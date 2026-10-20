@@ -105,9 +105,9 @@ fn core_kind_defaults_preloaded() {
     );
     // Links default to underlined; buttons to reverse video.
     let link = r.default_presentation(&Kind::new("ui.link")).unwrap();
-    assert!(link.style.as_ref().map(|s| s.underline).unwrap_or(false));
+    assert!(link.style.as_ref().is_some_and(|s| s.attrs.is_underline()));
     let button = r.default_presentation(&Kind::new("ui.button")).unwrap();
-    assert!(button.style.as_ref().map(|s| s.reverse).unwrap_or(false));
+    assert!(button.style.as_ref().is_some_and(|s| s.attrs.is_reverse()));
 }
 
 #[test]

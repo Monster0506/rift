@@ -79,13 +79,13 @@ impl Motion {
         last_search_query: Option<&str>,
     ) {
         match self {
-            Motion::Left => {
+            Self::Left => {
                 buf.move_left();
             }
-            Motion::Right => {
+            Self::Right => {
                 buf.move_right();
             }
-            Motion::Up => {
+            Self::Up => {
                 if op_ctx == crate::wrap::OperatorContext::Move {
                     if let Some(dm) = display_map {
                         let col =
@@ -97,7 +97,7 @@ impl Motion {
                 }
                 buf.move_up();
             }
-            Motion::Down => {
+            Self::Down => {
                 if op_ctx == crate::wrap::OperatorContext::Move {
                     if let Some(dm) = display_map {
                         let col =
@@ -109,168 +109,183 @@ impl Motion {
                 }
                 buf.move_down();
             }
-            Motion::StartOfLine => {
+            Self::StartOfLine => {
                 buf.move_to_line_start();
             }
-            Motion::EndOfLine => {
+            Self::EndOfLine => {
                 buf.move_to_line_end();
             }
-            Motion::StartOfFile => buf.move_to_start(),
-            Motion::EndOfFile => buf.move_to_end(),
-            Motion::PageUp => {
+            Self::StartOfFile => buf.move_to_start(),
+            Self::EndOfFile => buf.move_to_end(),
+            Self::PageUp => {
                 for _ in 0..viewport_height {
                     buf.move_up();
                 }
             }
-            Motion::PageDown => {
+            Self::PageDown => {
                 for _ in 0..viewport_height {
                     buf.move_down();
                 }
             }
-            Motion::NextWord => {
+            Self::NextWord => {
                 buf.move_word_right();
             }
-            Motion::PreviousWord => {
+            Self::PreviousWord => {
                 buf.move_word_left();
             }
-            Motion::WordEnd => {
+            Self::WordEnd => {
                 buf.move_word_end();
             }
-            Motion::NextBigWord => {
+            Self::NextBigWord => {
                 buf.move_big_word_right();
             }
-            Motion::PreviousBigWord => {
+            Self::PreviousBigWord => {
                 buf.move_big_word_left();
             }
-            Motion::NextParagraph => {
+            Self::NextParagraph => {
                 buf.move_paragraph_forward();
             }
-            Motion::PreviousParagraph => {
+            Self::PreviousParagraph => {
                 buf.move_paragraph_backward();
             }
-            Motion::NextSentence => {
+            Self::NextSentence => {
                 buf.move_sentence_forward();
             }
-            Motion::PreviousSentence => {
+            Self::PreviousSentence => {
                 buf.move_sentence_backward();
             }
-            Motion::NextMatch => {
-                buf.clear_desired_col();
-                if let Some(query) = last_search_query {
-                    let start = buf.cursor().saturating_add(1);
-                    if let Ok((Some(m), _stats)) =
-                        find_next(buf, start, query, SearchDirection::Forward)
-                    {
-                        let _ = buf.set_cursor(m.range.start);
-                    }
-                }
+            Self::NextMatch => jump_to_match(buf, last_search_query, SearchDirection::Forward),
+            Self::PreviousMatch => {
+                jump_to_match(buf, last_search_query, SearchDirection::Backward);
             }
-            Motion::PreviousMatch => {
-                buf.clear_desired_col();
-                if let Some(query) = last_search_query {
-                    if let Ok((Some(m), _stats)) =
-                        find_next(buf, buf.cursor(), query, SearchDirection::Backward)
-                    {
-                        let _ = buf.set_cursor(m.range.start);
-                    }
-                }
-            }
-            Motion::TillCharForward(ch) => {
-                buf.clear_desired_col();
-                let target = crate::character::Character::from(ch);
-                let current_line = buf.get_line();
-                let total_len = buf.len();
-                let line_end = buf
-                    .line_index
-                    .get_end(current_line, total_len)
-                    .unwrap_or(total_len);
-                let cursor = buf.cursor();
-                let start = if buf.char_at(cursor + 1) == Some(target) {
-                    cursor + 2
-                } else {
-                    cursor + 1
-                };
-                for pos in start..line_end {
-                    if buf.char_at(pos) == Some(target) {
-                        let land = if op_ctx == crate::wrap::OperatorContext::Operator {
-                            pos
-                        } else {
-                            pos.saturating_sub(1)
-                        };
-                        let _ = buf.set_cursor(land);
-                        return;
-                    }
-                }
-            }
-            Motion::TillCharBackward(ch) => {
-                buf.clear_desired_col();
-                let target = crate::character::Character::from(ch);
-                let current_line = buf.get_line();
-                let line_start = buf.line_index.get_start(current_line).unwrap_or(0);
-                let cursor = buf.cursor();
-                if cursor > line_start {
-                    let end = if cursor > 0 && buf.char_at(cursor - 1) == Some(target) {
-                        cursor - 1
-                    } else {
-                        cursor
-                    };
-                    if end > line_start {
-                        for pos in (line_start..end).rev() {
-                            if buf.char_at(pos) == Some(target) {
-                                let land = if op_ctx == crate::wrap::OperatorContext::Operator {
-                                    pos
-                                } else {
-                                    pos + 1
-                                };
-                                let _ = buf.set_cursor(land);
-                                return;
-                            }
-                        }
-                    }
-                }
-            }
-            Motion::RepeatFindForward | Motion::RepeatFindBackward => {}
-            Motion::ToLine(line_idx) => {
+            Self::TillCharForward(ch) => till_char_forward(buf, ch, op_ctx),
+            Self::TillCharBackward(ch) => till_char_backward(buf, ch, op_ctx),
+            // Text objects resolve at operator level; normal mode does not move.
+            Self::RepeatFindForward | Self::RepeatFindBackward | Self::TextObject(_) => {}
+            Self::ToLine(line_idx) => {
                 buf.clear_desired_col();
                 let start = buf.line_index.get_start(line_idx).unwrap_or(0);
                 let _ = buf.set_cursor(start);
             }
-            Motion::TextObject(_) => {
-                // Resolved at operator level; no cursor movement in normal mode.
-            }
-            Motion::FindCharForward(ch) => {
-                buf.clear_desired_col();
-                let target = crate::character::Character::from(ch);
-                let current_line = buf.get_line();
-                let total_len = buf.len();
-                let line_end = buf
-                    .line_index
-                    .get_end(current_line, total_len)
-                    .unwrap_or(total_len);
-                let start = buf.cursor() + 1;
-                for pos in start..line_end {
-                    if buf.char_at(pos) == Some(target) {
-                        let _ = buf.set_cursor(pos);
-                        return;
-                    }
-                }
-            }
-            Motion::FindCharBackward(ch) => {
-                buf.clear_desired_col();
-                let target = crate::character::Character::from(ch);
-                let current_line = buf.get_line();
-                let line_start = buf.line_index.get_start(current_line).unwrap_or(0);
-                let cursor = buf.cursor();
-                if cursor > line_start {
-                    for pos in (line_start..cursor).rev() {
-                        if buf.char_at(pos) == Some(target) {
-                            let _ = buf.set_cursor(pos);
-                            return;
-                        }
-                    }
+            Self::FindCharForward(ch) => find_char_forward(buf, ch),
+            Self::FindCharBackward(ch) => find_char_backward(buf, ch),
+        }
+    }
+}
+
+fn till_char_forward(
+    buf: &mut crate::buffer::TextBuffer,
+    ch: char,
+    op_ctx: crate::wrap::OperatorContext,
+) {
+    buf.clear_desired_col();
+    let target = crate::character::Character::from(ch);
+    let current_line = buf.get_line();
+    let total_len = buf.len();
+    let line_end = buf
+        .line_index
+        .get_end(current_line, total_len)
+        .unwrap_or(total_len);
+    let cursor = buf.cursor();
+    let start = if buf.char_at(cursor + 1) == Some(target) {
+        cursor + 2
+    } else {
+        cursor + 1
+    };
+    for pos in start..line_end {
+        if buf.char_at(pos) == Some(target) {
+            let land = if op_ctx == crate::wrap::OperatorContext::Operator {
+                pos
+            } else {
+                pos.saturating_sub(1)
+            };
+            let _ = buf.set_cursor(land);
+            return;
+        }
+    }
+}
+
+fn till_char_backward(
+    buf: &mut crate::buffer::TextBuffer,
+    ch: char,
+    op_ctx: crate::wrap::OperatorContext,
+) {
+    buf.clear_desired_col();
+    let target = crate::character::Character::from(ch);
+    let current_line = buf.get_line();
+    let line_start = buf.line_index.get_start(current_line).unwrap_or(0);
+    let cursor = buf.cursor();
+    if cursor > line_start {
+        let end = if cursor > 0 && buf.char_at(cursor - 1) == Some(target) {
+            cursor - 1
+        } else {
+            cursor
+        };
+        if end > line_start {
+            for pos in (line_start..end).rev() {
+                if buf.char_at(pos) == Some(target) {
+                    let land = if op_ctx == crate::wrap::OperatorContext::Operator {
+                        pos
+                    } else {
+                        pos + 1
+                    };
+                    let _ = buf.set_cursor(land);
+                    return;
                 }
             }
         }
+    }
+}
+
+fn find_char_forward(buf: &mut crate::buffer::TextBuffer, ch: char) {
+    buf.clear_desired_col();
+    let target = crate::character::Character::from(ch);
+    let current_line = buf.get_line();
+    let total_len = buf.len();
+    let line_end = buf
+        .line_index
+        .get_end(current_line, total_len)
+        .unwrap_or(total_len);
+    let start = buf.cursor() + 1;
+    for pos in start..line_end {
+        if buf.char_at(pos) == Some(target) {
+            let _ = buf.set_cursor(pos);
+            return;
+        }
+    }
+}
+
+fn find_char_backward(buf: &mut crate::buffer::TextBuffer, ch: char) {
+    buf.clear_desired_col();
+    let target = crate::character::Character::from(ch);
+    let current_line = buf.get_line();
+    let line_start = buf.line_index.get_start(current_line).unwrap_or(0);
+    let cursor = buf.cursor();
+    if cursor > line_start {
+        for pos in (line_start..cursor).rev() {
+            if buf.char_at(pos) == Some(target) {
+                let _ = buf.set_cursor(pos);
+                return;
+            }
+        }
+    }
+}
+
+fn jump_to_match(
+    buf: &mut crate::buffer::TextBuffer,
+    last_search_query: Option<&str>,
+    direction: SearchDirection,
+) {
+    buf.clear_desired_col();
+    let Some(query) = last_search_query else {
+        return;
+    };
+    let start = match direction {
+        SearchDirection::Forward => buf.cursor().saturating_add(1),
+        SearchDirection::Backward => buf.cursor(),
+    };
+    if let Ok((Some(m), _stats)) = find_next(buf, start, query, direction) {
+        let _ = buf.set_cursor(m.range.start);
     }
 }
 
@@ -398,7 +413,7 @@ pub enum EditorAction {
     LspDiagnosticNext,
     /// LSP: jump to previous diagnostic
     LspDiagnosticPrev,
-    /// LSP: open diagnostics panel (<space>e)
+    /// LSP: open diagnostics panel (`<space>e`)
     LspDiagnosticsPanel,
     /// Activate the interactive annotation under the cursor (default action).
     ActivateAnnotation,
@@ -411,7 +426,7 @@ pub enum EditorAction {
     PrevInteractiveAnnotation,
     /// Begin surround grammar (sd/sc/sg) as a top-level Normal-mode leader.
     SurroundStart,
-    /// `g` pressed under OperatorPending while an `sg` add-surround is in
+    /// `g` pressed under `OperatorPending` while an `sg` add-surround is in
     /// progress: `sgg<ch>` doubling shorthand for "surround the current line".
     SurroundGiveLine,
     /// `v`: enter/resume charwise Visual selection.
@@ -497,138 +512,149 @@ impl FromStr for Action {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             // Movement
-            "editor:move:left" => Ok(Action::Editor(EditorAction::Move(Motion::Left))),
-            "editor:move:right" => Ok(Action::Editor(EditorAction::Move(Motion::Right))),
-            "editor:move:up" => Ok(Action::Editor(EditorAction::Move(Motion::Up))),
-            "editor:move:down" => Ok(Action::Editor(EditorAction::Move(Motion::Down))),
-            "editor:move:line:start" => Ok(Action::Editor(EditorAction::Move(Motion::StartOfLine))),
-            "editor:move:line:end" => Ok(Action::Editor(EditorAction::Move(Motion::EndOfLine))),
-            "editor:move:file:start" => Ok(Action::Editor(EditorAction::Move(Motion::StartOfFile))),
-            "editor:move:file:end" => Ok(Action::Editor(EditorAction::Move(Motion::EndOfFile))),
-            "editor:move:page:up" => Ok(Action::Editor(EditorAction::Move(Motion::PageUp))),
-            "editor:move:page:down" => Ok(Action::Editor(EditorAction::Move(Motion::PageDown))),
-            "editor:move:word:next" => Ok(Action::Editor(EditorAction::Move(Motion::NextWord))),
-            "editor:move:word:prev" => Ok(Action::Editor(EditorAction::Move(Motion::PreviousWord))),
-            "editor:move:bigword:next" => {
-                Ok(Action::Editor(EditorAction::Move(Motion::NextBigWord)))
-            }
+            "editor:move:left" => Ok(Self::Editor(EditorAction::Move(Motion::Left))),
+            "editor:move:right" => Ok(Self::Editor(EditorAction::Move(Motion::Right))),
+            "editor:move:up" => Ok(Self::Editor(EditorAction::Move(Motion::Up))),
+            "editor:move:down" => Ok(Self::Editor(EditorAction::Move(Motion::Down))),
+            "editor:move:line:start" => Ok(Self::Editor(EditorAction::Move(Motion::StartOfLine))),
+            "editor:move:line:end" => Ok(Self::Editor(EditorAction::Move(Motion::EndOfLine))),
+            "editor:move:file:start" => Ok(Self::Editor(EditorAction::Move(Motion::StartOfFile))),
+            "editor:move:file:end" => Ok(Self::Editor(EditorAction::Move(Motion::EndOfFile))),
+            "editor:move:page:up" => Ok(Self::Editor(EditorAction::Move(Motion::PageUp))),
+            "editor:move:page:down" => Ok(Self::Editor(EditorAction::Move(Motion::PageDown))),
+            "editor:move:word:next" => Ok(Self::Editor(EditorAction::Move(Motion::NextWord))),
+            "editor:move:word:prev" => Ok(Self::Editor(EditorAction::Move(Motion::PreviousWord))),
+            "editor:move:bigword:next" => Ok(Self::Editor(EditorAction::Move(Motion::NextBigWord))),
             "editor:move:bigword:prev" => {
-                Ok(Action::Editor(EditorAction::Move(Motion::PreviousBigWord)))
+                Ok(Self::Editor(EditorAction::Move(Motion::PreviousBigWord)))
             }
             "editor:move:paragraph:next" => {
-                Ok(Action::Editor(EditorAction::Move(Motion::NextParagraph)))
+                Ok(Self::Editor(EditorAction::Move(Motion::NextParagraph)))
             }
-            "editor:move:paragraph:prev" => Ok(Action::Editor(EditorAction::Move(
-                Motion::PreviousParagraph,
-            ))),
+            "editor:move:paragraph:prev" => {
+                Ok(Self::Editor(EditorAction::Move(Motion::PreviousParagraph)))
+            }
             "editor:move:sentence:next" => {
-                Ok(Action::Editor(EditorAction::Move(Motion::NextSentence)))
+                Ok(Self::Editor(EditorAction::Move(Motion::NextSentence)))
             }
             "editor:move:sentence:prev" => {
-                Ok(Action::Editor(EditorAction::Move(Motion::PreviousSentence)))
+                Ok(Self::Editor(EditorAction::Move(Motion::PreviousSentence)))
             }
-            "editor:move:match:next" => Ok(Action::Editor(EditorAction::Move(Motion::NextMatch))),
-            "editor:move:match:prev" => {
-                Ok(Action::Editor(EditorAction::Move(Motion::PreviousMatch)))
-            }
+            "editor:move:match:next" => Ok(Self::Editor(EditorAction::Move(Motion::NextMatch))),
+            "editor:move:match:prev" => Ok(Self::Editor(EditorAction::Move(Motion::PreviousMatch))),
 
             // Mode transitions
-            "mode:normal" => Ok(Action::Editor(EditorAction::EnterNormalMode)),
-            "mode:insert" => Ok(Action::Editor(EditorAction::EnterInsertMode)),
-            "mode:insert_after" => Ok(Action::Editor(EditorAction::EnterInsertModeAfter)),
-            "mode:insert_line_start" => {
-                Ok(Action::Editor(EditorAction::EnterInsertModeAtLineStart))
-            }
-            "mode:insert_line_end" => Ok(Action::Editor(EditorAction::EnterInsertModeAtLineEnd)),
-            "mode:open_line_below" => Ok(Action::Editor(EditorAction::OpenLineBelow)),
-            "mode:open_line_above" => Ok(Action::Editor(EditorAction::OpenLineAbove)),
-            "mode:command" => Ok(Action::Editor(EditorAction::EnterCommandMode)),
-            "mode:search" => Ok(Action::Editor(EditorAction::EnterSearchMode)),
+            "mode:normal" => Ok(Self::Editor(EditorAction::EnterNormalMode)),
+            "mode:insert" => Ok(Self::Editor(EditorAction::EnterInsertMode)),
+            "mode:insert_after" => Ok(Self::Editor(EditorAction::EnterInsertModeAfter)),
+            "mode:insert_line_start" => Ok(Self::Editor(EditorAction::EnterInsertModeAtLineStart)),
+            "mode:insert_line_end" => Ok(Self::Editor(EditorAction::EnterInsertModeAtLineEnd)),
+            "mode:open_line_below" => Ok(Self::Editor(EditorAction::OpenLineBelow)),
+            "mode:open_line_above" => Ok(Self::Editor(EditorAction::OpenLineAbove)),
+            "mode:command" => Ok(Self::Editor(EditorAction::EnterCommandMode)),
+            "mode:search" => Ok(Self::Editor(EditorAction::EnterSearchMode)),
+            _ => Ok(Self::parse_rest(s)),
+        }
+    }
+}
 
+impl Action {
+    fn parse_rest(s: &str) -> Self {
+        match s {
             // Buffer management
-            "buffer:next" => Ok(Action::Editor(EditorAction::BufferNext)),
-            "buffer:prev" => Ok(Action::Editor(EditorAction::BufferPrevious)),
-            "buffer:list" => Ok(Action::Editor(EditorAction::ShowBufferList)),
+            "buffer:next" => Self::Editor(EditorAction::BufferNext),
+            "buffer:prev" => Self::Editor(EditorAction::BufferPrevious),
+            "buffer:list" => Self::Editor(EditorAction::ShowBufferList),
 
             // Search
-            "search:clear" => Ok(Action::Editor(EditorAction::ClearHighlights)),
+            "search:clear" => Self::Editor(EditorAction::ClearHighlights),
 
             // Notifications
-            "notifications:clear" => Ok(Action::Editor(EditorAction::ClearNotifications)),
-            "notifications:clear_last" => Ok(Action::Editor(EditorAction::ClearLastNotification)),
+            "notifications:clear" => Self::Editor(EditorAction::ClearNotifications),
+            "notifications:clear_last" => Self::Editor(EditorAction::ClearLastNotification),
 
             // History
-            "history:undo" => Ok(Action::Editor(EditorAction::Undo)),
-            "history:redo" => Ok(Action::Editor(EditorAction::Redo)),
-            "history:checkpoint" => Ok(Action::Editor(EditorAction::Checkpoint)),
+            "history:undo" => Self::Editor(EditorAction::Undo),
+            "history:redo" => Self::Editor(EditorAction::Redo),
+            "history:checkpoint" => Self::Editor(EditorAction::Checkpoint),
 
             // Feature openers
-            "explorer:open" => Ok(Action::Editor(EditorAction::OpenExplorer)),
-            "explorer:toggle_hidden" => Ok(Action::Editor(EditorAction::ExplorerToggleHidden)),
-            "terminal:exit" => Ok(Action::Editor(EditorAction::ExitTerminalMode)),
-            "terminal:scroll_up" => Ok(Action::Editor(EditorAction::TerminalScrollback(5))),
-            "terminal:scroll_down" => Ok(Action::Editor(EditorAction::TerminalScrollback(-5))),
-            "terminal:scroll_page_up" => Ok(Action::Editor(EditorAction::TerminalScrollback(20))),
-            "terminal:scroll_page_down" => {
-                Ok(Action::Editor(EditorAction::TerminalScrollback(-20)))
-            }
-            "undotree:open" => Ok(Action::Editor(EditorAction::OpenUndoTree)),
-            "terminal:open" => Ok(Action::Editor(EditorAction::OpenTerminal(None))),
-            "messages:open" => Ok(Action::Editor(EditorAction::OpenMessages)),
-            "clipboard:open" => Ok(Action::Editor(EditorAction::OpenClipboard)),
+            "explorer:open" => Self::Editor(EditorAction::OpenExplorer),
+            "explorer:toggle_hidden" => Self::Editor(EditorAction::ExplorerToggleHidden),
+            "terminal:exit" => Self::Editor(EditorAction::ExitTerminalMode),
+            "terminal:scroll_up" => Self::Editor(EditorAction::TerminalScrollback(5)),
+            "terminal:scroll_down" => Self::Editor(EditorAction::TerminalScrollback(-5)),
+            "terminal:scroll_page_up" => Self::Editor(EditorAction::TerminalScrollback(20)),
+            "terminal:scroll_page_down" => Self::Editor(EditorAction::TerminalScrollback(-20)),
+            "undotree:open" => Self::Editor(EditorAction::OpenUndoTree),
+            "terminal:open" => Self::Editor(EditorAction::OpenTerminal(None)),
+            "messages:open" => Self::Editor(EditorAction::OpenMessages),
+            "clipboard:open" => Self::Editor(EditorAction::OpenClipboard),
 
             // Editor-only actions
-            "editor:delete_line" => Ok(Action::Editor(EditorAction::DeleteLine)),
-            "editor:delete_char" => Ok(Action::Editor(EditorAction::Delete(Motion::Right))),
-            "editor:delete_back" => Ok(Action::Editor(EditorAction::Delete(Motion::Left))),
-            "editor:toggle_debug" => Ok(Action::Editor(EditorAction::ToggleDebug)),
-            "editor:redraw" => Ok(Action::Editor(EditorAction::Redraw)),
-            "editor:reload" => Ok(Action::Editor(EditorAction::Reload)),
-            "editor:save" => Ok(Action::Editor(EditorAction::Save)),
-            "editor:save_and_quit" => Ok(Action::Editor(EditorAction::SaveAndQuit)),
-            "editor:quit" => Ok(Action::Editor(EditorAction::Quit)),
-            "editor:submit" => Ok(Action::Editor(EditorAction::Submit)),
-            "editor:history_up" => Ok(Action::Editor(EditorAction::HistoryUp)),
-            "editor:history_down" => Ok(Action::Editor(EditorAction::HistoryDown)),
-            "editor:dot_repeat" => Ok(Action::Editor(EditorAction::DotRepeat)),
+            "editor:delete_line" => Self::Editor(EditorAction::DeleteLine),
+            "editor:delete_char" => Self::Editor(EditorAction::Delete(Motion::Right)),
+            "editor:delete_back" => Self::Editor(EditorAction::Delete(Motion::Left)),
+            "editor:toggle_debug" => Self::Editor(EditorAction::ToggleDebug),
+            "editor:redraw" => Self::Editor(EditorAction::Redraw),
+            "editor:reload" => Self::Editor(EditorAction::Reload),
+            "editor:save" => Self::Editor(EditorAction::Save),
+            "editor:save_and_quit" => Self::Editor(EditorAction::SaveAndQuit),
+            "editor:quit" => Self::Editor(EditorAction::Quit),
+            "editor:submit" => Self::Editor(EditorAction::Submit),
+            "editor:history_up" => Self::Editor(EditorAction::HistoryUp),
+            "editor:history_down" => Self::Editor(EditorAction::HistoryDown),
+            "editor:dot_repeat" => Self::Editor(EditorAction::DotRepeat),
 
             // Navigation / search (parameterised;  must precede Buffer catch-all)
-            s if s.starts_with("editor:run:") => Ok(Action::Editor(EditorAction::RunCommand(
-                s["editor:run:".len()..].to_string(),
-            ))),
-            "editor:goto:last" => Ok(Action::Editor(EditorAction::GotoLine(0))),
+            s if s.starts_with("editor:run:") => Self::Editor(EditorAction::RunCommand(
+                s.strip_prefix("editor:run:")
+                    .unwrap_or_default()
+                    .to_string(),
+            )),
+            "editor:goto:last" => Self::Editor(EditorAction::GotoLine(0)),
             s if s.starts_with("editor:goto:line:") => {
-                let n = s["editor:goto:line:".len()..].parse::<usize>().unwrap_or(0);
-                Ok(Action::Editor(EditorAction::GotoLine(n)))
+                let n = s
+                    .strip_prefix("editor:goto:line:")
+                    .unwrap_or_default()
+                    .parse::<usize>()
+                    .unwrap_or(0);
+                Self::Editor(EditorAction::GotoLine(n))
             }
-            s if s.starts_with("editor:search:") => Ok(Action::Editor(EditorAction::Search(
-                s["editor:search:".len()..].to_string(),
-            ))),
+            s if s.starts_with("editor:search:") => Self::Editor(EditorAction::Search(
+                s.strip_prefix("editor:search:")
+                    .unwrap_or_default()
+                    .to_string(),
+            )),
 
             // Multi-level editor sub-namespace: editor:X:Y forwards to Buffer action X:Y
             s if s.starts_with("editor:") && s.matches(':').count() >= 2 => {
-                Ok(Action::Buffer(s["editor:".len()..].to_string()))
+                Self::Buffer(s.strip_prefix("editor:").unwrap_or_default().to_string())
             }
 
             // LSP actions
-            "lsp:definition" => Ok(Action::Editor(EditorAction::LspGotoDefinition)),
-            "lsp:references" => Ok(Action::Editor(EditorAction::LspReferences)),
-            "lsp:hover" => Ok(Action::Editor(EditorAction::LspHover)),
-            "lsp:rename" => Ok(Action::Editor(EditorAction::LspRename)),
-            "lsp:code_action" => Ok(Action::Editor(EditorAction::LspCodeAction)),
-            "lsp:format" => Ok(Action::Editor(EditorAction::LspFormat)),
-            "lsp:diagnostic:next" => Ok(Action::Editor(EditorAction::LspDiagnosticNext)),
-            "lsp:diagnostic:prev" => Ok(Action::Editor(EditorAction::LspDiagnosticPrev)),
-            "annotation:activate" => Ok(Action::Editor(EditorAction::ActivateAnnotation)),
-            s if s.starts_with("annotation:activate:") => Ok(Action::Editor(
-                EditorAction::ActivateAnnotationVerb(s["annotation:activate:".len()..].to_string()),
-            )),
-            "annotation:next" => Ok(Action::Editor(EditorAction::NextInteractiveAnnotation)),
-            "annotation:prev" => Ok(Action::Editor(EditorAction::PrevInteractiveAnnotation)),
-            "lsp:diagnostics_panel" => Ok(Action::Editor(EditorAction::LspDiagnosticsPanel)),
+            "lsp:definition" => Self::Editor(EditorAction::LspGotoDefinition),
+            "lsp:references" => Self::Editor(EditorAction::LspReferences),
+            "lsp:hover" => Self::Editor(EditorAction::LspHover),
+            "lsp:rename" => Self::Editor(EditorAction::LspRename),
+            "lsp:code_action" => Self::Editor(EditorAction::LspCodeAction),
+            "lsp:format" => Self::Editor(EditorAction::LspFormat),
+            "lsp:diagnostic:next" => Self::Editor(EditorAction::LspDiagnosticNext),
+            "lsp:diagnostic:prev" => Self::Editor(EditorAction::LspDiagnosticPrev),
+            "annotation:activate" => Self::Editor(EditorAction::ActivateAnnotation),
+            s if s.starts_with("annotation:activate:") => {
+                Self::Editor(EditorAction::ActivateAnnotationVerb(
+                    s.strip_prefix("annotation:activate:")
+                        .unwrap_or_default()
+                        .to_string(),
+                ))
+            }
+            "annotation:next" => Self::Editor(EditorAction::NextInteractiveAnnotation),
+            "annotation:prev" => Self::Editor(EditorAction::PrevInteractiveAnnotation),
+            "lsp:diagnostics_panel" => Self::Editor(EditorAction::LspDiagnosticsPanel),
 
-            s if s.contains(':') && !s.starts_with("editor:") => Ok(Action::Buffer(s.to_string())),
-            _ => Ok(Action::Noop),
+            s if s.contains(':') && !s.starts_with("editor:") => Self::Buffer(s.to_string()),
+            _ => Self::Noop,
         }
     }
 }

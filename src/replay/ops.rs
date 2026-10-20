@@ -4,7 +4,7 @@
 use crate::key::{parse_key_sequence, Key};
 
 /// A single check against editor state at the point it appears in a script.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Assertion {
     Cursor { row: usize, col: usize },
     Mode(String),
@@ -13,7 +13,7 @@ pub enum Assertion {
 }
 
 /// One step of a parsed replay script.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScriptOp {
     /// Open a file before the session starts.
     Open(String),
@@ -31,7 +31,7 @@ pub enum ScriptOp {
     Assert(Assertion),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
     pub line: usize,
     pub message: String,
@@ -48,6 +48,9 @@ impl std::error::Error for ParseError {}
 const DEFAULT_WAIT_IDLE_MS: u64 = 2000;
 
 /// Parse a replay script into a sequence of [`ScriptOp`]s.
+///
+/// # Errors
+/// Returns a `ParseError` for the first malformed line.
 pub fn parse(source: &str) -> Result<Vec<ScriptOp>, ParseError> {
     let mut ops = Vec::new();
     let mut lines = source.lines().enumerate().peekable();
@@ -66,8 +69,8 @@ pub fn parse(source: &str) -> Result<Vec<ScriptOp>, ParseError> {
             "size" => {
                 let (rows, cols) = parse_two_usize(rest, line_no, "size")?;
                 ScriptOp::Size {
-                    rows: rows as u16,
-                    cols: cols as u16,
+                    rows: u16::try_from(rows).unwrap_or(u16::MAX),
+                    cols: u16::try_from(cols).unwrap_or(u16::MAX),
                 }
             }
             "keys" => {
@@ -118,9 +121,9 @@ fn parse_wait(rest: &str, line_no: usize) -> Result<ScriptOp, ParseError> {
     match parts.next() {
         Some("idle") => {
             let timeout_ms = match parts.next() {
-                Some(ms) => ms.parse().map_err(|_| ParseError {
+                Some(ms) => ms.parse().map_err(|e| ParseError {
                     line: line_no,
-                    message: format!("invalid timeout: {ms}"),
+                    message: format!("invalid timeout: {ms}: {e}"),
                 })?,
                 None => DEFAULT_WAIT_IDLE_MS,
             };
@@ -147,9 +150,9 @@ fn parse_assert<'a>(
         "mode" => Assertion::Mode(args.to_string()),
         "line" => {
             let (row_str, text) = split_verb(args);
-            let row = row_str.parse().map_err(|_| ParseError {
+            let row = row_str.parse().map_err(|e| ParseError {
                 line: line_no,
-                message: format!("invalid line number: {row_str}"),
+                message: format!("invalid line number: {row_str}: {e}"),
             })?;
             Assertion::Line {
                 row,
@@ -169,11 +172,10 @@ fn parse_assert<'a>(
 
 fn unquote(s: &str) -> String {
     let s = s.trim();
-    if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
-        s[1..s.len() - 1].to_string()
-    } else {
-        s.to_string()
-    }
+    s.strip_prefix('"')
+        .and_then(|t| t.strip_suffix('"'))
+        .unwrap_or(s)
+        .to_string()
 }
 
 fn read_fenced_block<'a>(

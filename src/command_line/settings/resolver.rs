@@ -11,14 +11,14 @@ pub struct SettingsResolver<L: 'static, G: 'static> {
 
 impl<L, G> SettingsResolver<L, G> {
     #[must_use]
-    pub fn new(local: SettingsRegistry<L>, global: SettingsRegistry<G>) -> Self {
+    pub const fn new(local: SettingsRegistry<L>, global: SettingsRegistry<G>) -> Self {
         Self { local, global }
     }
 
     pub fn set(
         &self,
         name: &str,
-        value: Option<String>,
+        value: Option<&str>,
         local_target: &mut L,
         global_target: &mut G,
         error_handler: &mut dyn FnMut(RiftError),

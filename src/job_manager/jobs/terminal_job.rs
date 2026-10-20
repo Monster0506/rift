@@ -11,7 +11,8 @@ pub struct TerminalInputJob {
 }
 
 impl TerminalInputJob {
-    pub fn new(token: AsyncToken, rx: Receiver<TerminalEvent>) -> Self {
+    #[must_use]
+    pub const fn new(token: AsyncToken, rx: Receiver<TerminalEvent>) -> Self {
         Self {
             document_id: token.doc_id(),
             rx,
@@ -25,7 +26,7 @@ impl fmt::Debug for TerminalInputJob {
         f.debug_struct("TerminalInputJob")
             .field("document_id", &self.document_id)
             .field("token", &self.token)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -47,7 +48,7 @@ impl Job for TerminalInputJob {
             match self.rx.recv_timeout(std::time::Duration::from_millis(50)) {
                 Ok(event) => match event {
                     TerminalEvent::Wakeup => {
-                        while let Ok(TerminalEvent::Wakeup) = self.rx.try_recv() {}
+                        while matches!(self.rx.try_recv(), Ok(TerminalEvent::Wakeup)) {}
                         if tx
                             .send(JobMessage::TerminalOutput(self.token, vec![]))
                             .is_err()

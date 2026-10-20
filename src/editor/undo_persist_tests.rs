@@ -16,7 +16,7 @@ fn drain_jobs(editor: &mut Editor<MockTerminal>) {
             .recv_timeout(Duration::from_millis(20))
         {
             Ok(msg) => {
-                let _ = editor.handle_job_message(msg);
+                editor.handle_job_message(msg);
             }
             Err(_) => {
                 if Instant::now() >= deadline {
@@ -36,8 +36,8 @@ fn undo_history_survives_a_simulated_editor_restart_when_enabled() {
     let path_str = file_path.to_string_lossy().into_owned();
 
     let mut editor = create_editor();
-    editor.state.settings.persistent_undo = true;
-    editor.state.settings.undo_dir = Some(undo_dir.clone());
+    editor.state.settings.undo.persistent = true;
+    editor.state.settings.undo.dir = Some(undo_dir.clone());
     editor.open_file(Some(path_str.clone()), false).unwrap();
     drain_jobs(&mut editor);
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
@@ -52,8 +52,8 @@ fn undo_history_survives_a_simulated_editor_restart_when_enabled() {
     drop(editor);
 
     let mut editor2 = create_editor();
-    editor2.state.settings.persistent_undo = true;
-    editor2.state.settings.undo_dir = Some(undo_dir);
+    editor2.state.settings.undo.persistent = true;
+    editor2.state.settings.undo.dir = Some(undo_dir);
     editor2.open_file(Some(path_str), false).unwrap();
     drain_jobs(&mut editor2);
 
@@ -74,8 +74,8 @@ fn undo_file_is_not_written_when_persistent_undo_is_explicitly_disabled() {
     let path_str = file_path.to_string_lossy().into_owned();
 
     let mut editor = create_editor();
-    editor.state.settings.persistent_undo = false; // undofile defaults to on; turn it off
-    editor.state.settings.undo_dir = Some(undo_dir.clone());
+    editor.state.settings.undo.persistent = false; // undofile defaults to on; turn it off
+    editor.state.settings.undo.dir = Some(undo_dir.clone());
     editor.open_file(Some(path_str), false).unwrap();
     drain_jobs(&mut editor);
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));

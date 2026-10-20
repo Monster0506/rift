@@ -1,79 +1,58 @@
 //! Inert stand-in for `lua_host` when `plugins` is compiled out: no Lua VM
 //! exists, so every operation is a no-op / empty result.
 
-pub use crate::plugin::lua_state::{AnnotationView, BufEntry, BufLinesSource, WinEntry};
-
-/// Stand-in for the real `lua_host::BufSourceUpdate`; carried through so
-/// callers don't need their own feature gate just to build the update.
-pub enum BufSourceUpdate {
-    Unchanged,
-    Cleared,
-    Set(Box<BufLinesSource>),
-}
+pub use crate::plugin::lua_state::{
+    AnnotationView, BufEntry, BufLinesSource, BufSourceUpdate, HistoryAvailability, StateUpdate,
+    WinEntry,
+};
 
 /// Stand-in for the real `LuaHost`; holds no state since there is no VM.
 #[derive(Debug, Default)]
 pub struct LuaHost;
 
 impl LuaHost {
-    pub fn new() -> Result<Self, String> {
+    /// # Errors
+    /// Never fails; the stub holds no state.
+    pub const fn new() -> Result<Self, String> {
         Ok(Self)
     }
 
-    pub fn with_generation(_generation: crate::plugin::PluginGeneration) -> Result<Self, String> {
+    /// # Errors
+    /// Never fails; the stub holds no state.
+    pub const fn with_generation(
+        _generation: crate::plugin::PluginGeneration,
+    ) -> Result<Self, String> {
         Ok(Self)
     }
 
-    pub fn generation(&self) -> crate::plugin::PluginGeneration {
+    #[must_use]
+    pub const fn generation(&self) -> crate::plugin::PluginGeneration {
         crate::plugin::PluginGeneration::new(
-            crate::plugin::PluginId::new(unsafe { std::num::NonZeroU32::new_unchecked(1) }),
-            unsafe { std::num::NonZeroU32::new_unchecked(1) },
+            crate::plugin::PluginId::new(std::num::NonZeroU32::MIN),
+            std::num::NonZeroU32::MIN,
         )
     }
 
-    pub fn mark_retiring(&self) {}
+    pub const fn mark_retiring(&self) {}
     pub fn set_annotations(&self, _views: Vec<AnnotationView>, _next_id: u64) {}
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn update_state(
-        &self,
-        _buf_id: usize,
-        _buf_kind: String,
-        _source: BufSourceUpdate,
-        _cursor: (usize, usize),
-        _tab_width: usize,
-        _expand_tabs: bool,
-        _mode: &str,
-        _filetype: Option<String>,
-        _file_path: Option<String>,
-        _buf_list: Vec<BufEntry>,
-        _window_size: (u16, u16),
-        _can_undo: bool,
-        _can_redo: bool,
-        _is_dirty: bool,
-        _scroll: (usize, usize),
-        _line_ending: &str,
-        _commands: Vec<(String, String)>,
-        _win_list: Vec<WinEntry>,
-        _focused_win_id: u64,
-        _previous_win_id: Option<u64>,
-        _lsp_diagnostics: std::collections::HashMap<String, Vec<(u32, u32, u32, String)>>,
-        _buffer_vars: std::collections::HashMap<
-            u64,
-            std::collections::HashMap<String, crate::annotations::Value>,
-        >,
-    ) {
-    }
+    pub fn update_state(&self, _update: StateUpdate<'_>) {}
 
-    pub fn dispatch_event(&self, _event: &crate::plugin::events::EditorEvent) -> Vec<String> {
+    #[must_use]
+    pub const fn dispatch_event(&self, _event: &crate::plugin::events::EditorEvent) -> Vec<String> {
         Vec::new()
     }
 
-    pub fn invoke_annotation_action(&self, _ctx: &crate::plugin::AnnotationActionCtx) -> bool {
+    #[must_use]
+    pub const fn invoke_annotation_action(
+        &self,
+        _ctx: &crate::plugin::AnnotationActionCtx,
+    ) -> bool {
         false
     }
 
-    pub fn invoke_annotation_hook(
+    #[must_use]
+    pub const fn invoke_annotation_hook(
         &self,
         _enter: bool,
         _ctx: &crate::plugin::AnnotationHoverCtx,
@@ -81,43 +60,53 @@ impl LuaHost {
         false
     }
 
-    pub fn invoke_buffer_action(&self, _buf_id: u64, _kind: &str, _action: &str) -> bool {
+    #[must_use]
+    pub const fn invoke_buffer_action(&self, _buf_id: u64, _kind: &str, _action: &str) -> bool {
         false
     }
 
-    pub fn invoke_buffer_save(&self, _buf_id: u64, _kind: &str) -> bool {
+    #[must_use]
+    pub const fn invoke_buffer_save(&self, _buf_id: u64, _kind: &str) -> bool {
         false
     }
 
-    pub fn invoke_buffer_close(&self, _buf_id: u64, _kind: &str) -> bool {
+    #[must_use]
+    pub const fn invoke_buffer_close(&self, _buf_id: u64, _kind: &str) -> bool {
         false
     }
 
-    pub fn execute_command(&self, _name: &str, _args: &[String]) -> bool {
+    #[must_use]
+    pub const fn execute_command(&self, _name: &str, _args: &[String]) -> bool {
         false
     }
 
-    pub fn command_list(&self) -> Vec<(String, String, Option<String>)> {
+    #[must_use]
+    pub const fn command_list(&self) -> Vec<(String, String, Option<String>)> {
         Vec::new()
     }
 
-    pub fn execute_action(&self, _id: &str) -> bool {
+    #[must_use]
+    pub const fn execute_action(&self, _id: &str) -> bool {
         false
     }
 
-    pub fn load_dir(&self, _dir: &std::path::Path) -> Vec<String> {
+    #[must_use]
+    pub const fn load_dir(&self, _dir: &std::path::Path) -> Vec<String> {
         Vec::new()
     }
 
-    pub fn load_file(&self, _path: &std::path::Path) -> Option<String> {
+    #[must_use]
+    pub const fn load_file(&self, _path: &std::path::Path) -> Option<String> {
         None
     }
 
-    pub fn drain_mutations(&self) -> Vec<crate::plugin::PluginMutation> {
+    #[must_use]
+    pub const fn drain_mutations(&self) -> Vec<crate::plugin::PluginMutation> {
         Vec::new()
     }
 
-    pub fn exec(&self, _code: &str) -> Option<String> {
+    #[must_use]
+    pub const fn exec(&self, _code: &str) -> Option<String> {
         None
     }
 }

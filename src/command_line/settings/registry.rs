@@ -22,12 +22,13 @@ impl<T> Copy for SettingsRegistry<T> {}
 impl<T> SettingsRegistry<T> {
     #[must_use]
     pub const fn new(descriptors: &'static [SettingDescriptor<T>]) -> Self {
-        SettingsRegistry {
+        Self {
             settings: descriptors,
         }
     }
 
-    pub fn descriptors(&self) -> &[SettingDescriptor<T>] {
+    #[must_use]
+    pub const fn descriptors(&self) -> &[SettingDescriptor<T>] {
         self.settings
     }
 
@@ -40,7 +41,7 @@ impl<T> SettingsRegistry<T> {
         let key = self.settings.as_ptr() as usize;
         let mut cache = OPTION_REGISTRY_CACHE
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         cache
             .entry(key)
             .or_insert_with(|| {
@@ -85,8 +86,8 @@ impl<T> SettingsRegistry<T> {
                 }
             }
             SettingType::Integer { min, max } => {
-                let val = value.parse::<usize>().map_err(|_| {
-                    SettingError::ParseError(format!("Invalid integer value: {value}"))
+                let val = value.parse::<usize>().map_err(|e| {
+                    SettingError::ParseError(format!("Invalid integer value: {value}: {e}"))
                 })?;
 
                 if let Some(min_val) = min {
@@ -106,8 +107,8 @@ impl<T> SettingsRegistry<T> {
                 Ok(SettingValue::Integer(val))
             }
             SettingType::Float { min, max } => {
-                let val = value.parse::<f64>().map_err(|_| {
-                    SettingError::ParseError(format!("Invalid float value: {value}"))
+                let val = value.parse::<f64>().map_err(|e| {
+                    SettingError::ParseError(format!("Invalid float value: {value}: {e}"))
                 })?;
 
                 if let Some(min_val) = min {
@@ -128,13 +129,17 @@ impl<T> SettingsRegistry<T> {
             }
             SettingType::Enum { variants } => {
                 let val_lower = value.to_lowercase();
-                if let Some(canonical) = variants.iter().find(|v| v.to_lowercase() == val_lower) {
-                    Ok(SettingValue::Enum(canonical.to_string()))
-                } else {
-                    Err(SettingError::ParseError(format!(
-                        "Invalid enum value: {value}. Valid values: {variants:?}"
-                    )))
-                }
+                variants
+                    .iter()
+                    .find(|v| v.to_lowercase() == val_lower)
+                    .map_or_else(
+                        || {
+                            Err(SettingError::ParseError(format!(
+                                "Invalid enum value: {value}. Valid values: {variants:?}"
+                            )))
+                        },
+                        |canonical| Ok(SettingValue::Enum(canonical.to_string())),
+                    )
             }
             SettingType::Color => Self::parse_color(value),
             SettingType::IntegerOrKeyword { min, max, keywords } => {
@@ -177,39 +182,41 @@ impl<T> SettingsRegistry<T> {
             return Ok(SettingValue::Color(Color::Reset));
         }
 
-        if val_lower.starts_with("rgb(") && val_lower.ends_with(')') {
-            let rgb_str = &val_lower[4..val_lower.len() - 1];
+        if let Some(rgb_str) = val_lower
+            .strip_prefix("rgb(")
+            .and_then(|s| s.strip_suffix(')'))
+        {
             let parts: Vec<&str> = rgb_str.split(',').map(str::trim).collect();
             if parts.len() == 3 {
-                let r = parts[0].parse::<u8>().map_err(|_| {
-                    SettingError::ParseError(format!("Invalid RGB red value: {}", parts[0]))
+                let r = parts[0].parse::<u8>().map_err(|e| {
+                    SettingError::ParseError(format!("Invalid RGB red value: {}: {e}", parts[0]))
                 })?;
-                let g = parts[1].parse::<u8>().map_err(|_| {
-                    SettingError::ParseError(format!("Invalid RGB green value: {}", parts[1]))
+                let g = parts[1].parse::<u8>().map_err(|e| {
+                    SettingError::ParseError(format!("Invalid RGB green value: {}: {e}", parts[1]))
                 })?;
-                let b = parts[2].parse::<u8>().map_err(|_| {
-                    SettingError::ParseError(format!("Invalid RGB blue value: {}", parts[2]))
+                let b = parts[2].parse::<u8>().map_err(|e| {
+                    SettingError::ParseError(format!("Invalid RGB blue value: {}: {e}", parts[2]))
                 })?;
                 return Ok(SettingValue::Color(Color::Rgb { r, g, b }));
             }
         }
 
         if let Some(hex) = val_lower.strip_prefix("#") {
+            let invalid = || SettingError::ParseError(format!("Invalid hex color: {value}"));
+            let channel = |range: std::ops::Range<usize>| {
+                hex.get(range)
+                    .and_then(|s| u8::from_str_radix(s, 16).ok())
+                    .ok_or_else(invalid)
+            };
             if hex.len() == 6 {
-                let r = u8::from_str_radix(&hex[0..2], 16)
-                    .map_err(|_| SettingError::ParseError(format!("Invalid hex color: {value}")))?;
-                let g = u8::from_str_radix(&hex[2..4], 16)
-                    .map_err(|_| SettingError::ParseError(format!("Invalid hex color: {value}")))?;
-                let b = u8::from_str_radix(&hex[4..6], 16)
-                    .map_err(|_| SettingError::ParseError(format!("Invalid hex color: {value}")))?;
+                let r = channel(0..2)?;
+                let g = channel(2..4)?;
+                let b = channel(4..6)?;
                 return Ok(SettingValue::Color(Color::Rgb { r, g, b }));
             } else if hex.len() == 3 {
-                let r = u8::from_str_radix(&hex[0..1], 16)
-                    .map_err(|_| SettingError::ParseError(format!("Invalid hex color: {value}")))?;
-                let g = u8::from_str_radix(&hex[1..2], 16)
-                    .map_err(|_| SettingError::ParseError(format!("Invalid hex color: {value}")))?;
-                let b = u8::from_str_radix(&hex[2..3], 16)
-                    .map_err(|_| SettingError::ParseError(format!("Invalid hex color: {value}")))?;
+                let r = channel(0..1)?;
+                let g = channel(1..2)?;
+                let b = channel(2..3)?;
                 let r = (r << 4) | r;
                 let g = (g << 4) | g;
                 let b = (b << 4) | b;
@@ -217,10 +224,12 @@ impl<T> SettingsRegistry<T> {
             }
         }
 
-        if val_lower.starts_with("ansi256(") && val_lower.ends_with(')') {
-            let num_str = &val_lower[8..val_lower.len() - 1];
-            let n = num_str.parse::<u8>().map_err(|_| {
-                SettingError::ParseError(format!("Invalid ANSI256 color index: {num_str}"))
+        if let Some(num_str) = val_lower
+            .strip_prefix("ansi256(")
+            .and_then(|s| s.strip_suffix(')'))
+        {
+            let n = num_str.parse::<u8>().map_err(|e| {
+                SettingError::ParseError(format!("Invalid ANSI256 color index: {num_str}: {e}"))
             })?;
             return Ok(SettingValue::Color(Color::Ansi256(n)));
         }
@@ -259,7 +268,7 @@ impl<T> SettingsRegistry<T> {
     pub fn execute_setting(
         &self,
         name: &str,
-        value: Option<String>,
+        value: Option<&str>,
         target: &mut T,
         error_handler: &mut dyn FnMut(RiftError),
     ) -> ExecutionResult {
@@ -286,30 +295,24 @@ impl<T> SettingsRegistry<T> {
             }
         };
 
-        let desc = match self.settings.iter().find(|d| d.name == matched_name) {
-            Some(d) => d,
-            None => {
-                error_handler(RiftError {
-                    severity: ErrorSeverity::Error,
-                    kind: ErrorType::Settings,
-                    code: "UNKNOWN_SETTING".to_string(),
-                    message: format!("Unknown option: {name}"),
-                });
-                return ExecutionResult::Failure;
-            }
+        let Some(desc) = self.settings.iter().find(|d| d.name == matched_name) else {
+            error_handler(RiftError {
+                severity: ErrorSeverity::Error,
+                kind: ErrorType::Settings,
+                code: "UNKNOWN_SETTING".to_string(),
+                message: format!("Unknown option: {name}"),
+            });
+            return ExecutionResult::Failure;
         };
 
-        let value_str = match value.as_ref() {
-            Some(v) => v,
-            None => {
-                error_handler(RiftError {
-                    severity: ErrorSeverity::Error,
-                    kind: ErrorType::Settings,
-                    code: "MISSING_SETTING_VALUE".to_string(),
-                    message: "Missing value".to_string(),
-                });
-                return ExecutionResult::Failure;
-            }
+        let Some(value_str) = value else {
+            error_handler(RiftError {
+                severity: ErrorSeverity::Error,
+                kind: ErrorType::Settings,
+                code: "MISSING_SETTING_VALUE".to_string(),
+                message: "Missing value".to_string(),
+            });
+            return ExecutionResult::Failure;
         };
 
         let typed_value = match Self::parse_value(&desc.ty, value_str) {
@@ -320,7 +323,7 @@ impl<T> SettingsRegistry<T> {
             }
         };
 
-        match (desc.set)(target, typed_value) {
+        match (desc.set)(target, &typed_value) {
             Ok(()) => {
                 if desc.needs_full_redraw {
                     ExecutionResult::Redraw

@@ -1,6 +1,7 @@
 //! Performance instrumentation, gated by the `perf_instrumentation` Cargo
 //! feature (zero-cost no-op when absent). Events go to `rift-perf.log` and a ring buffer.
 
+use crate::num::u64_to_f64;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
@@ -95,15 +96,15 @@ impl Drop for PerfSpan {
             .load(Ordering::Relaxed)
             .saturating_sub(self.start_clones);
 
-        fold_into_named_aggregate(
-            self.name,
+        let sample = Sample {
             duration,
             allocs,
             alloc_bytes,
             deallocs,
             dealloc_bytes,
             clones,
-        );
+        };
+        fold_into_named_aggregate(self.name, sample);
         record(PerfEvent {
             name: self.name,
             duration,
@@ -172,6 +173,7 @@ pub fn record(event: PerfEvent) {
 }
 
 /// Return a snapshot of the most recent events without removing them.
+#[must_use]
 pub fn recent_events() -> Vec<PerfEvent> {
     if let Ok(guard) = get_sink().lock() {
         if let Some(sink) = guard.as_ref() {
@@ -182,6 +184,7 @@ pub fn recent_events() -> Vec<PerfEvent> {
 }
 
 /// Drain all buffered events in chronological order, for a future `:perf` view.
+#[must_use]
 pub fn drain_events() -> Vec<PerfEvent> {
     if let Ok(mut guard) = get_sink().lock() {
         if let Some(sink) = guard.as_mut() {
@@ -200,11 +203,14 @@ static DEALLOC_BYTES: AtomicU64 = AtomicU64::new(0);
 /// Installed as `#[global_allocator]` below, so only builds with this feature pay for it.
 pub struct CountingAllocator;
 
+// SAFETY: every method forwards to `System` unchanged, so the caller's
+// GlobalAlloc contract is exactly what `System` requires.
 unsafe impl GlobalAlloc for CountingAllocator {
     #[inline]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
         ALLOC_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
+        // SAFETY: `layout` is forwarded unchanged; the caller upholds the alloc contract.
         unsafe { System.alloc(layout) }
     }
 
@@ -212,6 +218,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         DEALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
         DEALLOC_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
+        // SAFETY: `ptr` and `layout` come from the caller, who upholds the dealloc contract.
         unsafe { System.dealloc(ptr, layout) }
     }
 }
@@ -269,6 +276,17 @@ pub fn row_paint_counts() -> (u64, u64) {
     )
 }
 
+/// One span's or frame's measured deltas, folded into the aggregates.
+#[derive(Debug, Clone, Copy)]
+struct Sample {
+    duration: Duration,
+    allocs: u64,
+    alloc_bytes: u64,
+    deallocs: u64,
+    dealloc_bytes: u64,
+    clones: u64,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Aggregate {
     count: u64,
@@ -317,17 +335,16 @@ impl Aggregate {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn fold(
-        &mut self,
-        duration: Duration,
-        allocs: u64,
-        alloc_bytes: u64,
-        deallocs: u64,
-        dealloc_bytes: u64,
-        clones: u64,
-    ) {
-        let ns = duration.as_nanos() as u64;
+    fn fold(&mut self, sample: Sample) {
+        let Sample {
+            duration,
+            allocs,
+            alloc_bytes,
+            deallocs,
+            dealloc_bytes,
+            clones,
+        } = sample;
+        let ns = u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX);
         self.count += 1;
         self.sum_ns += ns;
         self.min_ns = self.min_ns.min(ns);
@@ -353,25 +370,25 @@ impl Aggregate {
         if self.count == 0 {
             return FrameStats::default();
         }
-        let count = self.count as f64;
+        let count = u64_to_f64(self.count);
         FrameStats {
             count: self.count,
-            avg_ms: (self.sum_ns as f64 / count) / 1_000_000.0,
-            min_ms: self.min_ns as f64 / 1_000_000.0,
-            max_ms: self.max_ns as f64 / 1_000_000.0,
-            avg_allocs: self.sum_allocs as f64 / count,
+            avg_ms: (u64_to_f64(self.sum_ns) / count) / 1_000_000.0,
+            min_ms: u64_to_f64(self.min_ns) / 1_000_000.0,
+            max_ms: u64_to_f64(self.max_ns) / 1_000_000.0,
+            avg_allocs: u64_to_f64(self.sum_allocs) / count,
             min_allocs: self.min_allocs,
             max_allocs: self.max_allocs,
-            avg_alloc_bytes: self.sum_alloc_bytes as f64 / count,
+            avg_alloc_bytes: u64_to_f64(self.sum_alloc_bytes) / count,
             min_alloc_bytes: self.min_alloc_bytes,
             max_alloc_bytes: self.max_alloc_bytes,
-            avg_deallocs: self.sum_deallocs as f64 / count,
+            avg_deallocs: u64_to_f64(self.sum_deallocs) / count,
             min_deallocs: self.min_deallocs,
             max_deallocs: self.max_deallocs,
-            avg_dealloc_bytes: self.sum_dealloc_bytes as f64 / count,
+            avg_dealloc_bytes: u64_to_f64(self.sum_dealloc_bytes) / count,
             min_dealloc_bytes: self.min_dealloc_bytes,
             max_dealloc_bytes: self.max_dealloc_bytes,
-            avg_clones: self.sum_clones as f64 / count,
+            avg_clones: u64_to_f64(self.sum_clones) / count,
             min_clones: self.min_clones,
             max_clones: self.max_clones,
         }
@@ -387,34 +404,18 @@ fn get_span_aggregates() -> &'static Mutex<std::collections::HashMap<&'static st
     SPAN_AGGREGATES.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn fold_into_named_aggregate(
-    name: &'static str,
-    duration: Duration,
-    allocs: u64,
-    alloc_bytes: u64,
-    deallocs: u64,
-    dealloc_bytes: u64,
-    clones: u64,
-) {
+fn fold_into_named_aggregate(name: &'static str, sample: Sample) {
     if let Ok(mut map) = get_span_aggregates().lock() {
-        map.entry(name).or_insert_with(Aggregate::new).fold(
-            duration,
-            allocs,
-            alloc_bytes,
-            deallocs,
-            dealloc_bytes,
-            clones,
-        );
+        map.entry(name).or_insert_with(Aggregate::new).fold(sample);
     }
 }
 
 /// Per-span-name time/alloc/clone breakdown, one entry per distinct
 /// `perf_span!`/frame name seen so far. Unordered.
+#[must_use]
 pub fn span_stats() -> Vec<(&'static str, FrameStats)> {
-    let map = match get_span_aggregates().lock() {
-        Ok(g) => g,
-        Err(_) => return Vec::new(),
+    let Ok(map) = get_span_aggregates().lock() else {
+        return Vec::new();
     };
     map.iter()
         .map(|(name, agg)| (*name, agg.to_frame_stats()))
@@ -451,7 +452,7 @@ pub struct FrameStats {
 }
 
 /// RAII guard for one `update_and_render` call: folds wall-clock/alloc/dealloc/
-/// clone deltas into the session [`AGGREGATE`] on drop, so early returns can't skip it.
+/// clone deltas into the session `AGGREGATE` on drop, so early returns can't skip it.
 pub struct FrameGuard {
     start: Instant,
     start_allocs: u64,
@@ -494,25 +495,18 @@ impl Drop for FrameGuard {
             .load(Ordering::Relaxed)
             .saturating_sub(self.start_clones);
 
-        if let Ok(mut agg) = AGGREGATE.lock() {
-            agg.fold(
-                duration,
-                allocs,
-                alloc_bytes,
-                deallocs,
-                dealloc_bytes,
-                clones,
-            );
-        }
-        fold_into_named_aggregate(
-            "update_and_render",
+        let sample = Sample {
             duration,
             allocs,
             alloc_bytes,
             deallocs,
             dealloc_bytes,
             clones,
-        );
+        };
+        if let Ok(mut agg) = AGGREGATE.lock() {
+            agg.fold(sample);
+        }
+        fold_into_named_aggregate("update_and_render", sample);
 
         record(PerfEvent {
             name: "update_and_render",

@@ -34,10 +34,10 @@ pub struct KeyHandler;
 impl KeyHandler {
     /// Process an input event and determine what action to take
     #[must_use]
-    pub fn process_event(event: InputEvent, current_mode: Mode) -> KeyAction {
+    pub const fn process_event(event: &InputEvent, current_mode: Mode) -> KeyAction {
         match event {
-            InputEvent::Key(key) => Self::process_key(key, current_mode),
-            InputEvent::Resize(cols, rows) => KeyAction::Resize(cols, rows),
+            InputEvent::Key(key) => Self::process_key(*key, current_mode),
+            InputEvent::Resize(cols, rows) => KeyAction::Resize(*cols, *rows),
             InputEvent::Paste(_) => KeyAction::Continue,
         }
     }
@@ -45,40 +45,38 @@ impl KeyHandler {
     /// Process a keypress and determine what action to take
     /// Returns the action the editor should take
     #[must_use]
-    pub fn process_key(key: Key, current_mode: Mode) -> KeyAction {
+    pub const fn process_key(key: Key, current_mode: Mode) -> KeyAction {
         match current_mode {
             Mode::Normal => Self::process_normal_mode_key(key),
-            Mode::Insert => Self::process_insert_mode_key(key),
-            Mode::Command => Self::process_command_mode_key(key),
+            Mode::Insert | Mode::Replace => Self::process_insert_mode_key(key),
+            Mode::Command | Mode::Rename => Self::process_command_mode_key(key),
             Mode::Search => Self::process_search_mode_key(key),
-            Mode::Rename => Self::process_command_mode_key(key),
-            Mode::OperatorPending => KeyAction::Continue,
-            Mode::Replace => Self::process_insert_mode_key(key),
-            Mode::Visual | Mode::VisualLine | Mode::VisualBlock => KeyAction::Continue,
+            Mode::OperatorPending | Mode::Visual | Mode::VisualLine | Mode::VisualBlock => {
+                KeyAction::Continue
+            }
         }
     }
 
     /// Process keypress in normal mode
-    fn process_normal_mode_key(key: Key) -> KeyAction {
+    const fn process_normal_mode_key(key: Key) -> KeyAction {
         match key {
             // Debug mode toggle
             Key {
                 code: KeyCode::Char('?'),
                 mods: Mods::NONE,
             } => KeyAction::ToggleDebug,
-            // Escape - clear pending keys
+            // Escape and Ctrl+] - clear pending keys
             Key {
                 code: KeyCode::Esc, ..
-            } => KeyAction::SkipAndRender,
-            // Ctrl+] - clear pending keys (alternative)
-            CTRL_RIGHT_BRACKET => KeyAction::SkipAndRender,
+            }
+            | CTRL_RIGHT_BRACKET => KeyAction::SkipAndRender,
             // All other keys continue to command processing
             _ => KeyAction::Continue,
         }
     }
 
     /// Process keypress in insert mode
-    fn process_insert_mode_key(key: Key) -> KeyAction {
+    const fn process_insert_mode_key(key: Key) -> KeyAction {
         match key {
             // Escape - exit insert mode
             Key {
@@ -90,7 +88,7 @@ impl KeyHandler {
     }
 
     /// Process keypress in command mode
-    fn process_command_mode_key(key: Key) -> KeyAction {
+    const fn process_command_mode_key(key: Key) -> KeyAction {
         match key {
             // Escape - exit command mode back to normal
             Key {
@@ -102,7 +100,7 @@ impl KeyHandler {
     }
 
     /// Process keypress in search mode
-    fn process_search_mode_key(key: Key) -> KeyAction {
+    const fn process_search_mode_key(key: Key) -> KeyAction {
         match key {
             // Escape - exit search mode back to normal
             Key {

@@ -17,7 +17,7 @@ struct RevChars<'a> {
 }
 
 impl<'a> RevChars<'a> {
-    fn new(buffer: &'a TextBuffer, end: usize) -> Self {
+    const fn new(buffer: &'a TextBuffer, end: usize) -> Self {
         Self {
             buffer,
             block: Vec::new(),

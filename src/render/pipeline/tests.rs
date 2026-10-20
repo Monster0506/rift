@@ -115,10 +115,7 @@ fn test_presentation_decorator_applies_fg_bg_attrs() {
         CellStyle {
             fg: Some(Color::Blue),
             bg: Some(Color::Black),
-            attrs: CellAttrs {
-                underline: true,
-                ..Default::default()
-            },
+            attrs: CellAttrs::UNDERLINE,
         },
     )];
     let mut idx = 0;
@@ -126,24 +123,24 @@ fn test_presentation_decorator_applies_fg_bg_attrs() {
     assert!(items[0].fg.is_none() && items[0].bg.is_none(), "'a' before");
     assert_eq!(items[1].fg, Some(Color::Blue));
     assert_eq!(items[1].bg, Some(Color::Black));
-    assert!(items[1].attrs.underline, "underline attr applied");
+    assert!(items[1].attrs.is_underline(), "underline attr applied");
     assert_eq!(items[2].fg, Some(Color::Blue));
     assert!(
-        items[3].fg.is_none() && !items[3].attrs.underline,
+        items[3].fg.is_none() && !items[3].attrs.is_underline(),
         "'d' after"
     );
 }
 
 #[test]
 fn test_presentation_decorator_fg_only_leaves_bg() {
-    use crate::layer::CellStyle;
+    use crate::layer::{CellAttrs, CellStyle};
     let input = chars("ab").into_iter();
     let styles: Vec<(std::ops::Range<usize>, CellStyle)> = vec![(
         0..2,
         CellStyle {
             fg: Some(Color::Red),
             bg: None,
-            attrs: Default::default(),
+            attrs: CellAttrs::default(),
         },
     )];
     let mut idx = 0;
@@ -156,14 +153,14 @@ fn test_presentation_decorator_fg_only_leaves_bg() {
 fn test_presentation_decorator_cursor_carries_over_across_calls() {
     // A second decorator sharing the same `idx` must not re-scan from the
     // start, and must still apply a style starting after the first call ended.
-    use crate::layer::CellStyle;
+    use crate::layer::{CellAttrs, CellStyle};
     let styles: Vec<(std::ops::Range<usize>, CellStyle)> = vec![
         (
             0..2,
             CellStyle {
                 fg: Some(Color::Red),
                 bg: None,
-                attrs: Default::default(),
+                attrs: CellAttrs::default(),
             },
         ),
         (
@@ -171,7 +168,7 @@ fn test_presentation_decorator_cursor_carries_over_across_calls() {
             CellStyle {
                 fg: Some(Color::Blue),
                 bg: None,
-                attrs: Default::default(),
+                attrs: CellAttrs::default(),
             },
         ),
     ];

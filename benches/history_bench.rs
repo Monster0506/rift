@@ -8,7 +8,7 @@ fn history_operations(c: &mut Criterion) {
 
     // Helper to create a dummy transaction
     let create_transaction = |i: usize| {
-        let mut tx = EditTransaction::new(format!("Test edit {}", i));
+        let mut tx = EditTransaction::new(format!("Test edit {i}"));
         tx.record(EditOperation::Insert {
             position: Position::new(0, 0),
             text: vec![Character::from('a')],
@@ -28,7 +28,7 @@ fn history_operations(c: &mut Criterion) {
                 history
             },
             criterion::BatchSize::SmallInput,
-        )
+        );
     });
 
     group.bench_function("undo_redo_small", |b| {
@@ -52,7 +52,7 @@ fn history_operations(c: &mut Criterion) {
                 }
             },
             criterion::BatchSize::SmallInput,
-        )
+        );
     });
 
     group.bench_function("compute_replay_path_deep", |b| {
@@ -74,7 +74,7 @@ fn history_operations(c: &mut Criterion) {
                 black_box(h.compute_replay_path(from, to).unwrap());
             },
             criterion::BatchSize::SmallInput,
-        )
+        );
     });
 
     group.finish();

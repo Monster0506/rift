@@ -107,7 +107,7 @@ fn advance_rebase(
         let step = steps.remove(0);
         let override_message = overrides.get(&step.sha).cloned();
         match step.verb {
-            RebaseVerb::Drop => continue,
+            RebaseVerb::Drop => {}
             RebaseVerb::Pick => match cherry_pick(repo_root, &step.sha, false) {
                 CherryPickOutcome::Ok => {
                     if let Some(msg) = override_message {
@@ -115,7 +115,6 @@ fn advance_rebase(
                             return RebaseAdvance::Error(e);
                         }
                     }
-                    continue;
                 }
                 CherryPickOutcome::Conflict => return RebaseAdvance::Conflict { remaining: steps },
                 CherryPickOutcome::Err(e) => return RebaseAdvance::Error(e),
@@ -166,7 +165,6 @@ fn advance_rebase(
                         if let Err(e) = result {
                             return RebaseAdvance::Error(e);
                         }
-                        continue;
                     }
                     CherryPickOutcome::Conflict => {
                         return RebaseAdvance::Conflict { remaining: steps }
@@ -184,7 +182,7 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(branch) = self.current_branch_or_notify(&repo_root) else {
             return;
         };
-        let base = match crate::git::run_checked(
+        let base = if let Ok(u) = crate::git::run_checked(
             &repo_root,
             &[
                 "rev-parse",
@@ -193,15 +191,14 @@ impl<T: TerminalBackend> Editor<T> {
                 "@{upstream}",
             ],
         ) {
-            Ok(u) => u.trim().to_string(),
-            Err(_) => {
-                self.state.notify(
-                    NotificationType::Error,
-                    "No upstream configured for this branch; set one with `git branch --set-upstream-to=<ref>`"
-                        .to_string(),
-                );
-                return;
-            }
+            u.trim().to_string()
+        } else {
+            self.state.notify(
+                NotificationType::Error,
+                "No upstream configured for this branch; set one with `git branch --set-upstream-to=<ref>`"
+                    .to_string(),
+            );
+            return;
         };
         self.start_rebase_from_base(repo_root, branch, base);
     }
@@ -236,7 +233,7 @@ impl<T: TerminalBackend> Editor<T> {
             );
             return;
         }
-        let base = format!("{}^", &sha[..sha.len().min(8)]);
+        let base = format!("{}^", sha.get(..8).unwrap_or(&sha));
         self.start_rebase_from_base(repo_root, branch, base);
     }
 
@@ -311,9 +308,8 @@ impl<T: TerminalBackend> Editor<T> {
     /// `:w` on a `GitRebaseTodo` buffer: start (if not yet running) or resume (if paused) executing it. Runs the buffer's structured `steps`/`message_overrides` directly; the rendered text is a view, not re-parsed.
     pub(super) fn apply_git_rebase_todo(&mut self) {
         let (repo_root, base, branch, pause, steps, message_overrides) = {
-            let doc = match self.document_manager.active_document() {
-                Some(d) => d,
-                None => return,
+            let Some(doc) = self.document_manager.active_document() else {
+                return;
             };
             if !doc.is_git_rebase_todo() {
                 return;
@@ -322,7 +318,8 @@ impl<T: TerminalBackend> Editor<T> {
                 doc.git_repo_root().map(Path::to_path_buf),
                 doc.git_rebase_base().map(str::to_string),
                 doc.git_rebase_branch().map(str::to_string),
-                doc.git_rebase_steps().map(|s| s.to_vec()),
+                doc.git_rebase_steps()
+                    .map(<[crate::git::rebase::RebaseStep]>::to_vec),
                 doc.git_rebase_message_overrides().cloned(),
             ) else {
                 return;
@@ -496,7 +493,7 @@ impl<T: TerminalBackend> Editor<T> {
                     NotificationType::Info,
                     format!(
                         "Rebase onto {branch} complete at {}",
-                        &new_tip[..new_tip.len().min(8)]
+                        new_tip.get(..8).unwrap_or(&new_tip)
                     ),
                 );
                 if let Err(e) = self.remove_document_force(doc_id) {
@@ -508,7 +505,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.render_rebase_pause(
                     doc_id,
                     RebasePause::Edit {
-                        remaining: remaining.clone(),
+                        remaining,
                     },
                     "Paused for edit. Edit files normally, stage with <Space>gs, then ca/cw to amend and resume (or :w here to continue without amending).",
                 );
@@ -518,23 +515,21 @@ impl<T: TerminalBackend> Editor<T> {
             RebaseAdvance::PausedForReword { message, remaining } => {
                 self.render_rebase_pause(
                     doc_id,
-                    RebasePause::AwaitingReword {
-                        remaining: remaining.clone(),
-                    },
+                    RebasePause::AwaitingReword { remaining },
                     "Paused for reword — finish the commit message buffer.",
                 );
                 self.open_git_commit_message(
                     GitCommitTarget::RebaseReword {
                         rebase_doc_id: doc_id,
                     },
-                    message,
+                    &message,
                 );
             }
             RebaseAdvance::Conflict { remaining } => {
                 self.render_rebase_pause(
                     doc_id,
                     RebasePause::Conflict {
-                        remaining: remaining.clone(),
+                        remaining,
                     },
                     "Conflict — resolve via <Space>gs, stage the fix, then :w this buffer to continue.",
                 );
@@ -662,7 +657,7 @@ impl<T: TerminalBackend> Editor<T> {
             .git_rebase_current_message(&sha, &repo_root);
         self.open_git_commit_message(
             GitCommitTarget::RebasePlanReword { rebase_doc_id, sha },
-            initial,
+            &initial,
         );
     }
 

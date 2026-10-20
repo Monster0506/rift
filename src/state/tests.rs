@@ -184,11 +184,12 @@ fn test_buffer_stats_updates() {
 
 #[test]
 fn test_user_settings_default() {
+    const RATIO_EPSILON: f64 = 1e-9;
     let settings = UserSettings::default();
-    assert!(settings.expand_tabs);
+    assert!(settings.editing.expand_tabs);
     assert_eq!(settings.tab_width, 4);
     assert_eq!(settings.default_border_chars, None);
-    assert_eq!(settings.command_line_window.width_ratio, 0.6);
+    assert!((settings.command_line_window.width_ratio - 0.6).abs() < RATIO_EPSILON);
     assert_eq!(settings.command_line_window.min_width, 40);
     assert_eq!(settings.command_line_window.height, 3);
     assert!(settings.command_line_window.border);
@@ -198,11 +199,11 @@ fn test_user_settings_default() {
 #[test]
 fn test_state_with_custom_settings() {
     let mut custom_settings = UserSettings::new();
-    custom_settings.expand_tabs = false;
+    custom_settings.editing.expand_tabs = false;
     custom_settings.tab_width = 4;
 
     let state = State::with_settings(custom_settings);
-    assert!(!state.settings.expand_tabs);
+    assert!(!state.settings.editing.expand_tabs);
     assert_eq!(state.settings.tab_width, 4);
     assert!(!state.debug_mode); // Runtime state should still be default
 }
@@ -237,7 +238,7 @@ fn test_handle_error() {
     let mut state = State::new();
     let err = RiftError::new(ErrorType::Io, "E1", "io failure");
 
-    state.handle_error(err.clone());
+    state.handle_error(err);
 
     // Verify notification is added
     let notifications: Vec<_> = state.error_manager.notifications().iter_active().collect();
@@ -318,39 +319,27 @@ fn test_command_line_cursor_tracks_multibyte_char_byte_length() {
 }
 
 #[test]
-fn test_gutter_thresholds() {
+fn test_gutter_width_follows_the_digit_count() {
     let mut state = State::new();
-    // gutter_width: 3 (for " 1 "), threshold: 10
     assert_eq!(state.gutter_width, 3);
-    assert_eq!(state.next_gutter_threshold, 10);
 
-    // Below threshold (9 lines)
-    state.update_buffer_stats(9, 100, crate::document::LineEnding::LF);
-    assert_eq!(state.gutter_width, 3);
-    assert_eq!(state.next_gutter_threshold, 10);
+    for (lines, width) in [(9, 3), (10, 4), (99, 4), (100, 5), (99, 4), (1, 3)] {
+        state.update_buffer_stats(lines, 100, crate::document::LineEnding::LF);
+        assert_eq!(state.gutter_width, width, "{lines} lines");
+    }
+}
 
-    // Cross threshold (10 lines) -> width becomes 4 (" 10 ")
-    state.update_buffer_stats(10, 100, crate::document::LineEnding::LF);
-    assert_eq!(state.gutter_width, 4);
-    assert_eq!(state.next_gutter_threshold, 100);
+#[test]
+fn test_gutter_cols_needs_the_document_and_the_global_setting() {
+    let mut state = State::new();
+    state.update_buffer_stats(120, 100, crate::document::LineEnding::LF);
 
-    // Stay in bracket (99 lines)
-    state.update_buffer_stats(99, 100, crate::document::LineEnding::LF);
-    assert_eq!(state.gutter_width, 4);
-    assert_eq!(state.next_gutter_threshold, 100);
+    assert_eq!(state.gutter_cols(true), 5);
+    assert_eq!(state.gutter_cols(false), 0);
+    assert_eq!(state.doc_gutter_cols(true, 9), 3);
+    assert_eq!(state.doc_gutter_cols(false, 9), 0);
 
-    // Cross next threshold (100 lines) -> width becomes 5 (" 100 ")
-    state.update_buffer_stats(100, 100, crate::document::LineEnding::LF);
-    assert_eq!(state.gutter_width, 5);
-    assert_eq!(state.next_gutter_threshold, 1000);
-
-    // Dropping to 99 lines is below threshold(1000)/10 = 100, so it reverts.
-    state.update_buffer_stats(99, 100, crate::document::LineEnding::LF);
-    assert_eq!(state.gutter_width, 4);
-    assert_eq!(state.next_gutter_threshold, 100);
-
-    // Massive drop
-    state.update_buffer_stats(1, 100, crate::document::LineEnding::LF);
-    assert_eq!(state.gutter_width, 3);
-    assert_eq!(state.next_gutter_threshold, 10);
+    state.settings.show_line_numbers = false;
+    assert_eq!(state.gutter_cols(true), 0);
+    assert_eq!(state.doc_gutter_cols(true, 9), 0);
 }

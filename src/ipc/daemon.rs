@@ -32,7 +32,8 @@ struct EditorInstance {
     detach_rx: Receiver<()>,
 }
 
-fn spawn_editor(file: Option<String>) -> EditorInstance {
+fn spawn_editor(file: Option<&str>) -> EditorInstance {
+    let file = file.map(str::to_owned);
     let (input_tx, input_rx) = std::sync::mpsc::sync_channel::<InputEvent>(64);
     let (output_tx, output_rx) = std::sync::mpsc::channel::<Vec<u8>>();
     let (detach_tx, detach_rx) = std::sync::mpsc::sync_channel::<()>(1);
@@ -41,14 +42,14 @@ fn spawn_editor(file: Option<String>) -> EditorInstance {
         let backend =
             ChannelBackend::new(input_rx, output_tx, detach_tx, Size { rows: 24, cols: 80 });
         eprintln!("rift: editor thread starting");
-        match crate::editor::Editor::with_file(backend, file) {
+        match crate::editor::Editor::with_file(backend, file.as_deref()) {
             Ok(mut e) => {
                 e.set_remote(true);
                 eprintln!("rift: editor initialized, running");
                 let r = e.run();
                 eprintln!(
                     "rift: editor run returned: {:?}",
-                    r.as_ref().map(|_| "ok").unwrap_or("err")
+                    r.as_ref().map(|()| "ok").unwrap_or("err")
                 );
             }
             Err(e) => eprintln!("rift: editor init error: {e}"),
@@ -64,7 +65,11 @@ fn spawn_editor(file: Option<String>) -> EditorInstance {
     }
 }
 
-pub fn run(file: Option<String>) -> anyhow::Result<()> {
+/// Bind a local listener, publish the session file, and serve clients until shutdown.
+///
+/// # Errors
+/// Returns `Err` if the listener cannot be bound or configured, or the session file cannot be written.
+pub fn run(file: Option<&str>) -> anyhow::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
 
@@ -86,7 +91,7 @@ pub fn run(file: Option<String>) -> anyhow::Result<()> {
     let shutdown = Arc::new(AtomicBool::new(false));
     install_sigterm_handler(Arc::clone(&shutdown));
 
-    let mut instance = spawn_editor(file.clone());
+    let mut instance = spawn_editor(file);
 
     loop {
         if shutdown.load(Ordering::Relaxed) {
@@ -103,7 +108,6 @@ pub fn run(file: Option<String>) -> anyhow::Result<()> {
                 Ok(p) => break Some(p),
                 Err(e) if e.kind() == ErrorKind::WouldBlock => {
                     std::thread::sleep(Duration::from_millis(50));
-                    continue;
                 }
                 Err(e) => {
                     eprintln!("rift accept error: {e}");
@@ -113,9 +117,8 @@ pub fn run(file: Option<String>) -> anyhow::Result<()> {
         };
         listener.set_nonblocking(false)?;
 
-        let (stream, peer) = match pair {
-            Some(p) => p,
-            None => break,
+        let Some((stream, peer)) = pair else {
+            break;
         };
 
         // The accepted socket inherits non-blocking mode from the listener on
@@ -129,7 +132,7 @@ pub fn run(file: Option<String>) -> anyhow::Result<()> {
 
         if instance.thread.is_finished() {
             eprintln!("rift: editor was not running, starting fresh");
-            instance = spawn_editor(file.clone());
+            instance = spawn_editor(file);
         }
 
         let reader = BufReader::new(stream);
@@ -146,7 +149,7 @@ pub fn run(file: Option<String>) -> anyhow::Result<()> {
             ServeResult::EditorExited => {
                 eprintln!("rift: editor quit, restarting for next session...");
                 let _ = instance.thread.join();
-                instance = spawn_editor(file.clone());
+                instance = spawn_editor(file);
             }
             ServeResult::Error => {
                 eprintln!("rift: client disconnected unexpectedly, waiting for reconnect...");
@@ -160,6 +163,9 @@ pub fn run(file: Option<String>) -> anyhow::Result<()> {
 
 /// Re-launch the current process without `--detach`/`-d`, running in the background.
 /// Polls until the daemon writes its session file, then prints startup info.
+///
+/// # Errors
+/// Returns `Err` if the current executable cannot be resolved or the background process cannot be spawned.
 pub fn detach() -> anyhow::Result<()> {
     let exe = std::env::current_exe()?;
     let args: Vec<String> = std::env::args()
@@ -204,8 +210,8 @@ pub fn detach() -> anyhow::Result<()> {
         use std::process::Command;
         // CREATE_NO_WINDOW hides the console window while keeping a valid
         // console context so Win32 APIs (arboard, etc.) work correctly.
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         Command::new(&exe)
             .args(&args)
             .creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP)
@@ -223,7 +229,7 @@ pub fn detach() -> anyhow::Result<()> {
             .into_iter()
             .flatten()
             .filter_map(|e| e.ok().map(|e| e.path()))
-            .find(|p| !existing.contains(p) && p.extension().map(|x| x == "json").unwrap_or(false));
+            .find(|p| !existing.contains(p) && p.extension().is_some_and(|x| x == "json"));
         if let Some(path) = new_file {
             if let Ok(info) = crate::ipc::session::read(&path) {
                 break Some((info, path));
@@ -244,7 +250,7 @@ pub fn detach() -> anyhow::Result<()> {
 
 #[cfg(unix)]
 fn publish_shutdown_flag(shutdown: Arc<AtomicBool>) {
-    SHUTDOWN_FLAG.store(shutdown.as_ptr() as *mut _, Ordering::Relaxed);
+    SHUTDOWN_FLAG.store(shutdown.as_ptr().cast::<AtomicBool>(), Ordering::Relaxed);
     std::mem::forget(shutdown);
 }
 
@@ -343,11 +349,10 @@ fn do_handshake(reader: &mut BufReader<TcpStream>, expected_token: &str) -> anyh
 /// Clamp a peer-supplied dimension into the valid u16 range instead of
 /// silently wrapping (e.g. 65536 -> 0) when cast from u64.
 fn clamp_dimension(value: u64, default: u16) -> u16 {
-    if value == 0 || value > u16::MAX as u64 {
-        default
-    } else {
-        value as u16
-    }
+    u16::try_from(value)
+        .ok()
+        .filter(|&v| v != 0)
+        .unwrap_or(default)
 }
 
 /// Forward a key, blocking if the channel is full so a burst never drops a
@@ -391,12 +396,87 @@ fn reader_loop(
                     break;
                 }
             }
-            Err(e) if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut => {
-                continue;
-            }
+            Err(e) if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut => {}
             Err(e) => {
                 let _ = msg_tx.send(Err(e));
                 break;
+            }
+        }
+    }
+}
+
+/// Writes a `session.ending` notification; delivery is best-effort.
+fn send_session_ending(stream: &mut TcpStream, reason: &str) {
+    let end = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "session.ending",
+        "params": SessionEndingParams { reason: reason.into() },
+    });
+    let _ = write_framed(stream, &end);
+}
+
+/// Applies one client message; returns `Some` when the serve loop must end.
+fn handle_client_msg(
+    bytes: &[u8],
+    input_tx: &SyncSender<InputEvent>,
+    write_stream: &mut TcpStream,
+    last_seq: &mut u64,
+) -> Option<ServeResult> {
+    let msg: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    match msg["method"].as_str().unwrap_or("") {
+        "session.detach" => {
+            send_session_ending(write_stream, "detached");
+            Some(ServeResult::Detach)
+        }
+        "input.key" => {
+            if let Some(seq) = msg["params"]["seq"].as_u64() {
+                *last_seq = seq;
+            }
+            let key = crate::key::parse_key(msg["params"]["key"].as_str()?)?;
+            if forward_key(input_tx, key) {
+                None
+            } else {
+                Some(ServeResult::EditorExited)
+            }
+        }
+        "resize" => {
+            // Dropping a stale resize is fine; only the latest size matters.
+            let resize = parse_resize_params(&msg["params"]);
+            if input_tx.try_send(resize).is_err() {
+                eprintln!("rift: dropped resize message");
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// Forwards queued renders; returns `Some` when the serve loop must end.
+fn forward_renders(
+    write_stream: &mut TcpStream,
+    output_rx: &Receiver<Vec<u8>>,
+    last_seq: u64,
+) -> Option<ServeResult> {
+    loop {
+        match output_rx.try_recv() {
+            Ok(render_bytes) => {
+                let params = RenderUpdateParams {
+                    screen: b64_encode(&render_bytes),
+                    last_seq,
+                };
+                let msg = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": "render.update",
+                    "params": params,
+                });
+                if write_framed(write_stream, &msg).is_err() {
+                    return Some(ServeResult::Error);
+                }
+            }
+            Err(TryRecvError::Empty) => return None,
+            Err(TryRecvError::Disconnected) => {
+                send_session_ending(write_stream, "editor-quit");
+                return Some(ServeResult::EditorExited);
             }
         }
     }
@@ -450,101 +530,30 @@ fn serve_client(
 
     let one_ms = Duration::from_millis(1);
     let mut last_seq: u64 = 0;
-    let result;
 
-    'serve: loop {
+    let result = loop {
         match msg_rx.recv_timeout(one_ms) {
             Ok(Ok(bytes)) => {
-                if let Ok(msg) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-                    match msg["method"].as_str().unwrap_or("") {
-                        "session.detach" => {
-                            let end = serde_json::json!({
-                                "jsonrpc": "2.0",
-                                "method": "session.ending",
-                                "params": SessionEndingParams { reason: "detached".into() },
-                            });
-                            let _ = write_framed(&mut write_stream, &end);
-                            result = ServeResult::Detach;
-                            break 'serve;
-                        }
-                        "input.key" => {
-                            if let Some(seq) = msg["params"]["seq"].as_u64() {
-                                last_seq = seq;
-                            }
-                            if let Some(key_str) = msg["params"]["key"].as_str() {
-                                if let Some(key) = crate::key::parse_key(key_str) {
-                                    if !forward_key(input_tx, key) {
-                                        result = ServeResult::EditorExited;
-                                        break 'serve;
-                                    }
-                                }
-                            }
-                        }
-                        "resize" => {
-                            // Dropping a stale resize is fine; only the latest size matters.
-                            let resize = parse_resize_params(&msg["params"]);
-                            if input_tx.try_send(resize).is_err() {
-                                eprintln!("rift: dropped resize message");
-                            }
-                        }
-                        _ => {}
-                    }
+                if let Some(result) =
+                    handle_client_msg(&bytes, input_tx, &mut write_stream, &mut last_seq)
+                {
+                    break result;
                 }
             }
-            Ok(Err(_)) => {
-                result = ServeResult::Error;
-                break 'serve;
-            }
+            Ok(Err(_)) | Err(RecvTimeoutError::Disconnected) => break ServeResult::Error,
             Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => {
-                result = ServeResult::Error;
-                break 'serve;
-            }
         }
 
         // Editor pressed :q in remote mode, so detach the client and keep the editor alive.
         if detach_rx.try_recv().is_ok() {
-            let end = serde_json::json!({
-                "jsonrpc": "2.0",
-                "method": "session.ending",
-                "params": SessionEndingParams { reason: "detached".into() },
-            });
-            let _ = write_framed(&mut write_stream, &end);
-            result = ServeResult::Detach;
-            break 'serve;
+            send_session_ending(&mut write_stream, "detached");
+            break ServeResult::Detach;
         }
 
-        loop {
-            match output_rx.try_recv() {
-                Ok(render_bytes) => {
-                    let params = RenderUpdateParams {
-                        screen: b64_encode(&render_bytes),
-                        last_seq,
-                    };
-                    let msg = serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "method": "render.update",
-                        "params": params,
-                    });
-                    if write_framed(&mut write_stream, &msg).is_err() {
-                        result = ServeResult::Error;
-                        break 'serve;
-                    }
-                }
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    let end = serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "method": "session.ending",
-                        "params": SessionEndingParams { reason: "editor-quit".into() },
-                    });
-                    let _ = write_framed(&mut write_stream, &end);
-                    result = ServeResult::EditorExited;
-                    break 'serve;
-                }
-            }
+        if let Some(result) = forward_renders(&mut write_stream, output_rx, last_seq) {
+            break result;
         }
-    }
+    };
 
     reader_shutdown.store(true, Ordering::Relaxed);
     let _ = write_stream.shutdown(std::net::Shutdown::Both);

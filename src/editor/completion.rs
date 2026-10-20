@@ -32,7 +32,8 @@ impl<T: TerminalBackend> Editor<T> {
                 self.apply_completion_text(&text, token_start);
                 self.state.completion_session = None;
             }
-            CompletionAction::UpdateDropdown { candidates } => {
+            CompletionAction::UpdateDropdown { candidates }
+            | CompletionAction::ShowDropdown { candidates } => {
                 let mut session = crate::state::CompletionSession::new(
                     self.state.command_line.clone(),
                     candidates,
@@ -56,23 +57,16 @@ impl<T: TerminalBackend> Editor<T> {
                 session.dropdown_open = true;
                 self.state.completion_session = Some(session);
             }
-            CompletionAction::ShowDropdown { candidates } => {
-                let mut session = crate::state::CompletionSession::new(
-                    self.state.command_line.clone(),
-                    candidates,
-                    token_start,
-                );
-                session.dropdown_open = true;
-                session.selected = Some(0);
-                self.state.completion_session = Some(session);
-            }
         }
 
         let _ = self.update_and_render();
     }
 
     pub(super) fn apply_completion_text(&mut self, text: &str, token_start: usize) {
-        let mut new_content = self.state.command_line[..token_start].to_string();
+        let Some(prefix) = self.state.command_line.get(..token_start) else {
+            return;
+        };
+        let mut new_content = prefix.to_string();
         new_content.push_str(text);
         self.state.command_line_cursor = new_content.len();
         self.state.command_line = new_content;

@@ -50,7 +50,7 @@ pub(super) fn set_annotated_buffer(doc: &mut Document, text: &str) {
                     line_annotations.push((line_idx, entry_id));
                 }
             }
-            plain_lines.push(&line[5..]);
+            plain_lines.push(line.get(5..).unwrap_or_default());
         } else {
             plain_lines.push(line);
         }
@@ -68,7 +68,7 @@ pub(super) fn set_annotated_buffer(doc: &mut Document, text: &str) {
 pub(super) fn line_anchor(doc: &Document, id: crate::annotations::AnnotationId) -> Option<usize> {
     match doc.annotations.get(id)?.anchor {
         crate::annotations::Anchor::Line(l) => Some(l),
-        other => panic!("expected line anchor, got {:?}", other),
+        other => panic!("expected line anchor, got {other:?}"),
     }
 }
 

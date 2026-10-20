@@ -28,7 +28,7 @@ impl Default for BorderChars {
 impl BorderChars {
     /// Create border characters from byte slices
     #[must_use]
-    pub fn new(
+    pub const fn new(
         top_left: char,
         top_right: char,
         bottom_left: char,
@@ -36,7 +36,7 @@ impl BorderChars {
         horizontal: char,
         vertical: char,
     ) -> Self {
-        constants::ui::borders::BorderSet {
+        Self {
             top_left,
             top_right,
             bottom_left,
@@ -48,7 +48,7 @@ impl BorderChars {
 
     /// Create border characters from single-byte ASCII characters
     #[must_use]
-    pub fn from_ascii(
+    pub const fn from_ascii(
         top_left: char,
         top_right: char,
         bottom_left: char,
@@ -56,7 +56,7 @@ impl BorderChars {
         horizontal: char,
         vertical: char,
     ) -> Self {
-        constants::ui::borders::BorderSet {
+        Self {
             top_left,
             top_right,
             bottom_left,
@@ -109,47 +109,48 @@ impl Default for WindowStyle {
 
 impl WindowStyle {
     /// Create a new window style with defaults
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Set whether to draw a border
     #[must_use]
-    pub fn with_border(mut self, border: bool) -> Self {
+    pub const fn with_border(mut self, border: bool) -> Self {
         self.border = border;
         self
     }
 
     /// Set custom border characters
     #[must_use]
-    pub fn with_border_chars(mut self, border_chars: BorderChars) -> Self {
+    pub const fn with_border_chars(mut self, border_chars: BorderChars) -> Self {
         self.border_chars = Some(border_chars);
         self
     }
 
     /// Set foreground color
     #[must_use]
-    pub fn with_fg(mut self, fg: Color) -> Self {
+    pub const fn with_fg(mut self, fg: Color) -> Self {
         self.fg = Some(fg);
         self
     }
 
     /// Set background color
     #[must_use]
-    pub fn with_bg(mut self, bg: Color) -> Self {
+    pub const fn with_bg(mut self, bg: Color) -> Self {
         self.bg = Some(bg);
         self
     }
 
     /// Set reverse video mode
     #[must_use]
-    pub fn with_reverse_video(mut self, reverse: bool) -> Self {
+    pub const fn with_reverse_video(mut self, reverse: bool) -> Self {
         self.reverse_video = reverse;
         self
     }
 
     /// Get the effective colors (applying reverse video if set)
-    fn effective_colors(&self) -> (Option<Color>, Option<Color>) {
+    const fn effective_colors(&self) -> (Option<Color>, Option<Color>) {
         if self.reverse_video {
             (self.bg, self.fg)
         } else {
@@ -181,7 +182,7 @@ impl FloatingWindow {
     /// Create a new floating window with default style
     #[must_use]
     pub fn new(position: WindowPosition, width: usize, height: usize) -> Self {
-        FloatingWindow {
+        Self {
             position,
             width,
             height,
@@ -191,13 +192,13 @@ impl FloatingWindow {
 
     /// Create a new floating window with custom style
     #[must_use]
-    pub fn with_style(
+    pub const fn with_style(
         position: WindowPosition,
         width: usize,
         height: usize,
         style: WindowStyle,
     ) -> Self {
-        FloatingWindow {
+        Self {
             position,
             width,
             height,
@@ -207,40 +208,40 @@ impl FloatingWindow {
 
     /// Set whether to draw a border (builder pattern for compatibility)
     #[must_use]
-    pub fn with_border(mut self, border: bool) -> Self {
+    pub const fn with_border(mut self, border: bool) -> Self {
         self.style.border = border;
         self
     }
 
     /// Set whether to use reverse video (builder pattern for compatibility)
     #[must_use]
-    pub fn with_reverse_video(mut self, reverse: bool) -> Self {
+    pub const fn with_reverse_video(mut self, reverse: bool) -> Self {
         self.style.reverse_video = reverse;
         self
     }
 
     /// Set custom border characters (builder pattern for compatibility)
     #[must_use]
-    pub fn with_border_chars(mut self, border_chars: BorderChars) -> Self {
+    pub const fn with_border_chars(mut self, border_chars: BorderChars) -> Self {
         self.style.border_chars = Some(border_chars);
         self
     }
 
     /// Get the width of the window
     #[must_use]
-    pub fn width(&self) -> usize {
+    pub const fn width(&self) -> usize {
         self.width
     }
 
     /// Get the height of the window
     #[must_use]
-    pub fn height(&self) -> usize {
+    pub const fn height(&self) -> usize {
         self.height
     }
 
     /// Get the content width (width minus border if enabled)
     #[must_use]
-    pub fn content_width(&self) -> usize {
+    pub const fn content_width(&self) -> usize {
         if self.style.border {
             self.width.saturating_sub(2)
         } else {
@@ -250,7 +251,7 @@ impl FloatingWindow {
 
     /// Get the content height (height minus border if enabled)
     #[must_use]
-    pub fn content_height(&self) -> usize {
+    pub const fn content_height(&self) -> usize {
         if self.style.border {
             self.height.saturating_sub(2)
         } else {
@@ -262,8 +263,8 @@ impl FloatingWindow {
     /// Returns (row, col) where the window should be positioned (0-indexed)
     #[must_use]
     pub fn calculate_position(&self, rows: u16, cols: u16) -> (u16, u16) {
-        let width = self.width.min(cols as usize) as u16;
-        let height = self.height.min(rows as usize) as u16;
+        let width = u16::try_from(self.width).unwrap_or(u16::MAX).min(cols);
+        let height = u16::try_from(self.height).unwrap_or(u16::MAX).min(rows);
 
         match self.position {
             WindowPosition::Center => {
@@ -293,12 +294,12 @@ impl FloatingWindow {
     /// Render the floating window to `layer` at the position calculated from
     /// the layer's dimensions, using `content` as the line-by-line body.
     pub fn render(&self, layer: &mut Layer, content: &[Vec<char>]) {
-        self.render_with_border_chars(layer, content, None)
+        self.render_with_border_chars(layer, content, None);
     }
 
     /// Render the floating window with Cells (colored content)
     pub fn render_cells(&self, layer: &mut Layer, content: &[Vec<Cell>]) {
-        self.render_cells_with_border_chars(layer, content, None)
+        self.render_cells_with_border_chars(layer, content, None);
     }
 
     /// Like [`Self::render`], but `border_chars_override` optionally
@@ -309,8 +310,8 @@ impl FloatingWindow {
         content: &[Vec<char>],
         border_chars_override: Option<BorderChars>,
     ) {
-        let rows = layer.rows() as u16;
-        let cols = layer.cols() as u16;
+        let rows = u16::try_from(layer.rows()).unwrap_or(u16::MAX);
+        let cols = u16::try_from(layer.cols()).unwrap_or(u16::MAX);
 
         // Calculate position
         let (start_row, start_col) = self.calculate_position(rows, cols);
@@ -329,10 +330,10 @@ impl FloatingWindow {
 
         let mut frame = crate::paint::PaintFrame::new(layer.rows());
         if self.style.border {
-            self.render_with_border(
+            Self::render_with_border(
                 &mut frame,
                 content,
-                RenderLayout {
+                &RenderLayout {
                     start_row,
                     start_col,
                     width,
@@ -343,10 +344,10 @@ impl FloatingWindow {
                 &border_chars,
             );
         } else {
-            self.render_without_border(
+            Self::render_without_border(
                 &mut frame,
                 content,
-                RenderLayout {
+                &RenderLayout {
                     start_row,
                     start_col,
                     width,
@@ -366,8 +367,8 @@ impl FloatingWindow {
         content: &[Vec<Cell>],
         border_chars_override: Option<BorderChars>,
     ) {
-        let rows = layer.rows() as u16;
-        let cols = layer.cols() as u16;
+        let rows = u16::try_from(layer.rows()).unwrap_or(u16::MAX);
+        let cols = u16::try_from(layer.cols()).unwrap_or(u16::MAX);
 
         let (start_row, start_col) = self.calculate_position(rows, cols);
         let start_row = start_row as usize;
@@ -381,10 +382,10 @@ impl FloatingWindow {
 
         let mut frame = crate::paint::PaintFrame::new(layer.rows());
         if self.style.border {
-            self.render_cells_with_border(
+            Self::render_cells_with_border(
                 &mut frame,
                 content,
-                RenderLayout {
+                &RenderLayout {
                     start_row,
                     start_col,
                     width,
@@ -395,10 +396,10 @@ impl FloatingWindow {
                 &border_chars,
             );
         } else {
-            self.render_cells_without_border(
+            Self::render_cells_without_border(
                 &mut frame,
                 content,
-                RenderLayout {
+                &RenderLayout {
                     start_row,
                     start_col,
                     width,
@@ -413,10 +414,9 @@ impl FloatingWindow {
 
     /// Render window content with border (Cells version)
     fn render_cells_with_border(
-        &self,
         frame: &mut crate::paint::PaintFrame,
         content: &[Vec<Cell>],
-        layout: RenderLayout,
+        layout: &RenderLayout,
         fg: Option<Color>,
         bg: Option<Color>,
         border_chars: &BorderChars,
@@ -536,10 +536,9 @@ impl FloatingWindow {
 
     /// Render window content without border (Cells version)
     fn render_cells_without_border(
-        &self,
         frame: &mut crate::paint::PaintFrame,
         content: &[Vec<Cell>],
-        layout: RenderLayout,
+        layout: &RenderLayout,
         fg: Option<Color>,
         bg: Option<Color>,
     ) {
@@ -584,10 +583,9 @@ impl FloatingWindow {
 
     /// Render window content with border
     fn render_with_border(
-        &self,
         frame: &mut crate::paint::PaintFrame,
         content: &[Vec<char>],
-        layout: RenderLayout,
+        layout: &RenderLayout,
         fg: Option<Color>,
         bg: Option<Color>,
         border_chars: &BorderChars,
@@ -696,10 +694,9 @@ impl FloatingWindow {
 
     /// Render window content without border
     fn render_without_border(
-        &self,
         frame: &mut crate::paint::PaintFrame,
         content: &[Vec<char>],
-        layout: RenderLayout,
+        layout: &RenderLayout,
         fg: Option<Color>,
         bg: Option<Color>,
     ) {

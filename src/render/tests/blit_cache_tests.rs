@@ -47,13 +47,13 @@ fn test_inline_annotation_change_triggers_content_redraw() {
     let inline_v2 = vec![(0usize, 0usize, "BB".to_string(), Color::Red, true)];
 
     system
-        .render(&mut term, inline_render_state(&buf, &state, &inline_v1, 1))
+        .render(&mut term, &inline_render_state(&buf, &state, &inline_v1, 1))
         .unwrap();
     let layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
     let first_char_v1 = layer.get_cell(0, 0).unwrap().content;
 
     system
-        .render(&mut term, inline_render_state(&buf, &state, &inline_v2, 2))
+        .render(&mut term, &inline_render_state(&buf, &state, &inline_v2, 2))
         .unwrap();
     let layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
     let first_char_v2 = layer.get_cell(0, 0).unwrap().content;
@@ -80,13 +80,19 @@ fn test_highlights_hash_detects_change_beyond_take_16_cap() {
     let mut base: Vec<(std::ops::Range<usize>, u32)> =
         (0..20).map(|i| (i * 10..i * 10 + 5, 1)).collect();
     system
-        .render(&mut term, render_state_with_highlights(&buf, &state, &base))
+        .render(
+            &mut term,
+            &render_state_with_highlights(&buf, &state, &base),
+        )
         .unwrap();
     let hash_before = content_highlights_hash(&system);
 
     base[17] = (170..200, 1);
     system
-        .render(&mut term, render_state_with_highlights(&buf, &state, &base))
+        .render(
+            &mut term,
+            &render_state_with_highlights(&buf, &state, &base),
+        )
         .unwrap();
     let hash_after = content_highlights_hash(&system);
 
@@ -106,13 +112,19 @@ fn test_highlights_hash_detects_capture_change_on_same_range() {
     let mut base: Vec<(std::ops::Range<usize>, u32)> =
         (0..20).map(|i| (i * 10..i * 10 + 5, 1)).collect();
     system
-        .render(&mut term, render_state_with_highlights(&buf, &state, &base))
+        .render(
+            &mut term,
+            &render_state_with_highlights(&buf, &state, &base),
+        )
         .unwrap();
     let hash_before = content_highlights_hash(&system);
 
     base[0].1 = 2;
     system
-        .render(&mut term, render_state_with_highlights(&buf, &state, &base))
+        .render(
+            &mut term,
+            &render_state_with_highlights(&buf, &state, &base),
+        )
         .unwrap();
     let hash_after = content_highlights_hash(&system);
 
@@ -232,13 +244,15 @@ fn scroll_blit_delta_rejects_placeholder_to_loaded_transition() {
 #[test]
 fn non_wrap_scroll_blit_with_left_col_tabs_and_multibyte_matches_fresh_render() {
     use crate::search::SearchMatch;
+    use std::fmt::Write as _;
     use std::ops::Range;
 
     let mut text = String::new();
     for i in 0..20 {
-        text.push_str(&format!(
-            "café\tline_{i}_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_filler\n"
-        ));
+        let _ = writeln!(
+            text,
+            "café\tline_{i}_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_filler"
+        );
     }
 
     let mut buf = TextBuffer::new(text.len() + 16).unwrap();
@@ -248,14 +262,11 @@ fn non_wrap_scroll_blit_with_left_col_tabs_and_multibyte_matches_fresh_render() 
         .match_indices("line_")
         .map(|(b, m)| (b..b + m.len(), Color::Red))
         .collect();
+    let char_at = |end: usize| text.get(..end).expect("char boundary").chars().count();
     let search_matches: Vec<SearchMatch> = text
         .match_indices("filler")
-        .map(|(b, m)| {
-            let char_start = text[..b].chars().count();
-            let char_end = text[..b + m.len()].chars().count();
-            SearchMatch {
-                range: char_start..char_end,
-            }
+        .map(|(b, m)| SearchMatch {
+            range: char_at(b)..char_at(b + m.len()),
         })
         .collect();
 
@@ -267,7 +278,7 @@ fn non_wrap_scroll_blit_with_left_col_tabs_and_multibyte_matches_fresh_render() 
         system
             .render(
                 term,
-                RenderState {
+                &RenderState {
                     syntax_generation: 0,
                     annotations_revision: 0,
                     kind_registry_generation: 0,
@@ -336,9 +347,10 @@ fn non_wrap_scroll_blit_with_left_col_tabs_and_multibyte_matches_fresh_render() 
 
 #[test]
 fn cursor_snaps_instead_of_animating_across_a_viewport_jump() {
+    use std::fmt::Write as _;
     let mut text = String::new();
     for i in 0..3000 {
-        text.push_str(&format!("line {i}\n"));
+        let _ = writeln!(text, "line {i}");
     }
     let mut buf = TextBuffer::new(text.len() + 16).unwrap();
     buf.insert_str(&text).unwrap();
@@ -353,7 +365,7 @@ fn cursor_snaps_instead_of_animating_across_a_viewport_jump() {
         system
             .render(
                 term,
-                RenderState {
+                &RenderState {
                     syntax_generation: 0,
                     annotations_revision: 0,
                     kind_registry_generation: 0,
@@ -423,7 +435,7 @@ fn needs_clear_forces_repaint_even_when_blit_key_is_unchanged() {
         system
             .render(
                 term,
-                RenderState {
+                &RenderState {
                     syntax_generation: 0,
                     annotations_revision: 0,
                     kind_registry_generation: 0,

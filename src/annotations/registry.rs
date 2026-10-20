@@ -35,6 +35,7 @@ pub struct DispatchRegistry {
 }
 
 impl DispatchRegistry {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             handlers: HashMap::new(),
@@ -42,6 +43,7 @@ impl DispatchRegistry {
     }
 
     /// A registry preloaded with core builtins.
+    #[must_use]
     pub fn with_builtins() -> Self {
         let mut r = Self::new();
         r.register("ui.link", "activate", Handler::Builtin(Builtin::FollowLink));
@@ -77,11 +79,12 @@ impl DispatchRegistry {
 
     /// Resolve a handler for a kind and verb, falling back from the full kind to
     /// its namespace prefix, then namespace, then the global "*" default.
+    #[must_use]
     pub fn resolve(&self, kind: &Kind, verb: &str) -> Option<&Handler> {
         let ns = kind.namespace();
         let candidates = [
             kind.as_str().to_string(),
-            format!("{}.", ns),
+            format!("{ns}."),
             ns.to_string(),
             "*".to_string(),
         ];
@@ -96,7 +99,7 @@ impl DispatchRegistry {
 
 /// Per-kind defaults: presentation applied when an annotation sets none, and a
 /// description used as a fallback hover tooltip.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct KindDefaults {
     pub presentation: Option<super::Presentation>,
     pub description: Option<String>,
@@ -113,6 +116,7 @@ pub struct KindRegistry {
 }
 
 impl KindRegistry {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             defaults: HashMap::new(),
@@ -121,11 +125,13 @@ impl KindRegistry {
     }
 
     /// Monotonic count of mutations to this registry's defaults.
-    pub fn generation(&self) -> u64 {
+    #[must_use]
+    pub const fn generation(&self) -> u64 {
         self.generation
     }
 
     /// A registry preloaded with sensible defaults for core kinds.
+    #[must_use]
     pub fn with_core() -> Self {
         use super::presentation::{FaceRef, Presentation, StyleOverride};
         let mut r = Self::new();
@@ -136,14 +142,14 @@ impl KindRegistry {
         r.set_description("lsp.diagnostic", "diagnostic");
         let mut link = Presentation::with_face(FaceRef::new("link"));
         link.style = Some(StyleOverride {
-            underline: true,
+            attrs: crate::layer::CellAttrs::UNDERLINE,
             ..Default::default()
         });
         r.set_presentation("ui.link", link);
         r.set_presentation(
             "ui.button",
             Presentation::with_style(StyleOverride {
-                reverse: true,
+                attrs: crate::layer::CellAttrs::REVERSE,
                 ..Default::default()
             }),
         );
@@ -169,7 +175,7 @@ impl KindRegistry {
         let ns = kind.namespace();
         let candidates = [
             kind.as_str().to_string(),
-            format!("{}.", ns),
+            format!("{ns}."),
             ns.to_string(),
             "*".to_string(),
         ];
@@ -177,11 +183,13 @@ impl KindRegistry {
     }
 
     /// Default presentation for a kind, with prefix fallback.
+    #[must_use]
     pub fn default_presentation(&self, kind: &Kind) -> Option<&super::Presentation> {
         self.resolve(kind).and_then(|d| d.presentation.as_ref())
     }
 
     /// Default description (hover doc) for a kind, with prefix fallback.
+    #[must_use]
     pub fn default_description(&self, kind: &Kind) -> Option<&str> {
         self.resolve(kind).and_then(|d| d.description.as_deref())
     }

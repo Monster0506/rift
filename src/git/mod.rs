@@ -19,7 +19,12 @@ pub struct GitOutput {
     pub success: bool,
 }
 
-/// Run `git <args>` in `cwd`, capturing stdout/stderr. A non-zero exit is not itself surfaced as an `Err` here; some callers need to distinguish "ran, but git said no" (e.g. `git diff --exit-code`, `git merge-base --is-ancestor`) from "couldn't even spawn git". Use [`run_checked`] when any non-zero exit should.
+/// Run `git <args>` in `cwd`, capturing stdout/stderr.
+///
+/// A non-zero exit is not itself surfaced as an `Err` here; some callers need to distinguish "ran, but git said no" (e.g. `git diff --exit-code`, `git merge-base --is-ancestor`) from "couldn't even spawn git". Use [`run_checked`] when any non-zero exit should.
+///
+/// # Errors
+/// Returns `Err` when the `git` process cannot be spawned.
 pub fn run(cwd: &Path, args: &[&str]) -> Result<GitOutput, RiftError> {
     let output = Command::new("git")
         .args(args)
@@ -48,6 +53,9 @@ pub fn run(cwd: &Path, args: &[&str]) -> Result<GitOutput, RiftError> {
 
 /// Run `git <args>` in `cwd`, returning stdout on success or an `Err`
 /// carrying stderr's text on a non-zero exit or spawn failure.
+///
+/// # Errors
+/// Returns `Err` when the spawn fails or git exits with a non-zero status.
 pub fn run_checked(cwd: &Path, args: &[&str]) -> Result<String, RiftError> {
     let out = run(cwd, args)?;
     if out.success {
@@ -72,6 +80,9 @@ pub struct RepoPaths {
 
 /// Discover the repository containing `start` (a directory). Fails with a
 /// descriptive error if `start` is not inside a git repository at all.
+///
+/// # Errors
+/// Returns `Err` when `start` is not inside a repository or `git rev-parse` fails.
 pub fn discover_repo(start: &Path) -> Result<RepoPaths, RiftError> {
     let root = run_checked(start, &["rev-parse", "--show-toplevel"])?;
     let git_dir_raw = run_checked(start, &["rev-parse", "--git-dir"])?;
@@ -87,7 +98,12 @@ pub fn discover_repo(start: &Path) -> Result<RepoPaths, RiftError> {
     Ok(RepoPaths { root, git_dir })
 }
 
-/// Resolve `repo_root`'s real git-dir alone (one subprocess call, not the two `discover_repo` needs); for callers that already trust `repo_root` and just need a real, writable git-dir for scratch files (commit message temp files) or in-progress-state checks (`CHERRY_PICK_HEAD`). **Never** hardcode.
+/// Resolve `repo_root`'s real git-dir alone.
+///
+/// One subprocess call, not the two `discover_repo` needs; for callers that already trust `repo_root` and just need a real, writable git-dir for scratch files (commit message temp files) or in-progress-state checks (`CHERRY_PICK_HEAD`). **Never** hardcode.
+///
+/// # Errors
+/// Returns `Err` when `git rev-parse --git-dir` fails in `repo_root`.
 pub fn git_dir(repo_root: &Path) -> Result<PathBuf, RiftError> {
     let raw = run_checked(repo_root, &["rev-parse", "--git-dir"])?;
     let raw = PathBuf::from(raw.trim());
@@ -99,6 +115,7 @@ pub fn git_dir(repo_root: &Path) -> Result<PathBuf, RiftError> {
 }
 
 /// Format a Unix timestamp as a UTC `YYYY-MM-DD` date. No timezone library dependency (this crate has none); good enough for blame/log display; deliberately not adjusted by a commit's own `author_tz`/`committer_tz`.
+#[must_use]
 pub fn format_unix_date(unix_seconds: i64) -> String {
     let days = unix_seconds.div_euclid(86400);
     let (y, m, d) = civil_from_days(days);
@@ -106,6 +123,7 @@ pub fn format_unix_date(unix_seconds: i64) -> String {
 }
 
 /// Format a Unix timestamp as a UTC `YYYY-MM-DD HH:MM` timestamp.
+#[must_use]
 pub fn format_unix_datetime(unix_seconds: i64) -> String {
     let days = unix_seconds.div_euclid(86400);
     let seconds = unix_seconds.rem_euclid(86400);
@@ -118,15 +136,15 @@ pub fn format_unix_datetime(unix_seconds: i64) -> String {
 /// Howard Hinnant's `civil_from_days`: days-since-epoch (1970-01-01) ->
 /// `(year, month, day)`. Proleptic Gregorian calendar, valid for any `i64`.
 fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    let z = z + 719468;
-    let era = if z >= 0 { z } else { z - 146096 } / 146097;
-    let doe = (z - era * 146097) as u64; // [0, 146096]
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; // [0, 399]
-    let y = yoe as i64 + era * 400;
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097).cast_unsigned(); // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365; // [0, 399]
+    let y = yoe.cast_signed() + era * 400;
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
     let mp = (5 * doy + 2) / 153; // [0, 11]
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u32; // [1, 31]
-    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32; // [1, 12]
+    let d = u32::try_from(doy - (153 * mp + 2) / 5 + 1).unwrap_or(u32::MAX); // [1, 31]
+    let m = u32::try_from(if mp < 10 { mp + 3 } else { mp - 9 }).unwrap_or(u32::MAX); // [1, 12]
     let y = if m <= 2 { y + 1 } else { y };
     (y, m, d)
 }

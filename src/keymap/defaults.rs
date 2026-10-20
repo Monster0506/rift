@@ -5,6 +5,37 @@ use crate::key::{Key, Mods};
 use crate::keymap::{KeyContext, KeyMap};
 /// Register default keybindings
 pub fn register_defaults(keymap: &mut KeyMap) {
+    register_terminal_defaults(keymap);
+    register_explorer_defaults(keymap);
+    register_git_status_defaults(keymap);
+    register_undo_tree_defaults(keymap);
+    register_clipboard_defaults(keymap);
+    register_normal_defaults(keymap);
+    register_normal_find_defaults(keymap);
+    register_normal_move_defaults(keymap);
+    register_normal_mode_defaults(keymap);
+    register_normal_keys_defaults(keymap);
+    register_insert_defaults(keymap);
+    register_cmdline_defaults(keymap);
+    register_cmdline_nav_defaults(keymap);
+    register_history_defaults(keymap);
+    register_operator_defaults(keymap);
+    register_visual_defaults(keymap);
+    register_region_defaults(keymap);
+    register_window_defaults(keymap);
+    register_normal_goto_defaults(keymap);
+    register_paste_defaults(keymap);
+    register_lsp_defaults(keymap);
+    register_rebase_todo_defaults(keymap);
+    register_blame_log_defaults(keymap);
+    register_location_defaults(keymap);
+    register_regions_defaults(keymap);
+    register_buffer_list_defaults(keymap);
+
+    // Text objects are handled by run_loop.rs's pending-grammar state machine, not the trie.
+}
+
+fn register_terminal_defaults(keymap: &mut KeyMap) {
     // Terminal mode Defaults
     keymap.register(
         KeyContext::Terminal,
@@ -31,7 +62,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::ctrl('d'),
         Action::Editor(EditorAction::TerminalScrollback(-10)),
     );
+}
 
+fn register_explorer_defaults(keymap: &mut KeyMap) {
     // FileExplorer (Directory buffer) Defaults. Normal motions fall through to KeyContext::Normal
     // via the fallback chain; only directory-specific bindings are registered here.
     keymap.register(
@@ -59,7 +92,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::char('H'),
         Action::Editor(EditorAction::ExplorerToggleHidden),
     );
+}
 
+fn register_git_status_defaults(keymap: &mut KeyMap) {
     // GitStatus buffer Defaults;  fugitive's in-buffer vocabulary.
     // Normal motions fall through to KeyContext::Normal via the fallback chain.
     keymap.register(
@@ -137,6 +172,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         vec![Key::char('g'), Key::char('?')],
         Action::Editor(EditorAction::GitHelp),
     );
+}
+
+fn register_undo_tree_defaults(keymap: &mut KeyMap) {
     // UndoTree buffer Defaults
     // j/k are overridden to skip connector lines; <CR> selects the node.
     keymap.register(
@@ -159,7 +197,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::ESC,
         Action::Buffer("undotree:close".to_string()),
     );
+}
 
+fn register_clipboard_defaults(keymap: &mut KeyMap) {
     // Clipboard index buffer Defaults
     keymap.register(
         KeyContext::Buffer(BufferKindId::CLIPBOARD),
@@ -187,6 +227,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::ESC,
         Action::Buffer("clipboard:entry:close".to_string()),
     );
+}
+
+fn register_normal_defaults(keymap: &mut KeyMap) {
     // Normal Mode Defaults
     // '-' opens the file-explorer buffer for the current file's parent directory
     keymap.register(
@@ -229,6 +272,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::char('N'),
         Action::Editor(EditorAction::Move(Motion::RepeatFindBackward)),
     );
+}
+
+fn register_normal_find_defaults(keymap: &mut KeyMap) {
     // Find-char motion (f / F) and till motion (t / T)
     keymap.register(
         KeyContext::Normal,
@@ -273,6 +319,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::char('R'),
         Action::Editor(EditorAction::EnterReplaceMode),
     );
+}
+
+fn register_normal_move_defaults(keymap: &mut KeyMap) {
     // Word Motion
     keymap.register(
         KeyContext::Normal,
@@ -333,6 +382,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::PAGE_DOWN,
         Action::Editor(EditorAction::Move(Motion::PageDown)),
     );
+}
+
+fn register_normal_mode_defaults(keymap: &mut KeyMap) {
     // Undo/Redo
     keymap.register(
         KeyContext::Normal,
@@ -385,6 +437,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::char('O'),
         Action::Editor(EditorAction::OpenLineAbove),
     );
+}
+
+fn register_normal_keys_defaults(keymap: &mut KeyMap) {
     // Normal Mode Arrows/Home/End
     keymap.register(
         KeyContext::Normal,
@@ -466,6 +521,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::ESC,
         Action::Editor(EditorAction::EnterNormalMode),
     );
+}
+
+fn register_insert_defaults(keymap: &mut KeyMap) {
     keymap.register(
         KeyContext::Insert,
         Key::ESC,
@@ -546,6 +604,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::ctrl('w'),
         Action::Editor(EditorAction::Delete(Motion::PreviousWord)),
     );
+}
+
+fn register_cmdline_defaults(keymap: &mut KeyMap) {
     keymap.register(
         KeyContext::Command,
         Key::ESC,
@@ -598,6 +659,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::LEFT,
         Action::Editor(EditorAction::Move(Motion::Left)),
     );
+}
+
+fn register_cmdline_nav_defaults(keymap: &mut KeyMap) {
     keymap.register(
         KeyContext::Command,
         Key::RIGHT,
@@ -658,6 +722,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::ctrl('w'),
         Action::Editor(EditorAction::Delete(Motion::PreviousWord)),
     );
+}
+
+fn register_history_defaults(keymap: &mut KeyMap) {
     // History navigation
     keymap.register(
         KeyContext::Command,
@@ -699,7 +766,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::ctrl('n'),
         Action::Editor(EditorAction::HistoryDown),
     );
+}
 
+fn register_operator_defaults(keymap: &mut KeyMap) {
     // Operators
     keymap.register(
         KeyContext::Normal,
@@ -741,6 +810,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::ctrl('v'),
         Action::Editor(EditorAction::EnterVisualBlock),
     );
+}
+
+fn register_visual_defaults(keymap: &mut KeyMap) {
     keymap.register(
         KeyContext::Visual,
         Key::char('o'),
@@ -776,6 +848,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::SHIFT_SPACE,
         Action::Editor(EditorAction::ShrinkRegion),
     );
+}
+
+fn register_region_defaults(keymap: &mut KeyMap) {
     keymap.register(
         KeyContext::Normal,
         Key::char('m'),
@@ -802,7 +877,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
             1,
         )))),
     );
+}
 
+fn register_window_defaults(keymap: &mut KeyMap) {
     let ww = Key::ctrl('w');
     for (ch, cmd) in [
         ('h', ":split :l"),
@@ -844,6 +921,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
             Action::Editor(EditorAction::RunCommand(cmd.to_string())),
         );
     }
+}
+
+fn register_normal_goto_defaults(keymap: &mut KeyMap) {
     keymap.register_sequence(
         KeyContext::Normal,
         vec![Key::char('g'), Key::char('g')],
@@ -866,7 +946,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         vec![Key::char(' '), Key::char('p'), Key::char('i')],
         Action::Editor(EditorAction::PluginAction("demo:insert".to_string())),
     );
+}
 
+fn register_paste_defaults(keymap: &mut KeyMap) {
     // Clipboard ring
     keymap.register(
         KeyContext::Normal,
@@ -898,7 +980,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         vec![Key::char('g'), Key::char('P')],
         Action::Editor(EditorAction::PutSystemClipboard { before: true }),
     );
+}
 
+fn register_lsp_defaults(keymap: &mut KeyMap) {
     keymap.register_sequence(
         KeyContext::Normal,
         vec![Key::char('g'), Key::char('d')],
@@ -967,7 +1051,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         vec![Key::char(' '), Key::char('g')],
         Action::Editor(EditorAction::GitStatus),
     );
+}
 
+fn register_rebase_todo_defaults(keymap: &mut KeyMap) {
     // GitRebaseTodo buffer Defaults
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
@@ -1034,7 +1120,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         vec![Key::char('g'), Key::char('?')],
         Action::Editor(EditorAction::GitHelp),
     );
+}
 
+fn register_blame_log_defaults(keymap: &mut KeyMap) {
     // GitBlame buffer Defaults
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_BLAME),
@@ -1078,7 +1166,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::char('r'),
         Action::Editor(EditorAction::GitRebaseFromLogCommit),
     );
+}
 
+fn register_location_defaults(keymap: &mut KeyMap) {
     // Location list panel bindings (diagnostics / references)
     keymap.register(
         KeyContext::Buffer(BufferKindId::LOCATION_LIST),
@@ -1095,7 +1185,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::char(' '),
         Action::Buffer("location_list:code_action".to_string()),
     );
+}
 
+fn register_regions_defaults(keymap: &mut KeyMap) {
     // `gv` regions list window.
     keymap.register_sequence(
         KeyContext::Normal,
@@ -1142,7 +1234,9 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::char('y'),
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Yank)),
     );
+}
 
+fn register_buffer_list_defaults(keymap: &mut KeyMap) {
     // Buffer-list panel: j/k inherit Normal's motion; only selection and close
     // are bound here.
     keymap.register(
@@ -1155,6 +1249,4 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::ESC,
         Action::Buffer("buffer_list:close".to_string()),
     );
-
-    // Text objects are handled by run_loop.rs's pending-grammar state machine, not the trie.
 }

@@ -24,7 +24,7 @@ impl Default for CommandHistory {
 impl CommandHistory {
     /// Create a new command history with the specified maximum size
     #[must_use]
-    pub fn new(max_size: usize) -> Self {
+    pub const fn new(max_size: usize) -> Self {
         Self {
             items: Vec::new(),
             max_size,
@@ -113,7 +113,7 @@ impl CommandHistory {
         self.original_line.as_deref()
     }
 
-    /// Reset navigation state, clearing history_index and original_line but keeping items.
+    /// Reset navigation state, clearing `history_index` and `original_line` but keeping items.
     pub fn reset_navigation(&mut self) {
         self.history_index = None;
         self.original_line = None;
@@ -121,13 +121,13 @@ impl CommandHistory {
 
     /// Get the number of items in history
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.items.len()
     }
 
     /// Check if history is empty
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 }

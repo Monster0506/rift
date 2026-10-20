@@ -12,7 +12,7 @@ fn test_populate_undotree_stores_text() {
     let text = "* [1] edit\n* [0] root".to_string();
     let seqs = vec![1u64, 0u64];
     let highlights = vec![];
-    doc.populate_undotree_buffer(text.clone(), seqs, highlights);
+    doc.populate_undotree_buffer(&text, seqs, highlights);
     assert_eq!(doc.buffer.to_string(), text);
 }
 
@@ -24,7 +24,7 @@ fn test_populate_undotree_stores_sequences() {
     )
     .unwrap();
     let seqs = vec![5u64, 3u64, 1u64];
-    doc.populate_undotree_buffer("text".to_string(), seqs.clone(), vec![]);
+    doc.populate_undotree_buffer("text", seqs.clone(), vec![]);
     assert_eq!(doc.undotree_sequences(), Some(seqs.as_slice()));
 }
 
@@ -36,7 +36,7 @@ fn test_populate_undotree_stores_highlights() {
     )
     .unwrap();
     let highlights = vec![(0..2, Color::Magenta), (3..5, Color::Cyan)];
-    doc.populate_undotree_buffer("ab cd".to_string(), vec![], highlights.clone());
+    doc.populate_undotree_buffer("ab cd", vec![], highlights);
     assert_eq!(doc.custom_highlights.len(), 2);
     assert_eq!(doc.custom_highlights[0].1, Color::Magenta);
     assert_eq!(doc.custom_highlights[1].1, Color::Cyan);
@@ -49,7 +49,7 @@ fn test_populate_undotree_preserves_linked_doc_id() {
         crate::document::DocumentId::new(99),
     )
     .unwrap();
-    doc.populate_undotree_buffer("x".to_string(), vec![], vec![]);
+    doc.populate_undotree_buffer("x", vec![], vec![]);
     assert_eq!(
         doc.undotree_linked_doc_id(),
         Some(crate::document::DocumentId::new(99))
@@ -59,7 +59,7 @@ fn test_populate_undotree_preserves_linked_doc_id() {
 #[test]
 fn test_populate_undotree_noop_on_wrong_kind() {
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    doc.populate_undotree_buffer("text".to_string(), vec![1], vec![]);
+    doc.populate_undotree_buffer("text", vec![1], vec![]);
     assert_eq!(doc.buffer.to_string(), "");
 }
 
@@ -70,7 +70,7 @@ fn test_populate_undotree_marks_saved() {
         crate::document::DocumentId::new(42),
     )
     .unwrap();
-    doc.populate_undotree_buffer("text".to_string(), vec![], vec![]);
+    doc.populate_undotree_buffer("text", vec![], vec![]);
     assert!(!doc.is_dirty());
 }
 
@@ -81,11 +81,11 @@ fn test_populate_undotree_replaces_old_highlights() {
         crate::document::DocumentId::new(42),
     )
     .unwrap();
-    doc.populate_undotree_buffer("ab".to_string(), vec![], vec![(0..2, Color::Red)]);
+    doc.populate_undotree_buffer("ab", vec![], vec![(0..2, Color::Red)]);
     assert_eq!(doc.custom_highlights.len(), 1);
 
     doc.populate_undotree_buffer(
-        "xyz".to_string(),
+        "xyz",
         vec![],
         vec![
             (0..1, Color::Blue),
@@ -133,7 +133,7 @@ fn test_populate_undotree_increments_revision() {
     )
     .unwrap();
     let rev0 = doc.buffer.revision;
-    doc.populate_undotree_buffer("text".to_string(), vec![], vec![]);
+    doc.populate_undotree_buffer("text", vec![], vec![]);
     assert!(
         doc.buffer.revision > rev0,
         "revision should increment after populate"

@@ -28,6 +28,7 @@ fn calculate_current_column(buf: &TextBuffer, tab_width: usize) -> usize {
 }
 
 /// Compute the byte range that a motion-operator pair would affect, without applying it.
+///
 /// Temporarily moves the cursor to simulate the motion, records the range, then restores the cursor; returns `None` if the range is empty.
 pub fn compute_motion_range(
     motion: Motion,
@@ -37,6 +38,7 @@ pub fn compute_motion_range(
     last_search_query: Option<&str>,
 ) -> Option<crate::wrap::MotionRange> {
     use crate::wrap::{MotionRange, OperatorContext};
+    const MAX_MOTION_REPEAT: usize = 1_000_000;
 
     if let Motion::TextObject(spec) = motion {
         #[cfg(feature = "treesitter")]
@@ -57,7 +59,7 @@ pub fn compute_motion_range(
                         source: bytes.as_slice(),
                     })
             });
-            return crate::text_objects::resolve(spec, &doc.buffer, count, syntax_ctx);
+            return crate::text_objects::resolve(spec, &doc.buffer, count, syntax_ctx.as_ref());
         }
         #[cfg(not(feature = "treesitter"))]
         {
@@ -76,7 +78,6 @@ pub fn compute_motion_range(
 
     let anchor = doc.buffer.cursor();
 
-    const MAX_MOTION_REPEAT: usize = 1_000_000;
     let count = count.min(MAX_MOTION_REPEAT);
 
     for _ in 0..count {
@@ -139,7 +140,7 @@ pub(crate) fn range_to_offsets(
             (start, end)
         }
         RangeKind::Charwise | RangeKind::Blockwise => {
-            let end_offset = if range.inclusive { 1 } else { 0 };
+            let end_offset = usize::from(range.inclusive);
             if range.new_cursor > range.anchor {
                 (
                     range.anchor,
@@ -156,6 +157,9 @@ pub(crate) fn range_to_offsets(
 }
 
 /// Execute a command on the editor buffer
+///
+/// # Errors
+/// Returns the first `RiftError` raised by a document operation.
 pub fn execute_command(
     cmd: Command,
     doc: &mut Document,
@@ -163,102 +167,24 @@ pub fn execute_command(
     tab_width: usize,
     viewport_height: usize,
     last_search_query: Option<&str>,
-    mut display_map: Option<&mut DisplayMap>,
+    display_map: Option<&mut DisplayMap>,
 ) -> Result<(), RiftError> {
     match cmd {
         Command::Move(motion, count) => {
-            let buf = &mut doc.buffer;
-            for _ in 0..count {
-                motion.apply(
-                    buf,
-                    display_map.as_deref_mut(),
-                    crate::wrap::OperatorContext::Move,
-                    viewport_height,
-                    last_search_query,
-                );
-            }
-        }
-        Command::Delete(motion, count) => {
-            let Some(range) =
-                compute_motion_range(motion, count, doc, viewport_height, last_search_query)
-            else {
-                return Ok(());
-            };
-            let (delete_start, delete_end) = range_to_offsets(&range, doc, true);
-            if delete_end > delete_start {
-                doc.begin_transaction("Delete");
-                let _ = doc.delete_range(delete_start, delete_end);
-                doc.commit_transaction();
-            }
-        }
-        Command::Change(motion, count) => {
-            let Some(range) =
-                compute_motion_range(motion, count, doc, viewport_height, last_search_query)
-            else {
-                return Ok(());
-            };
-            let (delete_start, delete_end) = range_to_offsets(&range, doc, true);
-            if delete_end > delete_start {
-                let _ = doc.delete_range(delete_start, delete_end);
-            }
-        }
-        Command::ChangeLine(count) => {
-            doc.buffer.move_to_line_start();
-            let start = doc.buffer.cursor();
-            for _ in 0..count.max(1).saturating_sub(1) {
-                doc.buffer.move_down();
-            }
-            doc.buffer.move_to_line_end();
-            let end = doc.buffer.cursor();
-            if end > start {
-                let _ = doc.delete_range(start, end);
-            }
-        }
-        Command::DeleteSurround(ch, count) => {
-            if let Some((open_range, close_range)) =
-                crate::text_objects::resolve_surround_pair(ch, &doc.buffer, count)
-            {
-                doc.begin_transaction("DeleteSurround");
-                let _ = doc.delete_range(close_range.start, close_range.end);
-                let _ = doc.delete_range(open_range.start, open_range.end);
-                doc.commit_transaction();
-            }
-        }
-        Command::ChangeSurround(from, to, count) => {
-            if let (Some((open_range, close_range)), Some((new_open, new_close))) = (
-                crate::text_objects::resolve_surround_pair(from, &doc.buffer, count),
-                crate::text_objects::surround_strings(to, count),
-            ) {
-                doc.begin_transaction("ChangeSurround");
-                let _ = doc.delete_range(close_range.start, close_range.end);
-                let _ = doc.buffer.set_cursor(close_range.start);
-                let _ = doc.insert_str(&new_close);
-                let _ = doc.delete_range(open_range.start, open_range.end);
-                let _ = doc.buffer.set_cursor(open_range.start);
-                let _ = doc.insert_str(&new_open);
-                doc.commit_transaction();
-            }
-        }
-        Command::AddSurround(motion, motion_count, ch, delim_count) => {
-            let Some((open, close)) = crate::text_objects::surround_strings(ch, delim_count) else {
-                return Ok(());
-            };
-            let Some(range) = compute_motion_range(
-                motion,
-                motion_count,
+            move_cmd(
                 doc,
+                display_map,
+                motion,
+                count,
                 viewport_height,
                 last_search_query,
-            ) else {
-                return Ok(());
-            };
-            let (start, end) = range_to_offsets(&range, doc, false);
-            doc.begin_transaction("AddSurround");
-            let _ = doc.buffer.set_cursor(end);
-            let _ = doc.insert_str(&close);
-            let _ = doc.buffer.set_cursor(start);
-            let _ = doc.insert_str(&open);
-            doc.commit_transaction();
+            );
+        }
+        Command::Delete(motion, count) => {
+            delete_motion_cmd(doc, motion, count, viewport_height, last_search_query);
+        }
+        Command::Change(motion, count) => {
+            change_motion_cmd(doc, motion, count, viewport_height, last_search_query);
         }
         Command::DeleteForward => {
             doc.delete_forward();
@@ -267,82 +193,269 @@ pub fn execute_command(
             doc.delete_backward();
         }
         Command::DeleteLine(count) => {
-            doc.begin_transaction("DeleteLine");
-            doc.buffer.move_to_line_start();
-            let start = doc.buffer.cursor();
-            let mut reached_last_line = false;
-            for _ in 0..count.max(1) {
-                if !doc.buffer.move_down() {
-                    reached_last_line = true;
-                    break;
-                }
-            }
-            if !reached_last_line {
-                let end = doc.buffer.cursor();
-                let _ = doc.delete_range(start, end);
-            } else {
-                doc.buffer.move_to_line_end();
-                let end = doc.buffer.cursor();
-                if end > start {
-                    let _ = doc.delete_range(start, end);
-                }
-                if start > 0 {
-                    doc.delete_backward();
-                    doc.buffer.move_to_line_start();
-                }
-            }
-            doc.commit_transaction();
+            delete_line_cmd(doc, count);
+        }
+        Command::ChangeLine(count) => {
+            change_line_cmd(doc, count);
         }
         Command::InsertChar(ch) => {
-            if ch == '\t' && expand_tabs {
-                let current_col = calculate_current_column(&doc.buffer, tab_width);
-                let spaces_needed = tab_width - (current_col % tab_width);
-                for _ in 0..spaces_needed {
-                    doc.insert_char(' ')?;
-                }
-            } else {
-                doc.insert_char(ch)?;
-            }
+            insert_char_cmd(doc, expand_tabs, tab_width, ch)?;
         }
         Command::ReplaceChar(ch, count) => {
-            let pos = doc.buffer.cursor();
-            let avail = doc.buffer.len().saturating_sub(pos);
-            let replace_count = count.min(avail);
-            if replace_count > 0 {
-                doc.begin_transaction("Replace");
-                doc.replace_repeat(pos, replace_count, ch)?;
-                doc.commit_transaction();
-            }
+            replace_char_cmd(doc, ch, count)?;
         }
-        Command::EnterReplaceMode => {}
+        Command::DeleteSurround(ch, count) => {
+            delete_surround_cmd(doc, ch, count);
+        }
+        Command::ChangeSurround(from, to, count) => {
+            change_surround_cmd(doc, from, to, count);
+        }
+        Command::AddSurround(motion, motion_count, ch, delim_count) => {
+            add_surround_cmd(
+                doc,
+                motion,
+                motion_count,
+                ch,
+                delim_count,
+                viewport_height,
+                last_search_query,
+            );
+        }
+        Command::Undo => {
+            undo_cmd(doc);
+        }
+        Command::Redo => {
+            redo_cmd(doc);
+        }
         Command::EnterInsertMode
         | Command::EnterInsertModeAfter
         | Command::EnterInsertModeAtLineStart
         | Command::EnterInsertModeAtLineEnd
         | Command::OpenLineBelow
-        | Command::OpenLineAbove => {}
-        Command::EnterCommandMode => {}
-        Command::EnterSearchMode => {}
-        Command::AppendToCommandLine(_) => {}
-        Command::DeleteFromCommandLine => {}
-        Command::ExecuteCommandLine => {}
-        Command::ExecuteSearch => {}
-        Command::NextMatch | Command::PreviousMatch => {}
-        Command::Quit => {}
-        Command::BufferNext | Command::BufferPrevious => {}
-        Command::Undo => {
-            crate::perf_span!("history_undo", crate::perf::PerfFields::default());
-            doc.undo();
-        }
-        Command::Redo => {
-            crate::perf_span!("history_redo", crate::perf::PerfFields::default());
-            doc.redo();
-        }
-        Command::DotRepeat => {}
-        Command::TabComplete | Command::TabCompletePrev => {}
-        Command::Noop => {}
+        | Command::OpenLineAbove
+        | Command::EnterReplaceMode
+        | Command::EnterCommandMode
+        | Command::EnterSearchMode
+        | Command::AppendToCommandLine(_)
+        | Command::DeleteFromCommandLine
+        | Command::ExecuteCommandLine
+        | Command::ExecuteSearch
+        | Command::NextMatch
+        | Command::PreviousMatch
+        | Command::Quit
+        | Command::BufferNext
+        | Command::BufferPrevious
+        | Command::DotRepeat
+        | Command::TabComplete
+        | Command::TabCompletePrev
+        | Command::Noop => {}
     }
     Ok(())
+}
+
+/// Cursor motion (`Move`).
+fn move_cmd(
+    doc: &mut Document,
+    mut display_map: Option<&mut DisplayMap>,
+    motion: Motion,
+    count: usize,
+    viewport_height: usize,
+    last_search_query: Option<&str>,
+) {
+    let buf = &mut doc.buffer;
+    for _ in 0..count {
+        motion.apply(
+            buf,
+            display_map.as_deref_mut(),
+            crate::wrap::OperatorContext::Move,
+            viewport_height,
+            last_search_query,
+        );
+    }
+}
+
+/// Delete over a motion (`Delete`).
+fn delete_motion_cmd(
+    doc: &mut Document,
+    motion: Motion,
+    count: usize,
+    viewport_height: usize,
+    last_search_query: Option<&str>,
+) {
+    let Some(range) = compute_motion_range(motion, count, doc, viewport_height, last_search_query)
+    else {
+        return;
+    };
+    let (delete_start, delete_end) = range_to_offsets(&range, doc, true);
+    if delete_end > delete_start {
+        doc.begin_transaction("Delete");
+        let _ = doc.delete_range(delete_start, delete_end);
+        doc.commit_transaction();
+    }
+}
+
+/// Change over a motion (`Change`).
+fn change_motion_cmd(
+    doc: &mut Document,
+    motion: Motion,
+    count: usize,
+    viewport_height: usize,
+    last_search_query: Option<&str>,
+) {
+    let Some(range) = compute_motion_range(motion, count, doc, viewport_height, last_search_query)
+    else {
+        return;
+    };
+    let (delete_start, delete_end) = range_to_offsets(&range, doc, true);
+    if delete_end > delete_start {
+        let _ = doc.delete_range(delete_start, delete_end);
+    }
+}
+
+/// Delete `count` whole lines (`DeleteLine`).
+fn delete_line_cmd(doc: &mut Document, count: usize) {
+    doc.begin_transaction("DeleteLine");
+    doc.buffer.move_to_line_start();
+    let start = doc.buffer.cursor();
+    let mut reached_last_line = false;
+    for _ in 0..count.max(1) {
+        if !doc.buffer.move_down() {
+            reached_last_line = true;
+            break;
+        }
+    }
+    if reached_last_line {
+        doc.buffer.move_to_line_end();
+        let end = doc.buffer.cursor();
+        if end > start {
+            let _ = doc.delete_range(start, end);
+        }
+        if start > 0 {
+            doc.delete_backward();
+            doc.buffer.move_to_line_start();
+        }
+    } else {
+        let end = doc.buffer.cursor();
+        let _ = doc.delete_range(start, end);
+    }
+    doc.commit_transaction();
+}
+
+/// Change `count` lines up to their end (`ChangeLine`).
+fn change_line_cmd(doc: &mut Document, count: usize) {
+    doc.buffer.move_to_line_start();
+    let start = doc.buffer.cursor();
+    for _ in 0..count.max(1).saturating_sub(1) {
+        doc.buffer.move_down();
+    }
+    doc.buffer.move_to_line_end();
+    let end = doc.buffer.cursor();
+    if end > start {
+        let _ = doc.delete_range(start, end);
+    }
+}
+
+/// Insert a character; `expand_tabs` turns a tab into spaces.
+fn insert_char_cmd(
+    doc: &mut Document,
+    expand_tabs: bool,
+    tab_width: usize,
+    ch: char,
+) -> Result<(), RiftError> {
+    if ch == '\t' && expand_tabs {
+        let current_col = calculate_current_column(&doc.buffer, tab_width);
+        let spaces_needed = tab_width - (current_col % tab_width);
+        for _ in 0..spaces_needed {
+            doc.insert_char(' ')?;
+        }
+        return Ok(());
+    }
+    doc.insert_char(ch)
+}
+
+/// Replace `count` characters under the cursor (`ReplaceChar`).
+fn replace_char_cmd(doc: &mut Document, ch: char, count: usize) -> Result<(), RiftError> {
+    let pos = doc.buffer.cursor();
+    let avail = doc.buffer.len().saturating_sub(pos);
+    let replace_count = count.min(avail);
+    if replace_count > 0 {
+        doc.begin_transaction("Replace");
+        doc.replace_repeat(pos, replace_count, ch)?;
+        doc.commit_transaction();
+    }
+    Ok(())
+}
+
+/// Delete the surrounding pair (`DeleteSurround`).
+fn delete_surround_cmd(doc: &mut Document, ch: char, count: usize) {
+    if let Some((open_range, close_range)) =
+        crate::text_objects::resolve_surround_pair(ch, &doc.buffer, count)
+    {
+        doc.begin_transaction("DeleteSurround");
+        let _ = doc.delete_range(close_range.start, close_range.end);
+        let _ = doc.delete_range(open_range.start, open_range.end);
+        doc.commit_transaction();
+    }
+}
+
+/// Replace the surrounding pair (`ChangeSurround`).
+fn change_surround_cmd(doc: &mut Document, from: char, to: char, count: usize) {
+    if let (Some((open_range, close_range)), Some((new_open, new_close))) = (
+        crate::text_objects::resolve_surround_pair(from, &doc.buffer, count),
+        crate::text_objects::surround_strings(to, count),
+    ) {
+        doc.begin_transaction("ChangeSurround");
+        let _ = doc.delete_range(close_range.start, close_range.end);
+        let _ = doc.buffer.set_cursor(close_range.start);
+        let _ = doc.insert_str(&new_close);
+        let _ = doc.delete_range(open_range.start, open_range.end);
+        let _ = doc.buffer.set_cursor(open_range.start);
+        let _ = doc.insert_str(&new_open);
+        doc.commit_transaction();
+    }
+}
+
+/// Wrap a motion's range in a surround pair (`AddSurround`).
+fn add_surround_cmd(
+    doc: &mut Document,
+    motion: Motion,
+    motion_count: usize,
+    ch: char,
+    delim_count: usize,
+    viewport_height: usize,
+    last_search_query: Option<&str>,
+) {
+    let Some((open, close)) = crate::text_objects::surround_strings(ch, delim_count) else {
+        return;
+    };
+    let Some(range) = compute_motion_range(
+        motion,
+        motion_count,
+        doc,
+        viewport_height,
+        last_search_query,
+    ) else {
+        return;
+    };
+    let (start, end) = range_to_offsets(&range, doc, false);
+    doc.begin_transaction("AddSurround");
+    let _ = doc.buffer.set_cursor(end);
+    let _ = doc.insert_str(&close);
+    let _ = doc.buffer.set_cursor(start);
+    let _ = doc.insert_str(&open);
+    doc.commit_transaction();
+}
+
+/// Undo the last edit (`Undo`).
+fn undo_cmd(doc: &mut Document) {
+    crate::perf_span!("history_undo", crate::perf::PerfFields::default());
+    doc.undo();
+}
+
+/// Redo the last undone edit (`Redo`).
+fn redo_cmd(doc: &mut Document) {
+    crate::perf_span!("history_redo", crate::perf::PerfFields::default());
+    doc.redo();
 }
 
 #[cfg(test)]

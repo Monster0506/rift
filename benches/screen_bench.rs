@@ -29,7 +29,7 @@ fn screen_diffing(c: &mut Criterion) {
                 black_box(buf.get_batched_changes());
             },
             criterion::BatchSize::SmallInput,
-        )
+        );
     });
 
     group.bench_function("diff_no_change", |b| {
@@ -45,7 +45,7 @@ fn screen_diffing(c: &mut Criterion) {
                 black_box(buf.get_batched_changes());
             },
             criterion::BatchSize::SmallInput,
-        )
+        );
     });
 
     group.finish();
@@ -66,7 +66,7 @@ fn screen_updates(c: &mut Criterion) {
             let r = i / cols;
             let col = i % cols;
             black_box(buf.set_cell(r, col, cell));
-        })
+        });
     });
 
     group.finish();

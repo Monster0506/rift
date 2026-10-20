@@ -39,7 +39,7 @@ pub struct PendingRequest {
 /// (stdio) or a keepalive broker socket that outlives this editor session.
 pub struct LspClient {
     pub language: String,
-    _process: Option<Child>,
+    process: Option<Child>,
     /// Pre-framed message bytes queued for the writer thread; the blocking
     /// I/O to a possibly-slow peer happens off this thread entirely.
     writer_tx: Sender<Vec<u8>>,
@@ -58,7 +58,7 @@ impl Drop for LspClient {
     /// Kill and reap an owned server process so it (and the reader thread
     /// blocked on its stdout) don't leak. Broker connections just close.
     fn drop(&mut self) {
-        if let Some(process) = &mut self._process {
+        if let Some(process) = &mut self.process {
             let _ = process.kill();
             let _ = process.wait();
         }
@@ -67,6 +67,11 @@ impl Drop for LspClient {
 
 impl LspClient {
     /// Spawn the language server process and set up I/O threads.
+    ///
+    /// # Errors
+    /// Returns an error if the server process cannot be spawned.
+    /// # Panics
+    /// Panics if the spawned child lacks the piped stdin or stdout set up below.
     pub fn start(
         language: String,
         command: &str,
@@ -90,7 +95,7 @@ impl LspClient {
 
         Ok(Self {
             language,
-            _process: Some(process),
+            process: Some(process),
             writer_tx,
             _writer_thread: writer_thread,
             next_id: 1,
@@ -104,6 +109,9 @@ impl LspClient {
 
     /// Attach to (or spawn) the keepalive broker for this server, so the
     /// server and its warm index survive across editor sessions.
+    ///
+    /// # Errors
+    /// Returns an error if attaching to or spawning the broker fails.
     pub fn start_keepalive(
         language: String,
         command: &str,
@@ -119,7 +127,7 @@ impl LspClient {
 
         Ok(Self {
             language,
-            _process: None,
+            process: None,
             writer_tx,
             _writer_thread: writer_thread,
             next_id: 1,
@@ -204,7 +212,7 @@ impl LspClient {
         });
     }
 
-    fn write_message<T: serde::Serialize>(&mut self, msg: &T) {
+    fn write_message<T: serde::Serialize>(&self, msg: &T) {
         if let Ok(framed) = crate::transport::frame_message(msg) {
             let _ = self.writer_tx.send(framed);
         }
@@ -249,9 +257,8 @@ fn spawn_reader_thread<R: Read + Send + 'static>(
     thread::spawn(move || {
         let mut reader = BufReader::new(source);
         loop {
-            let body = match crate::transport::read_framed(&mut reader) {
-                Ok(b) => b,
-                Err(_) => return,
+            let Ok(body) = crate::transport::read_framed(&mut reader) else {
+                return;
             };
 
             let msg: JsonRpcMessage = match serde_json::from_slice(&body) {
@@ -259,7 +266,7 @@ fn spawn_reader_thread<R: Read + Send + 'static>(
                 Err(e) => {
                     let snippet = String::from_utf8_lossy(&body[..body.len().min(200)]);
                     let _ = tx.send(RawLspMessage::ParseError {
-                        message: format!("JSON parse error: {} | body: {}", e, snippet),
+                        message: format!("JSON parse error: {e} | body: {snippet}"),
                     });
                     continue;
                 }

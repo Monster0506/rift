@@ -112,20 +112,15 @@ fn test_parse_diff_move_file_into_subdir() {
     set_annotated_buffer(&mut doc, "../\n/001 A/\n/002 A/b.c");
 
     let diff = doc.parse_directory_diff();
-    assert!(diff.deletes.is_empty(), "no deletes expected: {:?}", diff);
-    assert_eq!(
-        diff.renames.len(),
-        1,
-        "should produce one rename: {:?}",
-        diff
-    );
+    assert!(diff.deletes.is_empty(), "no deletes expected: {diff:?}");
+    assert_eq!(diff.renames.len(), 1, "should produce one rename: {diff:?}");
     assert!(
         diff.renames[0].0.to_string_lossy().contains("b.c"),
         "rename source should be b.c: {:?}",
         diff.renames[0]
     );
     assert_eq!(diff.renames[0].1, "A/b.c");
-    assert!(diff.creates.is_empty(), "no creates expected: {:?}", diff);
+    assert!(diff.creates.is_empty(), "no creates expected: {diff:?}");
 }
 
 #[test]
@@ -137,17 +132,16 @@ fn test_parse_diff_move_one_of_two_files_into_subdir() {
     let diff = doc.parse_directory_diff();
     assert!(
         diff.deletes.is_empty(),
-        "nothing should be deleted: {:?}",
-        diff
+        "nothing should be deleted: {diff:?}"
     );
-    assert_eq!(diff.renames.len(), 1, "exactly one rename: {:?}", diff);
+    assert_eq!(diff.renames.len(), 1, "exactly one rename: {diff:?}");
     assert!(
         diff.renames[0].0.to_string_lossy().contains("c.d"),
         "rename source should be c.d: {:?}",
         diff.renames[0]
     );
     assert_eq!(diff.renames[0].1, "A/c.d");
-    assert!(diff.creates.is_empty(), "no creates: {:?}", diff);
+    assert!(diff.creates.is_empty(), "no creates: {diff:?}");
 }
 
 #[test]
@@ -156,7 +150,7 @@ fn test_parse_diff_rename_simple() {
     set_annotated_buffer(&mut doc, "../\n/001 test1.json");
 
     let diff = doc.parse_directory_diff();
-    assert_eq!(diff.renames.len(), 1, "should detect a rename: {:?}", diff);
+    assert_eq!(diff.renames.len(), 1, "should detect a rename: {diff:?}");
     assert!(
         diff.renames[0].0.to_string_lossy().contains("test1.txt"),
         "renamed from test1.txt: {:?}",
@@ -213,9 +207,9 @@ fn test_parse_diff_rename_with_delete() {
     set_annotated_buffer(&mut doc, "../\n/001 keep.txt\n/002 new.txt");
 
     let diff = doc.parse_directory_diff();
-    assert_eq!(diff.renames.len(), 1, "one rename: {:?}", diff);
-    assert_eq!(diff.deletes.len(), 1, "one delete: {:?}", diff);
-    assert!(diff.creates.is_empty(), "no creates: {:?}", diff);
+    assert_eq!(diff.renames.len(), 1, "one rename: {diff:?}");
+    assert_eq!(diff.deletes.len(), 1, "one delete: {diff:?}");
+    assert!(diff.creates.is_empty(), "no creates: {diff:?}");
     assert!(
         diff.renames[0].0.file_name().unwrap().to_string_lossy() == "old.txt",
         "renamed from old.txt: {:?}",
@@ -295,8 +289,7 @@ fn test_parse_diff_rename_to_subdirectory_path() {
     assert_eq!(
         diff.renames.len(),
         1,
-        "exactly one rename (test -> Playground/test): {:?}",
-        diff
+        "exactly one rename (test -> Playground/test): {diff:?}"
     );
     assert!(
         diff.renames[0].0.to_string_lossy().contains("test"),
@@ -321,7 +314,7 @@ fn test_parse_diff_rename_into_dir_while_dir_line_removed_does_not_delete_dir() 
         "Playground/ must be protected from deletion when it is the rename destination parent: {:?}",
         diff.deletes
     );
-    assert_eq!(diff.renames.len(), 1, "one rename expected: {:?}", diff);
+    assert_eq!(diff.renames.len(), 1, "one rename expected: {diff:?}");
     assert_eq!(diff.renames[0].1, "Playground/test");
     assert!(
         diff.creates.is_empty(),
@@ -420,8 +413,7 @@ fn test_parse_diff_reorder_without_rename_produces_no_diff() {
     let diff = doc.parse_directory_diff();
     assert!(
         diff.renames.is_empty(),
-        "reorder without name change -> no renames: {:?}",
-        diff
+        "reorder without name change -> no renames: {diff:?}"
     );
     assert!(diff.deletes.is_empty());
     assert!(diff.creates.is_empty());
@@ -434,18 +426,15 @@ fn test_parse_diff_entry_with_zero_id_silently_ignored() {
     let diff = doc.parse_directory_diff();
     assert!(
         diff.deletes.is_empty(),
-        "real.txt should not be deleted: {:?}",
-        diff
+        "real.txt should not be deleted: {diff:?}"
     );
     assert!(
         diff.creates.is_empty(),
-        "id=0 line must not become a create: {:?}",
-        diff
+        "id=0 line must not become a create: {diff:?}"
     );
     assert!(
         diff.renames.is_empty(),
-        "id=0 line must not become a rename: {:?}",
-        diff
+        "id=0 line must not become a rename: {diff:?}"
     );
 }
 
@@ -457,12 +446,7 @@ fn test_parse_diff_all_entries_deleted() {
     );
     set_annotated_buffer(&mut doc, "../");
     let diff = doc.parse_directory_diff();
-    assert_eq!(
-        diff.deletes.len(),
-        3,
-        "all three entries deleted: {:?}",
-        diff
-    );
+    assert_eq!(diff.deletes.len(), 3, "all three entries deleted: {diff:?}");
     assert!(diff.renames.is_empty());
     assert!(diff.creates.is_empty());
 }

@@ -29,7 +29,9 @@ impl Document {
         self.transaction_depth -= 1;
         if self.transaction_depth == 0 {
             if let Some(mut tx) = self.current_transaction.take() {
-                if !tx.is_empty() {
+                if tx.is_empty() {
+                    self.pending_annotation_snapshot = None;
+                } else {
                     tx.cursor_after = Some(self.buffer.cursor());
                     self.history.push(tx, None);
                     if let Some(snapshot) = self.pending_annotation_snapshot.take() {
@@ -37,8 +39,6 @@ impl Document {
                             .push(super::AnnotationUndo::Snapshot(snapshot));
                         self.annotation_redo_stack.clear();
                     }
-                } else {
-                    self.pending_annotation_snapshot = None;
                 }
             }
         }
@@ -141,7 +141,7 @@ impl Document {
             EditOperation::Delete { .. } => 0,
             EditOperation::Replace { new_text, .. } => new_text.len(),
             EditOperation::BlockChange { new_content, .. } => {
-                new_content.iter().map(|line| line.len()).sum::<usize>()
+                new_content.iter().map(std::vec::Vec::len).sum::<usize>()
                     + new_content.len().saturating_sub(1)
             }
         };
@@ -304,7 +304,7 @@ impl Document {
     }
 
     /// Check if undo is available
-    pub fn can_undo(&self) -> bool {
+    pub const fn can_undo(&self) -> bool {
         self.history.can_undo()
     }
 
@@ -325,6 +325,9 @@ impl Document {
     }
 
     /// Navigate to a specific edit sequence in the undo tree
+    ///
+    /// # Errors
+    /// Propagates the `UndoError` from `history.goto_seq` when the target cannot be reached.
     pub fn goto_seq(&mut self, target: u64) -> Result<(), crate::history::UndoError> {
         self.commit_pending_ghost();
         let replay_path = self.history.goto_seq(target)?;
@@ -379,9 +382,9 @@ impl Document {
 
         let line = match op {
             EditOperation::Insert { position, .. } => position.line,
-            EditOperation::Delete { range, .. } => range.start.line,
-            EditOperation::Replace { range, .. } => range.start.line,
-            EditOperation::BlockChange { range, .. } => range.start.line,
+            EditOperation::Delete { range, .. }
+            | EditOperation::Replace { range, .. }
+            | EditOperation::BlockChange { range, .. } => range.start.line,
         };
 
         Some(line as usize)

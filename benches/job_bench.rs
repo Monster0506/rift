@@ -22,7 +22,7 @@ fn job_system_throughput(c: &mut Criterion) {
         let mut manager = JobManager::new();
         b.iter(|| {
             black_box(manager.spawn(NoOpJob));
-        })
+        });
     });
 
     group.bench_function("cleanup_finished_jobs", |b| {
@@ -46,7 +46,7 @@ fn job_system_throughput(c: &mut Criterion) {
                 black_box(manager.cleanup_finished_jobs());
             },
             criterion::BatchSize::SmallInput,
-        )
+        );
     });
 
     group.finish();

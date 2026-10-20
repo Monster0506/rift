@@ -19,7 +19,7 @@ use crate::term::{ColorTerminal, Size, TerminalBackend};
 
 /// Convert the core `Color` type to crossterm's `Color`.
 #[must_use]
-pub fn color_to_crossterm(color: Color) -> CrosstermColor {
+pub const fn color_to_crossterm(color: Color) -> CrosstermColor {
     match color {
         Color::Reset => CrosstermColor::Reset,
         Color::Black => CrosstermColor::Black,
@@ -45,7 +45,7 @@ pub fn color_to_crossterm(color: Color) -> CrosstermColor {
 
 /// Convert crossterm's `Color` to the core `Color` type.
 #[must_use]
-pub fn color_from_crossterm(color: CrosstermColor) -> Color {
+pub const fn color_from_crossterm(color: CrosstermColor) -> Color {
     match color {
         CrosstermColor::Reset => Color::Reset,
         CrosstermColor::Black => Color::Black,
@@ -70,7 +70,7 @@ pub fn color_from_crossterm(color: CrosstermColor) -> Color {
 }
 
 /// The crossterm `Attribute` for turning one text attribute on or off.
-fn crossterm_attr(kind: AttrKind, on: bool) -> crossterm::style::Attribute {
+const fn crossterm_attr(kind: AttrKind, on: bool) -> crossterm::style::Attribute {
     use crossterm::style::Attribute;
     match (kind, on) {
         (AttrKind::Bold, true) => Attribute::Bold,
@@ -88,6 +88,9 @@ fn crossterm_attr(kind: AttrKind, on: bool) -> crossterm::style::Attribute {
 
 /// Serialize a terminal-agnostic `StyleOp` sequence into ANSI escape bytes.
 /// The one place `screen_buffer`'s diff output meets crossterm's encoder.
+///
+/// # Errors
+/// Returns `Err` if a style op cannot be encoded into `buf`.
 pub fn encode_style_ops(ops: &[StyleOp], buf: &mut Vec<u8>) -> Result<(), RiftError> {
     use crossterm::style::{Attribute, SetAttribute};
 
@@ -126,8 +129,12 @@ pub struct CrosstermBackend<W: Write = std::io::Stdout> {
 }
 
 impl CrosstermBackend<std::io::Stdout> {
+    /// Create a backend that writes to stdout.
+    ///
+    /// # Errors
+    /// Never returns `Err` today; the `Result` keeps the constructor fallible.
     pub fn new() -> Result<Self, String> {
-        Ok(CrosstermBackend {
+        Ok(Self {
             // Sized so a full colored frame flushes in one write syscall.
             writer: BufWriter::with_capacity(256 * 1024, stdout()),
             raw_mode_enabled: false,
@@ -140,7 +147,7 @@ impl<W: Write> CrosstermBackend<W> {
     /// Build a backend that encodes through the same crossterm calls as
     /// `new()` but writes to `writer` instead of stdout (no TTY required).
     pub fn with_writer(writer: W) -> Self {
-        CrosstermBackend {
+        Self {
             writer: BufWriter::with_capacity(256 * 1024, writer),
             raw_mode_enabled: false,
             alternate_screen_enabled: false,

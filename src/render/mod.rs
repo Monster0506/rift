@@ -5,6 +5,7 @@ use crate::color::Color;
 use crate::key::Key;
 use crate::layer::{Cell, Layer};
 use crate::mode::Mode;
+use crate::num::{f64_to_usize, usize_to_f64};
 use crate::state::State;
 use crate::viewport::Viewport;
 use crate::wrap::DisplayMap;
@@ -69,15 +70,15 @@ fn hash_ranged_spans<E: std::hash::Hash>(spans: &[(std::ops::Range<usize>, E)]) 
     let mut h: u64 = spans.len() as u64;
     for (range, extra) in spans {
         h = h
-            .wrapping_mul(6364136223846793005)
+            .wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(range.start as u64);
         h = h
-            .wrapping_mul(6364136223846793005)
+            .wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(range.end as u64 + 1);
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         extra.hash(&mut hasher);
         h = h
-            .wrapping_mul(6364136223846793005)
+            .wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(hasher.finish());
     }
     h
@@ -87,10 +88,10 @@ fn hash_search_matches(matches: &[crate::search::SearchMatch]) -> u64 {
     let mut h: u64 = matches.len() as u64;
     for m in matches {
         h = h
-            .wrapping_mul(6364136223846793005)
+            .wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(m.range.start as u64);
         h = h
-            .wrapping_mul(6364136223846793005)
+            .wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(m.range.end as u64 + 1);
     }
     h
@@ -99,35 +100,33 @@ fn hash_search_matches(matches: &[crate::search::SearchMatch]) -> u64 {
 fn hash_concealed_ranges(items: &[(usize, usize)]) -> u64 {
     let mut h: u64 = items.len() as u64;
     for (s, e) in items {
-        h = h.wrapping_mul(6364136223846793005).wrapping_add(*s as u64);
         h = h
-            .wrapping_mul(6364136223846793005)
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(*s as u64);
+        h = h
+            .wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(*e as u64 + 1);
     }
     h
 }
 
-pub(crate) fn mix_generation(a: u64, b: u64) -> u64 {
-    a.wrapping_mul(6364136223846793005).wrapping_add(b)
+pub(crate) const fn mix_generation(a: u64, b: u64) -> u64 {
+    a.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(b)
 }
 
 fn hash_bytes(bytes: &[u8]) -> u64 {
     let mut h: u64 = bytes.len() as u64;
     for b in bytes {
         h = h
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(*b as u64 + 1);
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(u64::from(*b) + 1);
     }
     h
 }
 
 fn compute_content_blit_key(ctx: &DrawContext, visible_rows: usize) -> ContentBlitKey {
     let visible_cols = ctx.viewport.visible_cols();
-    let gutter_width = if ctx.show_line_numbers && ctx.state.settings.show_line_numbers {
-        ctx.gutter_width_override.unwrap_or(ctx.state.gutter_width)
-    } else {
-        0
-    };
+    let gutter_width = ctx.gutter_cols();
     let scroll_top = if ctx.display_map.is_some() {
         ctx.viewport.top_visual_row()
     } else {
@@ -142,7 +141,7 @@ fn compute_content_blit_key(ctx: &DrawContext, visible_rows: usize) -> ContentBl
         revision: ctx.buf.revision,
         buf_len: ctx.buf.len(),
         tab_width: ctx.tab_width,
-        show_line_numbers: ctx.show_line_numbers && ctx.state.settings.show_line_numbers,
+        show_line_numbers: ctx.state.line_numbers_on(ctx.show_line_numbers),
         gutter_width,
         left_col: ctx.viewport.left_col(),
         visible_rows,
@@ -168,7 +167,7 @@ fn scroll_blit_delta(old: &ContentBlitKey, new: &ContentBlitKey) -> Option<isize
     if !same_except_scroll {
         return None;
     }
-    let delta = new.scroll_top as isize - old.scroll_top as isize;
+    let delta = new.scroll_top.cast_signed() - old.scroll_top.cast_signed();
     if delta == 0 || delta.unsigned_abs() >= new.visible_rows {
         return None;
     }
@@ -202,10 +201,7 @@ pub struct StatusDrawState {
     pub search_query: Option<String>,
     pub search_match_index: Option<usize>,
     pub search_total_matches: usize,
-    pub reverse_video: bool,
-    pub show_status_line: bool,
-    pub show_filename: bool,
-    pub show_dirty_indicator: bool,
+    pub status_line: crate::state::StatusLineSettings,
     pub editor_bg: Option<crate::color::Color>,
     pub editor_fg: Option<crate::color::Color>,
     pub lsp_status: Option<String>,
@@ -310,6 +306,17 @@ pub struct DrawContext<'a> {
 }
 
 impl<'a> DrawContext<'a> {
+    /// Gutter columns for this draw, 0 when line numbers are hidden.
+    #[must_use]
+    pub fn gutter_cols(&self) -> usize {
+        if !self.state.line_numbers_on(self.show_line_numbers) {
+            return 0;
+        }
+        self.gutter_width_override
+            .unwrap_or(self.state.gutter_width)
+    }
+
+    #[must_use]
     pub fn search_matches(&self) -> &'a [crate::search::SearchMatch] {
         self.search_matches_override
             .unwrap_or_else(|| &self.state.search_matches)
@@ -326,8 +333,8 @@ pub(crate) fn render_content_to_layer(
     ctx: &DrawContext,
     frame: &mut crate::paint::PaintFrame,
     blit_cache: Option<&mut Option<ContentBlitKey>>,
-) -> Result<(), String> {
-    render_content_to_layer_offset(layer, ctx, 0, 0, frame, blit_cache)
+) {
+    render_content_to_layer_offset(layer, ctx, 0, 0, frame, blit_cache);
 }
 
 enum RowPolicy {
@@ -338,8 +345,8 @@ enum RowPolicy {
 impl RowPolicy {
     fn paints(&self, i: usize) -> bool {
         match self {
-            RowPolicy::All => true,
-            RowPolicy::Only(r) => r.contains(&i),
+            Self::All => true,
+            Self::Only(r) => r.contains(&i),
         }
     }
 }
@@ -351,7 +358,7 @@ pub(crate) fn render_content_to_layer_offset(
     col_offset: usize,
     frame: &mut crate::paint::PaintFrame,
     blit_cache: Option<&mut Option<ContentBlitKey>>,
-) -> Result<(), String> {
+) {
     crate::perf_span!("render_content", crate::perf::PerfFields::default());
 
     let painted_rows = ctx.viewport.visible_rows().saturating_sub(1);
@@ -362,7 +369,7 @@ pub(crate) fn render_content_to_layer_offset(
     if !ctx.needs_clear {
         if let Some(cache) = &blit_cache {
             if frame.rows.len() == frame_rows && cache.as_ref() == Some(&new_key) {
-                return Ok(());
+                return;
             }
         }
     }
@@ -370,20 +377,19 @@ pub(crate) fn render_content_to_layer_offset(
     let blit_delta = if ctx.needs_clear {
         None
     } else {
-        match &blit_cache {
-            Some(cache) => cache
+        blit_cache.as_ref().and_then(|cache| {
+            cache
                 .as_ref()
                 .filter(|_| frame.rows.len() == frame_rows)
-                .and_then(|old_key| scroll_blit_delta(old_key, &new_key)),
-            None => None,
-        }
+                .and_then(|old_key| scroll_blit_delta(old_key, &new_key))
+        })
     };
 
     let policy = if let Some(delta) = blit_delta {
         let painted = &mut frame.rows[..painted_rows];
         if delta > 0 {
-            painted.rotate_left(delta as usize);
-            RowPolicy::Only((painted_rows - delta as usize)..painted_rows)
+            painted.rotate_left(delta.cast_unsigned());
+            RowPolicy::Only((painted_rows - delta.cast_unsigned())..painted_rows)
         } else {
             painted.rotate_right(delta.unsigned_abs());
             RowPolicy::Only(0..delta.unsigned_abs())
@@ -397,283 +403,282 @@ pub(crate) fn render_content_to_layer_offset(
         frame.reset_row(row);
     }
 
-    render_content_to_paint_frame(frame, ctx, &policy)?;
+    render_content_to_paint_frame(frame, ctx, &policy);
     crate::paint::rasterize_offset(frame, layer, row_offset, col_offset);
 
     if let Some(cache) = blit_cache {
         *cache = Some(new_key);
     }
-    Ok(())
+}
+
+/// Per-span list positions, advanced monotonically as rows are painted.
+#[derive(Clone, Copy, Default)]
+struct RowCursors {
+    highlight: usize,
+    search: usize,
+    annotation: usize,
+    injection: usize,
+    custom: usize,
+    terminal: usize,
+}
+
+struct RowGeometry {
+    gutter_width: usize,
+    visible_rows: usize,
+    visible_cols: usize,
+    buf_total_lines: usize,
+    editor_fg: Option<Color>,
+    editor_bg: Option<Color>,
 }
 
 fn render_content_to_paint_frame(
     frame: &mut crate::paint::PaintFrame,
     ctx: &DrawContext,
     policy: &RowPolicy,
-) -> Result<(), String> {
-    let buf = ctx.buf;
-    let viewport = ctx.viewport;
-    let editor_bg = ctx.state.settings.editor_bg;
-    let editor_fg = ctx.state.settings.editor_fg;
-
-    let buf_total_lines = ctx.buf.get_total_lines();
-    let gutter_width = if ctx.show_line_numbers && ctx.state.settings.show_line_numbers {
-        ctx.gutter_width_override.unwrap_or(ctx.state.gutter_width)
-    } else {
-        0
+) {
+    let gutter_width = ctx.gutter_cols();
+    let geom = RowGeometry {
+        gutter_width,
+        visible_rows: ctx.viewport.visible_rows().saturating_sub(1),
+        visible_cols: ctx.viewport.visible_cols(),
+        buf_total_lines: ctx.buf.get_total_lines(),
+        editor_fg: ctx.state.settings.editor_fg,
+        editor_bg: ctx.state.settings.editor_bg,
     };
 
-    let visible_rows = viewport.visible_rows().saturating_sub(1);
-    let visible_cols = viewport.visible_cols();
-    let mut gutter_scratch = String::with_capacity(gutter_width);
+    match ctx.display_map {
+        Some(dm) => render_display_rows(frame, ctx, dm, policy, &geom),
+        None => render_plain_rows(frame, ctx, policy, &geom),
+    }
+}
 
-    if let Some(dm) = ctx.display_map {
-        let top_visual_row = viewport.top_visual_row();
-        let search_matches = ctx.search_matches();
+fn skip_row_cursors(
+    ctx: &DrawContext,
+    cursors: &mut RowCursors,
+    char_boundary: usize,
+    byte_boundary: usize,
+) {
+    advance_idx_past(
+        ctx.highlights.unwrap_or(&[]),
+        &mut cursors.highlight,
+        byte_boundary,
+        |(r, _)| r.end,
+    );
+    advance_idx_past(
+        ctx.search_matches(),
+        &mut cursors.search,
+        char_boundary,
+        |m| m.range.end,
+    );
+    advance_idx_past(
+        ctx.annotation_styles.unwrap_or(&[]),
+        &mut cursors.annotation,
+        byte_boundary,
+        |(r, _)| r.end,
+    );
+    advance_idx_past(
+        ctx.injection_highlights.unwrap_or(&[]),
+        &mut cursors.injection,
+        byte_boundary,
+        |(r, _)| r.end,
+    );
+    advance_idx_past(
+        ctx.custom_highlights.unwrap_or(&[]),
+        &mut cursors.custom,
+        byte_boundary,
+        |(r, _)| r.end,
+    );
+    advance_idx_past(
+        ctx.terminal_cell_colors.unwrap_or(&[]),
+        &mut cursors.terminal,
+        byte_boundary,
+        |(r, _)| r.end,
+    );
+}
 
-        let mut highlight_idx: usize = 0;
-        let mut search_match_idx: usize = 0;
-        let mut annotation_style_idx: usize = 0;
-        let mut injection_idx: usize = 0;
-        let mut custom_color_idx: usize = 0;
-        let mut terminal_color_idx: usize = 0;
-        let mut last_logical_line: Option<usize> = None;
-        let mut highlight_idx_at_line_start: usize = 0;
-        let mut search_match_idx_at_line_start: usize = 0;
-        let mut annotation_style_idx_at_line_start: usize = 0;
-        let mut injection_idx_at_line_start: usize = 0;
-        let mut custom_color_idx_at_line_start: usize = 0;
-        let mut terminal_color_idx_at_line_start: usize = 0;
+fn render_display_rows(
+    frame: &mut crate::paint::PaintFrame,
+    ctx: &DrawContext,
+    dm: &DisplayMap,
+    policy: &RowPolicy,
+    geom: &RowGeometry,
+) {
+    let top_visual_row = ctx.viewport.top_visual_row();
+    let search_matches = ctx.search_matches();
+    let mut gutter_scratch = String::with_capacity(geom.gutter_width);
+    let mut cursors = RowCursors::default();
+    let mut line_start = cursors;
+    let mut last_logical_line: Option<usize> = None;
 
-        if let Some(row_info) = dm.get_visual_row(top_visual_row) {
-            let first_char = row_info.char_start;
-            search_match_idx = search_matches.partition_point(|m| m.range.end <= first_char);
-            search_match_idx_at_line_start = search_match_idx;
-        }
+    if let Some(row_info) = dm.get_visual_row(top_visual_row) {
+        cursors.search = search_matches.partition_point(|m| m.range.end <= row_info.char_start);
+        line_start = cursors;
+    }
 
-        for i in 0..visible_rows {
-            let visual_row = top_visual_row + i;
-            let row_info = match dm.get_visual_row(visual_row) {
-                Some(r) => r,
-                None => {
-                    if policy.paints(i) {
-                        if gutter_width > 0 {
-                            render_gutter_blank(frame, i, gutter_width, editor_fg, editor_bg);
-                        }
-                        for col in gutter_width..visible_cols {
-                            frame.set_cell(
-                                i,
-                                col,
-                                Cell::from_char(' ').with_colors(editor_fg, editor_bg),
-                            );
-                        }
-                    }
-                    continue;
-                }
-            };
-
-            if Some(row_info.logical_line) != last_logical_line {
-                last_logical_line = Some(row_info.logical_line);
-                highlight_idx_at_line_start = highlight_idx;
-                search_match_idx_at_line_start = search_match_idx;
-                annotation_style_idx_at_line_start = annotation_style_idx;
-                injection_idx_at_line_start = injection_idx;
-                custom_color_idx_at_line_start = custom_color_idx;
-                terminal_color_idx_at_line_start = terminal_color_idx;
-            } else {
-                highlight_idx = highlight_idx_at_line_start;
-                search_match_idx = search_match_idx_at_line_start;
-                annotation_style_idx = annotation_style_idx_at_line_start;
-                injection_idx = injection_idx_at_line_start;
-                custom_color_idx = custom_color_idx_at_line_start;
-                terminal_color_idx = terminal_color_idx_at_line_start;
-            }
-
-            if !policy.paints(i) {
-                let char_boundary = row_info.char_end;
-                let byte_boundary = buf.char_to_byte(row_info.char_end);
-                advance_idx_past(
-                    ctx.highlights.unwrap_or(&[]),
-                    &mut highlight_idx,
-                    byte_boundary,
-                    |(r, _)| r.end,
-                );
-                advance_idx_past(search_matches, &mut search_match_idx, char_boundary, |m| {
-                    m.range.end
-                });
-                advance_idx_past(
-                    ctx.annotation_styles.unwrap_or(&[]),
-                    &mut annotation_style_idx,
-                    byte_boundary,
-                    |(r, _)| r.end,
-                );
-                advance_idx_past(
-                    ctx.injection_highlights.unwrap_or(&[]),
-                    &mut injection_idx,
-                    byte_boundary,
-                    |(r, _)| r.end,
-                );
-                advance_idx_past(
-                    ctx.custom_highlights.unwrap_or(&[]),
-                    &mut custom_color_idx,
-                    byte_boundary,
-                    |(r, _)| r.end,
-                );
-                advance_idx_past(
-                    ctx.terminal_cell_colors.unwrap_or(&[]),
-                    &mut terminal_color_idx,
-                    byte_boundary,
-                    |(r, _)| r.end,
-                );
-                crate::perf_row_blit_skipped!();
-                continue;
-            }
-
-            crate::perf_row_painted!();
-            frame.reset_row(i);
-
-            if gutter_width > 0 {
-                if row_info.is_first {
-                    let line_fg =
-                        gutter_color_for_line(ctx.git_gutter_colors, row_info.logical_line)
-                            .or(editor_fg);
-                    render_gutter(
+    for i in 0..geom.visible_rows {
+        let visual_row = top_visual_row + i;
+        let Some(row_info) = dm.get_visual_row(visual_row) else {
+            if policy.paints(i) {
+                if geom.gutter_width > 0 {
+                    render_gutter_blank(
                         frame,
-                        row_info.logical_line,
                         i,
-                        gutter_width,
-                        buf_total_lines,
-                        line_fg,
-                        editor_bg,
-                        &mut gutter_scratch,
+                        geom.gutter_width,
+                        geom.editor_fg,
+                        geom.editor_bg,
                     );
-                } else {
-                    render_gutter_blank(frame, i, gutter_width, editor_fg, editor_bg);
+                }
+                for col in geom.gutter_width..geom.visible_cols {
+                    frame.set_cell(
+                        i,
+                        col,
+                        Cell::from_char(' ').with_colors(geom.editor_fg, geom.editor_bg),
+                    );
                 }
             }
+            continue;
+        };
 
-            render_line(
-                frame,
-                ctx,
-                RenderLineConfig {
-                    line_num: row_info.logical_line,
-                    row_idx: i,
-                    gutter_width,
-                    visible_cols,
-                    default_fg: editor_fg,
-                    default_bg: editor_bg,
-                    segment_left_col: Some(row_info.segment_col_start),
-                    segment_content_cols: Some(
-                        row_info.segment_col_end - row_info.segment_col_start,
-                    ),
-                },
-                &mut highlight_idx,
-                &mut search_match_idx,
-                &mut annotation_style_idx,
-                &mut injection_idx,
-                &mut custom_color_idx,
-                &mut terminal_color_idx,
-            );
+        if Some(row_info.logical_line) == last_logical_line {
+            cursors = line_start;
+        } else {
+            last_logical_line = Some(row_info.logical_line);
+            line_start = cursors;
         }
-    } else {
-        let top_line = viewport.top_line();
-        let search_matches = ctx.search_matches();
-        let first_visible_char = buf.line_index.get_start(top_line).unwrap_or(0);
 
-        let mut search_match_idx =
-            search_matches.partition_point(|m| m.range.end <= first_visible_char);
-        let mut highlight_idx = 0;
-        let mut annotation_style_idx = 0;
-        let mut injection_idx = 0;
-        let mut custom_color_idx = 0;
-        let mut terminal_color_idx = 0;
+        if !policy.paints(i) {
+            let byte_boundary = ctx.buf.char_to_byte(row_info.char_end);
+            skip_row_cursors(ctx, &mut cursors, row_info.char_end, byte_boundary);
+            crate::perf_row_blit_skipped!();
+            continue;
+        }
 
-        for i in 0..visible_rows {
-            let line_num = top_line + i;
-            let config = RenderLineConfig {
-                line_num,
-                row_idx: i,
-                gutter_width,
-                visible_cols,
-                default_fg: editor_fg,
-                default_bg: editor_bg,
-                segment_left_col: None,
-                segment_content_cols: None,
-            };
+        paint_display_row(
+            frame,
+            ctx,
+            geom,
+            row_info,
+            i,
+            &mut cursors,
+            &mut gutter_scratch,
+        );
+    }
+}
 
-            if !policy.paints(i) {
-                if let Some(char_boundary) = find_line_render_boundary(ctx, &config) {
-                    let byte_boundary = buf.char_to_byte(char_boundary);
-                    advance_idx_past(
-                        ctx.highlights.unwrap_or(&[]),
-                        &mut highlight_idx,
-                        byte_boundary,
-                        |(r, _)| r.end,
-                    );
-                    advance_idx_past(search_matches, &mut search_match_idx, char_boundary, |m| {
-                        m.range.end
-                    });
-                    advance_idx_past(
-                        ctx.annotation_styles.unwrap_or(&[]),
-                        &mut annotation_style_idx,
-                        byte_boundary,
-                        |(r, _)| r.end,
-                    );
-                    advance_idx_past(
-                        ctx.injection_highlights.unwrap_or(&[]),
-                        &mut injection_idx,
-                        byte_boundary,
-                        |(r, _)| r.end,
-                    );
-                    advance_idx_past(
-                        ctx.custom_highlights.unwrap_or(&[]),
-                        &mut custom_color_idx,
-                        byte_boundary,
-                        |(r, _)| r.end,
-                    );
-                    advance_idx_past(
-                        ctx.terminal_cell_colors.unwrap_or(&[]),
-                        &mut terminal_color_idx,
-                        byte_boundary,
-                        |(r, _)| r.end,
-                    );
-                }
-                crate::perf_row_blit_skipped!();
-                continue;
-            }
+fn paint_display_row(
+    frame: &mut crate::paint::PaintFrame,
+    ctx: &DrawContext,
+    geom: &RowGeometry,
+    row_info: &crate::wrap::VisualRowInfo,
+    row_idx: usize,
+    cursors: &mut RowCursors,
+    gutter_scratch: &mut String,
+) {
+    crate::perf_row_painted!();
+    frame.reset_row(row_idx);
 
-            crate::perf_row_painted!();
-            frame.reset_row(i);
-
-            if gutter_width > 0 {
-                let line_fg = gutter_color_for_line(ctx.git_gutter_colors, line_num).or(editor_fg);
-                render_gutter(
-                    frame,
-                    line_num,
-                    i,
-                    gutter_width,
-                    buf_total_lines,
-                    line_fg,
-                    editor_bg,
-                    &mut gutter_scratch,
-                );
-            }
-
-            render_line(
+    if geom.gutter_width > 0 {
+        if row_info.is_first {
+            let line_fg = gutter_color_for_line(ctx.git_gutter_colors, row_info.logical_line)
+                .or(geom.editor_fg);
+            render_gutter(
                 frame,
-                ctx,
-                config,
-                &mut highlight_idx,
-                &mut search_match_idx,
-                &mut annotation_style_idx,
-                &mut injection_idx,
-                &mut custom_color_idx,
-                &mut terminal_color_idx,
+                GutterSlot {
+                    row_idx,
+                    gutter_width: geom.gutter_width,
+                    fg: line_fg,
+                    bg: geom.editor_bg,
+                },
+                row_info.logical_line,
+                geom.buf_total_lines,
+                gutter_scratch,
+            );
+        } else {
+            render_gutter_blank(
+                frame,
+                row_idx,
+                geom.gutter_width,
+                geom.editor_fg,
+                geom.editor_bg,
             );
         }
     }
 
-    Ok(())
+    render_line(
+        frame,
+        ctx,
+        &RenderLineConfig {
+            line_num: row_info.logical_line,
+            row_idx,
+            gutter_width: geom.gutter_width,
+            visible_cols: geom.visible_cols,
+            default_fg: geom.editor_fg,
+            default_bg: geom.editor_bg,
+            segment_left_col: Some(row_info.segment_col_start),
+            segment_content_cols: Some(row_info.segment_col_end - row_info.segment_col_start),
+        },
+        cursors,
+    );
+}
+
+fn render_plain_rows(
+    frame: &mut crate::paint::PaintFrame,
+    ctx: &DrawContext,
+    policy: &RowPolicy,
+    geom: &RowGeometry,
+) {
+    let top_line = ctx.viewport.top_line();
+    let search_matches = ctx.search_matches();
+    let first_visible_char = ctx.buf.line_index.get_start(top_line).unwrap_or(0);
+    let mut gutter_scratch = String::with_capacity(geom.gutter_width);
+    let mut cursors = RowCursors {
+        search: search_matches.partition_point(|m| m.range.end <= first_visible_char),
+        ..RowCursors::default()
+    };
+
+    for i in 0..geom.visible_rows {
+        let line_num = top_line + i;
+        let config = RenderLineConfig {
+            line_num,
+            row_idx: i,
+            gutter_width: geom.gutter_width,
+            visible_cols: geom.visible_cols,
+            default_fg: geom.editor_fg,
+            default_bg: geom.editor_bg,
+            segment_left_col: None,
+            segment_content_cols: None,
+        };
+
+        if !policy.paints(i) {
+            if let Some(char_boundary) = find_line_render_boundary(ctx, &config) {
+                let byte_boundary = ctx.buf.char_to_byte(char_boundary);
+                skip_row_cursors(ctx, &mut cursors, char_boundary, byte_boundary);
+            }
+            crate::perf_row_blit_skipped!();
+            continue;
+        }
+
+        crate::perf_row_painted!();
+        frame.reset_row(i);
+
+        if geom.gutter_width > 0 {
+            let line_fg = gutter_color_for_line(ctx.git_gutter_colors, line_num).or(geom.editor_fg);
+            render_gutter(
+                frame,
+                GutterSlot {
+                    row_idx: i,
+                    gutter_width: geom.gutter_width,
+                    fg: line_fg,
+                    bg: geom.editor_bg,
+                },
+                line_num,
+                geom.buf_total_lines,
+                &mut gutter_scratch,
+            );
+        }
+
+        render_line(frame, ctx, &config, &mut cursors);
+    }
 }
 
 fn gutter_color_for_line(colors: Option<&[(usize, Color)]>, line: usize) -> Option<Color> {
@@ -696,17 +701,28 @@ fn render_gutter_blank(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn render_gutter(
-    frame: &mut crate::paint::PaintFrame,
-    line_num: usize,
+/// Placement and colors of one gutter column.
+#[derive(Clone, Copy)]
+struct GutterSlot {
     row_idx: usize,
     gutter_width: usize,
-    total_lines: usize,
     fg: Option<Color>,
     bg: Option<Color>,
+}
+
+fn render_gutter(
+    frame: &mut crate::paint::PaintFrame,
+    slot: GutterSlot,
+    line_num: usize,
+    total_lines: usize,
     scratch: &mut String,
 ) {
+    let GutterSlot {
+        row_idx,
+        gutter_width,
+        fg,
+        bg,
+    } = slot;
     if line_num < total_lines {
         use std::fmt::Write as _;
         scratch.clear();
@@ -850,59 +866,28 @@ fn find_line_render_boundary(ctx: &DrawContext, config: &RenderLineConfig) -> Op
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn render_line(
     frame: &mut crate::paint::PaintFrame,
     ctx: &DrawContext,
-    config: RenderLineConfig,
-    highlight_idx: &mut usize,
-    _search_match_idx: &mut usize,
-    annotation_style_idx: &mut usize,
-    injection_idx: &mut usize,
-    custom_color_idx: &mut usize,
-    terminal_color_idx: &mut usize,
+    config: &RenderLineConfig,
+    cursors: &mut RowCursors,
 ) {
-    let buf = ctx.buf;
-    if config.line_num >= buf.get_total_lines() {
-        for col in config.gutter_width..config.visible_cols {
-            frame.set_cell(
-                config.row_idx,
-                col,
-                Cell::from_char(' ').with_colors(config.default_fg, config.default_bg),
-            );
-        }
+    if config.line_num >= ctx.buf.get_total_lines() {
+        fill_blank_from(frame, config, config.gutter_width);
         return;
     }
 
-    let source = pipeline::new_line_source(buf, config.line_num);
-    let highlights = ctx.highlights.unwrap_or(&[]);
-    let custom_highlights = ctx.custom_highlights.unwrap_or(&[]);
-    let terminal_cell_colors = ctx.terminal_cell_colors.unwrap_or(&[]);
-
-    let syntax = SyntaxDecorator::new(
-        source,
-        highlights,
-        highlight_idx,
-        ctx.state.settings.syntax_colors.as_ref(),
-        ctx.capture_map,
+    let layout = layout_line(
+        ctx,
+        config.line_num,
+        &mut cursors.highlight,
+        &mut cursors.annotation,
+        &mut cursors.injection,
+        &mut cursors.custom,
+        &mut cursors.terminal,
     );
-    let injection_highlights = ctx.injection_highlights.unwrap_or(&[]);
-    let injected = pipeline::InjectionDecorator::new(
-        syntax,
-        injection_highlights,
-        injection_idx,
-        ctx.state.settings.syntax_colors.as_ref(),
-    );
-    let colored = pipeline::ColorDecorator::new(injected, custom_highlights, custom_color_idx);
-    let term_colored =
-        pipeline::TerminalColorDecorator::new(colored, terminal_cell_colors, terminal_color_idx);
-    let annotation_styles = ctx.annotation_styles.unwrap_or(&[]);
-    let presented =
-        pipeline::PresentationDecorator::new(term_colored, annotation_styles, annotation_style_idx);
 
-    let layout = TabLayout::new(presented, ctx.tab_width);
-
-    let content_cols = line_content_cols(ctx, &config);
+    let content_cols = line_content_cols(ctx, config);
     let mut rendered_col = 0;
 
     let left_col = config
@@ -941,25 +926,14 @@ fn render_line(
             let plan = plan_glyph_draw(width, current_visual_col, left_col);
             let visible_width = plan.visible_width;
 
-            let mut display_col = rendered_col + config.gutter_width;
-
-            for (start, _end, text, color, is_leading) in inline {
-                if *is_leading && *start == item.byte_offset {
-                    for ch in text.chars() {
-                        if display_col >= config.visible_cols {
-                            break;
-                        }
-                        frame.set_cell(
-                            config.row_idx,
-                            display_col,
-                            Cell::new(Character::from(ch))
-                                .with_colors(Some(*color), config.default_bg),
-                        );
-                        display_col += 1;
-                        rendered_col += 1;
-                    }
-                }
-            }
+            rendered_col += draw_leading_inline(
+                frame,
+                config,
+                inline,
+                item.byte_offset,
+                rendered_col + config.gutter_width,
+            );
+            let display_col = rendered_col + config.gutter_width;
 
             for (i, (start, end, _t, _c, _l)) in inline.iter().enumerate() {
                 if *start == item.byte_offset {
@@ -980,27 +954,21 @@ fn render_line(
                     item.char
                 };
 
-                frame.set_cell(
-                    config.row_idx,
+                draw_glyph_cells(
+                    frame,
+                    config,
                     display_col,
+                    visible_width,
                     Cell::new(display_char)
                         .with_colors(fg, bg)
                         .with_attrs(item.attrs),
-                );
-
-                if visible_width > 1 {
-                    let empty_cell = Cell {
+                    Cell {
                         content: Character::from(' '),
                         fg,
                         bg,
                         attrs: item.attrs,
-                    };
-                    for k in 1..visible_width {
-                        if display_col + k < config.visible_cols {
-                            frame.set_cell(config.row_idx, display_col + k, empty_cell);
-                        }
-                    }
-                }
+                    },
+                );
             }
             rendered_col += visible_width;
         }
@@ -1012,11 +980,120 @@ fn render_line(
     let line_end_visible = reached_line_end && current_visual_col >= left_col;
     if let Some(adornments) = ctx.annotation_adornments.filter(|_| line_end_visible) {
         if let Some((_, text, color)) = adornments.iter().find(|(l, _, _)| *l == config.line_num) {
-            tail_col = render_trailing_adornment(frame, &config, tail_col, text, *color);
+            tail_col = render_trailing_adornment(frame, config, tail_col, text, *color);
         }
     }
 
     let content_end_col = rendered_col + config.gutter_width;
+    draw_inline_tails(frame, config, inline, &inline_cols, content_end_col);
+    fill_blank_from(frame, config, tail_col);
+}
+
+fn layout_line<'a>(
+    ctx: &DrawContext<'a>,
+    line_num: usize,
+    highlight_idx: &'a mut usize,
+    annotation_style_idx: &'a mut usize,
+    injection_idx: &'a mut usize,
+    custom_color_idx: &'a mut usize,
+    terminal_color_idx: &'a mut usize,
+) -> impl Iterator<Item = pipeline::LayoutItem> + 'a {
+    let source = pipeline::new_line_source(ctx.buf, line_num);
+    let highlights = ctx.highlights.unwrap_or(&[]);
+    let custom_highlights = ctx.custom_highlights.unwrap_or(&[]);
+    let terminal_cell_colors = ctx.terminal_cell_colors.unwrap_or(&[]);
+
+    let syntax = SyntaxDecorator::new(
+        source,
+        highlights,
+        highlight_idx,
+        ctx.state.settings.syntax_colors.as_ref(),
+        ctx.capture_map,
+    );
+    let injection_highlights = ctx.injection_highlights.unwrap_or(&[]);
+    let injected = pipeline::InjectionDecorator::new(
+        syntax,
+        injection_highlights,
+        injection_idx,
+        ctx.state.settings.syntax_colors.as_ref(),
+    );
+    let colored = pipeline::ColorDecorator::new(injected, custom_highlights, custom_color_idx);
+    let term_colored =
+        pipeline::TerminalColorDecorator::new(colored, terminal_cell_colors, terminal_color_idx);
+    let annotation_styles = ctx.annotation_styles.unwrap_or(&[]);
+    let presented =
+        pipeline::PresentationDecorator::new(term_colored, annotation_styles, annotation_style_idx);
+
+    TabLayout::new(presented, ctx.tab_width)
+}
+
+fn fill_blank_from(
+    frame: &mut crate::paint::PaintFrame,
+    config: &RenderLineConfig,
+    from_col: usize,
+) {
+    for col in from_col..config.visible_cols {
+        frame.set_cell(
+            config.row_idx,
+            col,
+            Cell::from_char(' ').with_colors(config.default_fg, config.default_bg),
+        );
+    }
+}
+
+fn draw_leading_inline(
+    frame: &mut crate::paint::PaintFrame,
+    config: &RenderLineConfig,
+    inline: &[InlineAdornment],
+    byte_offset: usize,
+    start_col: usize,
+) -> usize {
+    let mut display_col = start_col;
+    let mut written = 0;
+    for (start, _end, text, color, is_leading) in inline {
+        if *is_leading && *start == byte_offset {
+            for ch in text.chars() {
+                if display_col >= config.visible_cols {
+                    break;
+                }
+                frame.set_cell(
+                    config.row_idx,
+                    display_col,
+                    Cell::new(Character::from(ch)).with_colors(Some(*color), config.default_bg),
+                );
+                display_col += 1;
+                written += 1;
+            }
+        }
+    }
+    written
+}
+
+fn draw_glyph_cells(
+    frame: &mut crate::paint::PaintFrame,
+    config: &RenderLineConfig,
+    display_col: usize,
+    visible_width: usize,
+    glyph: Cell,
+    filler: Cell,
+) {
+    frame.set_cell(config.row_idx, display_col, glyph);
+    if visible_width > 1 {
+        for k in 1..visible_width {
+            if display_col + k < config.visible_cols {
+                frame.set_cell(config.row_idx, display_col + k, filler);
+            }
+        }
+    }
+}
+
+fn draw_inline_tails(
+    frame: &mut crate::paint::PaintFrame,
+    config: &RenderLineConfig,
+    inline: &[InlineAdornment],
+    inline_cols: &[(Option<usize>, Option<usize>)],
+    content_end_col: usize,
+) {
     for (i, (start, end, text, color, is_leading)) in inline.iter().enumerate() {
         if *is_leading {
             continue;
@@ -1025,32 +1102,22 @@ fn render_line(
             continue; // anchor not in this visible segment
         };
         let chars: Vec<char> = text.chars().collect();
-        {
-            let end_col = if *end > *start {
-                inline_cols[i].1.unwrap_or(content_end_col)
-            } else {
-                start_col + chars.len()
-            };
-            for (k, col) in (start_col..end_col).enumerate() {
-                if col >= config.visible_cols {
-                    break;
-                }
-                let ch = chars.get(k).copied().unwrap_or(' ');
-                frame.set_cell(
-                    config.row_idx,
-                    col,
-                    Cell::new(Character::from(ch)).with_colors(Some(*color), config.default_bg),
-                );
+        let end_col = if *end > *start {
+            inline_cols[i].1.unwrap_or(content_end_col)
+        } else {
+            start_col + chars.len()
+        };
+        for (k, col) in (start_col..end_col).enumerate() {
+            if col >= config.visible_cols {
+                break;
             }
+            let ch = chars.get(k).copied().unwrap_or(' ');
+            frame.set_cell(
+                config.row_idx,
+                col,
+                Cell::new(Character::from(ch)).with_colors(Some(*color), config.default_bg),
+            );
         }
-    }
-
-    for col in tail_col..config.visible_cols {
-        frame.set_cell(
-            config.row_idx,
-            col,
-            Cell::from_char(' ').with_colors(config.default_fg, config.default_bg),
-        );
     }
 }
 
@@ -1151,6 +1218,7 @@ pub fn calculate_cursor_column_at(
     col
 }
 
+#[must_use]
 pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
     use unicode_width::UnicodeWidthStr;
 
@@ -1195,6 +1263,8 @@ pub(crate) fn render_notifications(
     crate::paint::rasterize(&frame, layer);
 }
 
+const NOTIFICATION_WIDTH_RATIO: f64 = 0.8;
+
 fn render_notifications_to_paint_frame(
     frame: &mut crate::paint::PaintFrame,
     state: &State,
@@ -1209,7 +1279,7 @@ fn render_notifications_to_paint_frame(
     }
 
     let mut current_row = viewport_rows.saturating_sub(2);
-    let max_width = (viewport_cols as f32 * 0.8) as usize;
+    let max_width = f64_to_usize(usize_to_f64(viewport_cols) * NOTIFICATION_WIDTH_RATIO);
 
     for notification in notifications.iter_active().rev() {
         let message = &notification.message;
@@ -1280,22 +1350,39 @@ pub(crate) fn render_dividers(
     fg: Option<Color>,
     bg: Option<Color>,
 ) {
-    render_node_dividers(layer, &tree.root, 0, 0, total_rows, total_cols, fg, bg);
+    let area = SplitArea {
+        row: 0,
+        col: 0,
+        rows: total_rows,
+        cols: total_cols,
+    };
+    render_node_dividers(layer, &tree.root, area, fg, bg);
 }
 
-#[allow(clippy::too_many_arguments)]
-fn render_node_dividers(
-    layer: &mut Layer,
-    node: &crate::split::tree::SplitNode,
+/// Screen rectangle occupied by a split node.
+#[derive(Clone, Copy)]
+struct SplitArea {
     row: usize,
     col: usize,
     rows: usize,
     cols: usize,
+}
+
+fn render_node_dividers(
+    layer: &mut Layer,
+    node: &crate::split::tree::SplitNode,
+    area: SplitArea,
     fg: Option<Color>,
     bg: Option<Color>,
 ) {
     use crate::split::layout::{MIN_WINDOW_COLS, MIN_WINDOW_ROWS};
     use crate::split::tree::{SplitDirection, SplitNode};
+    let SplitArea {
+        row,
+        col,
+        rows,
+        cols,
+    } = area;
 
     if let SplitNode::Split {
         direction,
@@ -1307,7 +1394,7 @@ fn render_node_dividers(
         match direction {
             SplitDirection::Horizontal => {
                 let available = rows.saturating_sub(1);
-                let first_rows = ((available as f64) * ratio).round() as usize;
+                let first_rows = f64_to_usize((usize_to_f64(available) * ratio).round());
                 let first_rows = first_rows
                     .max(MIN_WINDOW_ROWS)
                     .min(available.saturating_sub(MIN_WINDOW_ROWS));
@@ -1322,21 +1409,34 @@ fn render_node_dividers(
                     );
                 }
 
-                render_node_dividers(layer, first, row, col, first_rows, cols, fg, bg);
+                render_node_dividers(
+                    layer,
+                    first,
+                    SplitArea {
+                        row,
+                        col,
+                        rows: first_rows,
+                        cols,
+                    },
+                    fg,
+                    bg,
+                );
                 render_node_dividers(
                     layer,
                     second,
-                    divider_row + 1,
-                    col,
-                    second_rows,
-                    cols,
+                    SplitArea {
+                        row: divider_row + 1,
+                        col,
+                        rows: second_rows,
+                        cols,
+                    },
                     fg,
                     bg,
                 );
             }
             SplitDirection::Vertical => {
                 let available = cols.saturating_sub(1);
-                let first_cols = ((available as f64) * ratio).round() as usize;
+                let first_cols = f64_to_usize((usize_to_f64(available) * ratio).round());
                 let first_cols = first_cols
                     .max(MIN_WINDOW_COLS)
                     .min(available.saturating_sub(MIN_WINDOW_COLS));
@@ -1351,14 +1451,27 @@ fn render_node_dividers(
                     );
                 }
 
-                render_node_dividers(layer, first, row, col, rows, first_cols, fg, bg);
+                render_node_dividers(
+                    layer,
+                    first,
+                    SplitArea {
+                        row,
+                        col,
+                        rows,
+                        cols: first_cols,
+                    },
+                    fg,
+                    bg,
+                );
                 render_node_dividers(
                     layer,
                     second,
-                    row,
-                    divider_col + 1,
-                    rows,
-                    second_cols,
+                    SplitArea {
+                        row,
+                        col: divider_col + 1,
+                        rows,
+                        cols: second_cols,
+                    },
                     fg,
                     bg,
                 );

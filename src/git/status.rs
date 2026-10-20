@@ -30,7 +30,7 @@ pub enum FileState {
 }
 
 impl FileState {
-    fn from_char(c: u8) -> Option<Self> {
+    const fn from_char(c: u8) -> Option<Self> {
         match c {
             b'.' => Some(Self::Unmodified),
             b'M' => Some(Self::Modified),
@@ -74,19 +74,23 @@ pub struct StatusEntry {
 }
 
 impl StatusEntry {
-    pub fn is_untracked(&self) -> bool {
+    #[must_use]
+    pub const fn is_untracked(&self) -> bool {
         matches!(self.kind, EntryKind::Untracked)
     }
 
-    pub fn is_ignored(&self) -> bool {
+    #[must_use]
+    pub const fn is_ignored(&self) -> bool {
         matches!(self.kind, EntryKind::Ignored)
     }
 
-    pub fn is_unmerged(&self) -> bool {
+    #[must_use]
+    pub const fn is_unmerged(&self) -> bool {
         matches!(self.kind, EntryKind::Unmerged)
     }
 
     /// Whether this entry belongs under a status buffer's "Staged" section.
+    #[must_use]
     pub fn is_staged(&self) -> bool {
         !self.is_untracked()
             && !self.is_ignored()
@@ -95,6 +99,7 @@ impl StatusEntry {
     }
 
     /// Whether this entry belongs under a status buffer's "Unstaged" section.
+    #[must_use]
     pub fn is_unstaged(&self) -> bool {
         !self.is_untracked()
             && !self.is_ignored()
@@ -111,6 +116,7 @@ pub struct StatusSnapshot {
 }
 
 /// Parse porcelain v2 stdout. Malformed or unrecognized lines are skipped rather than failing the whole parse: status output is advisory, and one unexpected line from a newer/older git shouldn't blank the buffer.
+#[must_use]
 pub fn parse_status(input: &str) -> StatusSnapshot {
     let mut snapshot = StatusSnapshot::default();
 

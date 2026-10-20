@@ -1,3 +1,4 @@
+#[cfg(feature = "lsp")]
 use super::common::*;
 
 #[cfg(feature = "lsp")]
@@ -159,7 +160,7 @@ fn goto_with_multiple_definitions_opens_a_location_list() {
         },
     };
     let mut editor = create_editor();
-    editor.handle_goto_result(vec![loc(1), loc(5)]);
+    editor.handle_goto_result(&[loc(1), loc(5)]);
 
     let layout = editor
         .panel_layout_of(super::PanelKind::LocationList)
@@ -288,7 +289,9 @@ fn published_diagnostic_underlines_exactly_its_range_and_keeps_the_eol_message()
     let cols = editor.render_system.compositor.cols();
     let cells = editor.render_system.compositor.get_composited_slice();
     let row: Vec<char> = (0..cols).map(|c| cells[c].to_char()).collect();
-    let underlined: Vec<usize> = (0..cols).filter(|&c| cells[c].attrs.underline).collect();
+    let underlined: Vec<usize> = (0..cols)
+        .filter(|&c| cells[c].attrs.is_underline())
+        .collect();
     assert_eq!(row[6..11].iter().collect::<String>(), "x = 1");
     assert_eq!(
         underlined,
@@ -302,6 +305,8 @@ fn published_diagnostic_underlines_exactly_its_range_and_keeps_the_eol_message()
     doc.insert_str("  ").unwrap();
     editor.update_and_render().unwrap();
     let cells = editor.render_system.compositor.get_composited_slice();
-    let underlined: Vec<usize> = (0..cols).filter(|&c| cells[c].attrs.underline).collect();
+    let underlined: Vec<usize> = (0..cols)
+        .filter(|&c| cells[c].attrs.is_underline())
+        .collect();
     assert_eq!(underlined, vec![8, 9, 10, 11, 12]);
 }

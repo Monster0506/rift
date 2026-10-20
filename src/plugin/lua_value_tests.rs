@@ -26,7 +26,7 @@ fn lua_table_round_trips_through_value() {
 #[test]
 fn lua_array_table_becomes_list() {
     let lua = mlua::Lua::new();
-    let tbl: mlua::Table = lua.load(r#"return {10, 20, 30}"#).eval().unwrap();
+    let tbl: mlua::Table = lua.load(r"return {10, 20, 30}").eval().unwrap();
     let v = value_from_lua_table(&tbl).unwrap();
     assert_eq!(
         v,
@@ -45,9 +45,8 @@ fn value_to_lua_and_back_is_lossless() {
         ),
     ]);
     let lua_val = value_into_lua(v.clone(), &lua).unwrap();
-    let tbl = match lua_val {
-        mlua::Value::Table(t) => t,
-        _ => panic!("expected table"),
+    let mlua::Value::Table(tbl) = lua_val else {
+        panic!("expected table");
     };
     assert_eq!(value_from_lua_table(&tbl).unwrap(), v);
 }

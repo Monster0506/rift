@@ -8,21 +8,23 @@ const BLAME_PANE_WIDTH_RATIO: f64 = 0.33;
 
 impl<T: TerminalBackend> Editor<T> {
     /// Open a blame view for `path`'s current content, as a new vertical split next to it. `repo_root` and `path` are caller-supplied; callers resolve "which file" from their own context (the active file buffer, a Status entry under the cursor, a `:Git blame <path>` argument), never guessed here. If `path` isn't.
+    ///
+    /// # Panics
+    /// Panics if the focused window is not a leaf of the split tree.
     pub fn open_git_blame(&mut self, path: std::path::PathBuf, repo_root: std::path::PathBuf) {
         let linked_doc_id = self
             .document_manager
             .documents_iter()
             .find(|d| d.path() == Some(path.as_path()))
             .map(|d| d.id);
-        let linked_doc_id = match linked_doc_id {
-            Some(id) => id,
-            None => {
-                if let Err(e) = self.open_file(Some(path.display().to_string()), false) {
-                    self.state.handle_error(e);
-                    return;
-                }
-                self.active_document_id()
+        let linked_doc_id = if let Some(id) = linked_doc_id {
+            id
+        } else {
+            if let Err(e) = self.open_file(Some(path.display().to_string()), false) {
+                self.state.handle_error(e);
+                return;
             }
+            self.active_document_id()
         };
 
         let size = self
@@ -191,52 +193,48 @@ impl<T: TerminalBackend> Editor<T> {
             .split_tree
             .get_window(linked_window_id)
             .map(|window| window.document_id);
-        match commit {
-            Some(commit) => {
-                let root = repo_root.to_string_lossy().replace('\\', "/");
-                let root = root.strip_prefix("//?/").unwrap_or(&root);
-                let full_path = path.to_string_lossy().replace('\\', "/");
-                let full_path = full_path.strip_prefix("//?/").unwrap_or(&full_path);
-                let relative = full_path
-                    .strip_prefix(root.trim_end_matches('/'))
-                    .unwrap_or(full_path)
-                    .trim_start_matches('/');
-                let spec = format!("{commit}:{relative}");
-                let content = match crate::git::run_checked(repo_root, &["cat-file", "blob", &spec])
-                {
-                    Ok(content) => content,
-                    Err(error) => {
-                        self.state.handle_error(error);
-                        return false;
-                    }
-                };
-                let id = self.document_manager.next_id();
-                let mut doc = match crate::document::Document::from_file(id, path) {
-                    Ok(doc) => doc,
-                    Err(error) => {
-                        self.state.handle_error(error);
-                        return false;
-                    }
-                };
-                doc.replace_buffer_content(&content);
-                doc.set_read_only(true);
-                doc.convert_to_scratch(format!(
-                    "[Git] {} @ {}",
-                    path.display(),
-                    &commit[..commit.len().min(8)]
-                ));
-                self.document_manager.add_private_document(doc);
-                self.split_tree.set_window_document(linked_window_id, id);
-                if let Some(old_doc_id) = old_doc_id.filter(|id| *id != linked_doc_id) {
-                    let _ = self.remove_private_document(old_doc_id);
+        if let Some(commit) = commit {
+            let root = repo_root.to_string_lossy().replace('\\', "/");
+            let root = root.strip_prefix("//?/").unwrap_or(&root);
+            let full_path = path.to_string_lossy().replace('\\', "/");
+            let full_path = full_path.strip_prefix("//?/").unwrap_or(&full_path);
+            let relative = full_path
+                .strip_prefix(root.trim_end_matches('/'))
+                .unwrap_or(full_path)
+                .trim_start_matches('/');
+            let spec = format!("{commit}:{relative}");
+            let content = match crate::git::run_checked(repo_root, &["cat-file", "blob", &spec]) {
+                Ok(content) => content,
+                Err(error) => {
+                    self.state.handle_error(error);
+                    return false;
                 }
+            };
+            let id = self.document_manager.next_id();
+            let mut doc = match crate::document::Document::from_file(id, path) {
+                Ok(doc) => doc,
+                Err(error) => {
+                    self.state.handle_error(error);
+                    return false;
+                }
+            };
+            doc.replace_buffer_content(&content);
+            doc.set_read_only(true);
+            doc.convert_to_scratch(format!(
+                "[Git] {} @ {}",
+                path.display(),
+                commit.get(..8).unwrap_or(commit)
+            ));
+            self.document_manager.add_private_document(doc);
+            self.split_tree.set_window_document(linked_window_id, id);
+            if let Some(old_doc_id) = old_doc_id.filter(|id| *id != linked_doc_id) {
+                let _ = self.remove_private_document(old_doc_id);
             }
-            None => {
-                self.split_tree
-                    .set_window_document(linked_window_id, linked_doc_id);
-                if let Some(old_doc_id) = old_doc_id.filter(|id| *id != linked_doc_id) {
-                    let _ = self.remove_private_document(old_doc_id);
-                }
+        } else {
+            self.split_tree
+                .set_window_document(linked_window_id, linked_doc_id);
+            if let Some(old_doc_id) = old_doc_id.filter(|id| *id != linked_doc_id) {
+                let _ = self.remove_private_document(old_doc_id);
             }
         }
         let _ = self.document_manager.switch_to_document(active_doc_id);
@@ -296,7 +294,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(linked_window_id) = self
             .document_manager
             .get_document(focused_doc_id)
-            .and_then(|doc| doc.git_blame_linked_window_id())
+            .and_then(super::super::document::Document::git_blame_linked_window_id)
         {
             return Some(linked_window_id);
         }

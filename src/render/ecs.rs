@@ -48,6 +48,7 @@ impl<T: PartialEq> ComponentStorage<T> {
 }
 
 impl<T> ComponentStorage<T> {
+    #[must_use]
     pub fn get(&self, entity: EntityId) -> Option<&T> {
         self.components.get(&entity).map(|e| &e.data)
     }
@@ -56,6 +57,7 @@ impl<T> ComponentStorage<T> {
         self.components.get_mut(&entity).map(|e| &mut e.data)
     }
 
+    #[must_use]
     pub fn get_version(&self, entity: EntityId) -> Option<u64> {
         self.components.get(&entity).map(|e| e.version)
     }
@@ -101,6 +103,7 @@ impl Default for World {
 
 impl World {
     /// Create a new empty world
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -116,7 +119,7 @@ impl World {
     }
 
     /// Advance the world version, signifying a new frame/update cycle
-    pub fn tick(&mut self) {
+    pub const fn tick(&mut self) {
         self.current_version += 1;
     }
 
@@ -160,7 +163,8 @@ impl World {
     }
 
     /// Get all entities
-    pub fn entities(&self) -> &HashSet<EntityId> {
+    #[must_use]
+    pub const fn entities(&self) -> &HashSet<EntityId> {
         &self.entities
     }
 }

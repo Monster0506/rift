@@ -45,32 +45,17 @@ fn test_get_option_reads_document_local_setting_via_alias() {
         tab_width: 8,
         ..Default::default()
     };
-    host.update_state(
-        1,
-        "file".to_string(),
-        BufSourceUpdate::Cleared,
-        (0, 0),
-        4,
-        true,
-        "normal",
-        None,
-        None,
-        vec![],
-        (0, 0),
-        false,
-        false,
-        false,
-        (0, 0),
-        "lf",
-        vec![],
-        vec![],
-        0,
-        None,
-        std::collections::HashMap::new(),
-        std::collections::HashMap::new(),
+    host.update_state(StateUpdate {
+        buf_id: 1,
+        buf_kind: "file".to_string(),
+        source: BufSourceUpdate::Cleared,
+        tab_width: 4,
+        expand_tabs: true,
+        mode: "normal",
+        line_ending: "lf",
         doc_options,
-        crate::state::UserSettings::new(),
-    );
+        ..Default::default()
+    });
     assert!(host
         .exec(
             "rift.notify('info', type(rift.get_option('tab_width')) \
@@ -89,32 +74,17 @@ fn test_get_option_falls_back_to_global_setting() {
     let host = make_host();
     let mut user_settings = crate::state::UserSettings::new();
     user_settings.clipboard_ring_size = 42;
-    host.update_state(
-        1,
-        "file".to_string(),
-        BufSourceUpdate::Cleared,
-        (0, 0),
-        4,
-        true,
-        "normal",
-        None,
-        None,
-        vec![],
-        (0, 0),
-        false,
-        false,
-        false,
-        (0, 0),
-        "lf",
-        vec![],
-        vec![],
-        0,
-        None,
-        std::collections::HashMap::new(),
-        std::collections::HashMap::new(),
-        crate::document::definitions::DocumentOptions::default(),
+    host.update_state(StateUpdate {
+        buf_id: 1,
+        buf_kind: "file".to_string(),
+        source: BufSourceUpdate::Cleared,
+        tab_width: 4,
+        expand_tabs: true,
+        mode: "normal",
+        line_ending: "lf",
         user_settings,
-    );
+        ..Default::default()
+    });
     assert!(host
         .exec("rift.notify('info', tostring(rift.get_option('clipboard.size')))")
         .is_none());
@@ -270,7 +240,7 @@ fn test_annotations_query_reads_snapshot() {
 fn test_annotations_update_queues_mutation() {
     let host = make_host();
     assert!(host
-        .exec(r#"rift.annotations.update(5, { visible = false, payload = { n = 1 } })"#)
+        .exec(r"rift.annotations.update(5, { visible = false, payload = { n = 1 } })")
         .is_none());
     let muts = host.drain_mutations();
     assert_eq!(muts.len(), 1);
@@ -372,7 +342,7 @@ fn test_annotations_register_kind_queues_mutation() {
             assert_eq!(description.as_deref(), Some("a staged hunk"));
             let pres = presentation.as_ref().expect("presentation built");
             assert_eq!(pres.face.as_ref().map(|f| f.0.as_str()), Some("diff.added"));
-            assert!(pres.style.as_ref().map(|s| s.underline).unwrap_or(false));
+            assert!(pres.style.as_ref().is_some_and(|s| s.attrs.is_underline()));
         }
         _ => panic!("expected RegisterKindDefaults"),
     }
@@ -470,7 +440,7 @@ fn test_on_and_dispatch_event() {
         .exec("rift.on('EditorStart', function(_ev) rift.notify('info', 'started') end)")
         .is_none());
     let errors = host.dispatch_event(&EditorEvent::EditorStart);
-    assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
+    assert!(errors.is_empty(), "unexpected errors: {errors:?}");
     let mutations = host.drain_mutations();
     assert_eq!(mutations.len(), 1);
     match &mutations[0] {
@@ -482,32 +452,16 @@ fn test_on_and_dispatch_event() {
 #[test]
 fn test_get_lines_returns_correct_lines() {
     let host = make_host();
-    host.update_state(
-        1,
-        "file".to_string(),
-        lines_source(&["alpha", "beta", "gamma"]),
-        (0, 0),
-        4,
-        true,
-        "normal",
-        None,
-        None,
-        vec![],
-        (0, 0),
-        false,
-        false,
-        false,
-        (0, 0),
-        "lf",
-        vec![],
-        vec![],
-        0,
-        None,
-        std::collections::HashMap::new(),
-        std::collections::HashMap::new(),
-        crate::document::definitions::DocumentOptions::default(),
-        crate::state::UserSettings::new(),
-    );
+    host.update_state(StateUpdate {
+        buf_id: 1,
+        buf_kind: "file".to_string(),
+        source: lines_source(&["alpha", "beta", "gamma"]),
+        tab_width: 4,
+        expand_tabs: true,
+        mode: "normal",
+        line_ending: "lf",
+        ..Default::default()
+    });
     assert!(host.exec("_lines = rift.get_lines(1, -1)").is_none());
     assert!(host.exec("rift.notify('info', _lines[2])").is_none());
     let mutations = host.drain_mutations();
@@ -520,32 +474,16 @@ fn test_get_lines_returns_correct_lines() {
 #[test]
 fn test_line_count_and_find_materialize_from_deferred_source() {
     let host = make_host();
-    host.update_state(
-        1,
-        "file".to_string(),
-        lines_source(&["needle here", "no match", "another needle"]),
-        (0, 0),
-        4,
-        true,
-        "normal",
-        None,
-        None,
-        vec![],
-        (0, 0),
-        false,
-        false,
-        false,
-        (0, 0),
-        "lf",
-        vec![],
-        vec![],
-        0,
-        None,
-        std::collections::HashMap::new(),
-        std::collections::HashMap::new(),
-        crate::document::definitions::DocumentOptions::default(),
-        crate::state::UserSettings::new(),
-    );
+    host.update_state(StateUpdate {
+        buf_id: 1,
+        buf_kind: "file".to_string(),
+        source: lines_source(&["needle here", "no match", "another needle"]),
+        tab_width: 4,
+        expand_tabs: true,
+        mode: "normal",
+        line_ending: "lf",
+        ..Default::default()
+    });
     // get_line_count is served from the cheap scalar without materializing.
     assert!(host
         .exec("rift.notify('info', tostring(rift.get_line_count()))")
@@ -568,32 +506,17 @@ fn test_line_count_and_find_materialize_from_deferred_source() {
 #[test]
 fn test_get_cursor_returns_1indexed_row() {
     let host = make_host();
-    host.update_state(
-        1,
-        "file".to_string(),
-        BufSourceUpdate::Cleared,
-        (4, 2),
-        4,
-        true,
-        "normal",
-        None,
-        None,
-        vec![],
-        (0, 0),
-        false,
-        false,
-        false,
-        (0, 0),
-        "lf",
-        vec![],
-        vec![],
-        0,
-        None,
-        std::collections::HashMap::new(),
-        std::collections::HashMap::new(),
-        crate::document::definitions::DocumentOptions::default(),
-        crate::state::UserSettings::new(),
-    );
+    host.update_state(StateUpdate {
+        buf_id: 1,
+        buf_kind: "file".to_string(),
+        source: BufSourceUpdate::Cleared,
+        cursor: (4, 2),
+        tab_width: 4,
+        expand_tabs: true,
+        mode: "normal",
+        line_ending: "lf",
+        ..Default::default()
+    });
     assert!(host
         .exec("local r, c = rift.get_cursor(); rift.notify('info', tostring(r))")
         .is_none());
@@ -607,32 +530,16 @@ fn test_get_cursor_returns_1indexed_row() {
 #[test]
 fn test_current_buf_returns_id() {
     let host = make_host();
-    host.update_state(
-        42,
-        "file".to_string(),
-        BufSourceUpdate::Cleared,
-        (0, 0),
-        4,
-        true,
-        "normal",
-        None,
-        None,
-        vec![],
-        (0, 0),
-        false,
-        false,
-        false,
-        (0, 0),
-        "lf",
-        vec![],
-        vec![],
-        0,
-        None,
-        std::collections::HashMap::new(),
-        std::collections::HashMap::new(),
-        crate::document::definitions::DocumentOptions::default(),
-        crate::state::UserSettings::new(),
-    );
+    host.update_state(StateUpdate {
+        buf_id: 42,
+        buf_kind: "file".to_string(),
+        source: BufSourceUpdate::Cleared,
+        tab_width: 4,
+        expand_tabs: true,
+        mode: "normal",
+        line_ending: "lf",
+        ..Default::default()
+    });
     assert!(host
         .exec("rift.notify('info', tostring(rift.current_buf()))")
         .is_none());
@@ -667,7 +574,7 @@ fn test_load_dir_loads_lua_file() {
 
     let host = make_host();
     let errors = host.load_dir(dir.path());
-    assert!(errors.is_empty(), "load errors: {:?}", errors);
+    assert!(errors.is_empty(), "load errors: {errors:?}");
     let mutations = host.drain_mutations();
     assert_eq!(mutations.len(), 1);
     match &mutations[0] {
@@ -737,7 +644,7 @@ fn test_load_file_sets_current_plugin_during_exec() {
 
     let host = make_host();
     let errors = host.load_file(&path);
-    assert!(errors.is_none(), "load error: {:?}", errors);
+    assert!(errors.is_none(), "load error: {errors:?}");
 
     // _rift_plugin_slots should have an entry for the plugin file path.
     let check = host.exec(
@@ -749,7 +656,7 @@ fn test_load_file_sets_current_plugin_during_exec() {
         assert(found, "no plugin slot entries recorded")
     "#,
     );
-    assert!(check.is_none(), "assertion failed: {:?}", check);
+    assert!(check.is_none(), "assertion failed: {check:?}");
 }
 
 #[test]
@@ -772,7 +679,7 @@ fn test_on_handler_tagged_with_plugin() {
         assert(list[1].plugin ~= nil, "handler missing plugin field")
     "#,
     );
-    assert!(check.is_none(), "assertion failed: {:?}", check);
+    assert!(check.is_none(), "assertion failed: {check:?}");
 }
 
 #[test]
@@ -798,7 +705,7 @@ fn test_register_command_tagged_with_plugin() {
         assert(entry.plugin ~= nil, "command missing plugin field")
     "#,
     );
-    assert!(check.is_none(), "assertion failed: {:?}", check);
+    assert!(check.is_none(), "assertion failed: {check:?}");
 }
 
 #[test]
@@ -821,7 +728,7 @@ fn test_register_action_tagged_with_plugin() {
         assert(entry.plugin ~= nil, "action missing plugin field")
     "#,
     );
-    assert!(check.is_none(), "assertion failed: {:?}", check);
+    assert!(check.is_none(), "assertion failed: {check:?}");
 }
 
 #[test]
@@ -864,7 +771,7 @@ fn test_map_keymap_tracked_in_plugin_keymaps() {
         assert(found, "keymap not recorded in _rift_plugin_keymaps")
     "#,
     );
-    assert!(check.is_none(), "assertion failed: {:?}", check);
+    assert!(check.is_none(), "assertion failed: {check:?}");
 }
 
 #[test]
@@ -885,7 +792,7 @@ fn test_plugins_list_returns_loaded_plugin_names() {
         assert(#list >= 1, "expected at least one plugin in list")
     "#,
     );
-    assert!(check.is_none(), "assertion failed: {:?}", check);
+    assert!(check.is_none(), "assertion failed: {check:?}");
 }
 
 #[test]
@@ -915,7 +822,7 @@ fn test_plugins_info_returns_correct_counts() {
         assert(#info.keys     == 1, "expected 1 keymap, got " .. #info.keys)
     "#,
     );
-    assert!(check.is_none(), "assertion failed: {:?}", check);
+    assert!(check.is_none(), "assertion failed: {check:?}");
 }
 
 #[test]
@@ -948,7 +855,7 @@ fn test_plugins_unload_removes_all_registrations() {
         assert(_rift_plugin_slots[name] == nil, "plugin_slots not cleared")
     "#,
     );
-    assert!(check.is_none(), "assertion failed: {:?}", check);
+    assert!(check.is_none(), "assertion failed: {check:?}");
 }
 
 #[test]
@@ -966,7 +873,7 @@ fn test_no_plugin_tag_when_exec_direct() {
         assert(list[1].plugin == nil, "inline handler should have no plugin field")
     "#,
     );
-    assert!(check.is_none(), "assertion failed: {:?}", check);
+    assert!(check.is_none(), "assertion failed: {check:?}");
 }
 
 #[test]
@@ -986,7 +893,7 @@ fn test_load_dir_ownership_tracks_each_file_separately() {
 
     let host = make_host();
     let errors = host.load_dir(dir.path());
-    assert!(errors.is_empty(), "load errors: {:?}", errors);
+    assert!(errors.is_empty(), "load errors: {errors:?}");
 
     let check = host.exec(
         r#"
@@ -1002,7 +909,7 @@ fn test_load_dir_ownership_tracks_each_file_separately() {
         assert(commands_total == 1, "expected 1 command total, got " .. commands_total)
     "#,
     );
-    assert!(check.is_none(), "assertion failed: {:?}", check);
+    assert!(check.is_none(), "assertion failed: {check:?}");
 }
 
 #[test]
@@ -1013,17 +920,17 @@ fn test_emit_does_not_invoke_handlers_registered_during_same_pass() {
     assert!(host.exec("_G.count = 0").is_none());
     assert!(host
         .exec(
-            r#"
+            r"
         rift.on('UserEvent', function(ev)
             _G.count = _G.count + 1
             rift.on('UserEvent', function(_ev) _G.count = _G.count + 1 end)
         end)
-    "#
+    "
         )
         .is_none());
     assert!(host.exec("rift.emit('Ping')").is_none());
     let check = host.exec("assert(_G.count == 1, 'count was ' .. _G.count)");
-    assert!(check.is_none(), "assertion failed: {:?}", check);
+    assert!(check.is_none(), "assertion failed: {check:?}");
 }
 
 #[test]
@@ -1032,18 +939,18 @@ fn test_dispatch_event_does_not_invoke_handlers_registered_during_same_pass() {
     assert!(host.exec("_G.count = 0").is_none());
     assert!(host
         .exec(
-            r#"
+            r"
         rift.on('EditorStart', function(_ev)
             _G.count = _G.count + 1
             rift.on('EditorStart', function(_ev) _G.count = _G.count + 1 end)
         end)
-    "#
+    "
         )
         .is_none());
     let errors = host.dispatch_event(&EditorEvent::EditorStart);
-    assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
+    assert!(errors.is_empty(), "unexpected errors: {errors:?}");
     let check = host.exec("assert(_G.count == 1, 'count was ' .. _G.count)");
-    assert!(check.is_none(), "assertion failed: {:?}", check);
+    assert!(check.is_none(), "assertion failed: {check:?}");
 }
 
 #[test]
@@ -1052,12 +959,12 @@ fn test_shelldone_fanout_does_not_invoke_handlers_registered_during_same_pass() 
     assert!(host.exec("_G.count = 0").is_none());
     assert!(host
         .exec(
-            r#"
+            r"
         rift.on('UserEvent', function(ev)
             _G.count = _G.count + 1
             rift.on('UserEvent', function(_ev) _G.count = _G.count + 1 end)
         end)
-    "#
+    "
         )
         .is_none());
     host.shared.borrow_mut().pending_shell_events.push((
@@ -1067,7 +974,7 @@ fn test_shelldone_fanout_does_not_invoke_handlers_registered_during_same_pass() 
     ));
     let _ = host.drain_mutations();
     let check = host.exec("assert(_G.count == 1, 'count was ' .. _G.count)");
-    assert!(check.is_none(), "assertion failed: {:?}", check);
+    assert!(check.is_none(), "assertion failed: {check:?}");
 }
 
 #[test]
@@ -1098,7 +1005,7 @@ fn test_current_slot_restored_after_reentrant_emit() {
         .is_none());
 
     let errors = host.dispatch_event(&EditorEvent::EditorStart);
-    assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
+    assert!(errors.is_empty(), "unexpected errors: {errors:?}");
 
     let mutations = host.drain_mutations();
     let slots: Vec<u32> = mutations
@@ -1114,12 +1021,11 @@ fn test_current_slot_restored_after_reentrant_emit() {
 
     let check = host.exec(&format!(
         r#"
-        assert({} == _G.b_slot, "B's highlight should be tagged with B's slot")
-        assert({} == _G.a_slot, "A's highlight should be tagged with A's slot")
-    "#,
-        b_highlight_slot, a_highlight_slot
+        assert({b_highlight_slot} == _G.b_slot, "B's highlight should be tagged with B's slot")
+        assert({a_highlight_slot} == _G.a_slot, "A's highlight should be tagged with A's slot")
+    "#
     ));
-    assert!(check.is_none(), "{:?}", check);
+    assert!(check.is_none(), "{check:?}");
 }
 
 #[test]
@@ -1127,14 +1033,14 @@ fn test_shell_done_handler_error_surfaces_as_notification() {
     let host = make_host();
     assert!(host
         .exec(
-            r#"
+            r"
         rift.on('UserEvent', function(ev)
             if ev.name == 'ShellDone' then
                 local x = nil
                 return x.boom
             end
         end)
-    "#
+    "
         )
         .is_none());
 
@@ -1156,8 +1062,7 @@ fn test_shell_done_handler_error_surfaces_as_notification() {
     });
     assert!(
         got_error,
-        "expected an error notification from the failing ShellDone handler, got: {:?}",
-        mutations
+        "expected an error notification from the failing ShellDone handler, got: {mutations:?}"
     );
 }
 
@@ -1166,7 +1071,7 @@ fn test_spawn_shell_delivers_result_from_background_thread() {
     let host = make_host();
     assert!(host
         .exec(
-            r#"
+            r"
         _G.got = nil
         rift.on('UserEvent', function(ev)
             if ev.name == 'ShellDone' then
@@ -1174,7 +1079,7 @@ fn test_spawn_shell_delivers_result_from_background_thread() {
             end
         end)
         rift.spawn_shell('echo hello', 'mytag')
-    "#
+    "
         )
         .is_none());
 
@@ -1204,7 +1109,7 @@ fn test_json_decode_rejects_deeply_nested_input() {
         assert(err ~= nil, "expected an error message for too-deeply-nested json")
     "#,
     );
-    assert!(check.is_none(), "{:?}", check);
+    assert!(check.is_none(), "{check:?}");
 }
 
 #[cfg(feature = "lsp")]
@@ -1219,7 +1124,7 @@ fn test_lsp_register_queues_mutation() {
         })
     "#,
     );
-    assert!(err.is_none(), "{:?}", err);
+    assert!(err.is_none(), "{err:?}");
 
     let mutations = host.drain_mutations();
     assert_eq!(mutations.len(), 1);
@@ -1228,7 +1133,7 @@ fn test_lsp_register_queues_mutation() {
             assert_eq!(language, "rust");
             assert_eq!(config.command, "rust-analyzer");
         }
-        other => panic!("expected LspRegisterServer, got {:?}", other),
+        other => panic!("expected LspRegisterServer, got {other:?}"),
     }
 }
 
@@ -1255,7 +1160,7 @@ fn test_lsp_stub_functions_are_callable_and_no_op() {
         assert(type(diags) == "table" and #diags == 0)
     "#,
     );
-    assert!(err.is_none(), "{:?}", err);
+    assert!(err.is_none(), "{err:?}");
     assert!(
         host.drain_mutations().is_empty(),
         "stub rift.lsp functions must not queue any mutation"
@@ -1269,11 +1174,11 @@ fn test_dispatch_event_aborts_a_runaway_handler_past_its_time_budget() {
     let host = make_host();
     assert!(host
         .exec(
-            r#"
+            r"
             rift.on('TextChangedCoarse', function(_ev)
                 while true do end
             end)
-        "#
+        "
         )
         .is_none());
 
@@ -1301,18 +1206,18 @@ fn test_dispatch_event_does_not_abort_a_fast_handler() {
     let host = make_host();
     assert!(host
         .exec(
-            r#"
+            r"
             rift.on('TextChangedCoarse', function(_ev)
                 rift.notify('info', 'fast handler ran')
             end)
-        "#
+        "
         )
         .is_none());
 
     let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse {
         buf: crate::document::DocumentId::new(1),
     });
-    assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
+    assert!(errors.is_empty(), "unexpected errors: {errors:?}");
     let mutations = host.drain_mutations();
     assert_eq!(mutations.len(), 1);
     assert!(matches!(&mutations[0], PluginMutation::Notify { .. }));

@@ -1,6 +1,5 @@
 use super::Editor;
 use crate::command_line::commands::CommandExecutor;
-use crate::error::RiftError;
 use crate::mode::Mode;
 use crate::search::SearchDirection;
 use crate::term::TerminalBackend;
@@ -68,19 +67,16 @@ impl<T: TerminalBackend> Editor<T> {
             if synced {
                 return;
             }
-            match doc.find_all_matches(query) {
-                Ok((matches, _)) => {
-                    // Render highlights through ui.search annotations, not a decorator.
-                    doc.sync_search_annotations(&matches, None);
-                    let key = (doc.id, doc.buffer.revision, query.to_string());
-                    self.state.search_matches = matches;
-                    self.search_highlights_synced = Some(key);
-                }
-                Err(_) => {
-                    doc.clear_search_annotations();
-                    self.state.search_matches.clear();
-                    self.search_highlights_synced = None;
-                }
+            if let Ok((matches, _)) = doc.find_all_matches(query) {
+                // Render highlights through ui.search annotations, not a decorator.
+                doc.sync_search_annotations(&matches, None);
+                let key = (doc.id, doc.buffer.revision, query.to_string());
+                self.state.search_matches = matches;
+                self.search_highlights_synced = Some(key);
+            } else {
+                doc.clear_search_annotations();
+                self.state.search_matches.clear();
+                self.search_highlights_synced = None;
             }
         } else if self.search_highlights_synced.take().is_some()
             || !self.state.search_matches.is_empty()
@@ -93,9 +89,8 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Execute a command line string
-    pub(super) fn execute_command_line(&mut self, cmd: String) {
-        use crate::command_line::commands::executor::ExecutionResult;
-        let parsed_command = self.command_parser.parse(&cmd);
+    pub(super) fn execute_command_line(&mut self, cmd: &str) {
+        let parsed_command = self.command_parser.parse(cmd);
         let active_id = self.active_document_id();
         let result = CommandExecutor::execute(
             parsed_command,
@@ -106,8 +101,29 @@ impl<T: TerminalBackend> Editor<T> {
             &self.settings_registry,
             &self.document_settings_registry,
         );
+        if !self.apply_command_result(result, cmd) {
+            return;
+        }
+        if self.current_mode == Mode::Command {
+            self.set_mode(Mode::Normal);
+        }
+        // Sync clipboard ring capacity in case clipboard.size was just changed
+        let desired = self.state.settings.clipboard_ring_size;
+        if self.clipboard_ring.capacity() != desired {
+            self.clipboard_ring.set_capacity(desired);
+            self.refresh_clipboard_buffer_if_open();
+        }
+    }
+
+    /// Returns false when the command line must stay as-is (no mode reset or ring sync).
+    fn apply_command_result(
+        &mut self,
+        result: crate::command_line::commands::executor::ExecutionResult,
+        cmd: &str,
+    ) -> bool {
+        use crate::command_line::commands::executor::ExecutionResult;
         match result {
-            ExecutionResult::Failure => return, // keep command line visible for editing
+            ExecutionResult::Failure => return false, // keep command line visible for editing
             ExecutionResult::OpenTerminal { cmd, .. } => {
                 if let Err(e) = self.open_terminal(cmd) {
                     self.state.handle_error(e);
@@ -115,13 +131,13 @@ impl<T: TerminalBackend> Editor<T> {
                     self.state.clear_command_line();
                     self.set_mode(Mode::Insert);
                 }
-                return;
+                return false;
             }
             ExecutionResult::RunGit { args } => {
                 self.run_git_command(args);
                 self.state.clear_command_line();
             }
-            ExecutionResult::Success => {}
+            ExecutionResult::Success | ExecutionResult::Checkpoint => {}
             ExecutionResult::Quit { bangs } => {
                 self.do_quit(bangs > 0);
             }
@@ -131,18 +147,10 @@ impl<T: TerminalBackend> Editor<T> {
             ExecutionResult::WriteAndQuit => {
                 self.do_save_and_quit();
             }
-            ExecutionResult::Redraw => {
-                self.state.clear_command_line();
-                // :s mutates the doc directly, skipping the sync reparse trigger;
-                // a no-op for non-mutating Redraw commands like :redraw/:nohl.
-                self.do_incremental_syntax_parse();
-                if let Err(e) = self.force_full_redraw() {
-                    self.state.handle_error(e);
-                }
-            }
+            ExecutionResult::Redraw => self.redraw_from_command(),
             ExecutionResult::Reload => {
                 if let Err(e) = self.load_plugins() {
-                    self.state.handle_error(e)
+                    self.state.handle_error(e);
                 }
             }
             ExecutionResult::Edit { path, bangs } => {
@@ -185,7 +193,6 @@ impl<T: TerminalBackend> Editor<T> {
             ExecutionResult::UndoGoto { seq } => {
                 self.do_undo_goto(seq);
             }
-            ExecutionResult::Checkpoint => {}
             ExecutionResult::SplitWindow {
                 direction,
                 subcommand,
@@ -205,56 +212,60 @@ impl<T: TerminalBackend> Editor<T> {
                 self.open_clipboard();
             }
             ExecutionResult::PluginCommand { name, args } => {
-                if name == "lua" {
-                    let s = cmd.trim_start_matches(':').trim();
-                    let code = s.strip_prefix("lua").map(|r| r.trim_start()).unwrap_or("");
-                    // First :lua in a pluginless session: snapshot state for it.
-                    self.plugin_host.mark_lua_used();
-                    self.update_lua_state();
-                    if let Some(err) = self.plugin_host.lua_exec(code) {
-                        self.state
-                            .notify(crate::notification::NotificationType::Error, err);
-                    }
-                    self.apply_plugin_mutations();
-                } else if !self.plugin_host.execute_command(&name, &args) {
-                    self.state.handle_error(crate::error::RiftError::new(
-                        crate::error::ErrorType::Parse,
-                        "UNKNOWN_COMMAND",
-                        format!("Unknown command: {name}"),
-                    ));
-                    return;
-                } else {
-                    self.apply_plugin_mutations();
+                if !self.run_plugin_command(&name, &args, cmd) {
+                    return false;
                 }
             }
         }
-        if self.current_mode == Mode::Command {
-            self.set_mode(Mode::Normal);
-        }
-        // Sync clipboard ring capacity in case clipboard.size was just changed
-        let desired = self.state.settings.clipboard_ring_size;
-        if self.clipboard_ring.capacity() != desired {
-            self.clipboard_ring.set_capacity(desired);
-            self.refresh_clipboard_buffer_if_open();
+        true
+    }
+
+    fn redraw_from_command(&mut self) {
+        self.state.clear_command_line();
+        // :s mutates the doc directly, skipping the sync reparse trigger;
+        // a no-op for non-mutating Redraw commands like :redraw/:nohl.
+        self.do_incremental_syntax_parse();
+        if let Err(e) = self.force_full_redraw() {
+            self.state.handle_error(e);
         }
     }
 
-    pub(super) fn handle_command_line_message(
-        &mut self,
-        msg: crate::message::CommandLineMessage,
-    ) -> Result<(), RiftError> {
+    /// Returns false when the command was unknown and reported as an error.
+    fn run_plugin_command(&mut self, name: &str, args: &[String], cmd: &str) -> bool {
+        if name == "lua" {
+            let s = cmd.trim_start_matches(':').trim();
+            let code = s.strip_prefix("lua").map_or("", |r| r.trim_start());
+            // First :lua in a pluginless session: snapshot state for it.
+            self.plugin_host.mark_lua_used();
+            self.update_lua_state();
+            if let Some(err) = self.plugin_host.lua_exec(code) {
+                self.state
+                    .notify(crate::notification::NotificationType::Error, err);
+            }
+            self.apply_plugin_mutations();
+        } else if !self.plugin_host.execute_command(name, args) {
+            self.state.handle_error(crate::error::RiftError::new(
+                crate::error::ErrorType::Parse,
+                "UNKNOWN_COMMAND",
+                format!("Unknown command: {name}"),
+            ));
+            return false;
+        } else {
+            self.apply_plugin_mutations();
+        }
+        true
+    }
+
+    pub(super) fn handle_command_line_message(&mut self, msg: crate::message::CommandLineMessage) {
         use crate::message::CommandLineMessage;
         match msg {
             CommandLineMessage::ExecuteCommand(cmd) => {
-                self.execute_command_line(cmd);
+                self.execute_command_line(&cmd);
                 self.state.clear_command_line();
             }
             CommandLineMessage::ExecuteSearch(query) => {
-                if !query.is_empty() {
-                    if self.perform_search(&query, SearchDirection::Forward, false) {
-                        self.state.clear_command_line();
-                    }
-                } else {
+                if query.is_empty() || self.perform_search(&query, SearchDirection::Forward, false)
+                {
                     self.state.clear_command_line();
                 }
             }
@@ -273,7 +284,7 @@ impl<T: TerminalBackend> Editor<T> {
                     let mut words: Vec<String> = buf_text
                         .split(|c: char| !c.is_alphanumeric() && c != '_')
                         .filter(|w| w.len() >= 2)
-                        .map(|w| w.to_string())
+                        .map(std::string::ToString::to_string)
                         .collect();
                     words.sort_unstable();
                     words.dedup();
@@ -290,6 +301,5 @@ impl<T: TerminalBackend> Editor<T> {
                 });
             }
         }
-        Ok(())
     }
 }

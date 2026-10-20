@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// UTF-16 code units needed to encode `ch` (1, or 2 for chars outside the BMP).
-fn utf16_len(ch: char) -> u32 {
+const fn utf16_len(ch: char) -> u32 {
     if (ch as u32) > 0xFFFF {
         2
     } else {
@@ -33,7 +33,9 @@ pub fn utf16_offset_to_char(line: impl Iterator<Item = char>, utf16_offset: u32)
 
 /// Convert a code-point offset within a line to a UTF-8 byte offset.
 pub fn char_offset_to_utf8(line: impl Iterator<Item = char>, char_offset: usize) -> u32 {
-    line.take(char_offset).map(|c| c.len_utf8() as u32).sum()
+    line.take(char_offset)
+        .map(|c| u32::try_from(c.len_utf8()).unwrap_or(u32::MAX))
+        .sum()
 }
 
 /// Convert a UTF-8 byte offset (as received from an LSP server) to a
@@ -45,7 +47,7 @@ pub fn utf8_offset_to_char(line: impl Iterator<Item = char>, byte_offset: u32) -
         if bytes >= byte_offset {
             break;
         }
-        bytes += ch.len_utf8() as u32;
+        bytes += u32::try_from(ch.len_utf8()).unwrap_or(u32::MAX);
         chars += 1;
     }
     chars
@@ -61,6 +63,7 @@ pub enum PositionEncoding {
 }
 
 impl PositionEncoding {
+    #[must_use]
     pub fn from_wire(s: &str) -> Option<Self> {
         match s {
             "utf-16" => Some(Self::Utf16),
@@ -116,8 +119,6 @@ pub enum RequestId {
 
 #[derive(Debug, Deserialize)]
 pub struct JsonRpcMessage {
-    #[allow(dead_code)]
-    pub jsonrpc: String,
     pub id: Option<Value>,
     pub method: Option<String>,
     pub params: Option<Value>,
@@ -127,8 +128,6 @@ pub struct JsonRpcMessage {
 
 #[derive(Debug, Deserialize)]
 pub struct JsonRpcError {
-    #[allow(dead_code)]
-    pub code: i64,
     pub message: String,
 }
 
@@ -162,7 +161,7 @@ pub struct LspLocationLink {
 
 impl From<LspLocationLink> for LspLocation {
     fn from(link: LspLocationLink) -> Self {
-        LspLocation {
+        Self {
             uri: link.target_uri,
             range: link.target_selection_range.unwrap_or(link.target_range),
         }
@@ -337,7 +336,7 @@ impl Default for CodeActionKindSet {
     fn default() -> Self {
         Self {
             value_set: vec![
-                "".into(),
+                String::new(),
                 "quickfix".into(),
                 "refactor".into(),
                 "refactor.extract".into(),
@@ -476,6 +475,7 @@ pub struct CodeActionContext {
 /// Percent-encode a URI path: everything except RFC 3986 unreserved chars
 /// and `/` (Windows drive colons stay bare, matching what servers echo).
 fn percent_encode_path(path: &str) -> String {
+    use std::fmt::Write as _;
     let mut out = String::with_capacity(path.len());
     for b in path.bytes() {
         let keep =
@@ -483,35 +483,36 @@ fn percent_encode_path(path: &str) -> String {
         if keep {
             out.push(b as char);
         } else {
-            out.push_str(&format!("%{:02X}", b));
+            let _ = write!(out, "%{b:02X}");
         }
     }
     out
 }
 
+#[must_use]
 pub fn path_to_uri(path: &std::path::Path) -> String {
     let path_str = path.to_string_lossy();
     if cfg!(windows) {
         // Strip the extended-length path prefix std::fs::canonicalize adds on Windows
         // (\\?\C:\... or \\?\UNC\...), so we emit file:///c:/... not file:////C:/...
-        let stripped: std::borrow::Cow<str> = if let Some(s) = path_str.strip_prefix(r"\\?\UNC\") {
-            format!("//{}", s).into()
-        } else if let Some(s) = path_str.strip_prefix(r"\\?\") {
-            s.into()
-        } else {
-            path_str
-        };
+        let stripped: std::borrow::Cow<str> = path_str
+            .strip_prefix(r"\\?\UNC\")
+            .map(|s| format!("//{s}").into())
+            .or_else(|| path_str.strip_prefix(r"\\?\").map(Into::into))
+            .unwrap_or_else(|| path_str.clone());
         let mut normalized = stripped.replace('\\', "/");
         // Only the drive letter is case-folded: servers key their file
         // graph by the on-disk spelling of the rest of the path.
         if normalized.as_bytes().get(1) == Some(&b':') {
-            normalized[..1].make_ascii_lowercase();
+            if let Some(drive) = normalized.get_mut(..1) {
+                drive.make_ascii_lowercase();
+            }
         }
         let encoded = percent_encode_path(&normalized);
         if encoded.starts_with('/') {
-            format!("file://{}", encoded)
+            format!("file://{encoded}")
         } else {
-            format!("file:///{}", encoded)
+            format!("file:///{encoded}")
         }
     } else {
         format!("file://{}", percent_encode_path(&path_str))
@@ -520,6 +521,7 @@ pub fn path_to_uri(path: &std::path::Path) -> String {
 
 /// Canonical map-key form of a file URI: percent-decoded so `c%3A` and `c:`
 /// agree, and case-folded on Windows where the filesystem is case-insensitive.
+#[must_use]
 pub fn normalize_uri(uri: &str) -> String {
     let decoded = if uri.contains('%') {
         std::borrow::Cow::Owned(percent_decode(uri))
@@ -553,6 +555,7 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+#[must_use]
 pub fn uri_to_path(uri: &str) -> Option<std::path::PathBuf> {
     let path = uri.strip_prefix("file://")?;
     let path = percent_decode(path);
@@ -565,7 +568,7 @@ pub fn uri_to_path(uri: &str) -> Option<std::path::PathBuf> {
         };
         p.replace('/', "\\")
     } else {
-        path.to_string()
+        path
     };
     Some(std::path::PathBuf::from(path))
 }

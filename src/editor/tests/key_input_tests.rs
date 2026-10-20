@@ -16,7 +16,7 @@ impl crate::term::TerminalBackend for KeyQueue {
         self.inner.init()
     }
     fn deinit(&mut self) {
-        self.inner.deinit()
+        self.inner.deinit();
     }
     fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, crate::error::RiftError> {
         Ok(!self.queue.is_empty())

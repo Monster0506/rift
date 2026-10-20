@@ -824,8 +824,11 @@ fn ambiguous_non_operator_binding_flushes_to_the_short_action_after_timeout() {
     );
 
     editor.pending_keys.push(Key::char('Q'));
-    editor.pending_keys_started_at =
-        Some(std::time::Instant::now() - std::time::Duration::from_millis(1500));
+    editor.pending_keys_started_at = Some(
+        std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_millis(1500))
+            .unwrap(),
+    );
 
     editor.flush_pending_keys_on_timeout().unwrap();
 

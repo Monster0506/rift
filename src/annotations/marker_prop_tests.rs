@@ -11,14 +11,14 @@ enum Edit {
 }
 
 impl Edit {
-    /// (start, old_end, new_end) for `Marker::on_edit`, and the new buffer length.
+    /// (start, `old_end`, `new_end`) for `Marker::on_edit`, and the new buffer length.
     fn apply(&self, buf_len: usize) -> (usize, usize, usize, usize) {
         match *self {
-            Edit::Insert { at, len } => {
+            Self::Insert { at, len } => {
                 let at = at.min(buf_len);
                 (at, at, at + len, buf_len + len)
             }
-            Edit::Delete { start, end } => {
+            Self::Delete { start, end } => {
                 let start = start.min(buf_len);
                 let end = end.min(buf_len).max(start);
                 (start, end, start, buf_len - (end - start))

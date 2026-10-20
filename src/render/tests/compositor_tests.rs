@@ -49,7 +49,7 @@ fn test_render_does_not_clear_screen() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,
@@ -96,7 +96,7 @@ fn test_render_cursor_positioning() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,
@@ -142,7 +142,7 @@ fn test_render_empty_buffer() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,
@@ -190,7 +190,7 @@ fn test_render_multiline_buffer() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,
@@ -243,7 +243,7 @@ fn test_render_file_loaded_at_start() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,
@@ -293,7 +293,7 @@ fn test_render_viewport_scrolling() {
     let mut term = MockTerminal::new(5, 80); // Small viewport
     let mut buf = TextBuffer::new(100).unwrap();
     for i in 0..10 {
-        buf.insert_str(&format!("line{}\n", i)).unwrap();
+        buf.insert_str(&format!("line{i}\n")).unwrap();
     }
     for _ in 0..8 {
         buf.move_up();
@@ -304,7 +304,7 @@ fn test_render_viewport_scrolling() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,
@@ -350,7 +350,7 @@ fn test_render_viewport_edge_cases() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,
@@ -389,7 +389,7 @@ fn test_render_large_buffer() {
     let mut term = MockTerminal::new(10, 80);
     let mut buf = TextBuffer::new(10000).unwrap();
     for i in 0..100 {
-        buf.insert_str(&format!("line {}\n", i)).unwrap();
+        buf.insert_str(&format!("line {i}\n")).unwrap();
     }
     let state = State::new();
     let mut system = RenderSystem::new(10, 80);
@@ -397,7 +397,7 @@ fn test_render_large_buffer() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,
@@ -439,7 +439,7 @@ fn test_render_cursor_at_viewport_boundaries() {
     let mut term = MockTerminal::new(5, 80);
     let mut buf = TextBuffer::new(100).unwrap();
     for i in 0..20 {
-        buf.insert_str(&format!("line {}\n", i)).unwrap();
+        buf.insert_str(&format!("line {i}\n")).unwrap();
     }
     let state = State::new();
     let mut system = RenderSystem::new(5, 80);
@@ -450,7 +450,7 @@ fn test_render_cursor_at_viewport_boundaries() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,
@@ -498,7 +498,7 @@ fn test_render_cursor_at_viewport_boundaries() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,
@@ -575,7 +575,7 @@ fn test_no_redraw_on_noop() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,
@@ -623,7 +623,7 @@ fn test_no_redraw_on_noop() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,

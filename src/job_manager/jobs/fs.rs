@@ -34,13 +34,18 @@ pub struct FsCopyJob {
 }
 
 impl FsCopyJob {
-    pub fn new(source: PathBuf, destination: PathBuf) -> Self {
+    #[must_use]
+    pub const fn new(source: PathBuf, destination: PathBuf) -> Self {
         Self {
             source,
             destination,
         }
     }
 
+    /// Recursively copy `source` into `destination`.
+    ///
+    /// # Errors
+    /// Returns `Err` if `destination` is inside `source` or any file operation fails.
     pub fn copy_recursive_pub(source: &Path, destination: &Path) -> std::io::Result<()> {
         let signal = CancellationSignal::new_uncancelled();
         let mut visited = HashSet::new();
@@ -73,8 +78,9 @@ impl FsCopyJob {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
                     format!(
-                        "cannot copy {:?}: destination {:?} is inside the source",
-                        source, destination
+                        "cannot copy {}: destination {} is inside the source",
+                        source.display(),
+                        destination.display()
                     ),
                 ));
             }
@@ -115,12 +121,16 @@ impl Job for FsCopyJob {
         let _ = sender.send(JobMessage::Progress(
             id,
             0,
-            format!("Copying {:?} to {:?}", self.source, self.destination),
+            format!(
+                "Copying {} to {}",
+                self.source.display(),
+                self.destination.display()
+            ),
         ));
 
         let mut visited = HashSet::new();
         match Self::copy_recursive(&self.source, &self.destination, &signal, &mut visited) {
-            Ok(_) => {
+            Ok(()) => {
                 let _ = sender.send(JobMessage::Finished(id, false));
             }
             Err(e) => {
@@ -142,7 +152,8 @@ pub struct FsMoveJob {
 }
 
 impl FsMoveJob {
-    pub fn new(source: PathBuf, destination: PathBuf) -> Self {
+    #[must_use]
+    pub const fn new(source: PathBuf, destination: PathBuf) -> Self {
         Self {
             source,
             destination,
@@ -162,7 +173,11 @@ impl Job for FsMoveJob {
         let _ = sender.send(JobMessage::Progress(
             id,
             0,
-            format!("Moving {:?} to {:?}", self.source, self.destination),
+            format!(
+                "Moving {} to {}",
+                self.source.display(),
+                self.destination.display()
+            ),
         ));
 
         if let Some(parent) = self.destination.parent() {
@@ -173,18 +188,18 @@ impl Job for FsMoveJob {
         }
 
         match fs::rename(&self.source, &self.destination) {
-            Ok(_) => {
+            Ok(()) => {
                 let _ = sender.send(JobMessage::Finished(id, false));
             }
             Err(_) => match FsCopyJob::copy_recursive_pub(&self.source, &self.destination) {
-                Ok(_) => {
+                Ok(()) => {
                     let del = if self.source.is_dir() {
                         fs::remove_dir_all(&self.source)
                     } else {
                         fs::remove_file(&self.source)
                     };
                     match del {
-                        Ok(_) => {
+                        Ok(()) => {
                             let _ = sender.send(JobMessage::Finished(id, false));
                         }
                         Err(e) => {
@@ -207,7 +222,8 @@ pub struct FsDeleteJob {
 }
 
 impl FsDeleteJob {
-    pub fn new(path: PathBuf) -> Self {
+    #[must_use]
+    pub const fn new(path: PathBuf) -> Self {
         Self { path }
     }
 }
@@ -224,7 +240,7 @@ impl Job for FsDeleteJob {
         let _ = sender.send(JobMessage::Progress(
             id,
             0,
-            format!("Deleting {:?}", self.path),
+            format!("Deleting {}", self.path.display()),
         ));
 
         let result = if self.path.is_dir() {
@@ -234,7 +250,7 @@ impl Job for FsDeleteJob {
         };
 
         match result {
-            Ok(_) => {
+            Ok(()) => {
                 let _ = sender.send(JobMessage::Finished(id, false));
             }
             Err(e) => {
@@ -252,7 +268,8 @@ pub struct FsCreateJob {
 }
 
 impl FsCreateJob {
-    pub fn new(path: PathBuf, is_dir: bool) -> Self {
+    #[must_use]
+    pub const fn new(path: PathBuf, is_dir: bool) -> Self {
         Self { path, is_dir }
     }
 }
@@ -280,7 +297,7 @@ impl Job for FsCreateJob {
         };
 
         match result {
-            Ok(_) => {
+            Ok(()) => {
                 let _ = sender.send(JobMessage::Finished(id, false));
             }
             Err(e) => {
@@ -297,7 +314,8 @@ pub struct FsBatchDeleteJob {
 }
 
 impl FsBatchDeleteJob {
-    pub fn new(paths: Vec<PathBuf>) -> Self {
+    #[must_use]
+    pub const fn new(paths: Vec<PathBuf>) -> Self {
         Self { paths }
     }
 }
@@ -320,10 +338,10 @@ impl Job for FsBatchDeleteJob {
 
             let _ = sender.send(JobMessage::Progress(
                 id,
-                ((i as f32 / total as f32) * 100.0) as u32,
+                u32::try_from(i * 100 / total).unwrap_or(100),
                 format!(
-                    "Deleting {:?} ({}/{})",
-                    path.file_name().unwrap_or_default(),
+                    "Deleting {} ({}/{})",
+                    path.file_name().unwrap_or_default().to_string_lossy(),
                     i + 1,
                     total
                 ),
@@ -338,7 +356,7 @@ impl Job for FsBatchDeleteJob {
             if let Err(e) = result {
                 let _ = sender.send(JobMessage::Error(
                     id,
-                    format!("Failed to delete {:?}: {}", path, e).into(),
+                    format!("Failed to delete {}: {e}", path.display()).into(),
                 ));
             }
         }

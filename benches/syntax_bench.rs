@@ -15,7 +15,7 @@ fn interval_tree_bench(c: &mut Criterion) {
         .map(|i| {
             let start = (i * 100) % max_val;
             let len = (i % 50) + 1;
-            (start..(start + len), i as u32)
+            (start..(start + len), u32::try_from(i).unwrap_or(u32::MAX))
         })
         .collect();
 
@@ -26,7 +26,7 @@ fn interval_tree_bench(c: &mut Criterion) {
                 black_box(IntervalTree::new(items));
             },
             criterion::BatchSize::LargeInput,
-        )
+        );
     });
 
     group.bench_function("query_tree", |b| {
@@ -35,7 +35,7 @@ fn interval_tree_bench(c: &mut Criterion) {
         b.iter(|| {
             // query roughly near the middle
             black_box(tree.query(500_000..(500_000 + query_len)));
-        })
+        });
     });
 
     group.finish();

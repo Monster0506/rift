@@ -16,6 +16,7 @@ struct Node<T> {
 }
 
 impl<T: Clone> IntervalTree<T> {
+    #[must_use]
     pub fn new(items: Vec<(Range<usize>, T)>) -> Self {
         if items.is_empty() {
             return Self {
@@ -79,6 +80,7 @@ impl<T: Clone> IntervalTree<T> {
         Some(idx)
     }
 
+    #[must_use]
     pub fn query(&self, query_range: Range<usize>) -> Vec<(Range<usize>, T)> {
         let mut results = Vec::new();
         if let Some(root) = self.root {
@@ -164,21 +166,22 @@ impl<T: Clone> IntervalTree<T> {
 
     /// Ranges at/before the edit are kept, at/after its old end shift by the
     /// delta, overlapping it are dropped (caller must also filter its fresh requery for touching cases).
+    #[must_use]
     pub fn shift_for_edit(
         &self,
         start_byte: usize,
         old_end_byte: usize,
         new_end_byte: usize,
     ) -> Vec<(Range<usize>, T)> {
-        let delta = new_end_byte as i64 - old_end_byte as i64;
+        let delta = new_end_byte.cast_signed() - old_end_byte.cast_signed();
         self.in_order()
             .into_iter()
             .filter_map(|(r, val)| {
                 if r.end <= start_byte {
                     Some((r, val))
                 } else if r.start >= old_end_byte {
-                    let new_start = (r.start as i64 + delta) as usize;
-                    let new_end = (r.end as i64 + delta) as usize;
+                    let new_start = (r.start.cast_signed() + delta).cast_unsigned();
+                    let new_end = (r.end.cast_signed() + delta).cast_unsigned();
                     Some((new_start..new_end, val))
                 } else {
                     None

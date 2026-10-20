@@ -5,7 +5,7 @@ use crate::dot_repeat::DotRegister;
 use crate::mode::Mode;
 use crate::term::TerminalBackend;
 
-fn with_count_override(cmd: Command, count: usize) -> Option<Command> {
+const fn with_count_override(cmd: Command, count: usize) -> Option<Command> {
     match cmd {
         Command::Move(m, _) => Some(Command::Move(m, count)),
         Command::Delete(m, _) => Some(Command::Delete(m, count)),
@@ -26,18 +26,7 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn execute_operator(&mut self, op: super::PendingOperator, motion: Motion) -> bool {
         let op = match op {
             super::PendingOperator::SurroundAdd(delim_count) => {
-                let count = self
-                    .pending_operator_count
-                    .max(1)
-                    .saturating_mul(self.pending_count.max(1));
-                self.pending_count = 0;
-                self.pending_grammar =
-                    Some(super::pending_grammar::PendingGrammar::AddSurroundChar {
-                        motion,
-                        count,
-                        delim_count,
-                    });
-                self.set_mode(Mode::Normal);
+                self.begin_surround_add(motion, delim_count);
                 return true;
             }
             super::PendingOperator::Op(op) => op,
@@ -67,7 +56,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .map(|doc| crate::clipboard::capture_text(&doc.buffer, &range))
         });
         let has_range = captured.is_some();
-        let in_clipboard = self.active_doc_is(|d| d.is_any_clipboard());
+        let in_clipboard = self.active_doc_is(super::super::document::Document::is_any_clipboard);
         if let Some(text) = captured.filter(|s| !s.is_empty()) {
             if !in_clipboard {
                 self.clipboard_ring.push(text);
@@ -77,41 +66,10 @@ impl<T: TerminalBackend> Editor<T> {
 
         match op {
             crate::action::OperatorType::Delete => {
-                let command = crate::command::Command::Delete(motion, count);
-                self.set_mode(Mode::Normal);
-                let ghost_allowed = self
-                    .document_manager
-                    .active_document()
-                    .is_some_and(|doc| doc.ghost_cut_allowed());
-                let result = if self.state.settings.ghost_cut && ghost_allowed {
-                    let mut ghosted_doc = None;
-                    if let Some(range) = motion_range {
-                        if let Some(doc) = self.document_manager.active_document_mut() {
-                            let (start, end) = crate::executor::range_to_offsets(&range, doc, true);
-                            if end > start {
-                                doc.create_ghosts(&[(start, end)]);
-                                let _ = doc.buffer.set_cursor(start);
-                                ghosted_doc = Some(doc.id);
-                            }
-                        }
-                    }
-                    if ghosted_doc.is_some() {
-                        self.do_incremental_syntax_parse();
-                    }
-                    if let Some(id) = ghosted_doc {
-                        self.document_manager.set_most_recent_ghost_doc(Some(id));
-                    }
-                    ghosted_doc.is_some()
-                } else {
-                    self.execute_buffer_command(command)
-                };
-                if result && !self.dot_repeat.is_replaying() && command.is_repeatable() {
-                    self.dot_repeat.record_single(command);
-                }
-                result
+                self.execute_delete_operator(motion, count, motion_range)
             }
             crate::action::OperatorType::Change => {
-                if self.active_doc_is(|d| d.is_read_only()) {
+                if self.active_doc_is(super::super::document::Document::is_read_only) {
                     self.reject_read_only_edit();
                     self.set_mode(Mode::Normal);
                     return false;
@@ -157,6 +115,60 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    fn begin_surround_add(&mut self, motion: Motion, delim_count: usize) {
+        let count = self
+            .pending_operator_count
+            .max(1)
+            .saturating_mul(self.pending_count.max(1));
+        self.pending_count = 0;
+        self.pending_grammar = Some(super::pending_grammar::PendingGrammar::AddSurroundChar {
+            motion,
+            count,
+            delim_count,
+        });
+        self.set_mode(Mode::Normal);
+    }
+
+    fn execute_delete_operator(
+        &mut self,
+        motion: Motion,
+        count: usize,
+        motion_range: Option<crate::wrap::MotionRange>,
+    ) -> bool {
+        let command = crate::command::Command::Delete(motion, count);
+        self.set_mode(Mode::Normal);
+        let ghost_allowed = self
+            .document_manager
+            .active_document()
+            .is_some_and(super::super::document::Document::ghost_cut_allowed);
+        let result = if self.state.settings.editing.ghost_cut && ghost_allowed {
+            let mut ghosted_doc = None;
+            if let Some(range) = motion_range {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    let (start, end) = crate::executor::range_to_offsets(&range, doc, true);
+                    if end > start {
+                        doc.create_ghosts(&[(start, end)]);
+                        let _ = doc.buffer.set_cursor(start);
+                        ghosted_doc = Some(doc.id);
+                    }
+                }
+            }
+            if ghosted_doc.is_some() {
+                self.do_incremental_syntax_parse();
+            }
+            if let Some(id) = ghosted_doc {
+                self.document_manager.set_most_recent_ghost_doc(Some(id));
+            }
+            ghosted_doc.is_some()
+        } else {
+            self.execute_buffer_command(command)
+        };
+        if result && !self.dot_repeat.is_replaying() && command.is_repeatable() {
+            self.dot_repeat.record_single(command);
+        }
+        result
+    }
+
     pub(super) fn execute_operator_linewise(&mut self, op: crate::action::OperatorType) -> bool {
         self.pending_operator = None;
         let count = self
@@ -170,7 +182,7 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .active_document()
             .map(|doc| crate::clipboard::capture_current_line(&doc.buffer, count));
-        let in_clipboard = self.active_doc_is(|d| d.is_any_clipboard());
+        let in_clipboard = self.active_doc_is(super::super::document::Document::is_any_clipboard);
         if let Some(text) = captured.filter(|s| !s.is_empty()) {
             if !in_clipboard {
                 self.clipboard_ring.push(text);
@@ -185,8 +197,8 @@ impl<T: TerminalBackend> Editor<T> {
                 let ghost_allowed = self
                     .document_manager
                     .active_document()
-                    .is_some_and(|doc| doc.ghost_cut_allowed());
-                let result = if self.state.settings.ghost_cut && ghost_allowed {
+                    .is_some_and(super::super::document::Document::ghost_cut_allowed);
+                let result = if self.state.settings.editing.ghost_cut && ghost_allowed {
                     let mut ghosted_doc = None;
                     if let Some(doc) = self.document_manager.active_document_mut() {
                         doc.buffer.move_to_line_start();
@@ -198,9 +210,7 @@ impl<T: TerminalBackend> Editor<T> {
                                 break;
                             }
                         }
-                        let (ghost_start, ghost_end) = if !reached_last_line {
-                            (start, doc.buffer.cursor())
-                        } else {
+                        let (ghost_start, ghost_end) = if reached_last_line {
                             doc.buffer.move_to_line_end();
                             let end = doc.buffer.cursor();
                             if start > 0 {
@@ -208,6 +218,8 @@ impl<T: TerminalBackend> Editor<T> {
                             } else {
                                 (start, end)
                             }
+                        } else {
+                            (start, doc.buffer.cursor())
                         };
                         let _ = doc.buffer.set_cursor(ghost_start);
                         if ghost_end > ghost_start {
@@ -231,7 +243,7 @@ impl<T: TerminalBackend> Editor<T> {
                 result
             }
             crate::action::OperatorType::Change => {
-                if self.active_doc_is(|d| d.is_read_only()) {
+                if self.active_doc_is(super::super::document::Document::is_read_only) {
                     self.reject_read_only_edit();
                     self.set_mode(Mode::Normal);
                     return false;

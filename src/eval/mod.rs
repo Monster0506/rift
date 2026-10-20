@@ -1,6 +1,11 @@
 //! Integer expression evaluator for settings values: arithmetic, parens, and
 //! keywords like `auto` resolved via a caller closure, e.g. `"auto / 2 + 5"`.
 
+/// Evaluates `input` to a `usize`, resolving keywords through `lookup`.
+///
+/// # Errors
+/// Returns an error for an unexpected character, malformed or incomplete
+/// expression, division by zero, or a keyword that `lookup` does not resolve.
 pub fn eval(input: &str, lookup: &dyn Fn(&str) -> Option<usize>) -> Result<usize, String> {
     let tokens = tokenize(input)?;
     let mut pos = 0;
@@ -147,13 +152,13 @@ fn parse_atom(
         }
         Tok::Word(w) => {
             let key = w.to_lowercase();
-            match lookup(&key) {
-                Some(v) => {
+            lookup(&key).map_or_else(
+                || Err(format!("unknown keyword '{w}'")),
+                |v| {
                     *pos += 1;
                     Ok(v)
-                }
-                None => Err(format!("unknown keyword '{w}'")),
-            }
+                },
+            )
         }
         Tok::LParen => {
             *pos += 1;

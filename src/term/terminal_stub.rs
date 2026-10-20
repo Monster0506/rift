@@ -11,6 +11,8 @@ pub struct Terminal {
 }
 
 impl Terminal {
+    /// # Errors
+    /// Always returns `Err`.
     pub fn new(
         _rows: u16,
         _cols: u16,
@@ -21,21 +23,26 @@ impl Terminal {
         ))
     }
 
-    pub fn resize(&mut self, rows: u16, cols: u16) -> std::io::Result<()> {
+    /// # Errors
+    /// Never fails; the stub only records the size.
+    pub const fn resize(&mut self, rows: u16, cols: u16) -> std::io::Result<()> {
         self.size = (rows, cols);
         Ok(())
     }
 
-    pub fn write(&mut self, _data: &[u8]) -> std::io::Result<()> {
+    /// # Errors
+    /// Never fails; the stub discards the data.
+    pub const fn write(&mut self, _data: &[u8]) -> std::io::Result<()> {
         Ok(())
     }
 
-    pub fn scroll_display(&self, _delta: i32) {}
+    pub const fn scroll_display(&self, _delta: i32) {}
 
-    pub fn scroll_to_bottom(&self) {}
+    pub const fn scroll_to_bottom(&self) {}
 
+    #[must_use]
     pub fn read_screen(&self) -> (String, usize, usize, crate::color::CellColorSpans) {
-        (String::new(), 0, 0, Default::default())
+        (String::new(), 0, 0, crate::color::CellColorSpans::default())
     }
 }
 

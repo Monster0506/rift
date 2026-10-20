@@ -17,7 +17,7 @@ pub mod fs {
         payload
             .get("entry_id")
             .and_then(Value::as_int)
-            .map(|i| i as u16)
+            .and_then(|i| u16::try_from(i).ok())
     }
 
     /// The filesystem path for an `fs.entry` (`payload.path`).
@@ -84,7 +84,7 @@ pub mod git {
         payload
             .get("hunk_index")
             .and_then(Value::as_int)
-            .map(|i| i as usize)
+            .and_then(|i| usize::try_from(i).ok())
     }
 
     /// Index into that hunk's `Vec<DiffLine>` for a `git.hunk_line`
@@ -93,7 +93,7 @@ pub mod git {
         payload
             .get("line_index")
             .and_then(Value::as_int)
-            .map(|i| i as usize)
+            .and_then(|i| usize::try_from(i).ok())
     }
 
     /// The commit sha a `git.blame`/`git.log_commit` line refers to (`payload.sha`).

@@ -21,7 +21,7 @@ impl crate::term::TerminalBackend for ScriptedTerminal {
         self.inner.init()
     }
     fn deinit(&mut self) {
-        self.inner.deinit()
+        self.inner.deinit();
     }
     fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, crate::error::RiftError> {
         Ok(!self.queue.is_empty())
@@ -107,9 +107,7 @@ fn bracketed_paste_in_insert_mode_renders_the_full_text_without_a_second_render(
     editor.update_and_render().unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
 
-    editor
-        .handle_paste(" 4 CS Classes to Visit".to_string())
-        .unwrap();
+    editor.handle_paste(" 4 CS Classes to Visit").unwrap();
 
     assert_eq!(
         editor.active_document().buffer.to_string(),
@@ -133,9 +131,7 @@ fn bracketed_paste_near_soft_wrap_boundary_renders_the_full_text() {
         editor.update_and_render().unwrap();
     }
 
-    editor
-        .handle_paste(" 4 CS Classes to Visit".to_string())
-        .unwrap();
+    editor.handle_paste(" 4 CS Classes to Visit").unwrap();
 
     let expected = "0123456789012345 4 CS Classes to Visit";
     assert_eq!(editor.active_document().buffer.to_string(), expected);
@@ -199,6 +195,7 @@ fn bracketed_paste_reproduced_through_a_real_vte_parser() {
     use crate::action::{Action, EditorAction};
     use crate::key::InputEvent;
     use crate::replay::ReplayBackend;
+    use alacritty_terminal::grid::Dimensions as _;
 
     let sink = SharedBuf::default();
     let backend = ReplayBackend::new(sink.clone(), 24, 80);
@@ -236,12 +233,17 @@ fn bracketed_paste_reproduced_through_a_real_vte_parser() {
     let expected = "Top of the list:  4 CS Classes to Visit";
     assert_eq!(editor.active_document().buffer.to_string(), expected);
 
-    use alacritty_terminal::grid::Dimensions as _;
-    let t = term.lock();
-    let grid = t.grid();
-    let line0: String = (0..grid.columns())
-        .map(|c| grid[alacritty_terminal::index::Line(0)][alacritty_terminal::index::Column(c)].c)
-        .collect();
+    let line0: String = {
+        let t = term.lock();
+        let grid = t.grid();
+        let line: String = (0..grid.columns())
+            .map(|c| {
+                grid[alacritty_terminal::index::Line(0)][alacritty_terminal::index::Column(c)].c
+            })
+            .collect();
+        drop(t);
+        line
+    };
     assert!(
         line0.contains("4 CS Classes to Visit"),
         "a real terminal parsing rift's own output bytes must show the full pasted text:\n{line0:?}"
@@ -272,7 +274,7 @@ impl crate::term::TerminalBackend for PressReleaseTerminal {
         self.inner.init()
     }
     fn deinit(&mut self) {
-        self.inner.deinit()
+        self.inner.deinit();
     }
     fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, crate::error::RiftError> {
         Ok(!self.raw.is_empty())

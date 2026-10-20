@@ -48,8 +48,7 @@ fn test_populate_directory_no_ids_in_output() {
         let trimmed = line.trim_start();
         assert!(
             !trimmed.starts_with(|c: char| c.is_ascii_digit()),
-            "line should not start with digit: {:?}",
-            line
+            "line should not start with digit: {line:?}"
         );
     }
 }
@@ -353,8 +352,7 @@ fn test_buffer_text_has_no_annotation_prefix_after_populate() {
             && b[4] == b' ';
         assert!(
             !is_id_prefix,
-            "buffer line must not start with /NNN prefix: {:?}",
-            line
+            "buffer line must not start with /NNN prefix: {line:?}"
         );
     }
 }

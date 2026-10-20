@@ -1,4 +1,5 @@
 use super::*;
+use crate::layer::CellAttrs;
 
 #[test]
 fn presentation_round_trips_through_json() {
@@ -14,10 +15,10 @@ fn presentation_round_trips_through_json() {
 fn style_override_carries_color() {
     let s = StyleOverride {
         fg: Some(Color::Red),
-        bold: true,
+        attrs: CellAttrs::BOLD,
         ..Default::default()
     };
     let back: StyleOverride = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
     assert_eq!(back.fg, Some(Color::Red));
-    assert!(back.bold);
+    assert!(back.attrs.is_bold());
 }

@@ -1,5 +1,7 @@
 use crate::character::Character;
+use crate::color::Color;
 use crate::history::{EditSeq, UndoTree};
+use crate::layer::Cell;
 use crate::time::SystemTime;
 
 fn format_age(timestamp: SystemTime) -> String {
@@ -22,150 +24,185 @@ fn format_age(timestamp: SystemTime) -> String {
     }
 }
 
-pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSeq>, usize) {
-    use crate::color::Color;
-    use crate::layer::Cell;
+const CURRENT_CHAR: char = '@';
+const NODE_CHAR: char = '*';
+const SNAPSHOT_CHAR: char = '#';
+const SAVED_CHAR: char = 'S';
+const NODE_COLOR: Color = Color::DarkYellow;
+const BRANCH_COLOR: Color = Color::DarkRed;
+const TEXT_COLOR: Color = Color::Grey;
+const CURRENT_TEXT_COLOR: Color = Color::Magenta;
+const SNAP_TEXT_COLOR: Color = Color::Cyan;
+const SAVED_COLOR: Color = Color::DarkGreen;
 
-    let mut lines = Vec::new();
-    let mut sequences = Vec::new();
-    let mut cursor_row = 0;
+#[derive(Clone, Copy)]
+struct Status {
+    current: bool,
+    saved: bool,
+    snapshot: bool,
+}
 
-    let mut all_seqs: Vec<EditSeq> = tree.nodes.keys().cloned().collect();
-    all_seqs.sort_by(|a, b| b.cmp(a)); // Descending
+impl Status {
+    const fn marker(self) -> (char, Color) {
+        if self.current {
+            (CURRENT_CHAR, CURRENT_TEXT_COLOR)
+        } else if self.saved {
+            (SAVED_CHAR, SAVED_COLOR)
+        } else if self.snapshot {
+            (SNAPSHOT_CHAR, SNAP_TEXT_COLOR)
+        } else {
+            (NODE_CHAR, NODE_COLOR)
+        }
+    }
 
-    let mut columns: Vec<Option<EditSeq>> = Vec::new();
+    const fn text_color(self) -> Color {
+        if self.current {
+            CURRENT_TEXT_COLOR
+        } else if self.saved {
+            SAVED_COLOR
+        } else if self.snapshot {
+            SNAP_TEXT_COLOR
+        } else {
+            TEXT_COLOR
+        }
+    }
+}
 
-    let node_color = Color::DarkYellow;
-    let branch_color = Color::DarkRed;
-    let text_color = Color::Grey;
-    let current_text_color = Color::Magenta;
-    let snap_text_color = Color::Cyan;
-    let saved_color = Color::DarkGreen;
+fn text_cells(text: &str, color: Color) -> Vec<Cell> {
+    text.chars()
+        .map(|ch| Cell::from_char(ch).with_fg(color))
+        .collect()
+}
 
-    for &seq in &all_seqs {
-        let node = match tree.nodes.get(&seq) {
-            Some(n) => n,
-            None => continue,
-        };
+// Column lanes and output rows shared across the tree walk.
+#[derive(Default)]
+struct TreeRows {
+    lines: Vec<Vec<Cell>>,
+    sequences: Vec<EditSeq>,
+    cursor_row: usize,
+    columns: Vec<Option<EditSeq>>,
+}
 
-        let is_current = seq == tree.current;
-        let is_saved = seq == tree.saved_seq && seq != tree.root_seq;
-
-        let mut col_indices: Vec<usize> = columns
+impl TreeRows {
+    // Lanes waiting on seq; a tip with none claims a free or new lane.
+    fn claim_columns(&mut self, seq: EditSeq) -> Vec<usize> {
+        let mut col_indices: Vec<usize> = self
+            .columns
             .iter()
             .enumerate()
             .filter(|(_, waiting_for)| **waiting_for == Some(seq))
             .map(|(i, _)| i)
             .collect();
-
-        let is_tip = col_indices.is_empty();
-        if is_tip {
-            let slot = if let Some(idx) = columns.iter().position(|c| c.is_none()) {
+        if col_indices.is_empty() {
+            let free = self.columns.iter().position(std::option::Option::is_none);
+            let slot = if let Some(idx) = free {
                 idx
             } else {
-                columns.push(None);
-                columns.len() - 1
+                self.columns.push(None);
+                self.columns.len() - 1
             };
             col_indices.push(slot);
         }
+        col_indices
+    }
 
-        let main_col = col_indices[0];
-
-        let max_col = columns.len();
-
-        if col_indices.len() > 1 {
-            let mut conn_line: Vec<Cell> = Vec::new();
-            for (c, item) in columns.iter().enumerate().take(max_col) {
-                let cell = if c == main_col {
-                    Cell::from_char('│').with_fg(branch_color)
-                } else if col_indices.contains(&c) {
-                    if c > main_col {
-                        Cell::from_char('/').with_fg(branch_color)
-                    } else {
-                        Cell::from_char('\\').with_fg(branch_color)
-                    }
-                } else if item.is_some() {
-                    Cell::from_char('│').with_fg(branch_color)
-                } else {
-                    Cell::new(Character::from(' '))
-                };
-                conn_line.push(cell);
-                conn_line.push(Cell::new(Character::from(' ')));
-            }
-            lines.push(conn_line);
-            sequences.push(EditSeq::MAX)
-        }
-
-        sequences.push(seq);
-        let mut final_row: Vec<Cell> = Vec::new();
-
-        let snap_marker = node.snapshot.is_some();
-
-        const CURRENT_CHAR: char = '@';
-        const NODE_CHAR: char = '*';
-        const SNAPSHOT_CHAR: char = '#';
-        const SAVED_CHAR: char = 'S';
-        for (c, item) in columns.iter().enumerate().take(max_col) {
+    fn push_connector(&mut self, col_indices: &[usize], main_col: usize) {
+        let mut conn_line: Vec<Cell> = Vec::new();
+        for (c, item) in self.columns.iter().enumerate() {
             let cell = if c == main_col {
-                if is_current {
-                    Cell::from_char(CURRENT_CHAR).with_fg(current_text_color)
-                } else if is_saved {
-                    Cell::from_char(SAVED_CHAR).with_fg(saved_color)
-                } else if snap_marker {
-                    Cell::from_char(SNAPSHOT_CHAR).with_fg(snap_text_color)
-                } else {
-                    Cell::from_char(NODE_CHAR).with_fg(node_color)
-                }
+                Cell::from_char('│').with_fg(BRANCH_COLOR)
             } else if col_indices.contains(&c) {
-                Cell::new(Character::from(' '))
+                if c > main_col {
+                    Cell::from_char('/').with_fg(BRANCH_COLOR)
+                } else {
+                    Cell::from_char('\\').with_fg(BRANCH_COLOR)
+                }
             } else if item.is_some() {
-                Cell::from_char('│').with_fg(branch_color)
+                Cell::from_char('│').with_fg(BRANCH_COLOR)
             } else {
                 Cell::new(Character::from(' '))
             };
-            final_row.push(cell);
-            final_row.push(Cell::new(Character::from(' ')));
+            conn_line.push(cell);
+            conn_line.push(Cell::new(Character::from(' ')));
+        }
+        self.lines.push(conn_line);
+        self.sequences.push(EditSeq::MAX);
+    }
+
+    fn node_cells(&self, col_indices: &[usize], main_col: usize, status: Status) -> Vec<Cell> {
+        let (marker, marker_color) = status.marker();
+        let mut row: Vec<Cell> = Vec::new();
+        for (c, item) in self.columns.iter().enumerate() {
+            let cell = if c == main_col {
+                Cell::from_char(marker).with_fg(marker_color)
+            } else if col_indices.contains(&c) {
+                Cell::new(Character::from(' '))
+            } else if item.is_some() {
+                Cell::from_char('│').with_fg(BRANCH_COLOR)
+            } else {
+                Cell::new(Character::from(' '))
+            };
+            row.push(cell);
+            row.push(Cell::new(Character::from(' ')));
+        }
+        row
+    }
+
+    fn advance(&mut self, main_col: usize, col_indices: &[usize], parent: Option<EditSeq>) {
+        self.columns[main_col] = parent;
+        for &idx in col_indices {
+            if idx != main_col {
+                self.columns[idx] = None;
+            }
+        }
+    }
+}
+
+#[must_use]
+// One layout pass; the column state is shared across every row.
+pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSeq>, usize) {
+    let mut all_seqs: Vec<EditSeq> = tree.nodes.keys().copied().collect();
+    all_seqs.sort_by(|a, b| b.cmp(a)); // Descending
+
+    let mut rows = TreeRows::default();
+    for &seq in &all_seqs {
+        let Some(node) = tree.nodes.get(&seq) else {
+            continue;
+        };
+        let status = Status {
+            current: seq == tree.current,
+            saved: seq == tree.saved_seq && seq != tree.root_seq,
+            snapshot: node.snapshot.is_some(),
+        };
+
+        let col_indices = rows.claim_columns(seq);
+        let main_col = col_indices[0];
+        if col_indices.len() > 1 {
+            rows.push_connector(&col_indices, main_col);
         }
 
+        rows.sequences.push(seq);
+        let mut final_row = rows.node_cells(&col_indices, main_col, status);
         let desc_str = format!(
             " [{}] {} - {}",
             seq,
             format_age(node.timestamp),
             node.transaction.description
         );
+        final_row.extend(text_cells(&desc_str, status.text_color()));
 
-        let desc_color = if is_current {
-            current_text_color
-        } else if is_saved {
-            saved_color
-        } else if snap_marker {
-            snap_text_color
-        } else {
-            text_color
-        };
-
-        for ch in desc_str.chars() {
-            final_row.push(Cell::from_char(ch).with_fg(desc_color));
+        if status.current {
+            rows.cursor_row = rows.lines.len();
         }
-
-        if is_current {
-            cursor_row = lines.len();
-        }
-        lines.push(final_row);
-
-        columns[main_col] = node.parent;
-
-        for &idx in &col_indices {
-            if idx != main_col {
-                columns[idx] = None;
-            }
-        }
+        rows.lines.push(final_row);
+        rows.advance(main_col, &col_indices, node.parent);
     }
 
-    (lines, sequences, cursor_row)
+    (rows.lines, rows.sequences, rows.cursor_row)
 }
 
 type Highlights = Vec<(std::ops::Range<usize>, crate::color::Color)>;
+#[must_use]
 pub fn render_tree_to_text(tree: &UndoTree) -> (String, Vec<EditSeq>, Highlights) {
     let (lines, sequences, _cursor) = render_tree(tree);
     let mut text = String::new();

@@ -19,7 +19,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 
-pub(crate) fn decode_file_bytes(
+pub fn decode_file_bytes(
     bytes: &[u8],
 ) -> (Vec<crate::character::Character>, LineEnding, Vec<usize>) {
     use crate::character::Character;
@@ -39,6 +39,7 @@ pub(crate) fn decode_file_bytes(
             }
             Err(e) => {
                 let valid_up_to = e.valid_up_to();
+                // SAFETY: `valid_up_to` is the length of the prefix `from_utf8` validated.
                 let valid = unsafe { std::str::from_utf8_unchecked(&remaining[..valid_up_to]) };
                 push_normalized(valid, &mut chars, &mut starts, &mut line_ending);
                 let error_len = e.error_len().unwrap_or(1);
@@ -78,8 +79,8 @@ fn push_normalized(
 }
 
 impl Document {
-    fn skeleton(id: super::DocumentId, buffer: TextBuffer) -> Document {
-        Document {
+    fn skeleton(id: super::DocumentId, buffer: TextBuffer) -> Self {
+        Self {
             id,
             buffer,
             options: DocumentOptions::default(),
@@ -100,7 +101,7 @@ impl Document {
             pending_annotation_snapshot: None,
             annotation_undo_stack: Vec::new(),
             annotation_redo_stack: Vec::new(),
-            document_version: 0,
+            content_version: 0,
             pending_lsp_edits: Vec::new(),
             lsp_synced_revision: 0,
             lsp_full_sync_needed: false,
@@ -110,17 +111,23 @@ impl Document {
         }
     }
 
+    /// # Errors
+    /// Propagates the error from `TextBuffer::new`.
     pub fn new(id: super::DocumentId) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         Ok(Self::skeleton(id, buffer))
     }
 
+    /// # Errors
+    /// Returns an error if the file cannot be read or its contents cannot be loaded.
     pub fn from_file(id: super::DocumentId, path: impl AsRef<Path>) -> Result<Self, RiftError> {
         let path = path.as_ref();
         let bytes = crate::fs_backend::backend().read_file(path)?;
         Self::from_bytes(id, Some(path), bytes)
     }
 
+    /// # Errors
+    /// Returns an error if the text buffer cannot be created.
     pub fn from_bytes(
         id: super::DocumentId,
         path: Option<&Path>,
@@ -136,7 +143,7 @@ impl Document {
         buffer.line_index = line_index;
         buffer.move_to_start();
 
-        Ok(Document {
+        Ok(Self {
             options: DocumentOptions {
                 line_ending,
                 ..DocumentOptions::default()
@@ -164,22 +171,23 @@ impl Document {
         )
     }
 
+    #[must_use]
     pub fn try_open_undo_file(
         id: super::DocumentId,
         path: &Path,
-    ) -> Option<Result<Document, RiftError>> {
+    ) -> Option<Result<Self, RiftError>> {
         let bytes = crate::fs_backend::backend().read_file(path).ok()?;
         Self::sniff_undo_file(&bytes)
-            .map(|result| result.map(|parsed| Self::build_undo_file_view(id, path, parsed)))
+            .map(|result| result.map(|parsed| Self::build_undo_file_view(id, path, &parsed)))
     }
 
     fn build_undo_file_view(
         id: super::DocumentId,
         path: &Path,
-        parsed: crate::history::persist::ParsedUndoFile,
-    ) -> Document {
+        parsed: &crate::history::persist::ParsedUndoFile,
+    ) -> Self {
         let buffer = TextBuffer::new(4096).unwrap_or_else(|_| panic!("Failed to create buffer"));
-        let mut doc = Document {
+        let mut doc = Self {
             file_path: Some(Self::normalize_path(path)),
             readonly_override: true,
             kind: BufferKind::undo_file_view(),
@@ -189,10 +197,12 @@ impl Document {
             ),
             ..Self::skeleton(id, buffer)
         };
-        doc.populate_undo_file_view(&parsed);
+        doc.populate_undo_file_view(parsed);
         doc
     }
 
+    /// # Errors
+    /// Returns an error if the document has no path, the file cannot be read, or it is not a valid undo file.
     pub fn reload_undo_file_view(&mut self) -> Result<(), RiftError> {
         let path = self
             .path()
@@ -216,6 +226,8 @@ impl Document {
         Ok(())
     }
 
+    /// # Errors
+    /// Returns an error if the text buffer or the terminal cannot be created.
     pub fn new_terminal(
         id: super::DocumentId,
         rows: u16,
@@ -240,6 +252,8 @@ impl Document {
         Ok((doc, rx))
     }
 
+    /// # Errors
+    /// Propagates the error from `TextBuffer::new`.
     pub fn new_directory(id: super::DocumentId, path: PathBuf) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         let mut doc = Self::skeleton(id, buffer);
@@ -256,6 +270,8 @@ impl Document {
         Ok(doc)
     }
 
+    /// # Errors
+    /// Propagates the error from `TextBuffer::new`.
     pub fn new_undotree(
         id: super::DocumentId,
         linked_doc_id: super::DocumentId,
@@ -274,11 +290,10 @@ impl Document {
         Ok(doc)
     }
 
-    pub fn new_undotree_preview(
-        id: super::DocumentId,
-        linked: &Document,
-    ) -> Result<Self, RiftError> {
-        Ok(Document {
+    /// # Errors
+    /// Never returns `Err` today; the `Result` keeps the signature fallible.
+    pub fn new_undotree_preview(id: super::DocumentId, linked: &Self) -> Result<Self, RiftError> {
+        Ok(Self {
             options: DocumentOptions {
                 show_line_numbers: false,
                 ..linked.options.clone()
@@ -290,6 +305,8 @@ impl Document {
         })
     }
 
+    /// # Errors
+    /// Propagates the error from `TextBuffer::new`.
     pub fn new_messages(id: super::DocumentId, show_all: bool) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         let mut doc = Self::skeleton(id, buffer);
@@ -299,6 +316,8 @@ impl Document {
         Ok(doc)
     }
 
+    /// # Errors
+    /// Propagates the error from `TextBuffer::new`.
     pub fn new_scratch(
         id: super::DocumentId,
         title: String,
@@ -314,6 +333,8 @@ impl Document {
         Ok(doc)
     }
 
+    /// # Errors
+    /// Propagates the error from `TextBuffer::new`.
     pub fn new_clipboard(id: super::DocumentId) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         let mut doc = Self::skeleton(id, buffer);
@@ -323,6 +344,8 @@ impl Document {
         Ok(doc)
     }
 
+    /// # Errors
+    /// Propagates the error from `TextBuffer::new`.
     pub fn new_git_status(id: super::DocumentId, repo_root: PathBuf) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         let mut doc = Self::skeleton(id, buffer);
@@ -340,6 +363,8 @@ impl Document {
         Ok(doc)
     }
 
+    /// # Errors
+    /// Propagates the error from `TextBuffer::new`.
     pub fn new_git_commit_message(
         id: super::DocumentId,
         repo_root: PathBuf,
@@ -360,6 +385,8 @@ impl Document {
         Ok(doc)
     }
 
+    /// # Errors
+    /// Propagates the error from `TextBuffer::new`.
     pub fn new_git_blame(
         id: super::DocumentId,
         repo_root: PathBuf,
@@ -389,6 +416,8 @@ impl Document {
         Ok(doc)
     }
 
+    /// # Errors
+    /// Propagates the error from `TextBuffer::new`.
     pub fn new_git_log(
         id: super::DocumentId,
         repo_root: PathBuf,
@@ -411,6 +440,8 @@ impl Document {
         Ok(doc)
     }
 
+    /// # Errors
+    /// Propagates the error from `TextBuffer::new`.
     pub fn new_git_rebase_todo(
         id: super::DocumentId,
         repo_root: PathBuf,
@@ -444,6 +475,8 @@ impl Document {
         Ok(doc)
     }
 
+    /// # Errors
+    /// Propagates the error from `TextBuffer::new`.
     pub fn new_buffer_list(id: super::DocumentId) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         let mut doc = Self::skeleton(id, buffer);

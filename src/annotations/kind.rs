@@ -7,21 +7,25 @@ pub struct Kind(Arc<str>);
 
 impl Kind {
     pub fn new(s: impl Into<String>) -> Self {
-        Kind(Arc::from(s.into()))
+        Self(Arc::from(s.into()))
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
+    #[must_use]
     pub fn as_arc(&self) -> Arc<str> {
         self.0.clone()
     }
 
+    #[must_use]
     pub fn namespace(&self) -> &str {
         self.0.split('.').next().unwrap_or(&self.0)
     }
 
+    #[must_use]
     pub fn matches_prefix(&self, prefix: &str) -> bool {
         &*self.0 == prefix || self.0.starts_with(prefix)
     }
@@ -29,13 +33,13 @@ impl Kind {
 
 impl From<&str> for Kind {
     fn from(s: &str) -> Self {
-        Kind(Arc::from(s))
+        Self(Arc::from(s))
     }
 }
 
 impl From<String> for Kind {
     fn from(s: String) -> Self {
-        Kind(Arc::from(s))
+        Self(Arc::from(s))
     }
 }
 

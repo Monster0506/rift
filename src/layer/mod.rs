@@ -5,6 +5,8 @@ use crate::character::Character;
 use crate::color::Color;
 use crate::error::RiftError;
 use crate::screen_buffer::{DoubleBuffer, FrameStats};
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 
 /// A rectangular region
@@ -18,7 +20,8 @@ pub struct Rect {
 
 impl Rect {
     /// Create a new rectangle
-    pub fn new(start_row: usize, start_col: usize, end_row: usize, end_col: usize) -> Self {
+    #[must_use]
+    pub const fn new(start_row: usize, start_col: usize, end_row: usize, end_col: usize) -> Self {
         Self {
             start_row,
             start_col,
@@ -27,7 +30,8 @@ impl Rect {
         }
     }
     /// Check if two rects intersect
-    pub fn intersects(&self, other: &Rect) -> bool {
+    #[must_use]
+    pub const fn intersects(&self, other: &Self) -> bool {
         self.start_row <= other.end_row
             && self.end_row >= other.start_row
             && self.start_col <= other.end_col
@@ -35,9 +39,10 @@ impl Rect {
     }
 
     /// Check if two rects are adjacent (touching)
-    pub fn is_adjacent(&self, other: &Rect) -> bool {
+    #[must_use]
+    pub const fn is_adjacent(&self, other: &Self) -> bool {
         // Expand self by 1 in all directions and check for intersection
-        let expanded = Rect {
+        let expanded = Self {
             start_row: self.start_row.saturating_sub(1),
             start_col: self.start_col.saturating_sub(1),
             end_row: self.end_row.saturating_add(1),
@@ -47,8 +52,9 @@ impl Rect {
     }
 
     /// Union of two rects (bounding box)
-    pub fn union(&self, other: &Rect) -> Rect {
-        Rect {
+    #[must_use]
+    pub fn union(&self, other: &Self) -> Self {
+        Self {
             start_row: self.start_row.min(other.start_row),
             start_col: self.start_col.min(other.start_col),
             end_row: self.end_row.max(other.end_row),
@@ -85,47 +91,109 @@ pub struct LayerPriority(pub u8);
 
 impl LayerPriority {
     /// Main text buffer content
-    pub const CONTENT: LayerPriority = LayerPriority(0);
+    pub const CONTENT: Self = Self(0);
     /// Status line at the bottom of the screen
-    pub const STATUS_BAR: LayerPriority = LayerPriority(10);
+    pub const STATUS_BAR: Self = Self(10);
     /// Floating windows like command line, dialogs
-    pub const FLOATING_WINDOW: LayerPriority = LayerPriority(20);
+    pub const FLOATING_WINDOW: Self = Self(20);
     /// Popup menus like autocomplete
-    pub const POPUP: LayerPriority = LayerPriority(30);
+    pub const POPUP: Self = Self(30);
     /// Hover information
-    pub const HOVER: LayerPriority = LayerPriority(40);
+    pub const HOVER: Self = Self(40);
     /// Tooltips and hints
-    pub const TOOLTIP: LayerPriority = LayerPriority(50);
+    pub const TOOLTIP: Self = Self(50);
     /// Notifications
-    pub const NOTIFICATION: LayerPriority = LayerPriority(60);
+    pub const NOTIFICATION: Self = Self(60);
     /// Software cursor
-    pub const CURSOR: LayerPriority = LayerPriority(100);
+    pub const CURSOR: Self = Self(100);
 }
 
 /// Text rendering attributes that compose on top of fg/bg color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct CellAttrs {
-    pub bold: bool,
-    pub italic: bool,
-    pub underline: bool,
-    pub strike: bool,
-    pub reverse: bool,
-}
+// One byte keeps `Cell` small and makes style equality a single integer compare.
+pub struct CellAttrs(u8);
 
 impl CellAttrs {
-    pub fn is_empty(&self) -> bool {
-        *self == CellAttrs::default()
+    pub const BOLD: Self = Self(0x01);
+    pub const ITALIC: Self = Self(0x02);
+    pub const UNDERLINE: Self = Self(0x04);
+    pub const STRIKE: Self = Self(0x08);
+    pub const REVERSE: Self = Self(0x10);
+
+    /// Attribute names used by Lua style tables and serialized output, in bit order.
+    pub(crate) const NAMED: [(&'static str, Self); 5] = [
+        ("bold", Self::BOLD),
+        ("italic", Self::ITALIC),
+        ("underline", Self::UNDERLINE),
+        ("strike", Self::STRIKE),
+        ("reverse", Self::REVERSE),
+    ];
+
+    #[must_use]
+    pub fn is_empty(self) -> bool {
+        self == Self::default()
+    }
+
+    /// True when every attribute in `other` is also set.
+    #[must_use]
+    pub const fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
     }
 
     /// Both sets of attributes (an underline composes over syntax bold/italic).
-    pub fn union(self, other: CellAttrs) -> CellAttrs {
-        CellAttrs {
-            bold: self.bold || other.bold,
-            italic: self.italic || other.italic,
-            underline: self.underline || other.underline,
-            strike: self.strike || other.strike,
-            reverse: self.reverse || other.reverse,
+    #[must_use]
+    pub const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    #[must_use]
+    pub const fn is_bold(self) -> bool {
+        self.contains(Self::BOLD)
+    }
+
+    #[must_use]
+    pub const fn is_italic(self) -> bool {
+        self.contains(Self::ITALIC)
+    }
+
+    #[must_use]
+    pub const fn is_underline(self) -> bool {
+        self.contains(Self::UNDERLINE)
+    }
+
+    #[must_use]
+    pub const fn is_strike(self) -> bool {
+        self.contains(Self::STRIKE)
+    }
+
+    #[must_use]
+    pub const fn is_reverse(self) -> bool {
+        self.contains(Self::REVERSE)
+    }
+}
+
+impl Serialize for CellAttrs {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(
+            Self::NAMED
+                .iter()
+                .filter(|(_, flag)| self.contains(*flag))
+                .map(|(name, _)| *name),
+        )
+    }
+}
+
+impl<'de> Deserialize<'de> for CellAttrs {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let names = Vec::<String>::deserialize(deserializer)?;
+        let mut attrs = Self::default();
+        for name in names {
+            let Some(&(_, flag)) = Self::NAMED.iter().find(|(known, _)| *known == name) else {
+                return Err(D::Error::custom(format!("unknown text attribute `{name}`")));
+            };
+            attrs = attrs.union(flag);
         }
+        Ok(attrs)
     }
 }
 
@@ -152,6 +220,7 @@ pub struct Cell {
 
 impl Cell {
     /// Create a new cell with the given character
+    #[must_use]
     pub fn new(ch: Character) -> Self {
         Self {
             content: ch,
@@ -162,56 +231,64 @@ impl Cell {
     }
 
     /// Convert cell content to char (best effort)
-    pub fn to_char(&self) -> char {
+    #[must_use]
+    pub const fn to_char(&self) -> char {
         self.content.to_char_lossy()
     }
 
     /// Create a new cell with UTF-8 content
     /// Note: This expects a single char bytes, or will map to Character
+    #[must_use]
     pub fn from_bytes(bytes: &[u8]) -> Self {
         if let Ok(s) = std::str::from_utf8(bytes) {
             if let Some(c) = s.chars().next() {
                 return Self::new(Character::from(c));
             }
         }
-        if !bytes.is_empty() {
-            Self::new(Character::Byte(bytes[0]))
-        } else {
+        if bytes.is_empty() {
             Self::empty()
+        } else {
+            Self::new(Character::Byte(bytes[0]))
         }
     }
 
     /// Create a new cell from a char
+    #[must_use]
     pub fn from_char(ch: char) -> Self {
         Self::new(Character::from(ch))
     }
 
     /// Create an empty (space) cell
+    #[must_use]
     pub fn empty() -> Self {
         Self::from_char(' ')
     }
 
     /// Set foreground color
-    pub fn with_fg(mut self, fg: Color) -> Self {
+    #[must_use]
+    pub const fn with_fg(mut self, fg: Color) -> Self {
         self.fg = Some(fg);
         self
     }
 
     /// Set background color
-    pub fn with_bg(mut self, bg: Color) -> Self {
+    #[must_use]
+    pub const fn with_bg(mut self, bg: Color) -> Self {
         self.bg = Some(bg);
         self
     }
 
     /// Set both foreground and background colors
-    pub fn with_colors(mut self, fg: Option<Color>, bg: Option<Color>) -> Self {
+    #[must_use]
+    pub const fn with_colors(mut self, fg: Option<Color>, bg: Option<Color>) -> Self {
         self.fg = fg;
         self.bg = bg;
         self
     }
 
     /// Set text attributes.
-    pub fn with_attrs(mut self, attrs: CellAttrs) -> Self {
+    #[must_use]
+    pub const fn with_attrs(mut self, attrs: CellAttrs) -> Self {
         self.attrs = attrs;
         self
     }
@@ -244,6 +321,7 @@ impl Layer {
     const MAX_DIRTY_RECTS: usize = 10;
 
     /// Create a new layer with the given dimensions
+    #[must_use]
     pub fn new(priority: LayerPriority, rows: usize, cols: usize) -> Self {
         let cells = vec![None; rows * cols];
         Self {
@@ -262,16 +340,19 @@ impl Layer {
     }
 
     /// Get the layer's priority
-    pub fn priority(&self) -> LayerPriority {
+    #[must_use]
+    pub const fn priority(&self) -> LayerPriority {
         self.priority
     }
 
     /// Check if the layer has been modified
-    pub fn is_dirty(&self) -> bool {
+    #[must_use]
+    pub const fn is_dirty(&self) -> bool {
         !self.dirty_rects.is_empty()
     }
 
     /// Get the list of dirty rectangles
+    #[must_use]
     pub fn get_dirty_rects(&self) -> &[Rect] {
         &self.dirty_rects
     }
@@ -341,7 +422,7 @@ impl Layer {
 
     /// Clear all cells in the layer (make transparent)
     pub fn clear(&mut self) {
-        for cell in self.cells.iter_mut() {
+        for cell in &mut self.cells {
             *cell = None;
         }
         self.dirty_rects.clear();
@@ -355,7 +436,7 @@ impl Layer {
 
     /// Helper to get index from row/col
     #[inline]
-    fn idx(&self, row: usize, col: usize) -> usize {
+    const fn idx(&self, row: usize, col: usize) -> usize {
         row * self.cols + col
     }
 
@@ -365,10 +446,9 @@ impl Layer {
         if row < self.rows && col < self.cols {
             let idx = self.idx(row, col);
             // Optimization: only mark dirty if cell actually changed
-            let changed = match &self.cells[idx] {
-                Some(current) => current != &cell,
-                None => true,
-            };
+            let changed = self.cells[idx]
+                .as_ref()
+                .is_none_or(|current| current != &cell);
 
             if changed {
                 self.cells[idx] = Some(cell);
@@ -396,6 +476,7 @@ impl Layer {
     }
 
     /// Get a cell at the given position
+    #[must_use]
     pub fn get_cell(&self, row: usize, col: usize) -> Option<&Cell> {
         if row < self.rows && col < self.cols {
             let idx = self.idx(row, col);
@@ -477,12 +558,14 @@ impl Layer {
     }
 
     /// Get the number of rows
-    pub fn rows(&self) -> usize {
+    #[must_use]
+    pub const fn rows(&self) -> usize {
         self.rows
     }
 
     /// Get the number of columns
-    pub fn cols(&self) -> usize {
+    #[must_use]
+    pub const fn cols(&self) -> usize {
         self.cols
     }
 }
@@ -500,6 +583,7 @@ pub struct LayerCompositor {
 
 impl LayerCompositor {
     /// Create a new compositor with the given terminal dimensions
+    #[must_use]
     pub fn new(rows: usize, cols: usize) -> Self {
         Self {
             layers: BTreeMap::new(),
@@ -536,6 +620,7 @@ impl LayerCompositor {
     }
 
     /// Get a layer by priority (read-only)
+    #[must_use]
     pub fn get_layer(&self, priority: LayerPriority) -> Option<&Layer> {
         self.layers.get(&priority)
     }
@@ -581,8 +666,9 @@ impl LayerCompositor {
     }
 
     /// Check if any layer has dirty rects
+    #[must_use]
     pub fn has_dirty(&self) -> bool {
-        self.layers.values().any(|l| l.is_dirty())
+        self.layers.values().any(Layer::is_dirty)
     }
 
     /// Composite all layers into the output buffer
@@ -664,6 +750,9 @@ impl LayerCompositor {
 
     /// Render the composited output, diffing against the previous frame. A
     /// `(top, bottom, delta)` scroll hint rides the terminal's scroll region.
+    ///
+    /// # Errors
+    /// Returns an error if the terminal backend fails to apply the scroll or write the frame.
     pub fn render_to_terminal<T: crate::term::TerminalBackend>(
         &mut self,
         term: &mut T,
@@ -687,12 +776,14 @@ impl LayerCompositor {
     }
 
     /// Get the number of rows
-    pub fn rows(&self) -> usize {
+    #[must_use]
+    pub const fn rows(&self) -> usize {
         self.rows
     }
 
     /// Get the number of columns
-    pub fn cols(&self) -> usize {
+    #[must_use]
+    pub const fn cols(&self) -> usize {
         self.cols
     }
 }

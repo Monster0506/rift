@@ -1,5 +1,6 @@
 use crate::error::RiftError;
 use crate::layer::{CellStyle, LayerCompositor, LayerPriority};
+use crate::num::{f64_to_usize, usize_to_f64};
 use crate::render::components::{Rect, Renderable};
 use crate::render::ecs::World;
 use crate::render::{
@@ -15,6 +16,10 @@ use crate::mode::Mode;
 use crate::status::StatusBar;
 use crate::term::CursorShape;
 
+fn to_u16_saturating(value: usize) -> u16 {
+    u16::try_from(value).unwrap_or(u16::MAX)
+}
+
 #[derive(Debug)]
 pub(crate) struct WindowPaintCache {
     pub(crate) frame: crate::paint::PaintFrame,
@@ -26,15 +31,15 @@ fn hash_annotation_styles(spans: &[(std::ops::Range<usize>, CellStyle)]) -> u64 
     let mut h: u64 = 0;
     for (range, style) in spans {
         h = h
-            .wrapping_mul(6364136223846793005)
+            .wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(range.start as u64);
         h = h
-            .wrapping_mul(6364136223846793005)
+            .wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(range.end as u64 + 1);
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         style.hash(&mut hasher);
         h = h
-            .wrapping_mul(6364136223846793005)
+            .wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(hasher.finish());
     }
     h
@@ -47,36 +52,36 @@ fn hash_virtual_text(
     let mut h: u64 = 0;
     for (start, end, text, color, leading) in inline {
         h = h
-            .wrapping_mul(6364136223846793005)
+            .wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(*start as u64);
         h = h
-            .wrapping_mul(6364136223846793005)
+            .wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(*end as u64 + 1);
         for b in text.bytes() {
             h = h
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(b as u64 + 1);
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(u64::from(b) + 1);
         }
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         color.hash(&mut hasher);
         leading.hash(&mut hasher);
         h = h
-            .wrapping_mul(6364136223846793005)
+            .wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(hasher.finish());
     }
     for (line, text, color) in adornments {
         h = h
-            .wrapping_mul(6364136223846793005)
+            .wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(*line as u64);
         for b in text.bytes() {
             h = h
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(b as u64 + 1);
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(u64::from(b) + 1);
         }
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         color.hash(&mut hasher);
         h = h
-            .wrapping_mul(6364136223846793005)
+            .wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(hasher.finish());
     }
     h
@@ -122,6 +127,7 @@ fn match_index_at_cursor(
 }
 
 impl RenderSystem {
+    #[must_use]
     pub fn new(rows: usize, cols: usize) -> Self {
         Self {
             compositor: LayerCompositor::new(rows, cols),
@@ -146,11 +152,13 @@ impl RenderSystem {
         }
     }
 
-    pub fn needs_animation_frame(&self) -> bool {
+    #[must_use]
+    pub const fn needs_animation_frame(&self) -> bool {
         self.cursor_animator.is_animating()
     }
 
-    pub fn last_soft_cursor(&self) -> Option<(usize, usize)> {
+    #[must_use]
+    pub const fn last_soft_cursor(&self) -> Option<(usize, usize)> {
         self.last_soft_cursor
     }
 
@@ -185,63 +193,7 @@ impl RenderSystem {
             .content_entity
             .expect("entity not initialized: call update_world before draw");
 
-        let effective_line_numbers = ctx.show_line_numbers && ctx.state.settings.show_line_numbers;
-        let content_state = ContentDrawState {
-            revision: ctx.buf.revision,
-            top_line: ctx.viewport.top_line(),
-            top_visual_row: ctx.viewport.top_visual_row(),
-            left_col: ctx.viewport.left_col(),
-            rows: ctx.viewport.visible_rows(),
-            tab_width: ctx.tab_width,
-            show_line_numbers: effective_line_numbers,
-            gutter_width: if effective_line_numbers {
-                ctx.state.gutter_width
-            } else {
-                0
-            },
-            search_matches_count: ctx.state.search_matches.len(),
-            conceal_hash: {
-                let mut h: u64 = 0;
-                for (s, e) in ctx.annotation_concealed.unwrap_or(&[]) {
-                    h = h.wrapping_mul(6364136223846793005).wrapping_add(*s as u64);
-                    h = h
-                        .wrapping_mul(6364136223846793005)
-                        .wrapping_add(*e as u64 + 1);
-                }
-                h
-            },
-            annotation_styles_hash: hash_annotation_styles(ctx.annotation_styles.unwrap_or(&[])),
-            annotation_text_hash: hash_virtual_text(
-                ctx.annotation_inline.unwrap_or(&[]),
-                ctx.annotation_adornments.unwrap_or(&[]),
-            ),
-            editor_bg: ctx.state.settings.editor_bg,
-            editor_fg: ctx.state.settings.editor_fg,
-            theme: crate::perf_clone!(ctx.state.settings.theme.clone()),
-            highlights_hash: ctx
-                .state
-                .settings
-                .syntax_colors
-                .as_ref()
-                .map(|_| {
-                    let highlights = ctx.highlights.unwrap_or(&[]);
-                    let mut hash: u64 = highlights.len() as u64;
-                    for (range, capture) in highlights.iter() {
-                        hash = hash
-                            .wrapping_mul(6364136223846793005)
-                            .wrapping_add(range.start as u64);
-                        hash = hash
-                            .wrapping_mul(6364136223846793005)
-                            .wrapping_add(range.end as u64 + 1);
-                        hash = hash
-                            .wrapping_mul(6364136223846793005)
-                            .wrapping_add(*capture as u64 + 1);
-                    }
-                    hash
-                })
-                .unwrap_or(0),
-        };
-
+        let content_state = Self::content_draw_state(ctx);
         self.world
             .add_renderable(content_entity, Renderable::TextBuffer(content_state));
         self.world.add_layer(content_entity, LayerPriority::CONTENT);
@@ -262,15 +214,99 @@ impl RenderSystem {
             .status_entity
             .expect("entity not initialized: call update_world before draw");
 
-        let (search_match_index, search_total_matches) = if !ctx.state.search_matches.is_empty() {
+        let status_state = Self::status_draw_state(ctx);
+        self.world
+            .add_renderable(status_entity, Renderable::StatusBar(status_state));
+        self.world
+            .add_layer(status_entity, LayerPriority::STATUS_BAR);
+
+        self.update_command_entity(ctx);
+        self.update_completion_entity(ctx);
+
+        if self.notification_entity.is_none() {
+            self.notification_entity = Some(self.world.create_entity());
+        }
+        let notification_entity = self.notification_entity.unwrap();
+
+        let notification_state = NotificationDrawState {
+            generation: ctx.state.error_manager.notifications().generation,
+            count: ctx
+                .state
+                .error_manager
+                .notifications()
+                .iter_active()
+                .count(),
+        };
+
+        self.world.add_renderable(
+            notification_entity,
+            Renderable::Notification(notification_state),
+        );
+        self.world
+            .add_layer(notification_entity, LayerPriority::NOTIFICATION);
+    }
+
+    fn content_draw_state(ctx: &DrawContext) -> ContentDrawState {
+        let effective_line_numbers = ctx.state.line_numbers_on(ctx.show_line_numbers);
+        ContentDrawState {
+            revision: ctx.buf.revision,
+            top_line: ctx.viewport.top_line(),
+            top_visual_row: ctx.viewport.top_visual_row(),
+            left_col: ctx.viewport.left_col(),
+            rows: ctx.viewport.visible_rows(),
+            tab_width: ctx.tab_width,
+            show_line_numbers: effective_line_numbers,
+            gutter_width: ctx.gutter_cols(),
+            search_matches_count: ctx.state.search_matches.len(),
+            conceal_hash: {
+                let mut h: u64 = 0;
+                for (s, e) in ctx.annotation_concealed.unwrap_or(&[]) {
+                    h = h
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(*s as u64);
+                    h = h
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(*e as u64 + 1);
+                }
+                h
+            },
+            annotation_styles_hash: hash_annotation_styles(ctx.annotation_styles.unwrap_or(&[])),
+            annotation_text_hash: hash_virtual_text(
+                ctx.annotation_inline.unwrap_or(&[]),
+                ctx.annotation_adornments.unwrap_or(&[]),
+            ),
+            editor_bg: ctx.state.settings.editor_bg,
+            editor_fg: ctx.state.settings.editor_fg,
+            theme: crate::perf_clone!(ctx.state.settings.theme.clone()),
+            highlights_hash: ctx.state.settings.syntax_colors.as_ref().map_or(0, |_| {
+                let highlights = ctx.highlights.unwrap_or(&[]);
+                let mut hash: u64 = highlights.len() as u64;
+                for (range, capture) in highlights {
+                    hash = hash
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(range.start as u64);
+                    hash = hash
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(range.end as u64 + 1);
+                    hash = hash
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(u64::from(*capture) + 1);
+                }
+                hash
+            }),
+        }
+    }
+
+    fn status_draw_state(ctx: &DrawContext) -> StatusDrawState {
+        let (search_match_index, search_total_matches) = if ctx.state.search_matches.is_empty() {
+            (None, 0)
+        } else {
             let cursor_offset = ctx.buf.cursor();
             let idx = match_index_at_cursor(&ctx.state.search_matches, cursor_offset);
             (idx, ctx.state.search_matches.len())
-        } else {
-            (None, 0)
         };
 
-        let status_state = StatusDrawState {
+        StatusDrawState {
             mode: ctx.current_mode,
             pending_key: ctx.pending_key,
             pending_count: ctx.pending_count,
@@ -287,10 +323,7 @@ impl RenderSystem {
             search_query: crate::perf_clone!(ctx.state.last_search_query.clone()),
             search_match_index,
             search_total_matches,
-            reverse_video: ctx.state.settings.status_line.reverse_video,
-            show_status_line: ctx.state.settings.status_line.show_status_line,
-            show_filename: ctx.state.settings.status_line.show_filename,
-            show_dirty_indicator: ctx.state.settings.status_line.show_dirty_indicator,
+            status_line: ctx.state.settings.status_line.clone(),
             editor_bg: ctx.state.settings.editor_bg,
             editor_fg: ctx.state.settings.editor_fg,
             lsp_status: crate::perf_clone!(ctx.state.lsp_status.clone()),
@@ -313,13 +346,10 @@ impl RenderSystem {
                 .as_ref()
                 .and_then(|c| c.get_color("ui.lsp.warn")),
             is_remote: ctx.state.is_remote,
-        };
+        }
+    }
 
-        self.world
-            .add_renderable(status_entity, Renderable::StatusBar(status_state));
-        self.world
-            .add_layer(status_entity, LayerPriority::STATUS_BAR);
-
+    fn update_command_entity(&mut self, ctx: &DrawContext) {
         if ctx.current_mode == Mode::Command
             || ctx.current_mode == Mode::Search
             || ctx.current_mode == Mode::Rename
@@ -355,14 +385,15 @@ impl RenderSystem {
             self.last_command_cursor = None;
             self.compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
         }
+    }
 
+    fn update_completion_entity(&mut self, ctx: &DrawContext) {
         let show_dropdown = ctx.current_mode == Mode::Command
             && ctx
                 .state
                 .completion_session
                 .as_ref()
-                .map(|s| s.dropdown_open && !s.candidates.is_empty())
-                .unwrap_or(false);
+                .is_some_and(|s| s.dropdown_open && !s.candidates.is_empty());
 
         if show_dropdown {
             if self.completion_entity.is_none() {
@@ -394,34 +425,14 @@ impl RenderSystem {
             self.world.destroy_entity(entity);
             self.compositor.clear_layer(LayerPriority::HOVER);
         }
-
-        if self.notification_entity.is_none() {
-            self.notification_entity = Some(self.world.create_entity());
-        }
-        let notification_entity = self.notification_entity.unwrap();
-
-        let notification_state = NotificationDrawState {
-            generation: ctx.state.error_manager.notifications().generation,
-            count: ctx
-                .state
-                .error_manager
-                .notifications()
-                .iter_active()
-                .count(),
-        };
-
-        self.world.add_renderable(
-            notification_entity,
-            Renderable::Notification(notification_state),
-        );
-        self.world
-            .add_layer(notification_entity, LayerPriority::NOTIFICATION);
     }
 
+    /// # Errors
+    /// Returns `Err` when the compositor, terminal, or cursor update fails.
     pub fn render<T: TerminalBackend>(
         &mut self,
         term: &mut T,
-        state: RenderState,
+        state: &RenderState,
     ) -> Result<CursorPosition, RiftError> {
         if self.compositor.rows() != self.viewport.visible_rows()
             || self.compositor.cols() != self.viewport.visible_cols()
@@ -436,9 +447,86 @@ impl RenderSystem {
         let cursor_row_offset = state.cursor_row_offset;
         let cursor_col_offset = state.cursor_col_offset;
         let cursor_viewport = state.cursor_viewport;
-        let ctx = DrawContext {
+        let terminal_cursor = state.terminal_cursor;
+        let ctx = Self::draw_context(&viewport, state);
+
+        self.update_world(&ctx);
+
+        if ctx.needs_clear {
+            self.last_render_version = 0;
+        }
+
+        let command_cursor_info = self.draw_layers(&ctx, skip_content);
+        let cursor_info = command_cursor_info.unwrap_or_else(|| {
+            Self::fallback_cursor(
+                &ctx,
+                terminal_cursor,
+                cursor_viewport,
+                cursor_row_offset,
+                cursor_col_offset,
+            )
+        });
+
+        let (cursor_row, cursor_col) = match cursor_info {
+            CursorPosition::Absolute(r, c) => (r as usize, c as usize),
+        };
+
+        let software = crate::cursor::is_software_cursor(ctx.current_mode);
+
+        let pane_vp = cursor_viewport.unwrap_or(&viewport);
+        let viewport_scrolled = pane_vp.top_line() != pane_vp.prev_top_line()
+            || pane_vp.top_visual_row() != pane_vp.prev_top_visual_row();
+
+        if software && !viewport_scrolled {
+            self.cursor_animator.set_target(cursor_row, cursor_col);
+        } else {
+            self.cursor_animator.snap_to(cursor_row, cursor_col);
+        }
+        self.cursor_animator.step(ctx.state.settings.cursor_speed);
+        let (anim_row, anim_col) = self.cursor_animator.display_pos();
+
+        if software {
+            self.draw_soft_cursor(&ctx, anim_row, anim_col);
+        } else if let Some((pr, pc)) = self.last_soft_cursor.take() {
+            self.compositor
+                .get_layer_mut(LayerPriority::CURSOR)
+                .clear_cell(pr, pc);
+        }
+
+        self.compositor
+            .render_to_terminal(term, ctx.needs_clear, scroll_hint)
+            .map_err(|e| {
+                RiftError::new(
+                    crate::error::ErrorType::Renderer,
+                    "RENDER_FAILED",
+                    e.to_string(),
+                )
+            })?;
+
+        if software {
+            self.last_cursor_shape = None;
+        } else {
+            let desired_shape = CursorShape::SteadyBar;
+            if self.last_cursor_shape != Some(desired_shape) {
+                term.set_cursor_shape(desired_shape)?;
+                self.last_cursor_shape = Some(desired_shape);
+            }
+            term.move_cursor(to_u16_saturating(cursor_row), to_u16_saturating(cursor_col))?;
+            term.show_cursor()?;
+        }
+
+        self.last_cursor_pos = Some(cursor_info);
+        term.flush()?;
+
+        self.last_render_version = self.world.current_version;
+
+        Ok(cursor_info)
+    }
+
+    const fn draw_context<'a>(viewport: &'a Viewport, state: &RenderState<'a>) -> DrawContext<'a> {
+        DrawContext {
             buf: state.buf,
-            viewport: &viewport,
+            viewport,
             current_mode: state.current_mode,
             pending_key: state.pending_key,
             pending_count: state.pending_count,
@@ -462,14 +550,10 @@ impl RenderSystem {
             syntax_generation: state.syntax_generation,
             annotations_revision: state.annotations_revision,
             kind_registry_generation: state.kind_registry_generation,
-        };
-
-        self.update_world(&ctx);
-
-        if ctx.needs_clear {
-            self.last_render_version = 0;
         }
+    }
 
+    fn draw_layers(&mut self, ctx: &DrawContext, skip_content: bool) -> Option<CursorPosition> {
         self.render_order.clear();
         self.render_order.extend(
             self.world
@@ -482,12 +566,12 @@ impl RenderSystem {
         let mut command_cursor_info = None;
 
         for i in 0..self.render_order.len() {
-            let (_entity, priority) = self.render_order[i];
-            let Some(renderable) = self.world.renderables.get(_entity) else {
+            let (entity, priority) = self.render_order[i];
+            let Some(renderable) = self.world.renderables.get(entity) else {
                 continue;
             };
             let priority = &priority;
-            let version = self.world.renderables.get_version(_entity).unwrap_or(0);
+            let version = self.world.renderables.get_version(entity).unwrap_or(0);
             let layer_needs_redraw =
                 version > self.last_render_version || self.last_render_version == 0;
 
@@ -496,13 +580,10 @@ impl RenderSystem {
                     if layer_needs_redraw && !skip_content {
                         crate::render::render_content_to_layer(
                             self.compositor.get_layer_mut(*priority),
-                            &ctx,
+                            ctx,
                             &mut self.content_paint_frame,
                             Some(&mut self.content_blit_key),
-                        )
-                        .map_err(|e| {
-                            RiftError::new(crate::error::ErrorType::Renderer, "RENDER_FAILED", e)
-                        })?;
+                        );
                     }
                 }
                 Renderable::StatusBar(state) => {
@@ -517,42 +598,8 @@ impl RenderSystem {
                 }
                 Renderable::Window(state) => {
                     if layer_needs_redraw {
-                        self.compositor.clear_layer(*priority);
-                        let layer = self.compositor.get_layer_mut(*priority);
-                        let default_border_chars =
-                            crate::perf_clone!(ctx.state.settings.default_border_chars.clone());
-
-                        let (window_row, window_col, _, offset) = CommandLine::render_to_layer(
-                            layer,
-                            ctx.viewport,
-                            &state.content,
-                            state.cursor.col,
-                            crate::command_line::RenderOptions {
-                                default_border_chars,
-                                window_settings: &ctx.state.settings.command_line_window,
-                                fg: state.editor_fg,
-                                bg: state.editor_bg,
-                                prompt: if ctx.current_mode == Mode::Search {
-                                    '/'
-                                } else if ctx.current_mode == Mode::Rename {
-                                    '@'
-                                } else {
-                                    ':'
-                                },
-                            },
-                        );
-
-                        let cursor_char = state
-                            .content
-                            .get(..state.cursor.col.min(state.content.len()))
-                            .map_or(0, |s| s.chars().count());
-                        let (cursor_row, cursor_col) = CommandLine::calculate_cursor_position(
-                            (window_row, window_col),
-                            cursor_char,
-                            offset,
-                            state.has_border,
-                        );
-                        let pos = CursorPosition::Absolute(cursor_row, cursor_col);
+                        let pos =
+                            Self::draw_command_window(&mut self.compositor, ctx, *priority, state);
                         command_cursor_info = Some(pos);
                         self.last_command_cursor = Some(pos);
                     } else {
@@ -589,177 +636,177 @@ impl RenderSystem {
             self.last_command_cursor = None;
         }
 
-        let cursor_info = if let Some(pos) = command_cursor_info {
-            pos
-        } else if let Some((term_row, term_col)) = state.terminal_cursor {
-            let gutter_width = if ctx.show_line_numbers && ctx.state.settings.show_line_numbers {
-                ctx.state.gutter_width
-            } else {
-                0
-            };
-            let pane_vp = cursor_viewport.unwrap_or(&viewport);
+        command_cursor_info
+    }
+
+    fn draw_command_window(
+        compositor: &mut LayerCompositor,
+        ctx: &DrawContext,
+        priority: LayerPriority,
+        state: &CommandDrawState,
+    ) -> CursorPosition {
+        compositor.clear_layer(priority);
+        let layer = compositor.get_layer_mut(priority);
+        let default_border_chars =
+            crate::perf_clone!(ctx.state.settings.default_border_chars.clone());
+
+        let (window_row, window_col, _, offset) = CommandLine::render_to_layer(
+            layer,
+            ctx.viewport,
+            &state.content,
+            state.cursor.col,
+            crate::command_line::RenderOptions {
+                default_border_chars,
+                window_settings: &ctx.state.settings.command_line_window,
+                fg: state.editor_fg,
+                bg: state.editor_bg,
+                prompt: if ctx.current_mode == Mode::Search {
+                    '/'
+                } else if ctx.current_mode == Mode::Rename {
+                    '@'
+                } else {
+                    ':'
+                },
+            },
+        );
+
+        let cursor_char = state
+            .content
+            .get(..state.cursor.col.min(state.content.len()))
+            .map_or(0, |s| s.chars().count());
+        let (cursor_row, cursor_col) = CommandLine::calculate_cursor_position(
+            (window_row, window_col),
+            cursor_char,
+            offset,
+            state.has_border,
+        );
+        CursorPosition::Absolute(cursor_row, cursor_col)
+    }
+
+    fn fallback_cursor(
+        ctx: &DrawContext,
+        terminal_cursor: Option<(usize, usize)>,
+        cursor_viewport: Option<&Viewport>,
+        cursor_row_offset: usize,
+        cursor_col_offset: usize,
+    ) -> CursorPosition {
+        if let Some((term_row, term_col)) = terminal_cursor {
+            let gutter_width = ctx.gutter_cols();
+            let pane_vp = cursor_viewport.unwrap_or(ctx.viewport);
             let max_content_row = pane_vp.visible_rows().saturating_sub(2);
             let clamped_row = term_row.min(max_content_row);
             let max_content_col = pane_vp.visible_cols().saturating_sub(gutter_width + 1);
             let clamped_col = term_col.min(max_content_col);
             CursorPosition::Absolute(
-                (clamped_row + cursor_row_offset) as u16,
-                (clamped_col + cursor_col_offset + gutter_width) as u16,
+                to_u16_saturating(clamped_row + cursor_row_offset),
+                to_u16_saturating(clamped_col + cursor_col_offset + gutter_width),
             )
         } else {
-            let vp = cursor_viewport.unwrap_or(&viewport);
-            let gutter_width = if ctx.show_line_numbers && ctx.state.settings.show_line_numbers {
-                ctx.state.gutter_width
-            } else {
-                0
-            };
+            let vp = cursor_viewport.unwrap_or(ctx.viewport);
+            let gutter_width = ctx.gutter_cols();
 
-            if let Some(dm) = ctx.display_map {
-                let cursor_visual_row = dm.char_to_visual_row(ctx.buf.cursor());
-                let top_visual = vp.top_visual_row();
+            ctx.display_map.map_or_else(
+                || {
+                    let cursor_line = ctx.buf.get_line();
+                    let cursor_line_in_viewport = if cursor_line >= vp.top_line()
+                        && cursor_line < vp.top_line() + vp.visible_rows()
+                    {
+                        cursor_line - vp.top_line()
+                    } else {
+                        0
+                    };
 
-                let row_in_viewport = if cursor_visual_row >= top_visual {
-                    (cursor_visual_row - top_visual).min(vp.visible_rows().saturating_sub(2))
-                } else {
-                    0
-                };
+                    let line_start = ctx.buf.line_index.get_start(cursor_line).unwrap_or(0);
+                    let cursor_off = ctx.buf.cursor();
+                    let leading: usize = ctx
+                        .annotation_inline
+                        .unwrap_or(&[])
+                        .iter()
+                        .filter(|(s, _e, _t, _c, lead)| {
+                            *lead && *s >= line_start && *s <= cursor_off
+                        })
+                        .map(|(_s, _e, text, _c, _l)| text.chars().count())
+                        .sum();
+                    let cursor_col =
+                        calculate_cursor_column_at(ctx.buf, cursor_line, ctx.tab_width, cursor_off)
+                            + leading;
+                    let visual_cursor_col = cursor_col.saturating_sub(vp.left_col());
+                    let display_col =
+                        (visual_cursor_col + gutter_width).min(vp.visible_cols().saturating_sub(1));
 
-                let cursor_off = ctx.buf.cursor();
-                let cline = ctx.buf.line_index.get_line_at(cursor_off);
-                let line_start = ctx.buf.line_index.get_start(cline).unwrap_or(0);
-                let leading: usize = ctx
-                    .annotation_inline
-                    .unwrap_or(&[])
-                    .iter()
-                    .filter(|(s, _e, _t, _c, lead)| *lead && *s >= line_start && *s <= cursor_off)
-                    .map(|(_s, _e, text, _c, _l)| text.chars().count())
-                    .sum();
-                let cursor_visual_col = dm.char_to_visual_col(cursor_off, ctx.buf) + leading;
+                    CursorPosition::Absolute(
+                        to_u16_saturating(cursor_line_in_viewport + cursor_row_offset),
+                        to_u16_saturating(display_col + cursor_col_offset),
+                    )
+                },
+                |dm| {
+                    let cursor_visual_row = dm.char_to_visual_row(ctx.buf.cursor());
+                    let top_visual = vp.top_visual_row();
 
-                let display_col =
-                    (cursor_visual_col + gutter_width).min(vp.visible_cols().saturating_sub(1));
+                    let row_in_viewport = if cursor_visual_row >= top_visual {
+                        (cursor_visual_row - top_visual).min(vp.visible_rows().saturating_sub(2))
+                    } else {
+                        0
+                    };
 
-                CursorPosition::Absolute(
-                    (row_in_viewport + cursor_row_offset) as u16,
-                    (display_col + cursor_col_offset) as u16,
-                )
-            } else {
-                let cursor_line = ctx.buf.get_line();
-                let cursor_line_in_viewport = if cursor_line >= vp.top_line()
-                    && cursor_line < vp.top_line() + vp.visible_rows()
-                {
-                    cursor_line - vp.top_line()
-                } else {
-                    0
-                };
+                    let cursor_off = ctx.buf.cursor();
+                    let cline = ctx.buf.line_index.get_line_at(cursor_off);
+                    let line_start = ctx.buf.line_index.get_start(cline).unwrap_or(0);
+                    let leading: usize = ctx
+                        .annotation_inline
+                        .unwrap_or(&[])
+                        .iter()
+                        .filter(|(s, _e, _t, _c, lead)| {
+                            *lead && *s >= line_start && *s <= cursor_off
+                        })
+                        .map(|(_s, _e, text, _c, _l)| text.chars().count())
+                        .sum();
+                    let cursor_visual_col = dm.char_to_visual_col(cursor_off, ctx.buf) + leading;
 
-                let line_start = ctx.buf.line_index.get_start(cursor_line).unwrap_or(0);
-                let cursor_off = ctx.buf.cursor();
-                let leading: usize = ctx
-                    .annotation_inline
-                    .unwrap_or(&[])
-                    .iter()
-                    .filter(|(s, _e, _t, _c, lead)| *lead && *s >= line_start && *s <= cursor_off)
-                    .map(|(_s, _e, text, _c, _l)| text.chars().count())
-                    .sum();
-                let cursor_col =
-                    calculate_cursor_column_at(ctx.buf, cursor_line, ctx.tab_width, cursor_off)
-                        + leading;
-                let visual_cursor_col = cursor_col.saturating_sub(vp.left_col());
-                let display_col =
-                    (visual_cursor_col + gutter_width).min(vp.visible_cols().saturating_sub(1));
+                    let display_col =
+                        (cursor_visual_col + gutter_width).min(vp.visible_cols().saturating_sub(1));
 
-                CursorPosition::Absolute(
-                    (cursor_line_in_viewport + cursor_row_offset) as u16,
-                    (display_col + cursor_col_offset) as u16,
-                )
-            }
-        };
-
-        let (cursor_row, cursor_col) = match cursor_info {
-            CursorPosition::Absolute(r, c) => (r as usize, c as usize),
-        };
-
-        let software = crate::cursor::is_software_cursor(ctx.current_mode);
-
-        let pane_vp = cursor_viewport.unwrap_or(&viewport);
-        let viewport_scrolled = pane_vp.top_line() != pane_vp.prev_top_line()
-            || pane_vp.top_visual_row() != pane_vp.prev_top_visual_row();
-
-        if software && !viewport_scrolled {
-            self.cursor_animator.set_target(cursor_row, cursor_col);
-        } else {
-            self.cursor_animator.snap_to(cursor_row, cursor_col);
+                    CursorPosition::Absolute(
+                        to_u16_saturating(row_in_viewport + cursor_row_offset),
+                        to_u16_saturating(display_col + cursor_col_offset),
+                    )
+                },
+            )
         }
-        self.cursor_animator.step(ctx.state.settings.cursor_speed);
-        let (anim_row, anim_col) = self.cursor_animator.display_pos();
-
-        if software {
-            {
-                let layer = self.compositor.get_layer_mut(LayerPriority::CURSOR);
-                layer.clear_cell(anim_row, anim_col);
-                if let Some((pr, pc)) = self.last_soft_cursor {
-                    if (pr, pc) != (anim_row, anim_col) {
-                        layer.clear_cell(pr, pc);
-                    }
-                }
-            }
-
-            let underlying = self.compositor.get_composited_cell(anim_row, anim_col);
-            let cursor_cell = crate::cursor::SoftCursor::block_cell(
-                underlying.as_ref(),
-                ctx.state.settings.cursor_color,
-                ctx.state.settings.editor_fg,
-                ctx.state.settings.editor_bg,
-            );
-
-            self.compositor
-                .get_layer_mut(LayerPriority::CURSOR)
-                .set_cell(anim_row, anim_col, cursor_cell);
-            self.last_soft_cursor = Some((anim_row, anim_col));
-        } else if let Some((pr, pc)) = self.last_soft_cursor.take() {
-            self.compositor
-                .get_layer_mut(LayerPriority::CURSOR)
-                .clear_cell(pr, pc);
-        }
-
-        self.compositor
-            .render_to_terminal(term, ctx.needs_clear, scroll_hint)
-            .map_err(|e| {
-                RiftError::new(
-                    crate::error::ErrorType::Renderer,
-                    "RENDER_FAILED",
-                    e.to_string(),
-                )
-            })?;
-
-        if !software {
-            let desired_shape = CursorShape::SteadyBar;
-            if self.last_cursor_shape != Some(desired_shape) {
-                term.set_cursor_shape(desired_shape)?;
-                self.last_cursor_shape = Some(desired_shape);
-            }
-            term.move_cursor(cursor_row as u16, cursor_col as u16)?;
-            term.show_cursor()?;
-        } else {
-            self.last_cursor_shape = None;
-        }
-
-        self.last_cursor_pos = Some(cursor_info);
-        term.flush()?;
-
-        self.last_render_version = self.world.current_version;
-
-        Ok(cursor_info)
     }
 
+    fn draw_soft_cursor(&mut self, ctx: &DrawContext, anim_row: usize, anim_col: usize) {
+        let layer = self.compositor.get_layer_mut(LayerPriority::CURSOR);
+        layer.clear_cell(anim_row, anim_col);
+        if let Some((pr, pc)) = self.last_soft_cursor {
+            if (pr, pc) != (anim_row, anim_col) {
+                layer.clear_cell(pr, pc);
+            }
+        }
+
+        let underlying = self.compositor.get_composited_cell(anim_row, anim_col);
+        let cursor_cell = crate::cursor::SoftCursor::block_cell(
+            underlying.as_ref(),
+            ctx.state.settings.cursor_color,
+            ctx.state.settings.editor_fg,
+            ctx.state.settings.editor_bg,
+        );
+
+        self.compositor
+            .get_layer_mut(LayerPriority::CURSOR)
+            .set_cell(anim_row, anim_col, cursor_cell);
+        self.last_soft_cursor = Some((anim_row, anim_col));
+    }
+
+    /// # Errors
+    /// Returns `Err` when rendering fails.
     pub fn force_full_redraw<T: TerminalBackend>(
         &mut self,
         term: &mut T,
         mut state: RenderState,
     ) -> Result<CursorPosition, RiftError> {
         state.needs_clear = true;
-        self.render(term, state)
+        self.render(term, &state)
     }
 }
 
@@ -775,18 +822,19 @@ fn render_completion_menu(
 
     let fg = state.editor_fg;
     let bg = state.editor_bg;
-    let sel_fg = bg.or(Some(crate::color::Color::Black));
-    let sel_bg = fg.or(Some(crate::color::Color::White));
+    let sel_text = bg.or(Some(crate::color::Color::Black));
+    let sel_back = fg.or(Some(crate::color::Color::White));
     let desc_fg = Some(crate::color::Color::Grey);
 
-    let cmd_width = ((state.terminal_cols as f64 * state.cmd_width_ratio) as usize)
+    // Ratio-scaled width of a terminal dimension; small and non-negative.
+    let cmd_width = f64_to_usize(usize_to_f64(state.terminal_cols) * state.cmd_width_ratio)
         .max(state.cmd_min_width)
         .min(state.terminal_cols);
 
-    let cmd_col = (cols.saturating_sub(cmd_width) / 2) as u16;
+    let cmd_col = to_u16_saturating(cols.saturating_sub(cmd_width) / 2);
     let cmd_total_height = state.cmd_height;
     let cmd_row = rows.saturating_sub(cmd_total_height) / 2;
-    let menu_start_row = (cmd_row + cmd_total_height) as u16;
+    let menu_start_row = to_u16_saturating(cmd_row + cmd_total_height);
 
     let max_visible = 8usize.min(state.candidates.len());
     if max_visible == 0 {
@@ -812,29 +860,33 @@ fn render_completion_menu(
 
     for &(abs_i, (ref text, ref desc)) in &visible {
         let selected = state.selected == Some(abs_i);
-        let (row_fg, row_bg) = if selected { (sel_fg, sel_bg) } else { (fg, bg) };
+        let (row_text, row_back) = if selected {
+            (sel_text, sel_back)
+        } else {
+            (fg, bg)
+        };
 
         let mut line: Vec<Cell> = Vec::with_capacity(content_width);
 
         let indicator = if selected { '▶' } else { ' ' };
-        line.push(Cell::from_char(indicator).with_colors(row_fg, row_bg));
-        line.push(Cell::from_char(' ').with_colors(row_fg, row_bg));
+        line.push(Cell::from_char(indicator).with_colors(row_text, row_back));
+        line.push(Cell::from_char(' ').with_colors(row_text, row_back));
 
         for ch in text.chars().take(left_col_width) {
-            line.push(Cell::from_char(ch).with_colors(row_fg, row_bg));
+            line.push(Cell::from_char(ch).with_colors(row_text, row_back));
         }
 
         while line.len() < 2 + left_col_width {
-            line.push(Cell::from_char(' ').with_colors(row_fg, row_bg));
+            line.push(Cell::from_char(' ').with_colors(row_text, row_back));
         }
 
         for ch in desc.chars().take(right_col_width.saturating_sub(1)) {
-            let d_fg = if selected { row_fg } else { desc_fg };
-            line.push(Cell::from_char(ch).with_colors(d_fg, row_bg));
+            let d_fg = if selected { row_text } else { desc_fg };
+            line.push(Cell::from_char(ch).with_colors(d_fg, row_back));
         }
 
         while line.len() < content_width {
-            line.push(Cell::from_char(' ').with_colors(row_fg, row_bg));
+            line.push(Cell::from_char(' ').with_colors(row_text, row_back));
         }
 
         cell_rows.push(line);
@@ -844,7 +896,7 @@ fn render_completion_menu(
     if total > max_visible {
         let from = scroll + 1;
         let to = (scroll + max_visible).min(total);
-        let footer_text = format!(" {}-{} of {} ", from, to, total);
+        let footer_text = format!(" {from}-{to} of {total} ");
         let mut footer_line: Vec<Cell> = footer_text
             .chars()
             .take(content_width)

@@ -3,11 +3,11 @@ use crate::text_objects::ObjectKind;
 
 fn finalize(keys: &str, modifier: Modifier) -> TextObjectSpec {
     let mut pending = PendingTextObject::new(modifier);
-    let mut keys = keys.chars().peekable();
+    let mut keys = keys.chars();
     loop {
         let ch = keys.next().expect("ran out of keys before Finalize");
         match pending.advance(Key::char(ch)) {
-            TextObjectStep::Continue => continue,
+            TextObjectStep::Continue => {}
             TextObjectStep::Finalize(spec) => return spec,
             TextObjectStep::Cancel => panic!("unexpected cancel on key '{ch}'"),
         }

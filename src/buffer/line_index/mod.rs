@@ -14,6 +14,7 @@ pub struct LineIndex {
 }
 
 impl LineIndex {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             table: PieceTable::new(Vec::new()),
@@ -23,7 +24,8 @@ impl LineIndex {
 
     /// Wrap an existing piece table (e.g. content loaded by a background job).
     /// The line-start cache builds lazily on first query.
-    pub fn from_table(table: PieceTable) -> Self {
+    #[must_use]
+    pub const fn from_table(table: PieceTable) -> Self {
         Self {
             table,
             line_starts: RefCell::new(None),
@@ -32,8 +34,13 @@ impl LineIndex {
 
     /// Wrap a piece table with a precomputed line-start vector (one entry per
     /// line, `starts[0] == 0`), e.g. collected while decoding file bytes.
+    #[must_use]
     pub fn from_table_with_starts(table: PieceTable, starts: Vec<usize>) -> Self {
-        debug_assert_eq!(starts.len(), table.get_line_count());
+        debug_assert_eq!(
+            starts.len(),
+            table.get_line_count(),
+            "line starts out of sync"
+        );
         Self {
             table,
             line_starts: RefCell::new(Some(starts)),
@@ -50,13 +57,20 @@ impl LineIndex {
         let mut starts = Vec::with_capacity(self.table.get_line_count());
         starts.push(0);
         let mut pos = 0usize;
-        for ch in self.table.iter() {
+        for ch in &self.table {
             pos += 1;
             if ch == Character::Newline {
                 starts.push(pos);
             }
         }
         *cache = Some(starts);
+    }
+
+    /// Run `f` over the line-start index, building it first if needed.
+    fn with_starts<R>(&self, f: impl FnOnce(&[usize]) -> R) -> R {
+        self.ensure_built();
+        let cache = self.line_starts.borrow();
+        f(cache.as_deref().unwrap_or_default())
     }
 
     /// Shift entries after `pos` right by `chars.len()`; insert a new line
@@ -67,7 +81,7 @@ impl LineIndex {
             return;
         }
         let split = starts.partition_point(|&s| s <= pos);
-        for s in starts[split..].iter_mut() {
+        for s in &mut starts[split..] {
             *s += added;
         }
         let new_starts: Vec<usize> = chars
@@ -91,7 +105,7 @@ impl LineIndex {
         let first_removed = starts.partition_point(|&s| s <= pos);
         let first_kept = starts.partition_point(|&s| s <= end);
         starts.drain(first_removed..first_kept);
-        for s in starts[first_removed..].iter_mut() {
+        for s in &mut starts[first_removed..] {
             *s -= len;
         }
     }
@@ -100,22 +114,24 @@ impl LineIndex {
         self.table.get_line_count()
     }
 
+    /// # Panics
+    /// Never panics; the line-start index is built on demand before indexing.
     pub fn get_start(&self, line_idx: usize) -> Option<usize> {
         if line_idx >= self.table.get_line_count() {
             return None;
         }
-        self.ensure_built();
-        Some(self.line_starts.borrow().as_ref().unwrap()[line_idx])
+        self.with_starts(|starts| starts.get(line_idx).copied())
     }
 
+    /// # Panics
+    /// Never panics; the line-start index is built on demand before indexing.
     pub fn get_line_start(&self, line_idx: usize) -> usize {
-        self.ensure_built();
-        let cache = self.line_starts.borrow();
-        let starts = cache.as_ref().unwrap();
-        starts
-            .get(line_idx)
-            .copied()
-            .unwrap_or_else(|| self.table.len())
+        self.with_starts(|starts| {
+            starts
+                .get(line_idx)
+                .copied()
+                .unwrap_or_else(|| self.table.len())
+        })
     }
 
     pub fn get_end(&self, line_idx: usize, total_len: usize) -> Option<usize> {
@@ -133,19 +149,22 @@ impl LineIndex {
         Some(next_start.saturating_sub(1))
     }
 
+    /// # Panics
+    /// Never panics; the line-start index is built on demand before indexing.
     pub fn get_line_at(&self, pos: usize) -> usize {
-        self.ensure_built();
-        let cache = self.line_starts.borrow();
-        let starts = cache.as_ref().unwrap();
         // Line of `pos` = index of the last line start <= pos.
-        starts.partition_point(|&s| s <= pos).saturating_sub(1)
+        self.with_starts(|starts| starts.partition_point(|&s| s <= pos).saturating_sub(1))
     }
 
     pub fn insert(&mut self, pos: usize, chars: &[Character]) {
         self.table.insert(pos, chars);
         if let Some(starts) = self.line_starts.get_mut().as_mut() {
             Self::apply_insert(starts, pos, chars);
-            debug_assert_eq!(starts.len(), self.table.get_line_count());
+            debug_assert_eq!(
+                starts.len(),
+                self.table.get_line_count(),
+                "line starts out of sync"
+            );
         }
     }
 
@@ -153,7 +172,11 @@ impl LineIndex {
         self.table.delete(pos..pos + len);
         if let Some(starts) = self.line_starts.get_mut().as_mut() {
             Self::apply_delete(starts, pos, len);
-            debug_assert_eq!(starts.len(), self.table.get_line_count());
+            debug_assert_eq!(
+                starts.len(),
+                self.table.get_line_count(),
+                "line starts out of sync"
+            );
         }
     }
 
@@ -162,7 +185,11 @@ impl LineIndex {
         if let Some(starts) = self.line_starts.get_mut().as_mut() {
             Self::apply_delete(starts, pos, count);
             Self::apply_insert(starts, pos, chars);
-            debug_assert_eq!(starts.len(), self.table.get_line_count());
+            debug_assert_eq!(
+                starts.len(),
+                self.table.get_line_count(),
+                "line starts out of sync"
+            );
         }
     }
 

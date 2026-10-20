@@ -135,9 +135,9 @@ impl std::fmt::Debug for ExecutionResult {
                 .debug_struct("NotificationClear")
                 .field("bangs", bangs)
                 .finish(),
-            Self::Undo { count } => write!(f, "Undo({:?})", count),
-            Self::Redo { count } => write!(f, "Redo({:?})", count),
-            Self::UndoGoto { seq } => write!(f, "UndoGoto({})", seq),
+            Self::Undo { count } => write!(f, "Undo({count:?})"),
+            Self::Redo { count } => write!(f, "Redo({count:?})"),
+            Self::UndoGoto { seq } => write!(f, "UndoGoto({seq})"),
             Self::Checkpoint => write!(f, "Checkpoint"),
             Self::OpenTerminal { cmd, bangs } => f
                 .debug_struct("OpenTerminal")
@@ -173,7 +173,7 @@ pub struct CommandExecutor;
 
 impl CommandExecutor {
     /// Execute a parsed command. Write commands do NOT perform file I/O here --
-    /// they return Success/WriteAndQuit, and the editor calls Document::save[_as]().
+    /// they return Success/WriteAndQuit, and the editor calls `Document::save`[_as]().
     pub fn execute(
         command: ParsedCommand,
         state: &mut State,
@@ -194,7 +194,7 @@ impl CommandExecutor {
                 let mut error_handler = |e: RiftError| errors.push(e);
                 let result = settings_registry.execute_setting(
                     &option,
-                    value,
+                    value.as_deref(),
                     &mut state.settings,
                     &mut error_handler,
                 );
@@ -209,18 +209,12 @@ impl CommandExecutor {
                 bangs: _,
             } => local::execute_local_command(command, state, document, document_settings_registry),
             ParsedCommand::Write { path, bangs: _ } => {
-                if let Some(ref file_path) = path {
-                    document.set_path(file_path);
-                    state.set_file_path(Some(file_path.clone()));
-                }
+                set_write_path(state, document, path.as_deref());
                 // Editor will check if path exists and call Document::save()
                 ExecutionResult::Write
             }
             ParsedCommand::WriteQuit { path, bangs: _ } => {
-                if let Some(ref file_path) = path {
-                    document.set_path(file_path);
-                    state.set_file_path(Some(file_path.clone()));
-                }
+                set_write_path(state, document, path.as_deref());
                 // Editor will check if path exists, call Document::save(), then quit
                 ExecutionResult::WriteAndQuit
             }
@@ -229,13 +223,7 @@ impl CommandExecutor {
                 ExecutionResult::PluginCommand { name, args }
             }
             ParsedCommand::Ambiguous { prefix, matches } => {
-                let matches_str = matches.join(", ");
-                state.handle_error(RiftError::new(
-                    ErrorType::Parse,
-                    "AMBIGUOUS_COMMAND",
-                    format!("Ambiguous command '{prefix}': matches {matches_str}"),
-                ));
-                ExecutionResult::Failure
+                report_ambiguous(state, &prefix, &matches)
             }
             ParsedCommand::Redraw { bangs: _ } => ExecutionResult::Redraw,
 
@@ -245,191 +233,25 @@ impl CommandExecutor {
                 kind,
                 message,
                 bangs,
-            } => {
-                use crate::notification::NotificationType;
-                if kind.to_lowercase().as_str() == "clear" {
-                    return ExecutionResult::NotificationClear { bangs };
-                }
-                let notification_kind = match kind.to_lowercase().as_str() {
-                    "info" => NotificationType::Info,
-                    "warning" | "warn" => NotificationType::Warning,
-                    "error" => NotificationType::Error,
-                    "success" => NotificationType::Success,
-                    _ => {
-                        state.handle_error(RiftError::new(
-                            ErrorType::Execution,
-                            "INVALID_NOTIFY_TYPE",
-                            format!("Unknown notification type: {kind}"),
-                        ));
-                        return ExecutionResult::Failure;
-                    }
-                };
-
-                state.notify(notification_kind, message);
-                ExecutionResult::Success
-            }
-            ParsedCommand::Edit { path, bangs } => {
-                if let Some(ref p) = path {
-                    let path_buf = std::path::Path::new(p);
-                    if path_buf.exists() && path_buf.is_dir() {
-                        state.handle_error(RiftError::new(
-                            ErrorType::Execution,
-                            crate::constants::errors::NOT_A_FILE,
-                            crate::constants::errors::MSG_NOT_A_FILE.to_string(),
-                        ));
-                        return ExecutionResult::Failure;
-                    }
-                    if !path_buf.exists() && crate::document::manager::parent_dir_missing(path_buf)
-                    {
-                        state.handle_error(RiftError::new(
-                            ErrorType::Execution,
-                            crate::constants::errors::PARENT_DIR_MISSING,
-                            crate::constants::errors::MSG_PARENT_DIR_MISSING.to_string(),
-                        ));
-                        return ExecutionResult::Failure;
-                    }
-                }
-                ExecutionResult::Edit { path, bangs }
-            }
+            } => execute_notify(state, &kind, message, bangs),
+            ParsedCommand::Edit { path, bangs } => execute_edit(state, path, bangs),
             ParsedCommand::BufferNext { bangs } => ExecutionResult::BufferNext { bangs },
             ParsedCommand::BufferPrevious { bangs } => ExecutionResult::BufferPrevious { bangs },
-            ParsedCommand::NoHighlight { bangs: _ } => {
-                state.search_matches.clear();
-                state.last_search_query = None;
-                ExecutionResult::Redraw
-            }
+            ParsedCommand::NoHighlight { bangs: _ } => clear_highlight(state),
             ParsedCommand::Substitute {
                 pattern,
                 replacement,
                 flags,
                 range,
                 bangs: _,
-            } => {
-                match crate::search::find_all(&document.buffer, &pattern) {
-                    Ok((mut matches, _stats)) => {
-                        let is_global_subst = flags.contains('g');
-                        let whole_file = range.as_deref() == Some("%");
-                        let has_selection = !document.selection_set.is_empty();
-
-                        // A non-empty SelectionSet takes priority over %/current-line;
-                        // each banked region is its own miniature substitution scope.
-                        if has_selection {
-                            let region_spans: Vec<(usize, usize)> = document
-                                .selection_set
-                                .sorted()
-                                .iter()
-                                .map(|r| r.buffer_span(&document.buffer))
-                                .collect();
-                            matches.retain(|m| {
-                                region_spans
-                                    .iter()
-                                    .any(|(s, e)| m.range.start >= *s && m.range.end <= *e)
-                            });
-                        } else if !whole_file {
-                            // Filter matches that intersect with current line
-                            let current_line_idx = document
-                                .buffer
-                                .line_index
-                                .get_line_at(document.buffer.cursor());
-                            let start_byte = document.buffer.line_start(current_line_idx);
-                            // Use get_end from LineIndex, passing total length
-                            let end_byte = document
-                                .buffer
-                                .line_index
-                                .get_end(current_line_idx, document.buffer.len())
-                                .unwrap_or(document.buffer.len());
-
-                            matches
-                                .retain(|m| m.range.start >= start_byte && m.range.end <= end_byte);
-                        }
-
-                        if matches.is_empty() {
-                            state.handle_error(RiftError::new(
-                                ErrorType::Execution,
-                                "PATTERN_NOT_FOUND",
-                                format!("Pattern not found: {pattern}"),
-                            ));
-                            return ExecutionResult::Failure;
-                        }
-
-                        // Filter matches based on global flag
-                        let mut valid_matches = Vec::new();
-                        let mut last_line_idx = None;
-
-                        for m in matches {
-                            let line_idx = document.buffer.line_index.get_line_at(m.range.start);
-                            if !is_global_subst {
-                                if Some(line_idx) == last_line_idx {
-                                    continue; // Already processed first match on this line
-                                }
-                                last_line_idx = Some(line_idx);
-                            }
-                            valid_matches.push(m);
-                        }
-
-                        if valid_matches.is_empty() {
-                            state.handle_error(RiftError::new(
-                                ErrorType::Execution,
-                                "PATTERN_NOT_FOUND",
-                                format!("Pattern not found: {pattern}"),
-                            ));
-                            return ExecutionResult::Failure;
-                        }
-
-                        // Begin transaction to group all substitutions
-                        document.begin_transaction(format!(
-                            "Substitute: {} -> {}",
-                            pattern, replacement
-                        ));
-
-                        // Sort reverse for application (to maintain offsets)
-                        valid_matches.sort_by_key(|m| std::cmp::Reverse(m.range.start));
-
-                        let mut changes_made = 0;
-                        for m in valid_matches {
-                            // Delete the matched text using undo-aware method
-                            if let Err(e) = document.delete_range(m.range.start, m.range.end) {
-                                state.handle_error(e);
-                                continue;
-                            }
-
-                            // Insert replacement text using undo-aware method
-                            if let Err(e) = document.insert_str(&replacement) {
-                                state.handle_error(e);
-                                continue;
-                            }
-
-                            changes_made += 1;
-                        }
-
-                        // Commit transaction
-                        document.commit_transaction();
-                        if has_selection {
-                            document.selection_set.clear();
-                        }
-
-                        if changes_made > 0 {
-                            state.last_search_query = Some(pattern.clone());
-
-                            // Re-run search to update highlights
-                            match crate::search::find_all(&document.buffer, &pattern) {
-                                Ok((new_matches, _)) => state.search_matches = new_matches,
-                                Err(_) => state.search_matches.clear(),
-                            }
-                        }
-
-                        state.notify(
-                            crate::notification::NotificationType::Info,
-                            format!("{} substitutions", changes_made),
-                        );
-                        ExecutionResult::Redraw
-                    }
-                    Err(e) => {
-                        state.handle_error(e);
-                        ExecutionResult::Failure
-                    }
-                }
-            }
+            } => execute_substitute(
+                state,
+                document,
+                &pattern,
+                &replacement,
+                &flags,
+                range.as_deref(),
+            ),
             ParsedCommand::BufferList => ExecutionResult::BufferList,
             ParsedCommand::BufferGoto { index, bangs: _ } => ExecutionResult::BufferGoto { index },
             ParsedCommand::OpenBufferList { bangs: _ } => ExecutionResult::OpenBufferList,
@@ -439,15 +261,7 @@ impl CommandExecutor {
             ParsedCommand::Undo { count, bangs: _ } => ExecutionResult::Undo { count },
             ParsedCommand::Redo { count, bangs: _ } => ExecutionResult::Redo { count },
             ParsedCommand::UndoGoto { seq, bangs: _ } => ExecutionResult::UndoGoto { seq },
-            ParsedCommand::Checkpoint { bangs: _ } => {
-                // Create checkpoint at current position
-                document.checkpoint();
-                state.notify(
-                    crate::notification::NotificationType::Info,
-                    "Checkpoint created".to_string(),
-                );
-                ExecutionResult::Checkpoint
-            }
+            ParsedCommand::Checkpoint { bangs: _ } => create_checkpoint(state, document),
             ParsedCommand::UndoTree { bangs: _ } => ExecutionResult::OpenUndoTree,
             ParsedCommand::Messages { show_all, bangs: _ } => {
                 ExecutionResult::OpenMessages { show_all }
@@ -467,30 +281,242 @@ impl CommandExecutor {
                 direction: crate::split::tree::SplitDirection::Vertical,
                 subcommand,
             },
-            ParsedCommand::File { path, bangs: _ } => {
-                let initial_path = if let Some(p) = path {
-                    let path_buf = std::path::PathBuf::from(p);
-                    if path_buf.exists() && path_buf.is_file() {
-                        state.handle_error(RiftError::new(
-                            ErrorType::Execution,
-                            crate::constants::errors::NOT_A_DIRECTORY,
-                            crate::constants::errors::MSG_NOT_A_DIRECTORY.to_string(),
-                        ));
-                        return ExecutionResult::Failure;
-                    }
-                    path_buf
-                } else if let Some(p) = document.path() {
-                    if p.is_dir() {
-                        p.to_path_buf()
-                    } else {
-                        p.parent().unwrap_or(p).to_path_buf()
-                    }
-                } else {
-                    std::env::current_dir().unwrap_or_default()
-                };
+            ParsedCommand::File { path, bangs: _ } => execute_file(state, document, path),
+        }
+    }
+}
 
-                ExecutionResult::OpenDirectory { path: initial_path }
+fn create_checkpoint(state: &mut State, document: &mut Document) -> ExecutionResult {
+    // Create checkpoint at current position
+    document.checkpoint();
+    state.notify(
+        crate::notification::NotificationType::Info,
+        "Checkpoint created".to_string(),
+    );
+    ExecutionResult::Checkpoint
+}
+
+fn clear_highlight(state: &mut State) -> ExecutionResult {
+    state.search_matches.clear();
+    state.last_search_query = None;
+    ExecutionResult::Redraw
+}
+
+fn set_write_path(state: &mut State, document: &mut Document, path: Option<&str>) {
+    if let Some(file_path) = path {
+        document.set_path(file_path);
+        state.set_file_path(Some(file_path.to_string()));
+    }
+}
+
+fn report_ambiguous(state: &mut State, prefix: &str, matches: &[String]) -> ExecutionResult {
+    let matches_str = matches.join(", ");
+    state.handle_error(RiftError::new(
+        ErrorType::Parse,
+        "AMBIGUOUS_COMMAND",
+        format!("Ambiguous command '{prefix}': matches {matches_str}"),
+    ));
+    ExecutionResult::Failure
+}
+
+fn execute_file(state: &mut State, document: &Document, path: Option<String>) -> ExecutionResult {
+    let initial_path = if let Some(p) = path {
+        let path_buf = std::path::PathBuf::from(p);
+        if path_buf.exists() && path_buf.is_file() {
+            state.handle_error(RiftError::new(
+                ErrorType::Execution,
+                crate::constants::errors::NOT_A_DIRECTORY,
+                crate::constants::errors::MSG_NOT_A_DIRECTORY.to_string(),
+            ));
+            return ExecutionResult::Failure;
+        }
+        path_buf
+    } else if let Some(p) = document.path() {
+        if p.is_dir() {
+            p.to_path_buf()
+        } else {
+            p.parent().unwrap_or(p).to_path_buf()
+        }
+    } else {
+        std::env::current_dir().unwrap_or_default()
+    };
+
+    ExecutionResult::OpenDirectory { path: initial_path }
+}
+
+fn execute_notify(state: &mut State, kind: &str, message: String, bangs: usize) -> ExecutionResult {
+    use crate::notification::NotificationType;
+    if kind.to_lowercase().as_str() == "clear" {
+        return ExecutionResult::NotificationClear { bangs };
+    }
+    let notification_kind = match kind.to_lowercase().as_str() {
+        "info" => NotificationType::Info,
+        "warning" | "warn" => NotificationType::Warning,
+        "error" => NotificationType::Error,
+        "success" => NotificationType::Success,
+        _ => {
+            state.handle_error(RiftError::new(
+                ErrorType::Execution,
+                "INVALID_NOTIFY_TYPE",
+                format!("Unknown notification type: {kind}"),
+            ));
+            return ExecutionResult::Failure;
+        }
+    };
+
+    state.notify(notification_kind, message);
+    ExecutionResult::Success
+}
+
+fn execute_edit(state: &mut State, path: Option<String>, bangs: usize) -> ExecutionResult {
+    if let Some(ref p) = path {
+        let path_buf = std::path::Path::new(p);
+        if path_buf.exists() && path_buf.is_dir() {
+            state.handle_error(RiftError::new(
+                ErrorType::Execution,
+                crate::constants::errors::NOT_A_FILE,
+                crate::constants::errors::MSG_NOT_A_FILE.to_string(),
+            ));
+            return ExecutionResult::Failure;
+        }
+        if !path_buf.exists() && crate::document::manager::parent_dir_missing(path_buf) {
+            state.handle_error(RiftError::new(
+                ErrorType::Execution,
+                crate::constants::errors::PARENT_DIR_MISSING,
+                crate::constants::errors::MSG_PARENT_DIR_MISSING.to_string(),
+            ));
+            return ExecutionResult::Failure;
+        }
+    }
+    ExecutionResult::Edit { path, bangs }
+}
+
+fn execute_substitute(
+    state: &mut State,
+    document: &mut Document,
+    pattern: &str,
+    replacement: &str,
+    flags: &str,
+    range: Option<&str>,
+) -> ExecutionResult {
+    match crate::search::find_all(&document.buffer, pattern) {
+        Ok((mut matches, _stats)) => {
+            let is_global_subst = flags.contains('g');
+            let whole_file = range == Some("%");
+            let has_selection = !document.selection_set.is_empty();
+
+            // A non-empty SelectionSet takes priority over %/current-line;
+            // each banked region is its own miniature substitution scope.
+            if has_selection {
+                let region_spans: Vec<(usize, usize)> = document
+                    .selection_set
+                    .sorted()
+                    .iter()
+                    .map(|r| r.buffer_span(&document.buffer))
+                    .collect();
+                matches.retain(|m| {
+                    region_spans
+                        .iter()
+                        .any(|(s, e)| m.range.start >= *s && m.range.end <= *e)
+                });
+            } else if !whole_file {
+                // Filter matches that intersect with current line
+                let current_line_idx = document
+                    .buffer
+                    .line_index
+                    .get_line_at(document.buffer.cursor());
+                let start_byte = document.buffer.line_start(current_line_idx);
+                // Use get_end from LineIndex, passing total length
+                let end_byte = document
+                    .buffer
+                    .line_index
+                    .get_end(current_line_idx, document.buffer.len())
+                    .unwrap_or(document.buffer.len());
+
+                matches.retain(|m| m.range.start >= start_byte && m.range.end <= end_byte);
             }
+
+            if matches.is_empty() {
+                state.handle_error(RiftError::new(
+                    ErrorType::Execution,
+                    "PATTERN_NOT_FOUND",
+                    format!("Pattern not found: {pattern}"),
+                ));
+                return ExecutionResult::Failure;
+            }
+
+            // Filter matches based on global flag
+            let mut valid_matches = Vec::new();
+            let mut last_line_idx = None;
+
+            for m in matches {
+                let line_idx = document.buffer.line_index.get_line_at(m.range.start);
+                if !is_global_subst {
+                    if Some(line_idx) == last_line_idx {
+                        continue; // Already processed first match on this line
+                    }
+                    last_line_idx = Some(line_idx);
+                }
+                valid_matches.push(m);
+            }
+
+            if valid_matches.is_empty() {
+                state.handle_error(RiftError::new(
+                    ErrorType::Execution,
+                    "PATTERN_NOT_FOUND",
+                    format!("Pattern not found: {pattern}"),
+                ));
+                return ExecutionResult::Failure;
+            }
+
+            // Begin transaction to group all substitutions
+            document.begin_transaction(format!("Substitute: {pattern} -> {replacement}"));
+
+            // Sort reverse for application (to maintain offsets)
+            valid_matches.sort_by_key(|m| std::cmp::Reverse(m.range.start));
+
+            let mut changes_made = 0;
+            for m in valid_matches {
+                // Delete the matched text using undo-aware method
+                if let Err(e) = document.delete_range(m.range.start, m.range.end) {
+                    state.handle_error(e);
+                    continue;
+                }
+
+                // Insert replacement text using undo-aware method
+                if let Err(e) = document.insert_str(replacement) {
+                    state.handle_error(e);
+                    continue;
+                }
+
+                changes_made += 1;
+            }
+
+            // Commit transaction
+            document.commit_transaction();
+            if has_selection {
+                document.selection_set.clear();
+            }
+
+            if changes_made > 0 {
+                state.last_search_query = Some(pattern.to_string());
+
+                // Re-run search to update highlights
+                match crate::search::find_all(&document.buffer, pattern) {
+                    Ok((new_matches, _)) => state.search_matches = new_matches,
+                    Err(_) => state.search_matches.clear(),
+                }
+            }
+
+            state.notify(
+                crate::notification::NotificationType::Info,
+                format!("{changes_made} substitutions"),
+            );
+            ExecutionResult::Redraw
+        }
+        Err(e) => {
+            state.handle_error(e);
+            ExecutionResult::Failure
         }
     }
 }

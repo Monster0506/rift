@@ -22,7 +22,7 @@ pub(super) enum TextObjectStep {
 }
 
 impl PendingTextObject {
-    pub(super) fn new(modifier: Modifier) -> Self {
+    pub(super) const fn new(modifier: Modifier) -> Self {
         Self {
             modifier,
             direction: Direction::Current,
@@ -53,7 +53,7 @@ impl PendingTextObject {
         }
 
         if ch.is_ascii_digit() && (ch != '0' || self.nesting > 0) {
-            let digit = ch.to_digit(10).unwrap() as u8;
+            let digit = ch as u8 - b'0';
             self.nesting = self.nesting.saturating_mul(10).saturating_add(digit);
             return TextObjectStep::Continue;
         }

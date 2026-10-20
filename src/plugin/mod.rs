@@ -1,4 +1,5 @@
 //! Plugin system for Rift: an event bus ([`PluginHost::dispatch`]) with Rust closure handlers today, a Lua VM layer to come.
+//!
 //! Invariant: the host never mutates editor state directly; mutations are queued as [`PluginMutation`] and applied via `execute_command`, preserving undo/dot-repeat.
 
 pub mod events;
@@ -42,21 +43,25 @@ pub struct PluginId(NonZeroU32);
 
 impl PluginId {
     /// Create a new `PluginId` wrapping a nonzero u32.
+    #[must_use]
     pub const fn new(id: NonZeroU32) -> Self {
         Self(id)
     }
 
     /// Allocate a fresh, process-unique `PluginId`.
+    #[must_use]
     pub fn allocate() -> Self {
         allocate_next_plugin_id()
     }
 
     /// Return the raw `u32` value.
+    #[must_use]
     pub const fn get(self) -> u32 {
         self.0.get()
     }
 
     /// Return the underlying `NonZeroU32`.
+    #[must_use]
     pub const fn as_nonzero(self) -> NonZeroU32 {
         self.0
     }
@@ -78,6 +83,7 @@ pub struct PluginGeneration {
 
 impl PluginGeneration {
     /// Create a new `PluginGeneration` from a plugin id and a load generation counter.
+    #[must_use]
     pub const fn new(plugin_id: PluginId, generation: NonZeroU32) -> Self {
         Self {
             plugin_id,
@@ -86,34 +92,40 @@ impl PluginGeneration {
     }
 
     /// Allocate a fresh, globally monotonic generation for the given plugin.
+    #[must_use]
     pub fn allocate(plugin_id: PluginId) -> Self {
         Self::new(plugin_id, allocate_next_generation_id())
     }
 
     /// The owning plugin identity.
+    #[must_use]
     pub const fn plugin_id(self) -> PluginId {
         self.plugin_id
     }
 
     /// The monotonic load generation number for this plugin incarnation.
+    #[must_use]
     pub const fn generation(self) -> NonZeroU32 {
         self.generation
     }
 
     /// Return the raw pair `(plugin_id, generation)` as u32 primitives.
+    #[must_use]
     pub const fn raw(self) -> (u32, u32) {
         (self.plugin_id.get(), self.generation.get())
     }
 
     /// Return the raw pair `(plugin_id, generation)` as `NonZeroU32` values.
+    #[must_use]
     pub const fn as_nonzeros(self) -> (NonZeroU32, NonZeroU32) {
         (self.plugin_id.as_nonzero(), self.generation)
     }
 
     /// Converts this `PluginGeneration` into an owner token for keymap layers.
+    #[must_use]
     pub fn keymap_owner_token(self) -> crate::keymap::KeyBindingToken {
         let (pid, gen) = self.raw();
-        crate::keymap::KeyBindingToken::new(((pid as u64) << 32) | (gen as u64))
+        crate::keymap::KeyBindingToken::new((u64::from(pid) << 32) | u64::from(gen))
     }
 }
 
@@ -146,14 +158,17 @@ pub enum GenerationStatus {
 }
 
 impl GenerationStatus {
+    #[must_use]
     pub const fn is_active(self) -> bool {
         matches!(self, Self::Active)
     }
 
+    #[must_use]
     pub const fn is_retiring(self) -> bool {
         matches!(self, Self::Retiring)
     }
 
+    #[must_use]
     pub const fn is_retired(self) -> bool {
         matches!(self, Self::Retired)
     }
@@ -169,7 +184,8 @@ pub struct PluginMutationEnvelope {
 
 impl PluginMutationEnvelope {
     /// Create a native mutation envelope without plugin origin tracking.
-    pub fn native(mutation: PluginMutation) -> Self {
+    #[must_use]
+    pub const fn native(mutation: PluginMutation) -> Self {
         Self {
             mutation,
             origin: None,
@@ -177,7 +193,8 @@ impl PluginMutationEnvelope {
     }
 
     /// Create a plugin-originated mutation envelope tagged with the owning generation.
-    pub fn plugin(mutation: PluginMutation, origin: PluginGeneration) -> Self {
+    #[must_use]
+    pub const fn plugin(mutation: PluginMutation, origin: PluginGeneration) -> Self {
         Self {
             mutation,
             origin: Some(origin),
@@ -185,27 +202,31 @@ impl PluginMutationEnvelope {
     }
 
     /// Create a mutation envelope with optional origin generation.
-    pub fn new(mutation: PluginMutation, origin: Option<PluginGeneration>) -> Self {
+    #[must_use]
+    pub const fn new(mutation: PluginMutation, origin: Option<PluginGeneration>) -> Self {
         Self { mutation, origin }
     }
 
     /// Extract the inner [`PluginMutation`].
+    #[must_use]
     pub fn into_mutation(self) -> PluginMutation {
         self.mutation
     }
 
     /// Reference the inner [`PluginMutation`].
-    pub fn mutation(&self) -> &PluginMutation {
+    #[must_use]
+    pub const fn mutation(&self) -> &PluginMutation {
         &self.mutation
     }
 
     /// Mutably reference the inner [`PluginMutation`].
-    pub fn mutation_mut(&mut self) -> &mut PluginMutation {
+    pub const fn mutation_mut(&mut self) -> &mut PluginMutation {
         &mut self.mutation
     }
 
     /// The origin plugin generation, if plugin-originated.
-    pub fn origin(&self) -> Option<PluginGeneration> {
+    #[must_use]
+    pub const fn origin(&self) -> Option<PluginGeneration> {
         self.origin
     }
 }
@@ -282,7 +303,7 @@ pub enum PluginMutation {
         keys: String,
         action: String,
     },
-    /// Set the viewport scroll position (top_line, left_col).
+    /// Set the viewport scroll position (`top_line`, `left_col`).
     SetScroll(usize, usize),
     /// Set the line ending for the active document ("lf" or "crlf").
     SetLineEnding(String),
@@ -290,7 +311,7 @@ pub enum PluginMutation {
     UnmapKey { mode: String, keys: String },
     /// Move the cursor to `row` (1-indexed) and center the viewport on it.
     CenterOnLine(usize),
-    /// Set the CursorHold idle delay in milliseconds.
+    /// Set the `CursorHold` idle delay in milliseconds.
     SetCursorHoldDelay(u32),
     /// Switch the active buffer to the given document ID.
     SwitchToBuffer(DocumentId),
@@ -388,7 +409,7 @@ pub enum PluginMutation {
         presentation: Option<crate::annotations::Presentation>,
         description: Option<String>,
     },
-    /// Create and activate an in-memory buffer. Fires BufOpen after creation.
+    /// Create and activate an in-memory buffer. Fires `BufOpen` after creation.
     CreateScratchBuf { name: String, lines: Vec<String> },
     /// Reload active buffer content from disk. Force discards unsaved changes.
     ReloadBuffer { force: bool },
@@ -433,7 +454,7 @@ pub enum PluginMutation {
 }
 
 /// Where a plugin-authored annotation is anchored.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AnnotationAnchorSpec {
     Line(usize),
     Point(usize),
@@ -490,7 +511,7 @@ impl PluginFloat {
 
     /// Anchor the float to a screen row (the cursor's) instead of centering.
     #[must_use]
-    pub fn with_anchor_row(mut self, row: usize) -> Self {
+    pub const fn with_anchor_row(mut self, row: usize) -> Self {
         self.anchor_row = Some(row);
         self
     }
@@ -510,7 +531,7 @@ struct CursorHoldState {
 }
 
 impl CursorHoldState {
-    fn new(threshold_polls: u32) -> Self {
+    const fn new(threshold_polls: u32) -> Self {
         Self {
             last_pos: (DocumentId::new(0), 0, 0),
             idle_polls: 0,
@@ -521,7 +542,7 @@ impl CursorHoldState {
 
     /// Called every idle frame. Returns `Some((buf, row, col))` when
     /// `CursorHold` should fire, `None` otherwise.
-    fn tick(&mut self) -> Option<(DocumentId, usize, usize)> {
+    const fn tick(&mut self) -> Option<(DocumentId, usize, usize)> {
         if self.fired {
             return None;
         }
@@ -548,8 +569,8 @@ impl CursorHoldState {
 /// Central plugin coordinator, owned by the `Editor`: dispatches [`EditorEvent`]s to handlers,
 /// queues [`PluginMutation`]s, tracks cursor-hold idle state, and holds registered commands/actions.
 pub struct PluginHost {
-    /// Handlers indexed by event name for O(1) lookup with optional origin generation.
-    handlers: std::collections::HashMap<&'static str, Vec<(Handler, Option<PluginGeneration>)>>,
+    /// Handlers indexed by event name; a `BTreeMap` keeps iteration order deterministic.
+    handlers: std::collections::BTreeMap<&'static str, Vec<(Handler, Option<PluginGeneration>)>>,
     /// Registered `:command` handlers with optional origin generation. Key is lowercase command name.
     commands: std::collections::HashMap<String, (CommandHandler, Option<PluginGeneration>)>,
     /// Optional one-line description for each registered command.
@@ -575,13 +596,13 @@ pub struct PluginHost {
     /// `(doc_id, annotations.revision)` last synced to Lua, so an unchanged
     /// annotation set isn't re-snapshotted every sync.
     last_synced_annotations: std::cell::Cell<Option<(u64, u64)>>,
-    /// Registered plugin names mapped to stable PluginId.
+    /// Registered plugin names mapped to stable `PluginId`.
     plugin_names: std::collections::HashMap<String, PluginId>,
-    /// Reverse mapping of PluginId to plugin name.
+    /// Reverse mapping of `PluginId` to plugin name.
     plugin_ids: std::collections::HashMap<PluginId, String>,
     /// Tracked generation lifecycles.
-    generations: std::collections::HashMap<PluginGeneration, GenerationStatus>,
-    /// Dedicated PluginId for Lua plugins.
+    generations: std::collections::BTreeMap<PluginGeneration, GenerationStatus>,
+    /// Dedicated `PluginId` for Lua plugins.
     lua_plugin_id: PluginId,
     /// Currently active Lua generation, if Lua is initialized.
     current_lua_generation: Option<PluginGeneration>,
@@ -590,9 +611,10 @@ pub struct PluginHost {
 impl PluginHost {
     /// Create a new plugin host. `cursor_hold_polls` is the number of idle main-loop polls
     /// before `CursorHold` fires (at the default 16ms poll rate, 25 polls = ~400ms).
+    #[must_use]
     pub fn new(cursor_hold_polls: u32) -> Self {
         Self {
-            handlers: std::collections::HashMap::new(),
+            handlers: std::collections::BTreeMap::new(),
             commands: std::collections::HashMap::new(),
             command_descriptions: std::collections::HashMap::new(),
             actions: std::collections::HashMap::new(),
@@ -606,14 +628,14 @@ impl PluginHost {
             last_synced_annotations: std::cell::Cell::new(None),
             plugin_names: std::collections::HashMap::new(),
             plugin_ids: std::collections::HashMap::new(),
-            generations: std::collections::HashMap::new(),
+            generations: std::collections::BTreeMap::new(),
             lua_plugin_id: allocate_next_plugin_id(),
             current_lua_generation: None,
         }
     }
 
     /// Whether any Lua code has run and can therefore observe editor state.
-    pub fn lua_state_wanted(&self) -> bool {
+    pub const fn lua_state_wanted(&self) -> bool {
         self.lua_used.get()
     }
 
@@ -833,7 +855,7 @@ impl PluginHost {
     }
 
     /// Returns `true` if a plugin float is currently open.
-    pub fn has_open_float(&self) -> bool {
+    pub const fn has_open_float(&self) -> bool {
         self.open_float.is_some()
     }
 
@@ -847,7 +869,7 @@ impl PluginHost {
 
     /// Returns `true` once after a float was closed, so the render layer
     /// can be cleared. Resets the flag on read.
-    pub fn take_float_closed(&mut self) -> bool {
+    pub const fn take_float_closed(&mut self) -> bool {
         let val = self.float_just_closed;
         self.float_just_closed = false;
         val
@@ -873,9 +895,8 @@ impl PluginHost {
         use crate::layer::Cell;
         use unicode_width::UnicodeWidthStr;
 
-        let float = match &mut self.open_float {
-            Some(f) => f,
-            None => return,
+        let Some(float) = &mut self.open_float else {
+            return;
         };
 
         let rows = layer.rows();
@@ -884,8 +905,15 @@ impl PluginHost {
 
         // Anchored: below the anchor row if it fits, else above; never on it.
         // The last screen row (status line) is never used. Otherwise centered.
-        let (position, content_h, left_aligned) = match float.anchor_row {
-            Some(r) => {
+        let (position, content_h, left_aligned) = float.anchor_row.map_or_else(
+            || {
+                (
+                    WindowPosition::Center,
+                    total.min(rows.saturating_sub(4)),
+                    false,
+                )
+            },
+            |r| {
                 let below = rows.saturating_sub(r + 2);
                 let above = r;
                 let wanted = total + 2;
@@ -899,17 +927,12 @@ impl PluginHost {
                     (0, above)
                 };
                 let position = WindowPosition::Absolute {
-                    row: top as u16,
+                    row: u16::try_from(top).unwrap_or(u16::MAX),
                     col: 0,
                 };
                 (position, height.saturating_sub(2), true)
-            }
-            None => (
-                WindowPosition::Center,
-                total.min(rows.saturating_sub(4)),
-                false,
-            ),
-        };
+            },
+        );
         float.visible_lines = content_h;
         float.scroll = float.scroll.min(total.saturating_sub(content_h));
         let overflow = total > content_h;
@@ -958,7 +981,10 @@ impl PluginHost {
         window.render(layer, &char_lines);
 
         // Title on the top border, clipped to the inner width.
-        let (top, left) = window.calculate_position(rows as u16, cols as u16);
+        let (top, left) = window.calculate_position(
+            u16::try_from(rows).unwrap_or(u16::MAX),
+            u16::try_from(cols).unwrap_or(u16::MAX),
+        );
         let (top, left) = (top as usize, left as usize + 1);
         let mut col = 0;
         for ch in title.chars() {
@@ -997,74 +1023,19 @@ impl PluginHost {
                 self.lua = Some(host);
                 None
             }
-            Err(e) => Some(format!("Failed to initialize Lua: {}", e)),
+            Err(e) => Some(format!("Failed to initialize Lua: {e}")),
         }
     }
 
     /// Return the currently active Lua generation, if any.
-    pub fn current_lua_generation(&self) -> Option<PluginGeneration> {
+    pub const fn current_lua_generation(&self) -> Option<PluginGeneration> {
         self.current_lua_generation
     }
 
     /// Update the Lua VM's buffer snapshot before dispatching events.
-    #[allow(clippy::too_many_arguments)]
-    pub fn lua_update_state(
-        &self,
-        buf_id: usize,
-        buf_kind: String,
-        source: lua_host::BufSourceUpdate,
-        cursor: (usize, usize),
-        tab_width: usize,
-        expand_tabs: bool,
-        mode: &str,
-        filetype: Option<String>,
-        file_path: Option<String>,
-        buf_list: Vec<lua_host::BufEntry>,
-        window_size: (u16, u16),
-        can_undo: bool,
-        can_redo: bool,
-        is_dirty: bool,
-        scroll: (usize, usize),
-        line_ending: &str,
-        commands: Vec<(String, String)>,
-        win_list: Vec<lua_host::WinEntry>,
-        focused_win_id: u64,
-        previous_win_id: Option<u64>,
-        lsp_diagnostics: std::collections::HashMap<String, Vec<(u32, u32, u32, String)>>,
-        buffer_vars: std::collections::HashMap<
-            u64,
-            std::collections::HashMap<String, crate::annotations::Value>,
-        >,
-        doc_options: crate::document::definitions::DocumentOptions,
-        user_settings: crate::state::UserSettings,
-    ) {
+    pub fn lua_update_state(&self, update: lua_host::StateUpdate<'_>) {
         if let Some(lua) = &self.lua {
-            lua.update_state(
-                buf_id,
-                buf_kind,
-                source,
-                cursor,
-                tab_width,
-                expand_tabs,
-                mode,
-                filetype,
-                file_path,
-                buf_list,
-                window_size,
-                can_undo,
-                can_redo,
-                is_dirty,
-                scroll,
-                line_ending,
-                commands,
-                win_list,
-                focused_win_id,
-                previous_win_id,
-                lsp_diagnostics,
-                buffer_vars,
-                doc_options,
-                user_settings,
-            );
+            lua.update_state(update);
         }
     }
 
@@ -1081,23 +1052,20 @@ impl PluginHost {
 
     /// Load all top-level `.lua` files in `dir`, sorted lexicographically. Returns error strings.
     pub fn lua_load_dir(&self, dir: &std::path::Path) -> Vec<String> {
-        match &self.lua {
-            Some(lua) => {
-                let has_lua_files = std::fs::read_dir(dir)
-                    .map(|rd| {
-                        rd.flatten().any(|e| {
-                            let p = e.path();
-                            p.is_file() && p.extension().is_some_and(|x| x == "lua")
-                        })
+        self.lua.as_ref().map_or_else(Vec::new, |lua| {
+            let has_lua_files = std::fs::read_dir(dir)
+                .map(|rd| {
+                    rd.flatten().any(|e| {
+                        let p = e.path();
+                        p.is_file() && p.extension().is_some_and(|x| x == "lua")
                     })
-                    .unwrap_or(false);
-                if has_lua_files {
-                    self.lua_used.set(true);
-                }
-                lua.load_dir(dir)
+                })
+                .unwrap_or(false);
+            if has_lua_files {
+                self.lua_used.set(true);
             }
-            None => vec![],
-        }
+            lua.load_dir(dir)
+        })
     }
 
     /// Execute a single `.lua` file. Returns an error string on failure.
@@ -1114,21 +1082,18 @@ impl PluginHost {
         lua.exec(code)
     }
 
-    /// Dispatch an event to all registered handlers, applying any returned mutations via [`apply_mutation`].
     /// Invoke a Lua annotation action handler. Returns `true` if one ran.
     pub fn invoke_annotation_action(&self, ctx: &AnnotationActionCtx) -> bool {
-        match &self.lua {
-            Some(lua) => lua.invoke_annotation_action(ctx),
-            None => false,
-        }
+        self.lua
+            .as_ref()
+            .is_some_and(|lua| lua.invoke_annotation_action(ctx))
     }
 
     /// Invoke a Lua cursor enter/leave hook. Returns `true` if one ran.
     pub fn invoke_annotation_hook(&self, enter: bool, ctx: &AnnotationHoverCtx) -> bool {
-        match &self.lua {
-            Some(lua) => lua.invoke_annotation_hook(enter, ctx),
-            None => false,
-        }
+        self.lua
+            .as_ref()
+            .is_some_and(|lua| lua.invoke_annotation_hook(enter, ctx))
     }
 
     /// Invoke a Lua buffer-kind action callback. Returns `true` if handled.
@@ -1170,6 +1135,8 @@ impl PluginHost {
         }
     }
 
+    /// Dispatch an event to all registered handlers, applying any returned mutations via
+    /// [`Self::apply_mutation`].
     pub fn dispatch(&mut self, event: &EditorEvent) {
         if let EditorEvent::CursorMoved { buf, row, col } = event {
             self.cursor_hold.on_cursor_move(*buf, *row, *col);
@@ -1212,7 +1179,7 @@ impl PluginHost {
             .map(|(buf, row, col)| EditorEvent::CursorHold { buf, row, col })
     }
 
-    /// Update the CursorHold threshold from a millisecond value.
+    /// Update the `CursorHold` threshold from a millisecond value.
     /// `poll_ms` is the main-loop poll interval (typically 16).
     pub fn set_cursor_hold_delay_ms(&mut self, delay_ms: u32, poll_ms: u32) {
         let polls = (delay_ms / poll_ms.max(1)).max(1);
@@ -1237,7 +1204,7 @@ impl PluginHost {
 
     /// Look up the plugin name for a given `PluginId`, if known.
     pub fn plugin_name(&self, id: PluginId) -> Option<&str> {
-        self.plugin_ids.get(&id).map(|s| s.as_str())
+        self.plugin_ids.get(&id).map(std::string::String::as_str)
     }
 
     /// Spawn a new active generation for a plugin. Generation numbers are
@@ -1337,9 +1304,9 @@ impl PluginHost {
         }
         let initial_len = self.mutation_queue.len();
         let generations = &self.generations;
-        self.mutation_queue.retain(|env| match env.origin {
-            Some(gen) => generations.get(&gen).copied() == Some(GenerationStatus::Active),
-            None => true,
+        self.mutation_queue.retain(|env| {
+            env.origin
+                .is_none_or(|gen| generations.get(&gen).copied() == Some(GenerationStatus::Active))
         });
         let discarded = initial_len.saturating_sub(self.mutation_queue.len());
         let to_retire: Vec<PluginGeneration> = self
@@ -1374,7 +1341,7 @@ impl PluginHost {
     }
 
     /// Number of mutations currently queued.
-    pub fn queued_mutation_count(&self) -> usize {
+    pub const fn queued_mutation_count(&self) -> usize {
         self.mutation_queue.len()
     }
 
@@ -1473,9 +1440,9 @@ impl PluginHost {
             }
         }
         let generations = &self.generations;
-        self.mutation_queue.retain(|env| match env.origin {
-            Some(gen) => generations.get(&gen).copied() == Some(GenerationStatus::Active),
-            None => true,
+        self.mutation_queue.retain(|env| {
+            env.origin
+                .is_none_or(|gen| generations.get(&gen).copied() == Some(GenerationStatus::Active))
         });
         self.mutation_queue.drain(..).map(|env| env.mutation)
     }
@@ -1492,9 +1459,9 @@ impl PluginHost {
             }
         }
         let generations = &self.generations;
-        self.mutation_queue.retain(|env| match env.origin {
-            Some(gen) => generations.get(&gen).copied() == Some(GenerationStatus::Active),
-            None => true,
+        self.mutation_queue.retain(|env| {
+            env.origin
+                .is_none_or(|gen| generations.get(&gen).copied() == Some(GenerationStatus::Active))
         });
         self.mutation_queue.drain(..)
     }
@@ -1502,7 +1469,7 @@ impl PluginHost {
 
 impl std::fmt::Debug for PluginHost {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let handler_counts: std::collections::HashMap<_, _> =
+        let handler_counts: std::collections::BTreeMap<_, _> =
             self.handlers.iter().map(|(k, v)| (k, v.len())).collect();
         f.debug_struct("PluginHost")
             .field("handlers", &handler_counts)
@@ -1511,7 +1478,7 @@ impl std::fmt::Debug for PluginHost {
             .field("open_float", &self.open_float.as_ref().map(|f| &f.title))
             .field("queued_mutations", &self.mutation_queue.len())
             .field("active_generations", &self.active_generations())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

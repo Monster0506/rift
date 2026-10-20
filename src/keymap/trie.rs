@@ -28,12 +28,13 @@ pub enum Strictness {
 #[derive(Debug, Default, Clone)]
 pub struct TrieNode {
     /// Children nodes mapped by key
-    children: HashMap<Key, TrieNode>,
+    children: HashMap<Key, Self>,
     /// Action associated with this sequence (if any)
     action: Option<Action>,
 }
 
 impl TrieNode {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -72,6 +73,7 @@ impl TrieNode {
     }
 
     /// Look up a sequence
+    #[must_use]
     pub fn lookup<'a>(&'a self, keys: &[Key], strictness: Strictness) -> MatchResult<'a> {
         if keys.is_empty() {
             // A node with both an action and children is Ambiguous: the caller
@@ -88,13 +90,13 @@ impl TrieNode {
             return MatchResult::None;
         }
 
-        match self.child(&keys[0], strictness) {
-            Some(child) => child.lookup(&keys[1..], strictness),
-            None => MatchResult::None,
-        }
+        self.child(&keys[0], strictness)
+            .map_or(MatchResult::None, |child| {
+                child.lookup(&keys[1..], strictness)
+            })
     }
 
-    fn child(&self, key: &Key, strictness: Strictness) -> Option<&TrieNode> {
+    fn child(&self, key: &Key, strictness: Strictness) -> Option<&Self> {
         if let Some(child) = self.children.get(key) {
             return Some(child);
         }

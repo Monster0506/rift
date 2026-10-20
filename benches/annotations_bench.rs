@@ -55,7 +55,7 @@ fn line_anchor_edit_tracking(c: &mut Criterion) {
                     store
                 },
                 criterion::BatchSize::SmallInput,
-            )
+            );
         });
     }
     group.finish();
@@ -75,7 +75,7 @@ fn marker_shift_under_edits(c: &mut Criterion) {
                     store
                 },
                 criterion::BatchSize::SmallInput,
-            )
+            );
         });
     }
     group.finish();
@@ -97,7 +97,7 @@ fn query_after_invalidation(c: &mut Criterion) {
                     }
                 },
                 criterion::BatchSize::SmallInput,
-            )
+            );
         });
 
         group.bench_with_input(BenchmarkId::new("range_after_edit", n), &n, |b, &n| {
@@ -114,7 +114,7 @@ fn query_after_invalidation(c: &mut Criterion) {
                     }
                 },
                 criterion::BatchSize::SmallInput,
-            )
+            );
         });
 
         group.bench_with_input(BenchmarkId::new("next_interactive", n), &n, |b, &n| {
@@ -134,7 +134,7 @@ fn query_after_invalidation(c: &mut Criterion) {
                     black_box(walked)
                 },
                 criterion::BatchSize::SmallInput,
-            )
+            );
         });
     }
     group.finish();
@@ -156,7 +156,7 @@ fn presentation_flatten(c: &mut Criterion) {
                     )
                     .with_presentation(Presentation::with_style(
                         StyleOverride {
-                            underline: true,
+                            attrs: monster_rift::layer::CellAttrs::UNDERLINE,
                             ..Default::default()
                         },
                     )),
@@ -166,7 +166,7 @@ fn presentation_flatten(c: &mut Criterion) {
                 let spans =
                     store.presentation_spans(black_box(None), black_box(None), 0..usize::MAX);
                 black_box(spans.len())
-            })
+            });
         });
     }
     group.finish();
@@ -184,7 +184,7 @@ fn populated_store_for_render(n: usize) -> AnnotationStore {
                 AnnotationOwner::User,
             )
             .with_presentation(Presentation::with_style(StyleOverride {
-                underline: true,
+                attrs: monster_rift::layer::CellAttrs::UNDERLINE,
                 ..Default::default()
             })),
         );
@@ -229,7 +229,7 @@ fn render_viewport_scroll(c: &mut Criterion) {
                     }
                 },
                 criterion::BatchSize::SmallInput,
-            )
+            );
         });
     }
     group.finish();
@@ -262,7 +262,7 @@ fn render_full_document_scan(c: &mut Criterion) {
                     }
                 },
                 criterion::BatchSize::SmallInput,
-            )
+            );
         });
     }
     group.finish();
@@ -285,7 +285,7 @@ fn insertion_undo_recording(c: &mut Criterion) {
                     store
                 },
                 criterion::BatchSize::SmallInput,
-            )
+            );
         });
         group.bench_with_input(BenchmarkId::new("shift_only", n), &n, |b, &n| {
             b.iter_batched(
@@ -298,7 +298,7 @@ fn insertion_undo_recording(c: &mut Criterion) {
                     store
                 },
                 criterion::BatchSize::SmallInput,
-            )
+            );
         });
     }
     group.finish();
@@ -325,7 +325,7 @@ fn diagnostic_replace(c: &mut Criterion) {
                     black_box(store.query_at(0).count());
                 },
                 criterion::BatchSize::SmallInput,
-            )
+            );
         });
         group.bench_with_input(BenchmarkId::new("bulk_replace", d), &d, |b, &d| {
             b.iter_batched(
@@ -341,7 +341,7 @@ fn diagnostic_replace(c: &mut Criterion) {
                     black_box(store.query_at(0).count());
                 },
                 criterion::BatchSize::SmallInput,
-            )
+            );
         });
     }
     group.finish();

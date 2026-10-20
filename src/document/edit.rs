@@ -16,10 +16,12 @@ impl Document {
         let line_start_byte = self.buffer.char_to_byte(line_start_char);
         let byte_col = byte_offset.saturating_sub(line_start_byte);
         let char_col = char_offset.saturating_sub(line_start_char);
-        (
-            (line, byte_col),
-            Position::new(line as u32, char_col as u32),
-        )
+        // Position is u32 by design; positions beyond u32 are unsupported.
+        let position = Position::new(
+            u32::try_from(line).unwrap_or(u32::MAX),
+            u32::try_from(char_col).unwrap_or(u32::MAX),
+        );
+        ((line, byte_col), position)
     }
 
     pub(super) fn record_edit(
@@ -32,7 +34,7 @@ impl Document {
         if self.ghost_paint_active {
             return;
         }
-        self.document_version = self.document_version.wrapping_add(1);
+        self.content_version = self.content_version.wrapping_add(1);
         self.pending_lsp_edits.push(op.clone());
         if let Some(ref mut tx) = self.current_transaction {
             tx.record(op);
@@ -61,6 +63,8 @@ impl Document {
         }
     }
 
+    /// # Errors
+    /// Propagates any error from the text buffer insert.
     pub fn insert_char(&mut self, ch: char) -> Result<(), RiftError> {
         if self.is_read_only() {
             return Ok(());
@@ -81,17 +85,15 @@ impl Document {
         let added_bytes = ch.len_utf8();
         let new_end_byte = start_byte + added_bytes;
 
-        let line_inserts = match line_before_insert {
-            Some(before_line) => vec![before_line + 1],
-            None => Vec::new(),
-        };
+        let line_inserts =
+            line_before_insert.map_or_else(Vec::new, |before_line| vec![before_line + 1]);
 
         let text = vec![Character::from(ch)];
         let ch_str = ch.to_string();
         self.record_edit(
             EditOperation::Insert {
                 position: history_pos,
-                text: text.clone(),
+                text,
                 len: ch.len_utf8(),
             },
             &format!("Insert '{}'", if ch == '\n' { "\\n" } else { &ch_str }),
@@ -126,6 +128,8 @@ impl Document {
         Ok(())
     }
 
+    /// # Errors
+    /// Propagates any error from the text buffer insert.
     pub fn insert_str(&mut self, s: &str) -> Result<(), RiftError> {
         let newline_count = s.chars().filter(|&c| c == '\n').count();
         let line_before_insert = if newline_count > 0 {
@@ -143,10 +147,9 @@ impl Document {
         let added_bytes = s.len();
         let new_end_byte = start_byte + added_bytes;
 
-        let line_inserts: Vec<usize> = match line_before_insert {
-            Some(before_line) => (0..newline_count).map(|i| before_line + 1 + i).collect(),
-            None => Vec::new(),
-        };
+        let line_inserts: Vec<usize> = line_before_insert.map_or_else(Vec::new, |before_line| {
+            (0..newline_count).map(|i| before_line + 1 + i).collect()
+        });
 
         if !s.is_empty() {
             let text: Vec<Character> = s.chars().map(Character::from).collect();
@@ -191,6 +194,8 @@ impl Document {
         Ok(())
     }
 
+    /// # Errors
+    /// Propagates any error from the text buffer insert.
     pub fn insert_characters(&mut self, chars: &[Character]) -> Result<(), RiftError> {
         if self.is_read_only() {
             return Ok(());
@@ -211,13 +216,15 @@ impl Document {
 
         self.buffer.insert_chars(chars)?;
 
-        let added_bytes: usize = chars.iter().map(|c| c.len_utf8()).sum();
+        let added_bytes: usize = chars
+            .iter()
+            .map(super::super::character::Character::len_utf8)
+            .sum();
         let new_end_byte = start_byte + added_bytes;
 
-        let line_inserts: Vec<usize> = match line_before_insert {
-            Some(before_line) => (0..newline_count).map(|i| before_line + 1 + i).collect(),
-            None => Vec::new(),
-        };
+        let line_inserts: Vec<usize> = line_before_insert.map_or_else(Vec::new, |before_line| {
+            (0..newline_count).map(|i| before_line + 1 + i).collect()
+        });
 
         if !chars.is_empty() {
             self.record_edit(
@@ -273,7 +280,7 @@ impl Document {
         let deleted_char = self
             .buffer
             .char_at(cursor - 1)
-            .unwrap_or(Character::from('\0'));
+            .unwrap_or_else(|| Character::from('\0'));
 
         if self.policies().structural_edit == crate::document::StructuralEditPolicy::PreserveRows
             && deleted_char == Character::Newline
@@ -335,7 +342,10 @@ impl Document {
             return false;
         }
 
-        let deleted_char = self.buffer.char_at(cursor).unwrap_or(Character::from('\0'));
+        let deleted_char = self
+            .buffer
+            .char_at(cursor)
+            .unwrap_or_else(|| Character::from('\0'));
 
         if self.policies().structural_edit == crate::document::StructuralEditPolicy::PreserveRows
             && deleted_char == Character::Newline
@@ -388,12 +398,15 @@ impl Document {
         false
     }
 
+    /// # Errors
+    /// Returns an `Internal` error when `pos + count` is past the end of the buffer.
     pub fn replace_chars(
         &mut self,
         pos: usize,
         count: usize,
         new_chars: &[Character],
     ) -> Result<(), RiftError> {
+        use crate::buffer::api::BufferView;
         if self.is_read_only() {
             return Ok(());
         }
@@ -410,7 +423,6 @@ impl Document {
             ));
         }
 
-        use crate::buffer::api::BufferView;
         let cursor_before = self.buffer.cursor();
         let old_chars: Vec<Character> = self.buffer.chars(pos..end).collect();
 
@@ -450,12 +462,17 @@ impl Document {
         Ok(())
     }
 
+    /// # Errors
+    /// Propagates the error from `replace_chars` when `pos + count` is past the end of the buffer.
     pub fn replace_repeat(&mut self, pos: usize, count: usize, ch: char) -> Result<(), RiftError> {
         let fill: Vec<Character> = vec![Character::from(ch); count];
         self.replace_chars(pos, count, &fill)
     }
 
+    /// # Errors
+    /// Returns an `Internal` error when `end` is past the end of the buffer.
     pub fn delete_range(&mut self, start: usize, end: usize) -> Result<(), RiftError> {
+        use crate::buffer::api::BufferView;
         if start >= end {
             return Ok(());
         }
@@ -472,7 +489,6 @@ impl Document {
             ));
         }
 
-        use crate::buffer::api::BufferView;
         let cursor_before = self.buffer.cursor();
         let deleted_chars: Vec<Character> = self.buffer.chars(start..end).collect();
 
@@ -506,7 +522,7 @@ impl Document {
                 range: Range::new(history_start, history_end),
                 deleted_text: deleted_chars,
             },
-            &format!("Delete {} chars", count),
+            &format!("Delete {count} chars"),
             AnnotationUndoHint::Snapshot,
             cursor_before,
         );

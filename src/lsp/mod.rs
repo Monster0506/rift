@@ -3,7 +3,7 @@ pub mod client;
 pub mod config;
 pub mod protocol;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use client::{LspClient, RawLspMessage};
@@ -100,11 +100,11 @@ struct DocState {
     version: i64,
 }
 
-/// The overall LSP integration layer. Owns one LspClient per active language server.
+/// The overall LSP integration layer. Owns one `LspClient` per active language server.
 pub struct LspManager {
     /// language name -> active client
-    clients: HashMap<String, LspClient>,
-    /// normalized document URI -> DocState
+    clients: BTreeMap<String, LspClient>,
+    /// normalized document URI -> `DocState`
     open_docs: HashMap<String, DocState>,
     /// project root, if any
     workspace_root: Option<PathBuf>,
@@ -118,13 +118,13 @@ pub struct LspManager {
     indexing_ended: HashMap<String, usize>,
     /// language -> human-readable server name (e.g. "rust-analyzer"), set on initialize
     server_names: HashMap<String, String>,
-    /// When indexing_tokens last dropped to 0. ServerReady fires after a 600ms
+    /// When `indexing_tokens` last dropped to 0. `ServerReady` fires after a 600ms
     /// grace period so rapid token bursts don't trigger premature readiness.
     indexing_idle_since: HashMap<String, std::time::Instant>,
     /// Documents queued for didOpen before their server's initialize handshake completes.
     /// language -> list of (uri, params) waiting to be sent.
     pending_opens: HashMap<String, Vec<(String, serde_json::Value)>>,
-    /// Debug log messages queued by internal methods that can't return LspMessage directly.
+    /// Debug log messages queued by internal methods that can't return `LspMessage` directly.
     pending_logs: Vec<String>,
     /// language -> negotiated `Position.character` unit, from the server's
     /// initialize response (LSP defaults to UTF-16 when it omits the field).
@@ -132,18 +132,19 @@ pub struct LspManager {
     /// language -> whether the server's initialize response negotiated
     /// incremental (as opposed to full-document) sync.
     incremental_sync: HashMap<String, bool>,
-    /// language -> unexpected exits so far; respawning stops at MAX_RESTARTS
+    /// language -> unexpected exits so far; respawning stops at `MAX_RESTARTS`
     /// (reset by `register_server`) so a crash-looping server can't spam.
     exits: HashMap<String, u32>,
     /// language -> active diagnostics-run progress tokens (never gate requests).
     flycheck_tokens: HashMap<String, std::collections::HashSet<String>>,
-    /// Languages that reached ServerReady once; later progress only shows status.
+    /// Languages that reached `ServerReady` once; later progress only shows status.
     ready_once: std::collections::HashSet<String>,
 }
 
 impl LspManager {
     /// True while `language`'s server is doing its initial load: requests
     /// would only queue behind it. Never true again once it has been ready.
+    #[must_use]
     pub fn is_indexing(&self, language: &str) -> bool {
         if self.ready_once.contains(language) {
             return false;
@@ -155,18 +156,19 @@ impl LspManager {
     }
 
     /// Returns true if the server for the given file path is still indexing.
+    #[must_use]
     pub fn is_indexing_path(&self, path: &Path) -> bool {
         self.open_docs
             .get(&doc_key(path))
-            .map(|s| self.is_indexing(&s.language))
-            .unwrap_or(false)
+            .is_some_and(|s| self.is_indexing(&s.language))
     }
 }
 
 impl LspManager {
+    #[must_use]
     pub fn new(workspace_root: Option<PathBuf>) -> Self {
         Self {
-            clients: HashMap::new(),
+            clients: BTreeMap::new(),
             open_docs: HashMap::new(),
 
             workspace_root,
@@ -188,6 +190,7 @@ impl LspManager {
 
     /// Negotiated `Position.character` unit for the server handling `path`
     /// (UTF-16 if unknown/not yet negotiated, per the LSP default).
+    #[must_use]
     pub fn position_encoding_for_path(
         &self,
         path: &Path,
@@ -208,6 +211,7 @@ impl LspManager {
     }
 
     /// Returns the LSP language name for a given document URI, if the document is open.
+    #[must_use]
     pub fn language_for_uri(&self, uri: &str) -> Option<&str> {
         self.open_docs
             .get(&normalize_uri(uri))
@@ -216,16 +220,19 @@ impl LspManager {
 
     /// Our current didChange version for an open document, so stale
     /// server snapshots (e.g. publishDiagnostics.version) can be detected.
+    #[must_use]
     pub fn document_version(&self, uri: &str) -> Option<i64> {
         self.open_docs.get(&normalize_uri(uri)).map(|s| s.version)
     }
 
     /// Returns the human-readable server name for a language, if the server has connected.
+    #[must_use]
     pub fn server_name(&self, lang: &str) -> Option<&str> {
-        self.server_names.get(lang).map(|s| s.as_str())
+        self.server_names.get(lang).map(std::string::String::as_str)
     }
 
     /// Returns (ended, started) for X/Y progress display, or None if no indexing has started.
+    #[must_use]
     pub fn indexing_progress(&self, lang: &str) -> Option<(usize, usize)> {
         let started = self.indexing_started.get(lang).copied().unwrap_or(0);
         if started == 0 {
@@ -246,8 +253,7 @@ impl LspManager {
     fn capability_allowed(&self, language: &str, cap: config::LspCapability) -> bool {
         self.registered_servers
             .get(language)
-            .map(|c| c.has_capability(&cap))
-            .unwrap_or(true)
+            .is_none_or(|c| c.has_capability(cap))
     }
 
     /// Walk up from `file` to find the nearest project root using the given markers.
@@ -277,8 +283,7 @@ impl LspManager {
             let server = self.registered_servers.get(language)?.clone();
             if self.exits.get(language).copied().unwrap_or(0) >= MAX_RESTARTS {
                 self.pending_logs.push(format!(
-                    "LSP [{}]: server exited {} times, not restarting",
-                    language, MAX_RESTARTS
+                    "LSP [{language}]: server exited {MAX_RESTARTS} times, not restarting"
                 ));
                 return None;
             }
@@ -314,8 +319,7 @@ impl LspManager {
                 )
                 .map_err(|e| {
                     self.pending_logs.push(format!(
-                        "LSP [{}]: keepalive unavailable ({}), spawning directly",
-                        language, e
+                        "LSP [{language}]: keepalive unavailable ({e}), spawning directly"
                     ));
                 })
                 .ok()
@@ -332,58 +336,15 @@ impl LspManager {
                 ) {
                     Ok(c) => c,
                     Err(e) => {
-                        self.pending_logs.push(format!(
-                            "LSP [{}]: failed to start server ({})",
-                            language, e
-                        ));
+                        self.pending_logs
+                            .push(format!("LSP [{language}]: failed to start server ({e})"));
                         return None;
                     }
                 },
             };
 
             // Send initialize
-            let workspace_folders = root_uri.as_ref().map(|uri| {
-                let name = uri.rsplit('/').next().unwrap_or("workspace").to_string();
-                vec![protocol::WorkspaceFolder {
-                    uri: uri.clone(),
-                    name,
-                }]
-            });
-            let params = serde_json::to_value(InitializeParams {
-                process_id: Some(std::process::id()),
-                root_uri,
-                workspace_folders,
-                capabilities: ClientCapabilities {
-                    general: GeneralCapabilities {
-                        position_encodings: vec!["utf-16".into(), "utf-8".into()],
-                    },
-                    text_document: TextDocumentClientCapabilities {
-                        synchronization: TextDocumentSyncClientCapabilities {
-                            dynamic_registration: false,
-                            will_save: false,
-                            did_save: true,
-                        },
-                        hover: Default::default(),
-                        definition: Default::default(),
-                        references: Default::default(),
-                        rename: Default::default(),
-                        formatting: Default::default(),
-                        publish_diagnostics: Default::default(),
-                        code_action: Default::default(),
-                    },
-                    workspace: protocol::WorkspaceClientCapabilities {
-                        apply_edit: true,
-                        workspace_edit: protocol::WorkspaceEditClientCapabilities {
-                            document_changes: true,
-                        },
-                    },
-                    window: WindowCapabilities {
-                        work_done_progress: true,
-                    },
-                },
-                initialization_options: server.initialization_options.clone(),
-            })
-            .ok()?;
+            let params = initialize_params(root_uri, &server)?;
 
             client.send_request("initialize", params, None);
 
@@ -406,7 +367,7 @@ impl LspManager {
         // Ensure the client exists (spawns and sends initialize if needed).
         if self.ensure_client(language, Some(path)).is_none() {
             return;
-        };
+        }
 
         self.open_docs.insert(
             key.clone(),
@@ -428,11 +389,7 @@ impl LspManager {
 
         // Queue didOpen until the initialize handshake completes.
         // poll() flushes it once the client is ready.
-        let initialized = self
-            .clients
-            .get(language)
-            .map(|c| c.initialized)
-            .unwrap_or(false);
+        let initialized = self.clients.get(language).is_some_and(|c| c.initialized);
         if initialized {
             if let Some(client) = self.clients.get_mut(language) {
                 client.send_notification("textDocument/didOpen", params);
@@ -445,8 +402,9 @@ impl LspManager {
         }
     }
 
-    /// True when a did_change for `path` would actually reach a live client,
+    /// True when a `did_change` for `path` would actually reach a live client,
     /// so callers can skip materializing the document content otherwise.
+    #[must_use]
     pub fn is_tracking(&self, path: &Path) -> bool {
         self.is_tracking_uri(&path_to_uri(path))
     }
@@ -465,17 +423,14 @@ impl LspManager {
 
     /// Notify the server that a URI's content changed.
     pub(crate) fn did_change_uri(&mut self, uri: &str, content: &str) {
-        let (language, version) = match self.open_docs.get_mut(&normalize_uri(uri)) {
-            Some(state) => {
-                state.version += 1;
-                (state.language.clone(), state.version)
-            }
-            None => return,
+        let Some(state) = self.open_docs.get_mut(&normalize_uri(uri)) else {
+            return;
         };
+        state.version += 1;
+        let (language, version) = (state.language.clone(), state.version);
 
-        let client = match self.clients.get_mut(&language) {
-            Some(c) => c,
-            None => return,
+        let Some(client) = self.clients.get_mut(&language) else {
+            return;
         };
 
         let params = DidChangeTextDocumentParams {
@@ -504,17 +459,14 @@ impl LspManager {
         uri: &str,
         changes: Vec<(LspRange, String)>,
     ) {
-        let (language, version) = match self.open_docs.get_mut(&normalize_uri(uri)) {
-            Some(state) => {
-                state.version += 1;
-                (state.language.clone(), state.version)
-            }
-            None => return,
+        let Some(state) = self.open_docs.get_mut(&normalize_uri(uri)) else {
+            return;
         };
+        state.version += 1;
+        let (language, version) = (state.language.clone(), state.version);
 
-        let client = match self.clients.get_mut(&language) {
-            Some(c) => c,
-            None => return,
+        let Some(client) = self.clients.get_mut(&language) else {
+            return;
         };
 
         let content_changes = changes
@@ -538,6 +490,7 @@ impl LspManager {
 
     /// Whether the server handling `path` negotiated incremental document
     /// sync (defaults to false -- full-document sync -- until negotiated).
+    #[must_use]
     pub fn supports_incremental_sync(&self, path: &Path) -> bool {
         self.supports_incremental_sync_uri(&path_to_uri(path))
     }
@@ -554,18 +507,17 @@ impl LspManager {
     /// Notify the server that a document was saved.
     pub fn did_save(&mut self, path: &Path, content: Option<&str>) {
         let uri = path_to_uri(path);
-        let language = match self.open_docs.get(&normalize_uri(&uri)) {
-            Some(s) => s.language.clone(),
-            None => return,
+        let Some(doc) = self.open_docs.get(&normalize_uri(&uri)) else {
+            return;
         };
-        let client = match self.clients.get_mut(&language) {
-            Some(c) => c,
-            None => return,
+        let language = doc.language.clone();
+        let Some(client) = self.clients.get_mut(&language) else {
+            return;
         };
 
         let params = serde_json::to_value(DidSaveTextDocumentParams {
             text_document: TextDocumentIdentifier { uri },
-            text: content.map(|s| s.to_string()),
+            text: content.map(std::string::ToString::to_string),
         })
         .unwrap_or(Value::Null);
 
@@ -575,13 +527,11 @@ impl LspManager {
     /// Notify the server that a document was closed.
     pub fn did_close(&mut self, path: &Path) {
         let uri = path_to_uri(path);
-        let state = match self.open_docs.remove(&normalize_uri(&uri)) {
-            Some(s) => s,
-            None => return,
+        let Some(state) = self.open_docs.remove(&normalize_uri(&uri)) else {
+            return;
         };
-        let client = match self.clients.get_mut(&state.language) {
-            Some(c) => c,
-            None => return,
+        let Some(client) = self.clients.get_mut(&state.language) else {
+            return;
         };
 
         let params = serde_json::to_value(DidCloseTextDocumentParams {
@@ -773,76 +723,12 @@ impl LspManager {
                             .clients
                             .get_mut(lang)
                             .and_then(|c| c.pending.remove(&id));
-                        let method = pending.as_ref().map(|p| p.method.as_str()).unwrap_or("");
+                        let method = pending.as_ref().map_or("", |p| p.method.as_str());
                         let uri = pending.as_ref().and_then(|p| p.uri.as_deref());
 
                         // Mark initialized after successful initialize
                         if method == "initialize" {
-                            results.push(LspMessage::Log {
-                                message: format!("LSP [{}]: initialize response received", lang),
-                            });
-                            if let Some(c) = self.clients.get_mut(lang) {
-                                c.initialized = true;
-                                c.send_notification("initialized", serde_json::json!({}));
-                            }
-
-                            // Server's chosen Position.character unit; LSP
-                            // defaults to UTF-16 when the field is absent.
-                            let encoding = result
-                                .get("capabilities")
-                                .and_then(|c| c.get("positionEncoding"))
-                                .and_then(|v| v.as_str())
-                                .and_then(crate::lsp::protocol::PositionEncoding::from_wire)
-                                .unwrap_or_default();
-                            self.position_encodings.insert(lang.to_string(), encoding);
-
-                            // textDocumentSync is either a bare number or an
-                            // object with a `change` field; 2 == Incremental.
-                            let sync = result
-                                .get("capabilities")
-                                .and_then(|c| c.get("textDocumentSync"));
-                            let sync_kind = sync.and_then(|s| s.as_u64()).or_else(|| {
-                                sync.and_then(|s| s.get("change")).and_then(|v| v.as_u64())
-                            });
-                            self.incremental_sync
-                                .insert(lang.to_string(), sync_kind == Some(2));
-
-                            // Flush any didOpen calls that arrived before initialization.
-                            let queued = self.pending_opens.remove(lang).unwrap_or_default();
-                            results.push(LspMessage::Log {
-                                message: format!(
-                                    "LSP [{}]: flushing {} queued didOpen(s)",
-                                    lang,
-                                    queued.len()
-                                ),
-                            });
-                            for (uri, params) in queued {
-                                results.push(LspMessage::Log {
-                                    message: format!("LSP [{}]: didOpen -> {}", lang, uri),
-                                });
-                                if let Some(c) = self.clients.get_mut(lang) {
-                                    c.send_notification("textDocument/didOpen", params);
-                                }
-                            }
-
-                            // Extract the human-readable server name from capabilities,
-                            // falling back to the language name if the server omits it.
-                            let server_name = result
-                                .get("serverInfo")
-                                .and_then(|si| si.get("name"))
-                                .and_then(|n| n.as_str())
-                                .unwrap_or(lang)
-                                .to_string();
-                            self.server_names
-                                .insert(lang.to_string(), server_name.clone());
-                            results.push(LspMessage::ServerConnected {
-                                language: lang.to_string(),
-                                server_name,
-                            });
-                            // Seed the idle timer so ServerReady fires if no $/progress tokens arrive.
-                            self.indexing_idle_since
-                                .entry(lang.to_string())
-                                .or_insert_with(std::time::Instant::now);
+                            self.handle_initialize_response(lang, &result, &mut results);
                         } else if method.is_empty() {
                             // Untracked id (e.g. reply to a forgotten server): nothing to route.
                         } else if let Some(msg) = route_response(method, uri, result) {
@@ -850,8 +736,7 @@ impl LspManager {
                         } else {
                             results.push(LspMessage::Log {
                                 message: format!(
-                                    "LSP [{}]: unrouted response method='{}'",
-                                    lang, method
+                                    "LSP [{lang}]: unrouted response method='{method}'"
                                 ),
                             });
                         }
@@ -875,52 +760,26 @@ impl LspManager {
                         if method == "$/progress" {
                             self.on_progress(lang, &params, &mut results);
                         }
-                        if let Some(msg) = route_notification(&method, params.clone()) {
+                        if let Some(msg) = route_notification(&method, &params) {
                             results.push(msg);
                         } else if method != "$/progress" {
                             results.push(LspMessage::Log {
                                 message: format!(
-                                    "LSP [{}]: unhandled notification '{}' params={}",
-                                    lang, method, params
+                                    "LSP [{lang}]: unhandled notification '{method}' params={params}"
                                 ),
                             });
                         }
                     }
                     RawLspMessage::ServerRequest { id, method, params } => {
-                        let response = match method.as_str() {
-                            // One null per requested item; a bare null is a protocol error.
-                            "workspace/configuration" => {
-                                let n = params
-                                    .get("items")
-                                    .and_then(|i| i.as_array())
-                                    .map(|a| a.len())
-                                    .unwrap_or(0);
-                                Value::Array(vec![Value::Null; n])
-                            }
-                            "workspace/applyEdit" => {
-                                if let Some(edit) = params.get("edit").cloned() {
-                                    results.push(LspMessage::ApplyWorkspaceEdit { edit });
-                                }
-                                serde_json::json!({ "applied": true })
-                            }
-                            "workspace/workspaceFolders" => self
-                                .clients
-                                .get(lang)
-                                .and_then(|c| c.root_uri.clone())
-                                .map(|uri| {
-                                    let name = uri.rsplit('/').next().unwrap_or("workspace");
-                                    serde_json::json!([{ "uri": uri, "name": name }])
-                                })
-                                .unwrap_or(Value::Null),
-                            _ => Value::Null,
-                        };
+                        let response =
+                            self.server_request_response(lang, &method, &params, &mut results);
                         if let Some(c) = self.clients.get_mut(lang) {
                             c.send_response(id, response);
                         }
                     }
                     RawLspMessage::ParseError { message } => {
                         results.push(LspMessage::Log {
-                            message: format!("LSP [{}]: {}", lang, message),
+                            message: format!("LSP [{lang}]: {message}"),
                         });
                     }
                 }
@@ -932,7 +791,7 @@ impl LspManager {
                 self.forget_server(lang);
                 *self.exits.entry(lang.clone()).or_insert(0) += 1;
                 results.push(LspMessage::ServerExited {
-                    language: lang.to_string(),
+                    language: lang.clone(),
                 });
             }
         }
@@ -955,12 +814,121 @@ impl LspManager {
         results
     }
 
+    fn handle_initialize_response(
+        &mut self,
+        lang: &str,
+        result: &Value,
+        results: &mut Vec<LspMessage>,
+    ) {
+        results.push(LspMessage::Log {
+            message: format!("LSP [{lang}]: initialize response received"),
+        });
+        if let Some(c) = self.clients.get_mut(lang) {
+            c.initialized = true;
+            c.send_notification("initialized", serde_json::json!({}));
+        }
+
+        // Server's chosen Position.character unit; LSP
+        // defaults to UTF-16 when the field is absent.
+        let encoding = result
+            .get("capabilities")
+            .and_then(|c| c.get("positionEncoding"))
+            .and_then(|v| v.as_str())
+            .and_then(crate::lsp::protocol::PositionEncoding::from_wire)
+            .unwrap_or_default();
+        self.position_encodings.insert(lang.to_string(), encoding);
+
+        // textDocumentSync is either a bare number or an
+        // object with a `change` field; 2 == Incremental.
+        let sync = result
+            .get("capabilities")
+            .and_then(|c| c.get("textDocumentSync"));
+        let sync_kind = sync.and_then(serde_json::Value::as_u64).or_else(|| {
+            sync.and_then(|s| s.get("change"))
+                .and_then(serde_json::Value::as_u64)
+        });
+        self.incremental_sync
+            .insert(lang.to_string(), sync_kind == Some(2));
+
+        // Flush any didOpen calls that arrived before initialization.
+        let queued = self.pending_opens.remove(lang).unwrap_or_default();
+        results.push(LspMessage::Log {
+            message: format!(
+                "LSP [{}]: flushing {} queued didOpen(s)",
+                lang,
+                queued.len()
+            ),
+        });
+        for (uri, params) in queued {
+            results.push(LspMessage::Log {
+                message: format!("LSP [{lang}]: didOpen -> {uri}"),
+            });
+            if let Some(c) = self.clients.get_mut(lang) {
+                c.send_notification("textDocument/didOpen", params);
+            }
+        }
+
+        // Extract the human-readable server name from capabilities,
+        // falling back to the language name if the server omits it.
+        let server_name = result
+            .get("serverInfo")
+            .and_then(|si| si.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or(lang)
+            .to_string();
+        self.server_names
+            .insert(lang.to_string(), server_name.clone());
+        results.push(LspMessage::ServerConnected {
+            language: lang.to_string(),
+            server_name,
+        });
+        // Seed the idle timer so ServerReady fires if no $/progress tokens arrive.
+        self.indexing_idle_since
+            .entry(lang.to_string())
+            .or_insert_with(std::time::Instant::now);
+    }
+
+    fn server_request_response(
+        &self,
+        lang: &str,
+        method: &str,
+        params: &Value,
+        results: &mut Vec<LspMessage>,
+    ) -> Value {
+        match method {
+            // One null per requested item; a bare null is a protocol error.
+            "workspace/configuration" => {
+                let n = params
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .map_or(0, std::vec::Vec::len);
+                Value::Array(vec![Value::Null; n])
+            }
+            "workspace/applyEdit" => {
+                if let Some(edit) = params.get("edit").cloned() {
+                    results.push(LspMessage::ApplyWorkspaceEdit { edit });
+                }
+                serde_json::json!({ "applied": true })
+            }
+            "workspace/workspaceFolders" => self
+                .clients
+                .get(lang)
+                .and_then(|c| c.root_uri.clone())
+                .map_or(Value::Null, |uri| {
+                    let name = uri.rsplit('/').next().unwrap_or("workspace");
+                    serde_json::json!([{ "uri": uri, "name": name }])
+                }),
+            _ => Value::Null,
+        }
+    }
+
     /// Returns `true` if there is an active LSP client for the given file path.
+    #[must_use]
     pub fn has_client_for_path(&self, path: &Path) -> bool {
         self.open_docs.contains_key(&doc_key(path))
     }
 
-    /// Track a `$/progress` token; ServerReady fires once every gating token has
+    /// Track a `$/progress` token; `ServerReady` fires once every gating token has
     /// ended. Flycheck runs never gate or surface a Progress message, so they can't clobber the status bar with stale indexing counts.
     fn on_progress(&mut self, lang: &str, params: &Value, results: &mut Vec<LspMessage>) {
         let val = params.get("value").cloned().unwrap_or(Value::Null);
@@ -969,7 +937,7 @@ impl LspManager {
         let message = val.get("message").and_then(|m| m.as_str()).unwrap_or("");
         let token = params
             .get("token")
-            .map(|t| t.to_string())
+            .map(std::string::ToString::to_string)
             .unwrap_or_default();
 
         let flychecks = self.flycheck_tokens.entry(lang.to_string()).or_default();
@@ -1051,6 +1019,51 @@ impl LspManager {
     }
 }
 
+fn initialize_params(root_uri: Option<String>, server: &config::LspServerConfig) -> Option<Value> {
+    let workspace_folders = root_uri.as_ref().map(|uri| {
+        let name = uri.rsplit('/').next().unwrap_or("workspace").to_string();
+        vec![protocol::WorkspaceFolder {
+            uri: uri.clone(),
+            name,
+        }]
+    });
+    serde_json::to_value(InitializeParams {
+        process_id: Some(std::process::id()),
+        root_uri,
+        workspace_folders,
+        capabilities: ClientCapabilities {
+            general: GeneralCapabilities {
+                position_encodings: vec!["utf-16".into(), "utf-8".into()],
+            },
+            text_document: TextDocumentClientCapabilities {
+                synchronization: TextDocumentSyncClientCapabilities {
+                    dynamic_registration: false,
+                    will_save: false,
+                    did_save: true,
+                },
+                hover: protocol::HoverClientCapabilities::default(),
+                definition: protocol::DefinitionClientCapabilities::default(),
+                references: protocol::ReferencesClientCapabilities::default(),
+                rename: protocol::RenameClientCapabilities::default(),
+                formatting: protocol::FormattingClientCapabilities::default(),
+                publish_diagnostics: protocol::PublishDiagnosticsClientCapabilities::default(),
+                code_action: protocol::CodeActionClientCapabilities::default(),
+            },
+            workspace: protocol::WorkspaceClientCapabilities {
+                apply_edit: true,
+                workspace_edit: protocol::WorkspaceEditClientCapabilities {
+                    document_changes: true,
+                },
+            },
+            window: WindowCapabilities {
+                work_done_progress: true,
+            },
+        },
+        initialization_options: server.initialization_options.clone(),
+    })
+    .ok()
+}
+
 /// Map key for a document path: its normalized URI.
 fn doc_key(path: &Path) -> String {
     normalize_uri(&path_to_uri(path))
@@ -1074,7 +1087,6 @@ fn is_flycheck_progress(token: &str, title: &str) -> bool {
 fn route_response(method: &str, uri: Option<&str>, result: Value) -> Option<LspMessage> {
     let uri = uri.unwrap_or("").to_string();
     match method {
-        "initialize" => None, // handled separately (send initialized notif)
         "textDocument/definition" | "textDocument/declaration" | "textDocument/typeDefinition" => {
             let locations = parse_locations(result);
             Some(LspMessage::GotoDefinitionResult { locations, uri })
@@ -1099,15 +1111,16 @@ fn route_response(method: &str, uri: Option<&str>, result: Value) -> Option<LspM
             Some(LspMessage::CodeActionResult { actions, uri })
         }
         "codeAction/resolve" => Some(LspMessage::CodeActionResolved { action: result }),
+        // "initialize" is answered by the caller, which sends the initialized notification.
         _ => None,
     }
 }
 
-fn route_notification(method: &str, params: Value) -> Option<LspMessage> {
+fn route_notification(method: &str, params: &Value) -> Option<LspMessage> {
     match method {
         "textDocument/publishDiagnostics" => {
             let uri = params["uri"].as_str()?.to_string();
-            let version = params.get("version").and_then(|v| v.as_i64());
+            let version = params.get("version").and_then(serde_json::Value::as_i64);
             let diags: Vec<protocol::LspDiagnostic> = params["diagnostics"]
                 .as_array()
                 .map(|arr| {
@@ -1123,7 +1136,7 @@ fn route_notification(method: &str, params: Value) -> Option<LspMessage> {
             })
         }
         "window/showMessage" => Some(LspMessage::ShowMessage {
-            kind: params["type"].as_u64().unwrap_or(3) as u32,
+            kind: u32::try_from(params["type"].as_u64().unwrap_or(3)).unwrap_or(3),
             message: params["message"].as_str()?.to_string(),
         }),
         "window/logMessage" => Some(LspMessage::Log {
@@ -1161,13 +1174,13 @@ fn extract_hover_text(result: &Value) -> Option<String> {
         let parts: Vec<String> = arr
             .iter()
             .filter_map(|item| {
-                if let Some(s) = item.as_str() {
-                    Some(s.to_string())
-                } else {
-                    item.get("value")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                }
+                item.as_str()
+                    .map(std::string::ToString::to_string)
+                    .or_else(|| {
+                        item.get("value")
+                            .and_then(|v| v.as_str())
+                            .map(std::string::ToString::to_string)
+                    })
             })
             .collect();
         if !parts.is_empty() {

@@ -26,10 +26,9 @@ pub enum NotificationType {
 impl From<ErrorSeverity> for NotificationType {
     fn from(severity: ErrorSeverity) -> Self {
         match severity {
-            ErrorSeverity::Info => NotificationType::Info,
-            ErrorSeverity::Warning => NotificationType::Warning,
-            ErrorSeverity::Error => NotificationType::Error,
-            ErrorSeverity::Critical => NotificationType::Error,
+            ErrorSeverity::Info => Self::Info,
+            ErrorSeverity::Warning => Self::Warning,
+            ErrorSeverity::Error | ErrorSeverity::Critical => Self::Error,
         }
     }
 }
@@ -65,10 +64,10 @@ pub enum MessageEntry {
 }
 
 impl MessageEntry {
-    pub fn time(&self) -> SystemTime {
+    #[must_use]
+    pub const fn time(&self) -> SystemTime {
         match self {
-            MessageEntry::Notification { time, .. } => *time,
-            MessageEntry::JobEvent { time, .. } => *time,
+            Self::Notification { time, .. } | Self::JobEvent { time, .. } => *time,
         }
     }
 }
@@ -106,12 +105,10 @@ impl Notification {
     }
 
     /// Check if the notification has expired
+    #[must_use]
     pub fn is_expired(&self, now: Instant) -> bool {
-        if let Some(ttl) = self.ttl {
-            now.duration_since(self.timestamp) > ttl
-        } else {
-            false
-        }
+        self.ttl
+            .is_some_and(|ttl| now.duration_since(self.timestamp) > ttl)
     }
 }
 
@@ -131,7 +128,8 @@ pub struct NotificationManager {
 
 impl NotificationManager {
     /// Create a new notification manager
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self {
             notifications: Vec::new(),
             next_id: 0,
@@ -203,6 +201,7 @@ impl NotificationManager {
         self.message_log.push_back(entry);
     }
 
+    #[must_use]
     pub fn message_log(&self) -> Vec<MessageEntry> {
         self.message_log.iter().cloned().collect()
     }
@@ -244,7 +243,8 @@ impl NotificationManager {
     }
 
     /// Check if there are any notifications
-    pub fn is_empty(&self) -> bool {
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
         self.notifications.is_empty()
     }
 
@@ -253,6 +253,7 @@ impl NotificationManager {
     }
 
     /// Returns true if the display needs a re-render due to time passing.
+    #[must_use]
     pub fn tick(&self, poll_timeout: Duration) -> bool {
         if self.notifications.is_empty() {
             return false;

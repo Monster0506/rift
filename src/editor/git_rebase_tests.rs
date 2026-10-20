@@ -21,7 +21,7 @@ fn drain_jobs(editor: &mut Editor<MockTerminal>) {
             .recv_timeout(Duration::from_millis(50))
         {
             Ok(msg) => {
-                let _ = editor.handle_job_message(msg);
+                editor.handle_job_message(msg);
             }
             Err(_) => {
                 if !editor.job_manager.any_job_thread_alive() {
@@ -83,7 +83,7 @@ fn init_repo_with_three_commits_ahead_of_upstream(dir: &Path) -> (String, String
 fn subjects(dir: &Path, range: &str) -> Vec<String> {
     let mut subs: Vec<String> = git(dir, &["log", "--format=%s", range])
         .lines()
-        .map(|s| s.to_string())
+        .map(str::to_string)
         .collect();
     subs.reverse();
     subs
@@ -100,7 +100,7 @@ fn open_git_rebase_populates_todo_oldest_first() {
     editor
         .open_file(Some(dir.join("c.txt").display().to_string()), false)
         .unwrap();
-    editor.open_git_rebase(dir.clone());
+    editor.open_git_rebase(dir);
 
     let doc = editor.document_manager.active_document().unwrap();
     assert!(doc.is_git_rebase_todo());
@@ -282,7 +282,7 @@ fn squash_succeeds_inside_a_real_worktree_checkout() {
             false,
         )
         .unwrap();
-    editor.open_git_rebase(worktree_dir.to_path_buf());
+    editor.open_git_rebase(worktree_dir.clone());
     let doc_id = editor.active_document_id();
 
     {
@@ -633,7 +633,7 @@ fn rebase_todo_key_bindings_resolve_to_the_new_actions() {
         );
         match result {
             MatchResult::Exact(Action::Editor(a)) => {
-                assert_eq!(*a, *expected, "key {key:?}")
+                assert_eq!(*a, *expected, "key {key:?}");
             }
             other => panic!("key {key:?}: expected {expected:?}, got {other:?}"),
         }
@@ -659,7 +659,7 @@ fn git_rebase_todo_is_read_only_and_blocks_insert_mode() {
     editor
         .open_file(Some(dir.join("c.txt").display().to_string()), false)
         .unwrap();
-    editor.open_git_rebase(dir.clone());
+    editor.open_git_rebase(dir);
 
     let doc = editor.document_manager.active_document().unwrap();
     assert!(doc.is_read_only(), "GitRebaseTodo must be read-only");
@@ -694,7 +694,7 @@ fn verb_keys_set_pick_squash_fixup_edit_directly_no_insert_mode() {
     editor
         .open_file(Some(dir.join("c.txt").display().to_string()), false)
         .unwrap();
-    editor.open_git_rebase(dir.clone());
+    editor.open_git_rebase(dir);
 
     {
         let doc = editor.document_manager.active_document_mut().unwrap();
@@ -736,7 +736,10 @@ fn verb_keys_set_pick_squash_fixup_edit_directly_no_insert_mode() {
         .buffer
         .to_string();
     assert!(text.lines().next().unwrap().starts_with("pick"), "{text}");
-    assert!(text.contains(&sha_a[..8]), "{text}");
+    assert!(
+        text.contains(sha_a.get(..8).expect("sha has 8 chars")),
+        "{text}"
+    );
 }
 
 #[test]
@@ -750,7 +753,7 @@ fn reorder_via_dedicated_action_is_a_single_undoable_edit() {
     editor
         .open_file(Some(dir.join("c.txt").display().to_string()), false)
         .unwrap();
-    editor.open_git_rebase(dir.clone());
+    editor.open_git_rebase(dir);
 
     let before = editor
         .document_manager
@@ -803,7 +806,7 @@ fn toggle_fold_shows_and_hides_the_body_preview() {
     editor
         .open_file(Some(dir.join("c.txt").display().to_string()), false)
         .unwrap();
-    editor.open_git_rebase(dir.clone());
+    editor.open_git_rebase(dir);
 
     {
         let doc = editor.document_manager.active_document_mut().unwrap();

@@ -110,13 +110,15 @@ impl Document {
     pub fn end_ghost_paint(&mut self) -> Option<super::SyntaxSync> {
         let real_cursor = self.ghost_paint_cursor.take()?;
 
-        let mut order: Vec<usize> = (0..self.pending_ghost.len())
-            .filter(|&i| self.pending_ghost[i].painted.is_some())
+        let mut order: Vec<(usize, usize)> = self
+            .pending_ghost
+            .iter()
+            .enumerate()
+            .filter_map(|(i, g)| Some((g.painted?.0, i)))
             .collect();
-        order
-            .sort_unstable_by_key(|&i| std::cmp::Reverse(self.pending_ghost[i].painted.unwrap().0));
+        order.sort_unstable_by_key(|&(offset, _)| std::cmp::Reverse(offset));
 
-        for i in order {
+        for (_, i) in order {
             let Some((offset, annotation_id)) = self.pending_ghost[i].painted.take() else {
                 continue;
             };

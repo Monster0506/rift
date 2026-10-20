@@ -13,146 +13,177 @@ impl<T: TerminalBackend> Editor<T> {
                 uri,
                 version,
                 diagnostics,
-            } => {
-                // Drop diagnostics computed for an older snapshot than the one
-                // we've already sent; the server will re-publish for the new one.
-                let stale = match (version, self.lsp_manager.document_version(&uri)) {
-                    (Some(v), Some(cur)) => v < cur,
-                    _ => false,
-                };
-                if !stale {
-                    self.handle_lsp_diagnostics(uri, diagnostics);
-                }
-            }
+            } => self.lsp_diagnostics_msg(&uri, version, &diagnostics),
             LspMessage::GotoDefinitionResult { locations, uri } => {
-                if self.lsp_result_is_current(&uri, "definition") {
-                    self.handle_goto_result(locations);
-                }
+                self.lsp_goto_msg(&uri, &locations);
             }
             LspMessage::ReferencesResult { locations, uri } => {
-                if self.lsp_result_is_current(&uri, "references") {
-                    self.handle_references_result(locations);
-                }
+                self.lsp_references_msg(&uri, &locations);
             }
-            LspMessage::HoverResult { contents, uri } => {
-                if self.lsp_result_is_current(&uri, "hover") {
-                    self.handle_hover_result(contents);
-                }
-            }
+            LspMessage::HoverResult { contents, uri } => self.lsp_hover_msg(&uri, &contents),
             LspMessage::RenameResult { workspace_edit } => {
-                self.handle_rename_result(workspace_edit);
+                self.handle_rename_result(&workspace_edit);
             }
             LspMessage::FormattingResult { uri, edits } => {
-                self.handle_formatting_result(uri, edits);
+                self.handle_formatting_result(&uri, edits);
             }
             LspMessage::CodeActionResult { actions, uri } => {
                 if self.lsp_result_is_current(&uri, "code action") {
                     self.handle_code_action_result(actions);
                 }
             }
-            LspMessage::ApplyWorkspaceEdit { edit } => {
-                let applied = self.apply_workspace_edit(&edit);
-                self.state.notify(
-                    NotificationType::Info,
-                    format!("LSP: server edit applied to {} file(s)", applied),
-                );
-            }
-            LspMessage::ShowMessage { kind, message } => {
-                let notif_type = match kind {
-                    1 => NotificationType::Error,
-                    2 => NotificationType::Warning,
-                    _ => NotificationType::Info,
-                };
-                if kind != 4 || self.state.settings.lsp_debug_log {
-                    self.state.notify(notif_type, format!("LSP: {}", message));
-                }
-            }
-            LspMessage::ServerExited { language } => {
-                self.lsp_ready_servers.remove(&language);
-                let name = self
-                    .lsp_manager
-                    .server_name(&language)
-                    .unwrap_or(&language)
-                    .to_string();
-                self.state.lsp_status = Some(format!("{}: exited", name));
-                self.state.notify(
-                    NotificationType::Warning,
-                    format!("LSP: {} exited; reopening documents", name),
-                );
-                self.update_lua_state();
-                // A fresh did_open respawns the server for its documents.
-                self.lsp_notify_open_all();
-            }
-            LspMessage::CodeActionResolved { action } => {
-                if let Some(edit) = action.get("edit").cloned() {
-                    self.apply_code_action_edit(&edit);
-                } else {
-                    self.state.notify(
-                        NotificationType::Warning,
-                        "LSP: server returned no edit for this action".to_string(),
-                    );
-                }
-            }
+            LspMessage::ApplyWorkspaceEdit { edit } => self.lsp_applied_edit(&edit),
+            LspMessage::ShowMessage { kind, message } => self.lsp_show_message(kind, &message),
+            LspMessage::ServerExited { language } => self.lsp_server_exited(&language),
+            LspMessage::CodeActionResolved { action } => self.lsp_action_resolved(&action),
             LspMessage::Error { method, message } => {
                 self.state.notify(
                     NotificationType::Error,
-                    format!("LSP [{}]: {}", method, message),
+                    format!("LSP [{method}]: {message}"),
                 );
             }
             LspMessage::ServerConnected {
                 language,
                 server_name,
-            } => {
-                self.state.lsp_status = Some(format!("{}: starting", server_name));
-                self.update_lua_state();
-                self.plugin_host
-                    .dispatch(&crate::plugin::EditorEvent::LspServerConnected {
-                        language,
-                        server_name,
-                    });
-                self.apply_plugin_mutations();
-            }
-            LspMessage::ServerReady { language } => {
-                self.lsp_ready_servers.insert(language.clone());
-                let name = self
-                    .lsp_manager
-                    .server_name(&language)
-                    .unwrap_or(&language)
-                    .to_string();
-                self.refresh_lsp_diag_status(&language, &name);
-                self.update_lua_state();
-                self.plugin_host
-                    .dispatch(&crate::plugin::EditorEvent::LspServerReady {
-                        language,
-                        server_name: name,
-                    });
-                self.apply_plugin_mutations();
-            }
+            } => self.lsp_server_connected(language, server_name),
+            LspMessage::ServerReady { language } => self.lsp_server_ready(language),
             LspMessage::Log { message } => {
-                if self.state.settings.lsp_debug_log {
+                if self.state.settings.lsp.debug_log {
                     self.state.notify(NotificationType::Info, message);
                 }
             }
-            LspMessage::Progress { language, .. } => {
-                let name = self
-                    .lsp_manager
-                    .server_name(&language)
-                    .unwrap_or(&language)
-                    .to_string();
-                let status = match self.lsp_manager.indexing_progress(&language) {
-                    Some((ended, started)) => format!("{}: {}/{}", name, ended, started),
-                    None => format!("{}: indexing", name),
-                };
-                self.state.lsp_status = Some(status);
-                self.update_lua_state();
-                self.plugin_host
-                    .dispatch(&crate::plugin::EditorEvent::LspProgress {
-                        language,
-                        server_name: name,
-                    });
-                self.apply_plugin_mutations();
-            }
+            LspMessage::Progress { language, .. } => self.lsp_progress(language),
         }
+    }
+
+    fn lsp_diagnostics_msg(
+        &mut self,
+        uri: &str,
+        version: Option<i64>,
+        diagnostics: &[LspDiagnostic],
+    ) {
+        // Drop diagnostics computed for an older snapshot than the one
+        // we've already sent; the server will re-publish for the new one.
+        let stale = match (version, self.lsp_manager.document_version(uri)) {
+            (Some(v), Some(cur)) => v < cur,
+            _ => false,
+        };
+        if !stale {
+            self.handle_lsp_diagnostics(uri, diagnostics);
+        }
+    }
+
+    fn lsp_goto_msg(&mut self, uri: &str, locations: &[LspLocation]) {
+        if self.lsp_result_is_current(uri, "definition") {
+            self.handle_goto_result(locations);
+        }
+    }
+
+    fn lsp_references_msg(&mut self, uri: &str, locations: &[LspLocation]) {
+        if self.lsp_result_is_current(uri, "references") {
+            self.handle_references_result(locations);
+        }
+    }
+
+    fn lsp_hover_msg(&mut self, uri: &str, contents: &str) {
+        if self.lsp_result_is_current(uri, "hover") {
+            self.handle_hover_result(contents);
+        }
+    }
+
+    fn lsp_applied_edit(&mut self, edit: &serde_json::Value) {
+        let applied = self.apply_workspace_edit(edit);
+        self.state.notify(
+            NotificationType::Info,
+            format!("LSP: server edit applied to {applied} file(s)"),
+        );
+    }
+
+    fn lsp_show_message(&mut self, kind: u32, message: &str) {
+        let notif_type = match kind {
+            1 => NotificationType::Error,
+            2 => NotificationType::Warning,
+            _ => NotificationType::Info,
+        };
+        if kind != 4 || self.state.settings.lsp.debug_log {
+            self.state.notify(notif_type, format!("LSP: {message}"));
+        }
+    }
+
+    fn lsp_server_exited(&mut self, language: &str) {
+        self.lsp_ready_servers.remove(language);
+        let name = self
+            .lsp_manager
+            .server_name(language)
+            .unwrap_or(language)
+            .to_string();
+        self.state.lsp_status = Some(format!("{name}: exited"));
+        self.state.notify(
+            NotificationType::Warning,
+            format!("LSP: {name} exited; reopening documents"),
+        );
+        self.update_lua_state();
+        // A fresh did_open respawns the server for its documents.
+        self.lsp_notify_open_all();
+    }
+
+    fn lsp_action_resolved(&mut self, action: &serde_json::Value) {
+        if let Some(edit) = action.get("edit").cloned() {
+            self.apply_code_action_edit(&edit);
+        } else {
+            self.state.notify(
+                NotificationType::Warning,
+                "LSP: server returned no edit for this action".to_string(),
+            );
+        }
+    }
+
+    fn lsp_server_connected(&mut self, language: String, server_name: String) {
+        self.state.lsp_status = Some(format!("{server_name}: starting"));
+        self.update_lua_state();
+        self.plugin_host
+            .dispatch(&crate::plugin::EditorEvent::LspServerConnected {
+                language,
+                server_name,
+            });
+        self.apply_plugin_mutations();
+    }
+
+    fn lsp_server_ready(&mut self, language: String) {
+        self.lsp_ready_servers.insert(language.clone());
+        let name = self
+            .lsp_manager
+            .server_name(&language)
+            .unwrap_or(&language)
+            .to_string();
+        self.refresh_lsp_diag_status(&language, &name);
+        self.update_lua_state();
+        self.plugin_host
+            .dispatch(&crate::plugin::EditorEvent::LspServerReady {
+                language,
+                server_name: name,
+            });
+        self.apply_plugin_mutations();
+    }
+
+    fn lsp_progress(&mut self, language: String) {
+        let name = self
+            .lsp_manager
+            .server_name(&language)
+            .unwrap_or(&language)
+            .to_string();
+        let status = match self.lsp_manager.indexing_progress(&language) {
+            Some((ended, started)) => format!("{name}: {ended}/{started}"),
+            None => format!("{name}: indexing"),
+        };
+        self.state.lsp_status = Some(status);
+        self.update_lua_state();
+        self.plugin_host
+            .dispatch(&crate::plugin::EditorEvent::LspProgress {
+                language,
+                server_name: name,
+            });
+        self.apply_plugin_mutations();
     }
 
     /// True when `uri` (normalized) is the active document. Stale results for a
@@ -166,10 +197,10 @@ impl<T: TerminalBackend> Editor<T> {
         if active.as_deref() == Some(uri) {
             return true;
         }
-        if self.state.settings.lsp_debug_log {
+        if self.state.settings.lsp.debug_log {
             self.state.notify(
                 NotificationType::Info,
-                format!("LSP: dropped stale {} result for {}", what, uri),
+                format!("LSP: dropped stale {what} result for {uri}"),
             );
         }
         false
@@ -185,7 +216,7 @@ impl<T: TerminalBackend> Editor<T> {
         let char_col = doc.buffer.cursor().saturating_sub(line_start);
         let encoding = self.lsp_manager.position_encoding_for_path(&path);
         let col = doc.lsp_position_units_in_line(cur_line, char_col, encoding);
-        Some((path, cur_line as u32, col))
+        Some((path, u32::try_from(cur_line).unwrap_or(u32::MAX), col))
     }
 
     /// `cursor_lsp_position`, but None (with a notice) while the server is
@@ -220,22 +251,22 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
         self.state.lsp_status = Some(match (errors, warnings) {
-            (0, 0) => format!("{}: ready", server_name),
-            (e, 0) => format!("{}: {}E", server_name, e),
-            (0, w) => format!("{}: {}W", server_name, w),
-            (e, w) => format!("{}: {}E {}W", server_name, e, w),
+            (0, 0) => format!("{server_name}: ready"),
+            (e, 0) => format!("{server_name}: {e}E"),
+            (0, w) => format!("{server_name}: {w}W"),
+            (e, w) => format!("{server_name}: {e}E {w}W"),
         });
     }
 
-    fn handle_lsp_diagnostics(&mut self, uri: String, diagnostics: Vec<LspDiagnostic>) {
+    fn handle_lsp_diagnostics(&mut self, uri: &str, diagnostics: &[LspDiagnostic]) {
         // Store for navigation under a normalized key so lookups are consistent
         // regardless of drive-letter case on Windows.
-        let key = crate::lsp::protocol::normalize_uri(&uri);
+        let key = crate::lsp::protocol::normalize_uri(uri);
         self.lsp_diagnostics
-            .insert(key.clone(), diagnostics.clone());
+            .insert(key.clone(), diagnostics.to_vec());
 
         // Find the matching document and update its annotations
-        let path = crate::lsp::protocol::uri_to_path(&uri);
+        let path = crate::lsp::protocol::uri_to_path(uri);
         let doc_id = path
             .as_ref()
             .and_then(|p| self.document_manager.find_open_document_id(p));
@@ -262,7 +293,7 @@ impl<T: TerminalBackend> Editor<T> {
             .iter()
             .map(|diag| {
                 let line = diag.range.start.line as usize;
-                let severity = diag.severity.unwrap_or(1) as i64;
+                let severity = i64::from(diag.severity.unwrap_or(1));
                 let bytes = match (
                     byte_at(doc, &diag.range.start),
                     byte_at(doc, &diag.range.end),
@@ -281,11 +312,10 @@ impl<T: TerminalBackend> Editor<T> {
         let lang = self
             .lsp_manager
             .language_for_uri(&key)
-            .map(|s| s.to_string());
+            .map(std::string::ToString::to_string);
         let server_ready = lang
             .as_ref()
-            .map(|l| self.lsp_ready_servers.contains(l))
-            .unwrap_or(false);
+            .is_some_and(|l| self.lsp_ready_servers.contains(l));
         if server_ready {
             if let Some(ref l) = lang {
                 let name = self.lsp_manager.server_name(l).unwrap_or(l).to_string();
@@ -298,7 +328,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.update_lua_state();
         self.plugin_host
             .dispatch(&crate::plugin::EditorEvent::LspDiagnosticsChanged {
-                uri: key.clone(),
+                uri: key,
                 error_count,
                 warning_count,
             });
@@ -307,7 +337,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.update_and_render();
     }
 
-    pub(super) fn handle_goto_result(&mut self, locations: Vec<LspLocation>) {
+    pub(super) fn handle_goto_result(&mut self, locations: &[LspLocation]) {
         if locations.is_empty() {
             self.state.notify(
                 NotificationType::Info,
@@ -316,7 +346,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
         if locations.len() > 1 {
-            let entries = Self::location_entries(&locations);
+            let entries = Self::location_entries(locations);
             self.open_location_list_panel(entries, "LSP Definitions");
             return;
         }
@@ -330,7 +360,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
         self.jump_to_location(
-            path,
+            &path,
             loc.range.start.line as usize,
             loc.range.start.character,
         );
@@ -338,13 +368,8 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Open `path` and place the cursor at (`line`, `col_units`), where the
     /// column is in the server's position encoding. Deferred if the file loads async.
-    pub(super) fn jump_to_location(
-        &mut self,
-        path: std::path::PathBuf,
-        line: usize,
-        col_units: u32,
-    ) {
-        let already_open = self.document_manager.find_open_document_id(&path).is_some();
+    pub(super) fn jump_to_location(&mut self, path: &std::path::Path, line: usize, col_units: u32) {
+        let already_open = self.document_manager.find_open_document_id(path).is_some();
         // Existing files that are not open load through a job.
         let loads_async = !already_open && path.exists();
 
@@ -361,7 +386,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        let encoding = self.lsp_manager.position_encoding_for_path(&path);
+        let encoding = self.lsp_manager.position_encoding_for_path(path);
         if let Some(doc) = self.document_manager.active_document_mut() {
             let target_col = doc.lsp_char_offset_in_line(line, col_units, encoding);
             let target = doc.buffer.line_start(line) + target_col;
@@ -375,14 +400,15 @@ impl<T: TerminalBackend> Editor<T> {
         locations
             .iter()
             .map(|loc| {
-                let file = crate::lsp::protocol::uri_to_path(&loc.uri)
-                    .map(|p| {
+                let file = crate::lsp::protocol::uri_to_path(&loc.uri).map_or_else(
+                    || loc.uri.clone(),
+                    |p| {
                         p.file_name()
                             .unwrap_or_default()
                             .to_string_lossy()
                             .into_owned()
-                    })
-                    .unwrap_or_else(|| loc.uri.clone());
+                    },
+                );
                 let line = loc.range.start.line;
                 let col = loc.range.start.character;
                 crate::document::LocationEntry {
@@ -395,7 +421,7 @@ impl<T: TerminalBackend> Editor<T> {
             .collect()
     }
 
-    fn handle_references_result(&mut self, locations: Vec<LspLocation>) {
+    fn handle_references_result(&mut self, locations: &[LspLocation]) {
         if locations.is_empty() {
             self.state.notify(
                 NotificationType::Info,
@@ -403,11 +429,11 @@ impl<T: TerminalBackend> Editor<T> {
             );
             return;
         }
-        let entries = Self::location_entries(&locations);
+        let entries = Self::location_entries(locations);
         self.open_location_list_panel(entries, "LSP References");
     }
 
-    fn handle_hover_result(&mut self, contents: String) {
+    fn handle_hover_result(&mut self, contents: &str) {
         if contents.trim().is_empty() {
             self.state
                 .notify(NotificationType::Info, "LSP: no hover info".to_string());
@@ -416,7 +442,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Wrap long lines to fit the terminal. Leave a margin for borders (4 cols)
         // and use the global wrap_width setting if set, otherwise use terminal width.
-        let term_cols = self.term.get_size().map(|s| s.cols as usize).unwrap_or(80);
+        let term_cols = self.term.get_size().map_or(80, |s| s.cols as usize);
         let wrap_width = self
             .state
             .settings
@@ -425,7 +451,7 @@ impl<T: TerminalBackend> Editor<T> {
             .saturating_sub(4)
             .max(20);
 
-        let lines = crate::render::wrap_text(&contents, wrap_width);
+        let lines = crate::render::wrap_text(contents, wrap_width);
         let anchor_row = self.cursor_screen_row();
         let float = crate::plugin::PluginFloat::new("LSP Hover", lines).with_anchor_row(anchor_row);
         self.plugin_host
@@ -433,18 +459,19 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.update_and_render();
     }
 
-    fn handle_rename_result(&mut self, workspace_edit: serde_json::Value) {
+    fn handle_rename_result(&mut self, workspace_edit: &serde_json::Value) {
         let had_changes = workspace_edit
             .get("changes")
             .and_then(|c| c.as_object())
-            .map(|m| !m.is_empty())
-            .unwrap_or_else(|| {
-                workspace_edit
-                    .get("documentChanges")
-                    .and_then(|d| d.as_array())
-                    .map(|a| !a.is_empty())
-                    .unwrap_or(false)
-            });
+            .map_or_else(
+                || {
+                    workspace_edit
+                        .get("documentChanges")
+                        .and_then(|d| d.as_array())
+                        .is_some_and(|a| !a.is_empty())
+                },
+                |m| !m.is_empty(),
+            );
 
         if !had_changes {
             self.state.notify(
@@ -454,21 +481,21 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        let applied = self.apply_workspace_edit(&workspace_edit);
+        let applied = self.apply_workspace_edit(workspace_edit);
         self.state.notify(
             NotificationType::Info,
-            format!("LSP: rename applied to {} file(s)", applied),
+            format!("LSP: rename applied to {applied} file(s)"),
         );
     }
 
-    fn handle_formatting_result(&mut self, uri: String, edits: Vec<LspTextEdit>) {
+    fn handle_formatting_result(&mut self, uri: &str, edits: Vec<LspTextEdit>) {
         if edits.is_empty() {
             self.state
                 .notify(NotificationType::Info, "LSP: already formatted".to_string());
             return;
         }
 
-        if let Some(doc_id) = self.apply_lsp_edits_for_uri(&uri, edits) {
+        if let Some(doc_id) = self.apply_lsp_edits_for_uri(uri, edits) {
             // Invalidate before spawning: format often touches many lines and can
             // leave the incremental tree in a corrupt state.
             if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
@@ -504,7 +531,7 @@ impl<T: TerminalBackend> Editor<T> {
                 // Collapse embedded newlines so the title fits on one line
                 let title: String = raw_title
                     .lines()
-                    .map(|l| l.trim())
+                    .map(str::trim)
                     .filter(|l| !l.is_empty())
                     .collect::<Vec<_>>()
                     .join(" ");
@@ -516,13 +543,13 @@ impl<T: TerminalBackend> Editor<T> {
                 let has_edit = a.get("edit").is_some();
                 let prefix = if has_edit { "" } else { "~ " };
                 let display = if kind.is_empty() {
-                    format!("{}{}", prefix, title)
+                    format!("{prefix}{title}")
                 } else {
-                    format!("{}[{}] {}", prefix, kind, title)
+                    format!("{prefix}[{kind}] {title}")
                 };
                 crate::document::LocationEntry {
                     uri: String::new(),
-                    line: i as u32,
+                    line: u32::try_from(i).unwrap_or(u32::MAX),
                     col: 0,
                     display,
                 }
@@ -544,9 +571,8 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        let (path, line, col) = match ctx {
-            Some(c) => c,
-            None => return,
+        let Some((path, line, col)) = ctx else {
+            return;
         };
 
         if self
@@ -572,7 +598,7 @@ impl<T: TerminalBackend> Editor<T> {
                     let uri = crate::lsp::protocol::path_to_uri(p);
                     self.lsp_manager.language_for_uri(&uri)
                 })
-                .map(|s| s.to_string());
+                .map(std::string::ToString::to_string);
 
             if let Some(lang) = language {
                 self.lsp_manager.resolve_code_action(&lang, action);
@@ -589,7 +615,7 @@ impl<T: TerminalBackend> Editor<T> {
         let applied = self.apply_workspace_edit(edit);
         self.state.notify(
             NotificationType::Info,
-            format!("LSP: code action applied to {} file(s)", applied),
+            format!("LSP: code action applied to {applied} file(s)"),
         );
     }
 
@@ -612,10 +638,7 @@ impl<T: TerminalBackend> Editor<T> {
                         .unwrap_or("?");
                     self.state.notify(
                         NotificationType::Warning,
-                        format!(
-                            "LSP: unsupported '{}' file operation skipped: {}",
-                            kind, target
-                        ),
+                        format!("LSP: unsupported '{kind}' file operation skipped: {target}"),
                     );
                     continue;
                 }
@@ -680,7 +703,7 @@ impl<T: TerminalBackend> Editor<T> {
             Err(e) => {
                 self.state.notify(
                     NotificationType::Warning,
-                    format!("LSP: malformed edit for {} skipped: {}", uri, e),
+                    format!("LSP: malformed edit for {uri} skipped: {e}"),
                 );
                 None
             }
@@ -688,7 +711,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Apply LSP text edits to the document for `uri`, opening it in the
-    /// background if needed. Returns the DocumentId so the caller can re-highlight.
+    /// background if needed. Returns the `DocumentId` so the caller can re-highlight.
     fn apply_lsp_edits_for_uri(
         &mut self,
         uri: &str,
@@ -699,16 +722,17 @@ impl<T: TerminalBackend> Editor<T> {
         let was_open = self.document_manager.find_open_document_id(&path);
         let doc_id = match was_open {
             Some(id) => id,
-            None => match self.open_document_in_background(&path) {
-                Some(id) => id,
-                None => {
+            None => {
+                if let Some(id) = self.open_document_in_background(&path) {
+                    id
+                } else {
                     self.state.notify(
                         NotificationType::Warning,
                         format!("LSP: could not open {} to apply edits", path.display()),
                     );
                     return None;
                 }
-            },
+            }
         };
 
         let doc = self.document_manager.get_document_mut(doc_id)?;
@@ -781,6 +805,7 @@ impl<T: TerminalBackend> Editor<T> {
         let id = self.document_manager.next_id();
         let doc = crate::document::Document::from_file(id, path).ok()?;
         self.document_manager.add_document_inactive(doc);
+        #[cfg(feature = "treesitter")]
         self.attach_syntax_for_document(id);
         Some(id)
     }
@@ -800,7 +825,7 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .active_document()
             .and_then(|d| d.path())
-            .map(|p| p.to_path_buf());
+            .map(std::path::Path::to_path_buf);
 
         let Some(path) = path else {
             self.state
@@ -826,18 +851,14 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let encoding = self.lsp_manager.position_encoding_for_path(&path);
-        let cursor_pos = self
-            .document_manager
-            .active_document()
-            .map(|d| {
-                let line = d.buffer.get_line();
-                let col = d.buffer.cursor().saturating_sub(d.buffer.line_start(line));
-                (
-                    line as u32,
-                    d.lsp_position_units_in_line(line, col, encoding),
-                )
-            })
-            .unwrap_or((0, 0));
+        let cursor_pos = self.document_manager.active_document().map_or((0, 0), |d| {
+            let line = d.buffer.get_line();
+            let col = d.buffer.cursor().saturating_sub(d.buffer.line_start(line));
+            (
+                u32::try_from(line).unwrap_or(u32::MAX),
+                d.lsp_position_units_in_line(line, col, encoding),
+            )
+        });
 
         let pos = |d: &LspDiagnostic| (d.range.start.line, d.range.start.character);
         let target = if forward {
@@ -875,20 +896,20 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.update_and_render();
     }
 
-    /// Send LSP did_close for `doc_id`, if it has a tracked file path. Call
+    /// Send LSP `did_close` for `doc_id`, if it has a tracked file path. Call
     /// before removing the document, since the path won't be readable after.
     pub(super) fn lsp_notify_close(&mut self, doc_id: crate::document::DocumentId) {
         if let Some(path) = self
             .document_manager
             .get_document(doc_id)
             .and_then(|doc| doc.path())
-            .map(|p| p.to_path_buf())
+            .map(std::path::Path::to_path_buf)
         {
             self.lsp_manager.did_close(&path);
         }
     }
 
-    /// Send LSP did_open for `doc_id` (no-op without a path or a known language).
+    /// Send LSP `did_open` for `doc_id` (no-op without a path or a known language).
     pub(super) fn lsp_notify_open(&mut self, doc_id: crate::document::DocumentId) {
         // Collect path, optional syntax language, and content first to avoid
         // holding a borrow on document_manager while calling language_loader.
@@ -914,7 +935,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Send did_open for every open document, e.g. after a server is
+    /// Send `did_open` for every open document, e.g. after a server is
     /// registered or restarted; unrelated languages no-op inside the manager.
     pub(super) fn lsp_notify_open_all(&mut self) {
         let ids: Vec<crate::document::DocumentId> = self
@@ -928,13 +949,13 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Send LSP did_change for `doc_id`: an incremental range+text delta when
+    /// Send LSP `did_change` for `doc_id`: an incremental range+text delta when
     /// possible, otherwise the full document (skipped if nothing tracks it).
     pub(super) fn lsp_notify_change(&mut self, doc_id: crate::document::DocumentId) {
         let Some(doc) = self.document_manager.get_document_mut(doc_id) else {
             return;
         };
-        let Some(path) = doc.path().map(|p| p.to_path_buf()) else {
+        let Some(path) = doc.path().map(std::path::Path::to_path_buf) else {
             doc.discard_pending_lsp_changes();
             return;
         };
@@ -1018,7 +1039,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let first_line = d
                     .message
                     .lines()
-                    .map(|l| l.trim())
+                    .map(str::trim)
                     .find(|l| !l.is_empty())
                     .unwrap_or("");
                 crate::document::LocationEntry {
@@ -1048,8 +1069,7 @@ impl<T: TerminalBackend> Editor<T> {
         let source_doc_id = self
             .document_manager
             .active_document()
-            .map(|d| d.id)
-            .unwrap_or(crate::document::DocumentId::new(0));
+            .map_or(crate::document::DocumentId::new(0), |d| d.id);
 
         // Create the location list document.
         let loc_doc_id = self.document_manager.next_id();

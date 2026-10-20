@@ -267,8 +267,7 @@ fn test_file_explorer_buffer_all_normal_motions_accessible() {
         assert_eq!(
             map.get_action_with_parent(ctx, *key, |c| (c == ctx).then_some(KeyContext::Normal)),
             Some(&Action::Editor(EditorAction::Move(*motion))),
-            "Directory should inherit {:?} from Normal",
-            key
+            "Directory should inherit {key:?} from Normal"
         );
     }
 }
@@ -295,8 +294,7 @@ fn test_undotree_all_normal_motions_accessible() {
         assert_eq!(
             map.get_action_with_parent(ctx, *key, |c| (c == ctx).then_some(KeyContext::Normal)),
             Some(&Action::Editor(EditorAction::Move(*motion))),
-            "UndoTree should inherit {:?} from Normal",
-            key
+            "UndoTree should inherit {key:?} from Normal"
         );
     }
 }

@@ -20,7 +20,7 @@ fn set_prefers_local_registry_when_name_exists_there() {
 
     r.set(
         "tabwidth",
-        Some("8".to_string()),
+        Some("8"),
         &mut doc,
         &mut user,
         &mut error_handler,
@@ -40,14 +40,14 @@ fn set_falls_back_to_global_registry_when_name_is_not_local() {
 
     r.set(
         "ghostcut",
-        Some("false".to_string()),
+        Some("false"),
         &mut doc,
         &mut user,
         &mut error_handler,
     );
 
     assert!(errors.is_empty());
-    assert!(!user.ghost_cut);
+    assert!(!user.editing.ghost_cut);
 }
 
 #[test]

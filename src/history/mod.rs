@@ -3,7 +3,7 @@ pub mod persist;
 
 use crate::character::Character;
 use crate::time::SystemTime;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 pub type EditSeq = u64;
 
@@ -14,7 +14,8 @@ pub struct Position {
 }
 
 impl Position {
-    pub fn new(line: u32, col: u32) -> Self {
+    #[must_use]
+    pub const fn new(line: u32, col: u32) -> Self {
         Self { line, col }
     }
 }
@@ -26,10 +27,12 @@ pub struct Range {
 }
 
 impl Range {
-    pub fn new(start: Position, end: Position) -> Self {
+    #[must_use]
+    pub const fn new(start: Position, end: Position) -> Self {
         Self { start, end }
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.start == self.end
     }
@@ -71,81 +74,95 @@ pub enum ApplyError {
 impl std::fmt::Display for ApplyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ApplyError::PositionOutOfBounds { position } => {
-                write!(f, "Position out of bounds: {:?}", position)
+            Self::PositionOutOfBounds { position } => {
+                write!(f, "Position out of bounds: {position:?}")
             }
-            ApplyError::InvalidRange { range } => {
-                write!(f, "Invalid range: {:?}", range)
+            Self::InvalidRange { range } => {
+                write!(f, "Invalid range: {range:?}")
             }
-            ApplyError::EncodingError(msg) => write!(f, "Encoding error: {}", msg),
+            Self::EncodingError(msg) => write!(f, "Encoding error: {msg}"),
         }
     }
 }
 
 impl std::error::Error for ApplyError {}
 
+/// Positions are `u32`; a count above `u32::MAX` saturates instead of wrapping.
+fn saturating_u32(n: usize) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
+}
+
 impl EditOperation {
-    pub fn start_position(&self) -> Position {
+    #[must_use]
+    pub const fn start_position(&self) -> Position {
         match self {
-            EditOperation::Insert { position, .. } => *position,
-            EditOperation::Delete { range, .. } => range.start,
-            EditOperation::Replace { range, .. } => range.start,
-            EditOperation::BlockChange { range, .. } => range.start,
+            Self::Insert { position, .. } => *position,
+            Self::Delete { range, .. }
+            | Self::Replace { range, .. }
+            | Self::BlockChange { range, .. } => range.start,
         }
     }
 
     #[must_use]
-    pub fn inverse(&self) -> EditOperation {
+    pub fn inverse(&self) -> Self {
         match self {
-            EditOperation::Insert { position, text, .. } => EditOperation::Delete {
+            Self::Insert { position, text, .. } => Self::Delete {
                 range: Range::new(
                     *position,
                     Position::new(
                         position.line
-                            + text.iter().filter(|c| **c == Character::Newline).count() as u32,
+                            + saturating_u32(
+                                text.iter().filter(|c| **c == Character::Newline).count(),
+                            ),
                         if text.contains(&Character::Newline) {
-                            text.iter()
-                                .rev()
-                                .take_while(|c| **c != Character::Newline)
-                                .count() as u32
+                            saturating_u32(
+                                text.iter()
+                                    .rev()
+                                    .take_while(|c| **c != Character::Newline)
+                                    .count(),
+                            )
                         } else {
-                            position.col + text.len() as u32
+                            position.col + saturating_u32(text.len())
                         },
                     ),
                 ),
                 deleted_text: text.clone(),
             },
 
-            EditOperation::Delete {
+            Self::Delete {
                 range,
                 deleted_text,
-            } => EditOperation::Insert {
+            } => Self::Insert {
                 position: range.start,
                 text: deleted_text.clone(),
                 len: deleted_text.len(),
             },
 
-            EditOperation::Replace {
+            Self::Replace {
                 range,
                 old_text,
                 new_text,
-            } => EditOperation::Replace {
+            } => Self::Replace {
                 range: Range::new(
                     range.start,
                     Position::new(
                         range.start.line
-                            + new_text
-                                .iter()
-                                .filter(|c| **c == Character::Newline)
-                                .count() as u32,
+                            + saturating_u32(
+                                new_text
+                                    .iter()
+                                    .filter(|c| **c == Character::Newline)
+                                    .count(),
+                            ),
                         if new_text.contains(&Character::Newline) {
-                            new_text
-                                .iter()
-                                .rev()
-                                .take_while(|c| **c != Character::Newline)
-                                .count() as u32
+                            saturating_u32(
+                                new_text
+                                    .iter()
+                                    .rev()
+                                    .take_while(|c| **c != Character::Newline)
+                                    .count(),
+                            )
                         } else {
-                            range.start.col + new_text.len() as u32
+                            range.start.col + saturating_u32(new_text.len())
                         },
                     ),
                 ),
@@ -153,16 +170,16 @@ impl EditOperation {
                 new_text: old_text.clone(),
             },
 
-            EditOperation::BlockChange {
+            Self::BlockChange {
                 range,
                 old_content,
                 new_content,
-            } => EditOperation::BlockChange {
+            } => Self::BlockChange {
                 range: Range::new(
                     range.start,
                     Position::new(
-                        range.start.line + new_content.len().saturating_sub(1) as u32,
-                        new_content.last().map_or(0, |s| s.len() as u32),
+                        range.start.line + saturating_u32(new_content.len().saturating_sub(1)),
+                        new_content.last().map_or(0, |s| saturating_u32(s.len())),
                     ),
                 ),
                 old_content: new_content.clone(),
@@ -174,18 +191,18 @@ impl EditOperation {
     #[must_use]
     pub fn estimated_size(&self) -> usize {
         match self {
-            EditOperation::Insert { text, .. } => text.len() + 32,
-            EditOperation::Delete { deleted_text, .. } => deleted_text.len() + 32,
-            EditOperation::Replace {
+            Self::Insert { text, .. } => text.len() + 32,
+            Self::Delete { deleted_text, .. } => deleted_text.len() + 32,
+            Self::Replace {
                 old_text, new_text, ..
             } => old_text.len() + new_text.len() + 32,
-            EditOperation::BlockChange {
+            Self::BlockChange {
                 old_content,
                 new_content,
                 ..
             } => {
-                old_content.iter().map(|s| s.len()).sum::<usize>()
-                    + new_content.iter().map(|s| s.len()).sum::<usize>()
+                old_content.iter().map(std::vec::Vec::len).sum::<usize>()
+                    + new_content.iter().map(std::vec::Vec::len).sum::<usize>()
                     + 32
             }
         }
@@ -216,15 +233,22 @@ impl EditTransaction {
 
     #[must_use]
     pub fn inverse(&self) -> Vec<EditOperation> {
-        self.ops.iter().rev().map(|op| op.inverse()).collect()
+        self.ops.iter().rev().map(EditOperation::inverse).collect()
     }
 
-    pub fn is_empty(&self) -> bool {
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
         self.ops.is_empty()
     }
 
+    #[must_use]
     pub fn estimated_size(&self) -> usize {
-        self.ops.iter().map(|op| op.estimated_size()).sum::<usize>() + self.description.len() + 16
+        self.ops
+            .iter()
+            .map(EditOperation::estimated_size)
+            .sum::<usize>()
+            + self.description.len()
+            + 16
     }
 }
 
@@ -237,9 +261,11 @@ pub struct DocumentSnapshot {
 }
 
 impl DocumentSnapshot {
+    #[must_use]
     pub fn new(text: Vec<Character>, annotations: Vec<crate::annotations::Annotation>) -> Self {
         let byte_count = text.len();
-        let line_count = text.iter().filter(|c| **c == Character::Newline).count() as u32 + 1;
+        let line_count =
+            saturating_u32(text.iter().filter(|c| **c == Character::Newline).count()) + 1;
         Self {
             full_text: text,
             byte_count,
@@ -261,6 +287,7 @@ pub struct EditNode {
 }
 
 impl EditNode {
+    #[must_use]
     pub fn new(seq: EditSeq, transaction: EditTransaction, parent: Option<EditSeq>) -> Self {
         Self {
             seq,
@@ -293,9 +320,9 @@ pub enum UndoError {
 impl std::fmt::Display for UndoError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UndoError::NoUndoAvailable => write!(f, "No undo available"),
-            UndoError::NoRedoAvailable => write!(f, "No redo available"),
-            UndoError::InvalidSeq(seq) => write!(f, "Invalid edit sequence: {}", seq),
+            Self::NoUndoAvailable => write!(f, "No undo available"),
+            Self::NoRedoAvailable => write!(f, "No redo available"),
+            Self::InvalidSeq(seq) => write!(f, "Invalid edit sequence: {seq}"),
         }
     }
 }
@@ -304,7 +331,7 @@ impl std::error::Error for UndoError {}
 
 #[derive(Clone, Debug)]
 pub struct UndoTree {
-    pub nodes: HashMap<EditSeq, EditNode>,
+    pub nodes: BTreeMap<EditSeq, EditNode>,
     pub current: EditSeq,
     next_seq: EditSeq,
     pub root_seq: EditSeq,
@@ -317,13 +344,15 @@ pub struct UndoTree {
 }
 
 impl UndoTree {
+    #[must_use]
     pub fn new() -> Self {
         Self::with_config(50, 1024 * 1024) // Default: checkpoint every 50 edits or 1MB
     }
 
+    #[must_use]
     pub fn with_config(checkpoint_interval: u64, memory_threshold: usize) -> Self {
         let root = EditNode::new(0, EditTransaction::new("Initial state"), None);
-        let mut nodes = HashMap::new();
+        let mut nodes = BTreeMap::new();
         nodes.insert(0, root);
 
         Self {
@@ -339,7 +368,7 @@ impl UndoTree {
         }
     }
 
-    pub(crate) fn from_parts(nodes: HashMap<EditSeq, EditNode>, current: EditSeq) -> Self {
+    pub(crate) fn from_parts(nodes: BTreeMap<EditSeq, EditNode>, current: EditSeq) -> Self {
         let total_memory = nodes.values().map(|n| n.transaction.estimated_size()).sum();
         let next_seq = nodes.keys().copied().max().map_or(1, |max| max + 1);
         let mut tree = Self::new();
@@ -351,7 +380,8 @@ impl UndoTree {
         tree
     }
 
-    pub fn current_seq(&self) -> EditSeq {
+    #[must_use]
+    pub const fn current_seq(&self) -> EditSeq {
         self.current
     }
 
@@ -376,6 +406,7 @@ impl UndoTree {
             .or_else(|| Some(&self.nodes.get(&(self.current + 1))?.transaction))
     }
 
+    #[must_use]
     pub fn current_transaction(&self) -> Option<&EditTransaction> {
         if self.current == self.root_seq {
             return None;
@@ -407,6 +438,10 @@ impl UndoTree {
         })
     }
 
+    /// Computes the undo and redo operations that move the tree from `from` to `to`.
+    ///
+    /// # Errors
+    /// Returns `Err` when `from` or `to` is not a node in the tree.
     pub fn compute_replay_path(&self, from: EditSeq, to: EditSeq) -> Result<ReplayPath, UndoError> {
         if !self.nodes.contains_key(&from) {
             return Err(UndoError::InvalidSeq(from));
@@ -462,7 +497,7 @@ impl UndoTree {
         redo_path.reverse();
 
         let mut redo_ops = Vec::new();
-        for seq in redo_path.iter() {
+        for seq in &redo_path {
             if let Some(node) = self.nodes.get(seq) {
                 redo_ops.push(node.transaction.clone());
             }
@@ -495,6 +530,10 @@ impl UndoTree {
         })
     }
 
+    /// Moves the tree's current position to `target`, returning the replay path taken.
+    ///
+    /// # Errors
+    /// Returns `Err` when `target` is not a node in the tree.
     pub fn goto_seq(&mut self, target: EditSeq) -> Result<ReplayPath, UndoError> {
         let path = self.compute_replay_path(self.current, target)?;
 
@@ -611,22 +650,23 @@ impl UndoTree {
         }
     }
 
+    #[must_use]
     pub fn branch_count(&self) -> usize {
         self.nodes
             .get(&self.current)
-            .map(|n| n.children.len())
-            .unwrap_or(0)
+            .map_or(0, |n| n.children.len())
     }
 
-    pub fn can_undo(&self) -> bool {
+    #[must_use]
+    pub const fn can_undo(&self) -> bool {
         self.current != self.root_seq
     }
 
+    #[must_use]
     pub fn can_redo(&self) -> bool {
         self.nodes
             .get(&self.current)
-            .map(|n| !n.children.is_empty())
-            .unwrap_or(false)
+            .is_some_and(|n| !n.children.is_empty())
     }
 
     pub fn clear(&mut self) {
@@ -643,11 +683,11 @@ impl UndoTree {
         }
     }
 
-    pub fn mark_saved(&mut self) {
+    pub const fn mark_saved(&mut self) {
         self.saved_seq = self.current;
     }
 
-    pub(crate) fn mark_saved_at(&mut self, seq: EditSeq) {
+    pub(crate) const fn mark_saved_at(&mut self, seq: EditSeq) {
         self.saved_seq = seq;
     }
 
@@ -683,7 +723,7 @@ impl UndoTree {
                 if let Some(parent_seq) = node.parent {
                     match self.nodes.get(&parent_seq) {
                         None => {
-                            out.push(format!("node {seq}'s parent {parent_seq} does not exist"))
+                            out.push(format!("node {seq}'s parent {parent_seq} does not exist"));
                         }
                         Some(parent) if !parent.children.contains(&seq) => out.push(format!(
                             "node {seq}'s parent {parent_seq} does not list it as a child"
@@ -707,7 +747,8 @@ impl UndoTree {
         out
     }
 
-    pub fn is_at_saved(&self) -> bool {
+    #[must_use]
+    pub const fn is_at_saved(&self) -> bool {
         self.current == self.saved_seq
     }
 }

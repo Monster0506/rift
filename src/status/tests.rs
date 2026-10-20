@@ -21,10 +21,7 @@ fn default_state() -> StatusDrawState {
         search_query: None,
         search_match_index: None,
         search_total_matches: 0,
-        reverse_video: false,
-        show_status_line: true,
-        show_filename: true,
-        show_dirty_indicator: true,
+        status_line: crate::state::StatusLineSettings::default(),
         editor_bg: None,
         editor_fg: None,
         lsp_status: None,
@@ -46,8 +43,7 @@ fn render_row_text(state: &StatusDrawState, rows: usize, cols: usize) -> String 
         .map(|col| {
             layer
                 .get_cell(row, col)
-                .map(|c| c.content.to_char_lossy())
-                .unwrap_or(' ')
+                .map_or(' ', |c| c.content.to_char_lossy())
         })
         .collect()
 }
@@ -127,7 +123,7 @@ fn test_status_bar_render_fills_line() {
 #[test]
 fn test_status_bar_render_reverse_video() {
     let mut state = default_state();
-    state.reverse_video = true;
+    state.status_line.reverse_video = true;
 
     let mut layer = Layer::new(LayerPriority::STATUS_BAR, 10, 80);
     let mut paint_frame = crate::paint::PaintFrame::new(0);
@@ -193,7 +189,7 @@ fn test_status_bar_filename_shown_when_enabled() {
 fn test_status_bar_filename_hidden_when_disabled() {
     let mut state = default_state();
     state.file_name = "test.txt".to_string();
-    state.show_filename = false;
+    state.status_line.segments.show_filename = false;
 
     let written = render_row_text(&state, 10, 80);
     assert!(!written.contains("test.txt"));
@@ -204,7 +200,7 @@ fn test_status_bar_filename_always_shown_in_debug() {
     let mut state = default_state();
     state.file_name = "file.txt".to_string();
     state.debug_mode = true;
-    state.show_filename = false; // Disabled, but debug mode ignores it
+    state.status_line.segments.show_filename = false; // Disabled, but debug mode ignores it
 
     let written = render_row_text(&state, 10, 120);
     assert!(written.contains("File:"));
@@ -236,7 +232,7 @@ fn test_status_bar_dirty_indicator_hidden_when_disabled() {
     let mut state = default_state();
     state.file_name = "test.txt".to_string();
     state.is_dirty = true;
-    state.show_dirty_indicator = false;
+    state.status_line.segments.show_dirty_indicator = false;
 
     let written = render_row_text(&state, 10, 80);
     assert!(written.contains("test.txt"));
@@ -247,7 +243,7 @@ fn test_status_bar_dirty_indicator_hidden_when_disabled() {
 fn test_status_bar_hidden_when_show_status_line_disabled() {
     let mut state = default_state();
     state.file_name = "test.txt".to_string();
-    state.show_status_line = false;
+    state.status_line.show_status_line = false;
 
     let written = render_row_text(&state, 10, 80);
     assert!(!written.contains("NORMAL"));

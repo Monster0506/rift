@@ -5,7 +5,7 @@ pub use self::trie::{MatchResult, Strictness, TrieNode};
 use crate::action::Action;
 use crate::document::BufferKindId;
 use crate::key::Key;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// Trait for resolving the parent context of a given key context.
 pub trait ParentResolver {
@@ -22,7 +22,7 @@ where
 }
 
 /// Context where input occurs
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum KeyContext {
     Global,
     Normal,
@@ -50,11 +50,13 @@ pub struct KeyBindingToken(pub u64);
 
 impl KeyBindingToken {
     /// Create a new token from a raw identifier.
+    #[must_use]
     pub const fn new(raw: u64) -> Self {
         Self(raw)
     }
 
     /// Return the raw numeric value.
+    #[must_use]
     pub const fn get(self) -> u64 {
         self.0
     }
@@ -68,28 +70,29 @@ struct LayerEntry {
     action: Action,
 }
 
-/// KeyMap stores mappings from (Context, Key Sequence) -> Action with layered registrations.
+/// `KeyMap` stores mappings from (Context, Key Sequence) -> Action with layered registrations.
 #[derive(Debug, Clone)]
 pub struct KeyMap {
     /// Active lookup trie per context for fast traversal on the input hot path.
     mappings: HashMap<KeyContext, TrieNode>,
     /// Stack of registration layers for each sequence, ordered from oldest to newest.
-    layers: HashMap<(KeyContext, Vec<Key>), Vec<LayerEntry>>,
+    layers: BTreeMap<(KeyContext, Vec<Key>), Vec<LayerEntry>>,
     /// Monotonic generator for internally allocated registration tokens.
     next_token: u64,
 }
 
 impl KeyMap {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             mappings: HashMap::new(),
-            layers: HashMap::new(),
+            layers: BTreeMap::new(),
             next_token: 0,
         }
     }
 
     /// Allocate a fresh unique registration token.
-    pub fn allocate_token(&mut self) -> KeyBindingToken {
+    pub const fn allocate_token(&mut self) -> KeyBindingToken {
         self.next_token += 1;
         KeyBindingToken(self.next_token)
     }
@@ -144,16 +147,16 @@ impl KeyMap {
         token: KeyBindingToken,
         owner: Option<KeyBindingToken>,
     ) {
-        let key_tuple = (context, keys.clone());
-        self.layers.entry(key_tuple).or_default().push(LayerEntry {
+        let entry = LayerEntry {
             token,
             owner,
             action: action.clone(),
-        });
+        };
         self.mappings
             .entry(context)
             .or_default()
             .insert(&keys, action);
+        self.layers.entry((context, keys)).or_default().push(entry);
     }
 
     /// Refresh the active trie node for a sequence after layers change.
@@ -200,11 +203,10 @@ impl KeyMap {
     pub fn unregister_sequence_all(&mut self, context: KeyContext, keys: &[Key]) -> bool {
         let key_tuple = (context, keys.to_vec());
         let had_layers = self.layers.remove(&key_tuple).is_some();
-        let had_trie = if let Some(trie) = self.mappings.get_mut(&context) {
-            trie.remove(keys)
-        } else {
-            false
-        };
+        let had_trie = self
+            .mappings
+            .get_mut(&context)
+            .is_some_and(|trie| trie.remove(keys));
         had_layers || had_trie
     }
 
@@ -213,7 +215,7 @@ impl KeyMap {
         let mut removed = false;
         let mut to_cleanup = Vec::new();
 
-        for ((ctx, keys), stack) in self.layers.iter_mut() {
+        for ((ctx, keys), stack) in &mut self.layers {
             let initial_len = stack.len();
             stack.retain(|entry| {
                 if entry.token == token {
@@ -240,7 +242,7 @@ impl KeyMap {
         let mut count = 0;
         let mut to_cleanup = Vec::new();
 
-        for ((ctx, keys), stack) in self.layers.iter_mut() {
+        for ((ctx, keys), stack) in &mut self.layers {
             let initial_len = stack.len();
             stack.retain(|entry| {
                 if entry.owner == Some(owner) {
@@ -263,25 +265,26 @@ impl KeyMap {
     }
 
     /// Return the active registration layer count for a sequence.
+    #[must_use]
     pub fn layer_count(&self, context: KeyContext, keys: &[Key]) -> usize {
         self.layers
             .get(&(context, keys.to_vec()))
-            .map_or(0, |stack| stack.len())
+            .map_or(0, std::vec::Vec::len)
     }
 
     /// Static fallback chain for built-in contexts; `Buffer` kinds have no
     /// built-in fallback and must be resolved by the caller.
-    pub fn parent_context(context: KeyContext) -> Option<KeyContext> {
+    #[must_use]
+    pub const fn parent_context(context: KeyContext) -> Option<KeyContext> {
         match context {
-            KeyContext::OperatorPending => Some(KeyContext::Normal),
-            KeyContext::Visual => Some(KeyContext::Normal),
+            KeyContext::OperatorPending | KeyContext::Visual | KeyContext::TerminalNormal => {
+                Some(KeyContext::Normal)
+            }
             KeyContext::Terminal => Some(KeyContext::Global),
-            KeyContext::TerminalNormal => Some(KeyContext::Normal),
             KeyContext::Normal | KeyContext::Insert | KeyContext::Command | KeyContext::Search => {
                 Some(KeyContext::Global)
             }
-            KeyContext::Global => None,
-            KeyContext::Buffer(_) => None,
+            KeyContext::Global | KeyContext::Buffer(_) => None,
         }
     }
 

@@ -8,8 +8,7 @@ fn test_vsplit_divider_appears() {
     let screen = render_ascii(&mut editor);
     assert!(
         screen.contains('│'),
-        "vsplit divider should be visible\n{}",
-        screen
+        "vsplit divider should be visible\n{screen}"
     );
 }
 
@@ -29,14 +28,11 @@ fn test_resize_pane_moves_divider() {
 
     assert!(
         before_col.is_some() && after_col.is_some(),
-        "divider should be present before and after\nbefore:\n{}\nafter:\n{}",
-        before,
-        after
+        "divider should be present before and after\nbefore:\n{before}\nafter:\n{after}"
     );
     assert_ne!(
         before_col, after_col,
-        "divider column should shift\nbefore:\n{}\nafter:\n{}",
-        before, after
+        "divider column should shift\nbefore:\n{before}\nafter:\n{after}"
     );
 }
 
@@ -58,19 +54,15 @@ fn test_resize_pane_only_shifts_divider_not_all_content() {
     assert_eq!(
         before_divs.len(),
         after_divs.len(),
-        "divider count unchanged\nbefore:\n{}\nafter:\n{}",
-        before,
-        after
+        "divider count unchanged\nbefore:\n{before}\nafter:\n{after}"
     );
     assert_eq!(
         before_divs[0], after_divs[0],
-        "left divider fixed\nbefore:{:?} after:{:?}",
-        before_divs, after_divs
+        "left divider fixed\nbefore:{before_divs:?} after:{after_divs:?}"
     );
     assert_ne!(
         before_divs[1], after_divs[1],
-        "right divider moved\nbefore:{:?} after:{:?}",
-        before_divs, after_divs
+        "right divider moved\nbefore:{before_divs:?} after:{after_divs:?}"
     );
 }
 
@@ -88,15 +80,13 @@ fn test_pane_content_stays_within_boundary_after_resize() {
         assert_eq!(
             line.chars().count(),
             cols,
-            "row must be exactly {} chars wide",
-            cols
+            "row must be exactly {cols} chars wide"
         );
     }
     let div_col = screen.lines().next().and_then(|l| l.find('│'));
     assert!(
-        div_col.map(|c| c > 0 && c < cols - 1).unwrap_or(false),
-        "divider should be inside the screen\n{}",
-        screen
+        div_col.is_some_and(|c| c > 0 && c < cols - 1),
+        "divider should be inside the screen\n{screen}"
     );
 }
 

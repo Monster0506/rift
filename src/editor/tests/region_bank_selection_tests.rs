@@ -312,7 +312,7 @@ fn issue_worked_example_bank_two_regions_no_delete_yet() {
         .selection_set
         .sorted()
         .iter()
-        .map(|r| r.span())
+        .map(crate::selection::Region::span)
         .collect();
     assert_eq!(spans[0], (0, 2), "\"Ho\" region");
     assert_eq!(spans[1].1 - spans[1].0, 1, "\"f\" region is one char");

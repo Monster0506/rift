@@ -12,56 +12,77 @@ use crate::state::State;
 use crate::term::TerminalBackend;
 use std::sync::Arc;
 
-fn decimal_digit_count(mut n: usize) -> usize {
-    let mut count = 1;
-    while n >= 10 {
-        n /= 10;
-        count += 1;
+/// Splits the startup argument into a directory target and an optional file to open.
+fn startup_target(file_path: Option<&str>) -> (Option<std::path::PathBuf>, Option<&str>) {
+    let target_dir = file_path
+        .map(std::path::Path::new)
+        .filter(|p| p.is_dir())
+        .map(std::path::Path::to_path_buf);
+    let effective_file_path = if target_dir.is_some() {
+        None
+    } else {
+        file_path
+    };
+    (target_dir, effective_file_path)
+}
+
+fn startup_language_loader() -> Arc<crate::syntax::loader::LanguageLoader> {
+    let grammar_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| {
+            p.parent()
+                .map(|p| p.join(crate::constants::paths::GRAMMARS_DIR))
+        })
+        .unwrap_or_else(|| std::path::PathBuf::from(crate::constants::paths::GRAMMARS_DIR));
+    Arc::new(crate::syntax::loader::LanguageLoader::new(grammar_dir))
+}
+
+fn open_startup_documents(
+    effective_file_path: Option<&str>,
+) -> Result<crate::document::DocumentManager, RiftError> {
+    let mut document_manager = crate::document::DocumentManager::new();
+    if let Some(path) = effective_file_path {
+        document_manager.open_file(Some(path.to_string()), false)?;
+    } else {
+        let new_doc = Document::new(crate::document::DocumentId::new(1)).map_err(|e| {
+            RiftError::new(
+                ErrorType::Internal,
+                crate::constants::errors::INTERNAL_ERROR,
+                e.to_string(),
+            )
+        })?;
+        document_manager.add_document(new_doc);
     }
-    count
+    Ok(document_manager)
+}
+
+fn startup_state(
+    effective_file_path: Option<&str>,
+    document_manager: &crate::document::DocumentManager,
+) -> State {
+    let mut state = State::new();
+    state.set_file_path(effective_file_path.map(str::to_string));
+    if let Some(doc) = document_manager.active_document() {
+        state.update_filename(doc.display_name().to_string());
+    }
+    state
 }
 
 impl<T: TerminalBackend> Editor<T> {
+    /// # Errors
+    /// Returns an error if the terminal cannot be initialized or the startup buffer cannot be created.
     pub fn new(terminal: T) -> Result<Self, RiftError> {
         Self::with_file(terminal, None)
     }
 
-    pub fn with_file(mut terminal: T, file_path: Option<String>) -> Result<Self, RiftError> {
-        let grammar_dir = std::env::current_exe()
-            .ok()
-            .and_then(|p| {
-                p.parent()
-                    .map(|p| p.join(crate::constants::paths::GRAMMARS_DIR))
-            })
-            .unwrap_or_else(|| std::path::PathBuf::from(crate::constants::paths::GRAMMARS_DIR));
-
-        let language_loader = Arc::new(crate::syntax::loader::LanguageLoader::new(grammar_dir));
-
-        let mut document_manager = crate::document::DocumentManager::new();
-
-        let target_dir = file_path
-            .as_deref()
-            .map(std::path::Path::new)
-            .filter(|p| p.is_dir())
-            .map(|p| p.to_path_buf());
-        let effective_file_path = if target_dir.is_some() {
-            None
-        } else {
-            file_path.as_deref()
-        };
-
-        if let Some(path) = effective_file_path {
-            document_manager.open_file(Some(path.to_string()), false)?;
-        } else {
-            let new_doc = Document::new(crate::document::DocumentId::new(1)).map_err(|e| {
-                RiftError::new(
-                    ErrorType::Internal,
-                    crate::constants::errors::INTERNAL_ERROR,
-                    e.to_string(),
-                )
-            })?;
-            document_manager.add_document(new_doc);
-        }
+    /// # Errors
+    /// Returns an error if the startup file cannot be opened, the startup buffer cannot be created, or the terminal fails to initialize or report its size.
+    /// # Panics
+    /// Panics if no document is active after the startup buffer is created.
+    pub fn with_file(mut terminal: T, file_path: Option<&str>) -> Result<Self, RiftError> {
+        let (target_dir, effective_file_path) = startup_target(file_path);
+        let language_loader = startup_language_loader();
+        let document_manager = open_startup_documents(effective_file_path)?;
 
         let mut buffer_kinds = crate::document::BufferKindRegistry::with_builtins();
         buffer_kinds.increment_open_count(crate::document::BufferKindId::FILE);
@@ -76,12 +97,7 @@ impl<T: TerminalBackend> Editor<T> {
         let settings_registry = create_settings_registry();
         let command_parser = CommandParser::new(settings_registry);
 
-        let mut state = State::new();
-        state.set_file_path(effective_file_path.map(str::to_string));
-        if let Some(doc) = document_manager.active_document() {
-            state.update_filename(doc.display_name().to_string());
-        }
-
+        let state = startup_state(effective_file_path, &document_manager);
         let initial_doc_id = document_manager
             .active_document_id()
             .expect("No active document after initialization");
@@ -132,7 +148,7 @@ impl<T: TerminalBackend> Editor<T> {
             #[cfg(feature = "lsp")]
             lsp_manager: crate::lsp::LspManager::new(std::env::current_dir().ok()),
             #[cfg(feature = "lsp")]
-            lsp_diagnostics: std::collections::HashMap::new(),
+            lsp_diagnostics: std::collections::BTreeMap::new(),
             #[cfg(feature = "lsp")]
             lsp_ready_servers: std::collections::HashSet::new(),
             #[cfg(feature = "lsp")]
@@ -157,85 +173,94 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         crate::keymap::defaults::register_defaults(&mut editor.keymap);
-
-        if let Err(e) = editor.load_plugins() {
-            editor
-                .state
-                .notify(crate::notification::NotificationType::Error, e.to_string())
-        }
-
+        editor.load_startup_plugins();
         if effective_file_path.is_some() {
-            if let Some(hash) = editor
-                .document_manager
-                .get_document(initial_doc_id)
-                .map(|doc| crate::history::persist::sha256(&doc.buffer.to_logical_bytes()))
-            {
-                editor.restore_persisted_undo(initial_doc_id, hash);
-            }
+            editor.restore_startup_undo(initial_doc_id);
         }
+        editor.finish_startup(target_dir);
 
-        let _ = editor.update_and_render();
-        editor.startup_first_paint = Some(crate::time::Instant::now());
+        Ok(editor)
+    }
 
-        if let Some(doc) = editor.document_manager.active_document() {
+    fn load_startup_plugins(&mut self) {
+        if let Err(e) = self.load_plugins() {
+            self.state
+                .notify(crate::notification::NotificationType::Error, e.to_string());
+        }
+    }
+
+    fn restore_startup_undo(&mut self, doc_id: DocumentId) {
+        let hash = self
+            .document_manager
+            .get_document(doc_id)
+            .map(|doc| crate::history::persist::sha256(&doc.buffer.to_logical_bytes()));
+        if let Some(hash) = hash {
+            self.restore_persisted_undo(doc_id, hash);
+        }
+    }
+
+    fn finish_startup(&mut self, target_dir: Option<std::path::PathBuf>) {
+        let _ = self.update_and_render();
+        self.startup_first_paint = Some(crate::time::Instant::now());
+
+        if let Some(doc) = self.document_manager.active_document() {
             let table = doc.buffer.line_index.table.clone();
             let revision = doc.buffer.revision;
             let job =
                 crate::job_manager::jobs::cache_warming::CacheWarmingJob::new(table, revision);
 
-            editor.job_manager.spawn(job);
+            self.job_manager.spawn(job);
         }
 
-        if let Some(doc_id) = editor.document_manager.active_document_id() {
-            editor.attach_syntax_for_document(doc_id);
-            if editor
+        if let Some(doc_id) = self.document_manager.active_document_id() {
+            #[cfg(feature = "treesitter")]
+            self.attach_syntax_for_document(doc_id);
+            if self
                 .document_manager
                 .get_document(doc_id)
                 .is_some_and(|d| d.syntax.is_some())
             {
-                editor.spawn_syntax_parse_job(doc_id);
+                self.spawn_syntax_parse_job(doc_id);
             }
         }
 
         {
-            let buf_info = editor.document_manager.active_document().map(|doc| {
+            let buf_info = self.document_manager.active_document().map(|doc| {
                 let buf = doc.id;
-                let path = doc.path().map(|p| p.to_path_buf());
+                let path = doc.path().map(std::path::Path::to_path_buf);
                 let filetype = doc.syntax.as_ref().map(|s| s.language_name.clone());
                 (buf, path, filetype)
             });
             if let Some((buf, path, filetype)) = buf_info {
-                editor.update_lua_state();
-                editor
-                    .plugin_host
+                self.update_lua_state();
+                self.plugin_host
                     .dispatch(&crate::plugin::EditorEvent::BufOpen {
                         buf,
                         path,
                         filetype,
                     });
-                editor.apply_plugin_mutations();
+                self.apply_plugin_mutations();
                 #[cfg(feature = "lsp")]
-                editor.lsp_notify_open(buf);
+                self.lsp_notify_open(buf);
             }
         }
 
-        editor.update_lua_state();
-        editor
-            .plugin_host
+        self.update_lua_state();
+        self.plugin_host
             .dispatch(&crate::plugin::EditorEvent::EditorStart);
-        editor.apply_plugin_mutations();
+        self.apply_plugin_mutations();
 
         if let Some(dir) = target_dir {
-            editor.open_explorer(dir);
+            self.open_explorer(dir);
         }
-
-        Ok(editor)
     }
 
     pub fn active_document_id(&self) -> DocumentId {
         self.split_tree.focused_window().document_id
     }
 
+    /// # Panics
+    /// Panics if the focused window's document is missing from the document manager.
     pub fn active_document(&mut self) -> &mut Document {
         let doc_id = self.split_tree.focused_window().document_id;
         self.document_manager
@@ -313,12 +338,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.state
             .update_buffer_stats(total_lines, buffer_size, line_ending);
 
-        if self.state.settings.show_line_numbers {
-            self.state.gutter_width = decimal_digit_count(total_lines) + 2;
-        } else {
-            self.state.gutter_width = 0;
-        }
-
         self.refresh_search_highlights_if_stale();
     }
 
@@ -342,7 +361,7 @@ impl<T: TerminalBackend> Editor<T> {
             let retired_kind_ids = self.buffer_kinds.retire_plugin(
                 gen.plugin_id().as_nonzero(),
                 gen.generation(),
-                "plugin reloaded".to_string(),
+                "plugin reloaded",
             );
 
             for kind_id in retired_kind_ids {
@@ -403,7 +422,7 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
-    pub fn set_remote(&mut self, remote: bool) {
+    pub const fn set_remote(&mut self, remote: bool) {
         self.state.is_remote = remote;
     }
 }

@@ -18,7 +18,7 @@ impl ColorMap {
     /// Create a new empty color map
     #[must_use]
     pub fn new() -> Self {
-        ColorMap {
+        Self {
             line_colors: HashMap::new(),
         }
     }
@@ -77,9 +77,8 @@ impl ColorMap {
 
     /// Merge overlapping or adjacent spans with the same style
     fn merge_spans(&mut self, line: usize) {
-        let spans = match self.line_colors.get_mut(&line) {
-            Some(spans) => spans,
-            None => return,
+        let Some(spans) = self.line_colors.get_mut(&line) else {
+            return;
         };
 
         if spans.len() <= 1 {
@@ -91,7 +90,8 @@ impl ColorMap {
 
         for span in spans.iter().skip(1) {
             // If spans overlap or are adjacent and have the same style, merge them
-            if current.end >= span.start && current.style == span.style {
+            let overlaps = current.end >= span.start;
+            if overlaps && current.style == span.style {
                 current.end = current.end.max(span.end);
             } else {
                 merged.push(current);

@@ -9,6 +9,7 @@ pub struct LineCache {
 }
 
 impl LineCache {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             cache: HashMap::new(),

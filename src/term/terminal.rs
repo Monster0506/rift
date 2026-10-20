@@ -64,6 +64,10 @@ impl std::fmt::Debug for Terminal {
 }
 
 impl Terminal {
+    /// Spawn a shell in a PTY of the given size.
+    ///
+    /// # Errors
+    /// Returns `Err` if the PTY cannot be created or the shell cannot be spawned.
     pub fn new(
         rows: u16,
         cols: u16,
@@ -100,8 +104,8 @@ impl Terminal {
             cell_height: 20,
         };
 
-        let pty = tty::new(&options, size, 0)
-            .map_err(|e| anyhow::anyhow!("Failed to spawn PTY: {}", e))?;
+        let pty =
+            tty::new(&options, size, 0).map_err(|e| anyhow::anyhow!("Failed to spawn PTY: {e}"))?;
 
         let (tx, rx) = mpsc::channel();
         let listener = TerminalListener(tx);
@@ -115,7 +119,7 @@ impl Terminal {
         let term = Arc::new(FairMutex::new(term));
 
         let event_loop = EventLoop::new(term.clone(), listener, pty, false, false)
-            .map_err(|e| anyhow::anyhow!("Failed to create EventLoop: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to create EventLoop: {e}"))?;
 
         let notifier = Notifier(event_loop.channel());
         let _ = event_loop.spawn();
@@ -131,7 +135,12 @@ impl Terminal {
         ))
     }
 
+    /// Resize the PTY and the terminal grid.
+    ///
+    /// # Errors
+    /// Always returns `Ok` today; the `Result` keeps the signature stable.
     pub fn resize(&mut self, rows: u16, cols: u16) -> io::Result<()> {
+        use alacritty_terminal::event::OnResize;
         self.size = (rows, cols);
         let new_dims = TermDims {
             rows: rows as usize,
@@ -148,11 +157,14 @@ impl Terminal {
             cell_width: 10,
             cell_height: 20,
         };
-        use alacritty_terminal::event::OnResize;
         self.notifier.on_resize(size);
         Ok(())
     }
 
+    /// Write raw bytes to the PTY.
+    ///
+    /// # Errors
+    /// Always returns `Ok` today; the `Result` keeps the signature stable.
     pub fn write(&mut self, data: &[u8]) -> io::Result<()> {
         use alacritty_terminal::event::Notify;
         self.notifier.notify(data.to_vec());
@@ -172,6 +184,7 @@ impl Terminal {
         self.term.lock().grid_mut().scroll_display(Scroll::Bottom);
     }
 
+    #[must_use]
     pub fn read_screen(&self) -> (String, usize, usize, crate::color::CellColorSpans) {
         read_term_screen(&self.term)
     }
@@ -187,16 +200,15 @@ fn read_term_screen(
 
     let num_cols = grid.columns();
     let num_lines = grid.screen_lines();
-    let display_offset = grid.display_offset() as i32;
+    let display_offset = i32::try_from(grid.display_offset()).unwrap_or(i32::MAX);
 
     let cursor_point = grid.cursor.point;
     let cursor_abs = cursor_point.line.0;
     let cursor_line_in_view = cursor_abs + display_offset;
-    let cursor_line = if cursor_line_in_view >= 0 && (cursor_line_in_view as usize) < num_lines {
-        cursor_line_in_view as usize
-    } else {
-        num_lines
-    };
+    let cursor_line = usize::try_from(cursor_line_in_view)
+        .ok()
+        .filter(|&line| line < num_lines)
+        .unwrap_or(num_lines);
     let cursor_col = cursor_point.column.0.min(num_cols.saturating_sub(1));
 
     let mut lines: Vec<String> = Vec::with_capacity(num_lines);
@@ -204,10 +216,12 @@ fn read_term_screen(
     let mut byte_offset: usize = 0;
     let mut span_start: usize = 0;
     let mut span_fg: Option<crate::color::Color> = None;
-    let mut span_bg: Option<crate::color::Color> = None;
+    let mut span_background: Option<crate::color::Color> = None;
 
     for line_idx in 0..num_lines {
-        let line = alacritty_terminal::index::Line(line_idx as i32 - display_offset);
+        let line = alacritty_terminal::index::Line(
+            i32::try_from(line_idx).unwrap_or(i32::MAX) - display_offset,
+        );
         let mut line_chars: Vec<char> = Vec::with_capacity(num_cols);
         let mut line_cell_colors: Vec<(Option<crate::color::Color>, Option<crate::color::Color>)> =
             Vec::with_capacity(num_cols);
@@ -224,15 +238,9 @@ fn read_term_screen(
         let last_non_space = line_chars.iter().rposition(|&c| c != ' ');
         let trim_to = if line_idx == cursor_line {
             let cursor_end = (cursor_col + 1).min(num_cols);
-            match last_non_space {
-                Some(idx) => (idx + 1).max(cursor_end),
-                None => cursor_end,
-            }
+            last_non_space.map_or(cursor_end, |idx| (idx + 1).max(cursor_end))
         } else {
-            match last_non_space {
-                Some(idx) => idx + 1,
-                None => 0,
-            }
+            last_non_space.map_or(0, |idx| idx + 1)
         };
 
         lines.push(line_chars[..trim_to].iter().collect());
@@ -240,34 +248,37 @@ fn read_term_screen(
         for col_idx in 0..trim_to {
             let (fg, bg) = line_cell_colors[col_idx];
             let ch_bytes = line_chars[col_idx].len_utf8();
-            if (fg, bg) != (span_fg, span_bg) {
-                if (span_fg.is_some() || span_bg.is_some()) && byte_offset > span_start {
-                    color_spans.push((span_start..byte_offset, (span_fg, span_bg)));
+            if (fg, bg) != (span_fg, span_background) {
+                if (span_fg.is_some() || span_background.is_some()) && byte_offset > span_start {
+                    color_spans.push((span_start..byte_offset, (span_fg, span_background)));
                 }
                 span_start = byte_offset;
                 span_fg = fg;
-                span_bg = bg;
+                span_background = bg;
             }
             byte_offset += ch_bytes;
         }
 
-        if (span_fg.is_some() || span_bg.is_some()) && byte_offset > span_start {
-            color_spans.push((span_start..byte_offset, (span_fg, span_bg)));
+        if (span_fg.is_some() || span_background.is_some()) && byte_offset > span_start {
+            color_spans.push((span_start..byte_offset, (span_fg, span_background)));
         }
         span_fg = None;
-        span_bg = None;
+        span_background = None;
 
         if line_idx + 1 < num_lines {
             byte_offset += 1;
         }
         span_start = byte_offset;
     }
+    drop(term);
 
     let content = lines.join("\n");
     (content, cursor_line, cursor_col, color_spans)
 }
 
-fn alacritty_color_to_rift(c: alacritty_terminal::vte::ansi::Color) -> Option<crate::color::Color> {
+const fn alacritty_color_to_rift(
+    c: alacritty_terminal::vte::ansi::Color,
+) -> Option<crate::color::Color> {
     use crate::color::Color;
     use alacritty_terminal::vte::ansi::{Color as AColor, NamedColor};
 
@@ -279,14 +290,14 @@ fn alacritty_color_to_rift(c: alacritty_terminal::vte::ansi::Color) -> Option<cr
             | NamedColor::DimForeground
             | NamedColor::Cursor,
         ) => None,
-        AColor::Named(NamedColor::Black) => Some(Color::Black),
-        AColor::Named(NamedColor::Red) => Some(Color::DarkRed),
-        AColor::Named(NamedColor::Green) => Some(Color::DarkGreen),
-        AColor::Named(NamedColor::Yellow) => Some(Color::DarkYellow),
-        AColor::Named(NamedColor::Blue) => Some(Color::DarkBlue),
-        AColor::Named(NamedColor::Magenta) => Some(Color::DarkMagenta),
-        AColor::Named(NamedColor::Cyan) => Some(Color::DarkCyan),
-        AColor::Named(NamedColor::White) => Some(Color::Grey),
+        AColor::Named(NamedColor::Black | NamedColor::DimBlack) => Some(Color::Black),
+        AColor::Named(NamedColor::Red | NamedColor::DimRed) => Some(Color::DarkRed),
+        AColor::Named(NamedColor::Green | NamedColor::DimGreen) => Some(Color::DarkGreen),
+        AColor::Named(NamedColor::Yellow | NamedColor::DimYellow) => Some(Color::DarkYellow),
+        AColor::Named(NamedColor::Blue | NamedColor::DimBlue) => Some(Color::DarkBlue),
+        AColor::Named(NamedColor::Magenta | NamedColor::DimMagenta) => Some(Color::DarkMagenta),
+        AColor::Named(NamedColor::Cyan | NamedColor::DimCyan) => Some(Color::DarkCyan),
+        AColor::Named(NamedColor::White | NamedColor::DimWhite) => Some(Color::Grey),
         AColor::Named(NamedColor::BrightBlack) => Some(Color::DarkGrey),
         AColor::Named(NamedColor::BrightRed) => Some(Color::Red),
         AColor::Named(NamedColor::BrightGreen) => Some(Color::Green),
@@ -295,14 +306,6 @@ fn alacritty_color_to_rift(c: alacritty_terminal::vte::ansi::Color) -> Option<cr
         AColor::Named(NamedColor::BrightMagenta) => Some(Color::Magenta),
         AColor::Named(NamedColor::BrightCyan) => Some(Color::Cyan),
         AColor::Named(NamedColor::BrightWhite) => Some(Color::White),
-        AColor::Named(NamedColor::DimBlack) => Some(Color::Black),
-        AColor::Named(NamedColor::DimRed) => Some(Color::DarkRed),
-        AColor::Named(NamedColor::DimGreen) => Some(Color::DarkGreen),
-        AColor::Named(NamedColor::DimYellow) => Some(Color::DarkYellow),
-        AColor::Named(NamedColor::DimBlue) => Some(Color::DarkBlue),
-        AColor::Named(NamedColor::DimMagenta) => Some(Color::DarkMagenta),
-        AColor::Named(NamedColor::DimCyan) => Some(Color::DarkCyan),
-        AColor::Named(NamedColor::DimWhite) => Some(Color::Grey),
         AColor::Indexed(n) => Some(Color::Ansi256(n)),
         AColor::Spec(rgb) => Some(Color::Rgb {
             r: rgb.r,

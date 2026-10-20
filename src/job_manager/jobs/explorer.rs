@@ -29,7 +29,8 @@ pub struct DirectoryListJob {
 }
 
 impl DirectoryListJob {
-    pub fn new(doc_id: DocumentId, path: PathBuf, show_hidden: bool) -> Self {
+    #[must_use]
+    pub const fn new(doc_id: DocumentId, path: PathBuf, show_hidden: bool) -> Self {
         Self {
             doc_id,
             path,
@@ -38,7 +39,8 @@ impl DirectoryListJob {
         }
     }
 
-    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+    #[must_use]
+    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
         self.token = Some(token);
         self
     }

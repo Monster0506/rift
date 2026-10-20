@@ -21,7 +21,7 @@ pub fn execute_local_command(
             let mut error_handler = |e: RiftError| errors.push(e);
             let result = document_settings_registry.execute_setting(
                 &option,
-                value,
+                value.as_deref(),
                 &mut document.options,
                 &mut error_handler,
             );

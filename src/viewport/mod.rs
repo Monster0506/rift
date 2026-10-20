@@ -1,6 +1,6 @@
 //! Viewport management
 //! Handles the visible portion of the text buffer
-
+//!
 //! The viewport is a read-only window into buffer content, sized to the terminal, that never
 //! mutates the buffer; it keeps the cursor visible and stays independent of rendering mechanics.
 
@@ -25,15 +25,15 @@ pub struct Viewport {
     visible_rows: usize,
     /// Number of visible columns
     visible_cols: usize,
-    /// Fractional scroll offset in [0.0, 1.0) below top_line; no current
-    /// caller reads this, and top_line() stays integer-only.
+    /// Fractional scroll offset in [0.0, 1.0) below `top_line`; no current
+    /// caller reads this, and `top_line()` stays integer-only.
     sub_line_offset: f64,
 }
 
 impl Viewport {
     #[must_use]
-    pub fn new(rows: usize, cols: usize) -> Self {
-        Viewport {
+    pub const fn new(rows: usize, cols: usize) -> Self {
+        Self {
             top_line: 0,
             prev_top_line: 0,
             top_visual_row: 0,
@@ -109,55 +109,55 @@ impl Viewport {
 
     /// Get the previous top line (before last update)
     #[must_use]
-    pub fn prev_top_line(&self) -> usize {
+    pub const fn prev_top_line(&self) -> usize {
         self.prev_top_line
     }
 
     /// Get the previous top visual row (before last update)
     #[must_use]
-    pub fn prev_top_visual_row(&self) -> usize {
+    pub const fn prev_top_visual_row(&self) -> usize {
         self.prev_top_visual_row
     }
 
     /// Get the previous leftmost visible column (before last update)
     #[must_use]
-    pub fn prev_left_col(&self) -> usize {
+    pub const fn prev_left_col(&self) -> usize {
         self.prev_left_col
     }
 
     #[must_use]
-    pub fn top_line(&self) -> usize {
+    pub const fn top_line(&self) -> usize {
         self.top_line
     }
 
     #[must_use]
-    pub fn top_visual_row(&self) -> usize {
+    pub const fn top_visual_row(&self) -> usize {
         self.top_visual_row
     }
 
     /// Get the leftmost visible column
     #[must_use]
-    pub fn left_col(&self) -> usize {
+    pub const fn left_col(&self) -> usize {
         self.left_col
     }
 
     #[must_use]
-    pub fn visible_rows(&self) -> usize {
+    pub const fn visible_rows(&self) -> usize {
         self.visible_rows
     }
 
     #[must_use]
-    pub fn visible_cols(&self) -> usize {
+    pub const fn visible_cols(&self) -> usize {
         self.visible_cols
     }
 
-    pub fn set_size(&mut self, rows: usize, cols: usize) {
+    pub const fn set_size(&mut self, rows: usize, cols: usize) {
         self.visible_rows = rows;
         self.visible_cols = cols;
     }
 
     /// Set the scroll position (used when restoring view state)
-    pub fn set_scroll(&mut self, top_line: usize, left_col: usize) {
+    pub const fn set_scroll(&mut self, top_line: usize, left_col: usize) {
         self.top_line = top_line;
         self.left_col = left_col;
         self.sub_line_offset = 0.0;
@@ -167,7 +167,7 @@ impl Viewport {
 
     /// Set the logical and visual scroll positions together for synchronized
     /// split panes.
-    pub fn set_scroll_with_visual(
+    pub const fn set_scroll_with_visual(
         &mut self,
         top_line: usize,
         top_visual_row: usize,
@@ -192,25 +192,26 @@ impl Viewport {
         self.first_update = true;
     }
 
-    /// Get current scroll position as (top_line, left_col)
-    pub fn get_scroll(&self) -> (usize, usize) {
+    /// Get current scroll position as (`top_line`, `left_col`)
+    #[must_use]
+    pub const fn get_scroll(&self) -> (usize, usize) {
         (self.top_line, self.left_col)
     }
 
     /// Fractional scroll offset in [0.0, 1.0] below `top_line`. Always 0.0
     /// until a future renderer calls `set_sub_line_offset`.
     #[must_use]
-    pub fn sub_line_offset(&self) -> f64 {
+    pub const fn sub_line_offset(&self) -> f64 {
         self.sub_line_offset
     }
 
     /// Set the fractional scroll offset below `top_line`, clamped to
     /// [0.0, 1.0]. Does not itself move `top_line`.
-    pub fn set_sub_line_offset(&mut self, offset: f64) {
+    pub const fn set_sub_line_offset(&mut self, offset: f64) {
         self.sub_line_offset = offset.clamp(0.0, 1.0);
     }
 
-    pub fn mark_needs_full_redraw(&mut self) {
+    pub const fn mark_needs_full_redraw(&mut self) {
         self.first_update = true;
         self.prev_top_visual_row = self.top_visual_row;
     }

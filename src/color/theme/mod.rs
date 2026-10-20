@@ -2,6 +2,12 @@
 //! Provides predefined color themes for the editor
 
 use super::Color;
+use crate::constants::captures::{
+    ATTRIBUTE, BOOLEAN, BUILTIN, CHARACTER, COMMENT, CONSTANT, CONSTRUCTOR, C_IMPORT, ESCAPE,
+    FUNCTION, KEYWORD, LABEL, MODULE, MODULE_BUILTIN, NAMESPACE, NUMBER, OPERATOR, PARAMETER,
+    PROPERTY, PUNCTUATION, SPELL, STRING, TAG, TEXT_LITERAL, TEXT_REFERENCE, TEXT_TITLE, TEXT_URI,
+    TYPE, VARIABLE,
+};
 use crate::state::UserSettings;
 
 /// Theme handler trait, allowing themes to be extended to apply more than
@@ -21,7 +27,7 @@ impl ThemeHandler for DefaultThemeHandler {
         settings.theme = Some(theme.name.to_string());
         settings.editor_bg = Some(theme.background);
         settings.editor_fg = Some(theme.foreground);
-        settings.syntax_colors = theme.syntax.clone();
+        settings.syntax_colors.clone_from(&theme.syntax);
         settings.cursor_color = Some(theme.cursor_color);
     }
 }
@@ -40,12 +46,14 @@ pub struct SyntaxColors {
 
 impl SyntaxColors {
     /// Create syntax colors from a list of base colors
+    #[must_use]
     pub fn from_base_colors(base: &[(&str, Color)]) -> Self {
         Self {
             colors: base.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
         }
     }
 
+    #[must_use]
     pub fn get_color(&self, capture: &str) -> Option<Color> {
         // 1. Normalize (remove leading @ and trim)
         let clean_capture = capture.trim_start_matches('@').trim();
@@ -57,8 +65,8 @@ impl SyntaxColors {
 
         // 3. Fallback components (e.g., "function.builtin" -> "function")
         let mut part = clean_capture;
-        while let Some(dot_index) = part.rfind('.') {
-            part = &part[0..dot_index];
+        while let Some((prefix, _)) = part.rsplit_once('.') {
+            part = prefix;
             if let Some(color) = self.colors.get(part) {
                 return Some(*color);
             }
@@ -97,7 +105,7 @@ pub enum ThemeVariant {
 impl Theme {
     /// Create a new theme
     #[must_use]
-    pub fn new(
+    pub const fn new(
         name: &'static str,
         variant: ThemeVariant,
         background: Color,
@@ -105,7 +113,7 @@ impl Theme {
         cursor_color: Color,
         syntax: Option<SyntaxColors>,
     ) -> Self {
-        Theme {
+        Self {
             name,
             variant,
             background,
@@ -118,7 +126,26 @@ impl Theme {
     /// Get the light theme
     #[must_use]
     pub fn light() -> Self {
-        use crate::constants::captures::*;
+        let syntax = Self::light_syntax();
+        Self::new(
+            crate::constants::themes::LIGHT,
+            ThemeVariant::Light,
+            Color::Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
+            Color::Rgb { r: 0, g: 0, b: 0 },
+            Color::Rgb {
+                r: 0,
+                g: 120,
+                b: 212,
+            },
+            Some(syntax),
+        )
+    }
+
+    fn light_syntax() -> SyntaxColors {
         let fg = Color::Black;
         let def = Color::Rgb {
             r: 29,
@@ -150,7 +177,7 @@ impl Theme {
             g: 64,
             b: 58,
         };
-        let syntax = SyntaxColors::from_base_colors(&[
+        SyntaxColors::from_base_colors(&[
             (KEYWORD, fg),
             (FUNCTION, def),
             (TYPE, def),
@@ -203,30 +230,36 @@ impl Theme {
             (MODULE_BUILTIN, def),
             (SPELL, comment),
             (MODULE, def),
-        ]);
-
-        Theme::new(
-            crate::constants::themes::LIGHT,
-            ThemeVariant::Light,
-            Color::Rgb {
-                r: 255,
-                g: 255,
-                b: 255,
-            },
-            Color::Rgb { r: 0, g: 0, b: 0 },
-            Color::Rgb {
-                r: 0,
-                g: 120,
-                b: 212,
-            },
-            Some(syntax),
-        )
+        ])
     }
 
     /// Get the dark theme
     #[must_use]
     pub fn dark() -> Self {
-        use crate::constants::captures::*;
+        let syntax = Self::dark_syntax();
+        Self::new(
+            crate::constants::themes::DARK,
+            ThemeVariant::Dark,
+            Color::Rgb {
+                r: 30,
+                g: 30,
+                b: 30,
+            },
+            Color::Rgb {
+                r: 224,
+                g: 224,
+                b: 224,
+            },
+            Color::Rgb {
+                r: 86,
+                g: 156,
+                b: 214,
+            },
+            Some(syntax),
+        )
+    }
+
+    fn dark_syntax() -> SyntaxColors {
         let fg = Color::Rgb {
             r: 224,
             g: 224,
@@ -262,7 +295,7 @@ impl Theme {
             g: 201,
             b: 184,
         };
-        let syntax = SyntaxColors::from_base_colors(&[
+        SyntaxColors::from_base_colors(&[
             (KEYWORD, fg),
             (FUNCTION, def),
             (TYPE, def),
@@ -308,39 +341,37 @@ impl Theme {
             (MODULE_BUILTIN, def),
             (SPELL, comment),
             (MODULE, def),
-        ]);
-
-        Theme::new(
-            crate::constants::themes::DARK,
-            ThemeVariant::Dark,
-            Color::Rgb {
-                r: 30,
-                g: 30,
-                b: 30,
-            },
-            Color::Rgb {
-                r: 224,
-                g: 224,
-                b: 224,
-            },
-            Color::Rgb {
-                r: 86,
-                g: 156,
-                b: 214,
-            },
-            Some(syntax),
-        )
+        ])
     }
 
     /// Get the gruvbox theme (dark variant)
     #[must_use]
     pub fn gruvbox() -> Self {
-        use crate::constants::captures::*;
         let fg = Color::Rgb {
             r: 235,
             g: 219,
             b: 178,
         };
+        let syntax = Self::gruvbox_syntax(fg);
+        Self::new(
+            crate::constants::themes::GRUVBOX,
+            ThemeVariant::Dark,
+            Color::Rgb {
+                r: 40,
+                g: 40,
+                b: 32,
+            },
+            fg,
+            Color::Rgb {
+                r: 255,
+                g: 146,
+                b: 47,
+            },
+            Some(syntax),
+        )
+    }
+
+    fn gruvbox_syntax(fg: Color) -> SyntaxColors {
         let def = Color::Rgb {
             r: 142,
             g: 192,
@@ -371,7 +402,7 @@ impl Theme {
             g: 210,
             b: 213,
         };
-        let syntax = SyntaxColors::from_base_colors(&[
+        SyntaxColors::from_base_colors(&[
             (KEYWORD, fg),
             (FUNCTION, def),
             (TYPE, def),
@@ -438,35 +469,37 @@ impl Theme {
                     b: 47,
                 },
             ),
-        ]);
-
-        Theme::new(
-            crate::constants::themes::GRUVBOX,
-            ThemeVariant::Dark,
-            Color::Rgb {
-                r: 40,
-                g: 40,
-                b: 32,
-            },
-            fg,
-            Color::Rgb {
-                r: 255,
-                g: 146,
-                b: 47,
-            },
-            Some(syntax),
-        )
+        ])
     }
 
     /// Get the nordic theme
     #[must_use]
     pub fn nordic() -> Self {
-        use crate::constants::captures::*;
         let fg = Color::Rgb {
             r: 187,
             g: 195,
             b: 212,
         };
+        let syntax = Self::nordic_syntax(fg);
+        Self::new(
+            crate::constants::themes::NORDIC,
+            ThemeVariant::Dark,
+            Color::Rgb {
+                r: 46,
+                g: 52,
+                b: 64,
+            },
+            fg,
+            Color::Rgb {
+                r: 136,
+                g: 192,
+                b: 208,
+            },
+            Some(syntax),
+        )
+    }
+
+    fn nordic_syntax(fg: Color) -> SyntaxColors {
         let def = Color::Rgb {
             r: 136,
             g: 192,
@@ -497,7 +530,7 @@ impl Theme {
             g: 222,
             b: 233,
         };
-        let syntax = SyntaxColors::from_base_colors(&[
+        SyntaxColors::from_base_colors(&[
             (KEYWORD, fg),
             (FUNCTION, def),
             (TYPE, def),
@@ -563,34 +596,17 @@ impl Theme {
                     b: 139,
                 },
             ),
-        ]);
-
-        Theme::new(
-            crate::constants::themes::NORDIC,
-            ThemeVariant::Dark,
-            Color::Rgb {
-                r: 46,
-                g: 52,
-                b: 64,
-            },
-            fg,
-            Color::Rgb {
-                r: 136,
-                g: 192,
-                b: 208,
-            },
-            Some(syntax),
-        )
+        ])
     }
 
     /// Get theme by name
     #[must_use]
     pub fn by_name(name: &str) -> Option<Self> {
         match name.to_lowercase().as_str() {
-            crate::constants::themes::LIGHT => Some(Theme::light()),
-            crate::constants::themes::DARK => Some(Theme::dark()),
-            crate::constants::themes::GRUVBOX => Some(Theme::gruvbox()),
-            crate::constants::themes::NORDIC => Some(Theme::nordic()),
+            crate::constants::themes::LIGHT => Some(Self::light()),
+            crate::constants::themes::DARK => Some(Self::dark()),
+            crate::constants::themes::GRUVBOX => Some(Self::gruvbox()),
+            crate::constants::themes::NORDIC => Some(Self::nordic()),
             _ => None,
         }
     }

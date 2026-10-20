@@ -20,7 +20,7 @@ pub struct CommandLineWindowSettings {
 
 impl Default for CommandLineWindowSettings {
     fn default() -> Self {
-        CommandLineWindowSettings {
+        Self {
             width_ratio: 0.6, // 60% of terminal width
             min_width: 40,
             height: 3, // top border (1) + content (1) + bottom border (1)
@@ -31,21 +31,81 @@ impl Default for CommandLineWindowSettings {
 }
 impl CommandLineWindowSettings {}
 
-#[derive(Debug, Clone)]
-pub struct StatusLineSettings {
-    pub show_status_line: bool,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusLineSegments {
     pub show_filename: bool,
     pub show_dirty_indicator: bool,
+}
+
+impl Default for StatusLineSegments {
+    fn default() -> Self {
+        Self {
+            show_filename: true,
+            show_dirty_indicator: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusLineSettings {
+    pub show_status_line: bool,
     pub reverse_video: bool,
+    pub segments: StatusLineSegments,
 }
 
 impl Default for StatusLineSettings {
     fn default() -> Self {
-        StatusLineSettings {
+        Self {
             show_status_line: true,
-            show_filename: true,
-            show_dirty_indicator: true,
             reverse_video: false,
+            segments: StatusLineSegments::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct EditingSettings {
+    pub expand_tabs: bool,
+    pub ghost_cut: bool,
+}
+
+impl Default for EditingSettings {
+    fn default() -> Self {
+        Self {
+            expand_tabs: true,
+            ghost_cut: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct LspSettings {
+    pub debug_log: bool,
+    pub virtual_text: bool,
+    pub diagnostic_tooltip: bool,
+}
+
+impl Default for LspSettings {
+    fn default() -> Self {
+        Self {
+            debug_log: false,
+            virtual_text: true,
+            diagnostic_tooltip: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UndoSettings {
+    pub persistent: bool,
+    pub dir: Option<std::path::PathBuf>,
+}
+
+impl Default for UndoSettings {
+    fn default() -> Self {
+        Self {
+            persistent: true,
+            dir: None,
         }
     }
 }
@@ -61,7 +121,7 @@ pub struct UserSettings {
     pub theme: Option<String>,
     pub poll_timeout_ms: u64,
     pub tab_width: usize,
-    pub expand_tabs: bool,
+    pub editing: EditingSettings,
     pub syntax_colors: Option<crate::color::theme::SyntaxColors>,
     pub soft_wrap: bool,
     pub wrap_width: Option<usize>,
@@ -69,18 +129,14 @@ pub struct UserSettings {
     pub equalize_proportional: bool,
     pub cursor_color: Option<Color>,
     pub cursor_speed: f64,
-    pub lsp_debug_log: bool,
-    pub lsp_virtual_text: bool,
-    pub lsp_diagnostic_tooltip: bool,
-    pub ghost_cut: bool,
-    pub persistent_undo: bool,
-    pub undo_dir: Option<std::path::PathBuf>,
+    pub lsp: LspSettings,
+    pub undo: UndoSettings,
 }
 
 impl UserSettings {
     #[must_use]
     pub fn new() -> Self {
-        let mut settings = UserSettings {
+        let mut settings = Self {
             show_line_numbers: true,    // Default to showing line numbers
             default_border_chars: None, // None means use FloatingWindow defaults
             command_line_window: CommandLineWindowSettings::default(),
@@ -90,7 +146,7 @@ impl UserSettings {
             theme: None,
             poll_timeout_ms: 16,
             tab_width: 4,
-            expand_tabs: true,
+            editing: EditingSettings::default(),
             syntax_colors: None,
             soft_wrap: true,
             wrap_width: None,
@@ -98,12 +154,8 @@ impl UserSettings {
             equalize_proportional: false,
             cursor_color: None,
             cursor_speed: 0.8,
-            lsp_debug_log: false,
-            lsp_virtual_text: true,
-            lsp_diagnostic_tooltip: true,
-            ghost_cut: true,
-            persistent_undo: true,
-            undo_dir: None,
+            lsp: LspSettings::default(),
+            undo: UndoSettings::default(),
         };
 
         let default_theme = Theme::gruvbox();
@@ -141,7 +193,8 @@ pub struct CompletionSession {
 }
 
 impl CompletionSession {
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         input_at_tab: String,
         candidates: Vec<CompletionCandidate>,
         token_start: usize,
@@ -180,6 +233,7 @@ impl CompletionSession {
         self.ensure_selected_visible();
     }
 
+    #[must_use]
     pub fn selected_text(&self) -> Option<&str> {
         self.selected
             .and_then(|i| self.candidates.get(i))
@@ -210,7 +264,6 @@ pub struct State {
     pub cursor_pos: (usize, usize),
     pub total_lines: usize,
     pub gutter_width: usize,
-    pub next_gutter_threshold: usize,
     pub buffer_size: usize,
     pub command_line: String,
     pub command_line_cursor: usize,
@@ -228,10 +281,22 @@ pub struct State {
     pub is_remote: bool,
 }
 
+const GUTTER_PADDING: usize = 2;
+
+/// Columns the line-number gutter needs for `total_lines` lines, padding included.
+#[must_use]
+pub fn gutter_width_for(total_lines: usize) -> usize {
+    if total_lines == 0 {
+        return 0;
+    }
+    let digits = usize::try_from(total_lines.ilog10()).unwrap_or(0) + 1;
+    digits + GUTTER_PADDING
+}
+
 impl State {
     #[must_use]
     pub fn new() -> Self {
-        State {
+        Self {
             settings: UserSettings::new(),
             debug_mode: false,
             file_path: None,
@@ -241,7 +306,6 @@ impl State {
             cursor_pos: (0, 0),
             total_lines: 1,
             gutter_width: 3,
-            next_gutter_threshold: 10,
             buffer_size: 0,
             command_line: String::new(),
             command_line_cursor: 0,
@@ -262,7 +326,7 @@ impl State {
 
     #[must_use]
     pub fn with_settings(settings: UserSettings) -> Self {
-        State {
+        Self {
             settings,
             debug_mode: false,
             file_path: None,
@@ -272,7 +336,6 @@ impl State {
             cursor_pos: (0, 0),
             total_lines: 1,
             gutter_width: 3,
-            next_gutter_threshold: 10,
             buffer_size: 0,
             command_line: String::new(),
             command_line_cursor: 0,
@@ -291,7 +354,7 @@ impl State {
         }
     }
 
-    pub fn set_default_border_chars(&mut self, border_chars: Option<BorderChars>) {
+    pub const fn set_default_border_chars(&mut self, border_chars: Option<BorderChars>) {
         self.settings.default_border_chars = border_chars;
     }
 
@@ -299,19 +362,19 @@ impl State {
         self.file_path = path;
     }
 
-    pub fn toggle_debug(&mut self) {
+    pub const fn toggle_debug(&mut self) {
         self.debug_mode = !self.debug_mode;
     }
 
-    pub fn update_keypress(&mut self, key: Key) {
+    pub const fn update_keypress(&mut self, key: Key) {
         self.last_keypress = Some(key);
     }
 
-    pub fn update_command(&mut self, cmd: Command) {
+    pub const fn update_command(&mut self, cmd: Command) {
         self.last_command = Some(cmd);
     }
 
-    pub fn update_cursor(&mut self, line: usize, col: usize) {
+    pub const fn update_cursor(&mut self, line: usize, col: usize) {
         self.cursor_pos = (line, col);
     }
 
@@ -321,24 +384,37 @@ impl State {
         buffer_size: usize,
         line_ending: LineEnding,
     ) {
-        if total_lines >= self.next_gutter_threshold
-            || (total_lines < self.next_gutter_threshold / 10 && self.gutter_width > 2)
-        {
-            self.gutter_width = if total_lines == 0 {
-                0
-            } else {
-                total_lines.to_string().len() + 2
-            };
-            let mut threshold = 10;
-            while threshold <= total_lines {
-                threshold *= 10;
-            }
-            self.next_gutter_threshold = threshold;
-        }
+        self.gutter_width = gutter_width_for(total_lines);
 
         self.total_lines = total_lines;
         self.buffer_size = buffer_size;
         self.line_ending = line_ending;
+    }
+
+    /// Line numbers draw only when both the document and the global setting allow them.
+    #[must_use]
+    pub const fn line_numbers_on(&self, doc_enabled: bool) -> bool {
+        doc_enabled && self.settings.show_line_numbers
+    }
+
+    /// Gutter columns of the active document, 0 when its line numbers are hidden.
+    #[must_use]
+    pub const fn gutter_cols(&self, doc_enabled: bool) -> usize {
+        if self.line_numbers_on(doc_enabled) {
+            self.gutter_width
+        } else {
+            0
+        }
+    }
+
+    /// Gutter columns of any document with `total_lines` lines, 0 when hidden.
+    #[must_use]
+    pub fn doc_gutter_cols(&self, doc_enabled: bool, total_lines: usize) -> usize {
+        if self.line_numbers_on(doc_enabled) {
+            gutter_width_for(total_lines)
+        } else {
+            0
+        }
     }
 
     pub fn append_to_command_line(&mut self, ch: char) {
@@ -352,7 +428,10 @@ impl State {
 
     pub fn remove_from_command_line(&mut self) {
         if self.command_line_cursor > 0 {
-            let prev_len = self.command_line[..self.command_line_cursor]
+            let prev_len = self
+                .command_line
+                .get(..self.command_line_cursor)
+                .unwrap_or_default()
                 .chars()
                 .next_back()
                 .map_or(0, char::len_utf8);
@@ -374,7 +453,10 @@ impl State {
     }
 
     pub fn move_command_line_left(&mut self) {
-        let prev_len = self.command_line[..self.command_line_cursor]
+        let prev_len = self
+            .command_line
+            .get(..self.command_line_cursor)
+            .unwrap_or_default()
             .chars()
             .next_back()
             .map_or(0, char::len_utf8);
@@ -382,14 +464,17 @@ impl State {
     }
 
     pub fn move_command_line_right(&mut self) {
-        let next_len = self.command_line[self.command_line_cursor..]
+        let next_len = self
+            .command_line
+            .get(self.command_line_cursor..)
+            .unwrap_or_default()
             .chars()
             .next()
             .map_or(0, char::len_utf8);
         self.command_line_cursor += next_len;
     }
 
-    pub fn move_command_line_home(&mut self) {
+    pub const fn move_command_line_home(&mut self) {
         self.command_line_cursor = 0;
     }
 
@@ -413,7 +498,7 @@ impl State {
         }
     }
 
-    pub fn move_command_line_end(&mut self) {
+    pub const fn move_command_line_end(&mut self) {
         self.command_line_cursor = self.command_line.len();
     }
 
@@ -437,7 +522,7 @@ impl State {
             .add(kind, message, ttl);
     }
 
-    pub fn update_dirty(&mut self, is_dirty: bool) {
+    pub const fn update_dirty(&mut self, is_dirty: bool) {
         self.is_dirty = is_dirty;
     }
 }

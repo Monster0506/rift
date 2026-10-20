@@ -3,7 +3,7 @@ mod v1;
 use super::{EditNode, EditSeq, EditTransaction, UndoTree};
 use crate::time::UNIX_EPOCH;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
@@ -63,19 +63,20 @@ pub fn expand_tilde(path: &str) -> PathBuf {
 
 #[must_use]
 pub fn resolve_undo_dir(configured: Option<&Path>) -> PathBuf {
-    configured
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| crate::editor::user_config_dir().join("undofiles"))
+    configured.map_or_else(
+        || crate::editor::user_config_dir().join("undofiles"),
+        Path::to_path_buf,
+    )
 }
 
 fn undo_file_name(path: &Path) -> String {
     let mut hasher = DefaultHasher::new();
     path.hash(&mut hasher);
     let hash = hasher.finish();
-    let stem = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "buffer".to_string());
+    let stem = path.file_name().map_or_else(
+        || "buffer".to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    );
     format!("{stem}.{hash:016x}.undo")
 }
 
@@ -104,6 +105,10 @@ fn decode_payload(version: u16, payload: &[u8]) -> Result<Decoded, String> {
     }
 }
 
+/// Writes the undo tree for `doc_path` into `undo_dir`.
+///
+/// # Errors
+/// Returns `Err` when `undo_dir` cannot be created or the file cannot be written.
 pub fn save(
     undo_dir: &Path,
     doc_path: &Path,
@@ -122,7 +127,7 @@ pub fn save(
 }
 
 fn build_tree(nodes: Vec<DecodedNode>, current: EditSeq) -> Option<UndoTree> {
-    let mut nodes: HashMap<EditSeq, EditNode> = nodes
+    let mut nodes: BTreeMap<EditSeq, EditNode> = nodes
         .into_iter()
         .map(|n| {
             let timestamp = UNIX_EPOCH + std::time::Duration::from_secs(n.timestamp_unix_secs);
@@ -170,6 +175,10 @@ pub fn load(undo_dir: &Path, doc_path: &Path, content_hash: Sha256Digest) -> Opt
     build_tree(file.nodes, file.current)
 }
 
+/// Decodes an undo file for display without checking it against a document.
+///
+/// # Errors
+/// Returns `Err` when the envelope or version is unrecognized, the payload fails to decode, or the tree is corrupt.
 pub fn parse_for_display(bytes: &[u8]) -> Result<ParsedUndoFile, String> {
     let (version, payload) =
         split_envelope(bytes).ok_or_else(|| "unrecognized undo file format".to_string())?;

@@ -51,16 +51,18 @@ pub use syntax_sync::SyntaxSync;
 pub struct DocumentId(u64);
 
 impl DocumentId {
+    #[must_use]
     pub const fn new(id: u64) -> Self {
-        DocumentId(id)
+        Self(id)
     }
 
+    #[must_use]
     pub const fn get(self) -> u64 {
         self.0
     }
 
-    pub(crate) fn next(self) -> Self {
-        DocumentId(self.0 + 1)
+    pub(crate) const fn next(self) -> Self {
+        Self(self.0 + 1)
     }
 }
 
@@ -161,10 +163,11 @@ pub enum LineEnding {
 }
 
 impl LineEnding {
-    pub fn as_bytes(&self) -> &'static [u8] {
+    #[must_use]
+    pub const fn as_bytes(&self) -> &'static [u8] {
         match self {
-            LineEnding::LF => b"\n",
-            LineEnding::CRLF => b"\r\n",
+            Self::LF => b"\n",
+            Self::CRLF => b"\r\n",
         }
     }
 }
@@ -196,7 +199,7 @@ pub struct Document {
     pending_annotation_snapshot: Option<Vec<crate::annotations::Annotation>>,
     annotation_undo_stack: Vec<AnnotationUndo>,
     annotation_redo_stack: Vec<AnnotationUndo>,
-    document_version: u64,
+    content_version: u64,
     pending_lsp_edits: Vec<crate::history::EditOperation>,
     lsp_synced_revision: u64,
     lsp_full_sync_needed: bool,
@@ -232,8 +235,8 @@ macro_rules! state_set {
 }
 
 impl Document {
-    pub fn version(&self) -> u64 {
-        self.document_version
+    pub const fn version(&self) -> u64 {
+        self.content_version
     }
 
     pub fn set_syntax(&mut self, syntax: Syntax) {
@@ -351,10 +354,7 @@ impl Document {
                 text,
             ));
         }
-        if ops.is_empty() {
-            return None;
-        }
-        let op = ops.pop().unwrap();
+        let op = ops.pop()?;
 
         let single_line = |c: &Character| !matches!(c, Character::Newline);
         match op {
@@ -431,7 +431,9 @@ impl Document {
             .line_chars(range.start.line as usize)
             .map(|c| c.to_char_lossy())
             .take(range.start.col as usize);
-        let removed = removed_text.iter().map(|c| c.to_char_lossy());
+        let removed = removed_text
+            .iter()
+            .map(super::character::Character::to_char_lossy);
         let end_char_offset = range.start.col as usize + removed_len;
         let end_units = encoding.units_for_char_offset(prefix.chain(removed), end_char_offset);
 
@@ -453,18 +455,18 @@ impl Document {
         self.lsp_full_sync_needed = false;
     }
 
-    pub fn mark_lsp_full_sync(&mut self) {
+    pub const fn mark_lsp_full_sync(&mut self) {
         self.lsp_full_sync_needed = true;
     }
 
-    pub fn has_pending_lsp_edits(&self) -> bool {
+    pub const fn has_pending_lsp_edits(&self) -> bool {
         self.lsp_full_sync_needed
             || !self.pending_lsp_edits.is_empty()
             || self.buffer.revision != self.lsp_synced_revision
     }
 
     #[cfg(feature = "lsp")]
-    fn pending_lsp_edits_are_complete(&self) -> bool {
+    const fn pending_lsp_edits_are_complete(&self) -> bool {
         let recorded = self.pending_lsp_edits.len() as u64;
         !self.lsp_full_sync_needed
             && self.buffer.revision.wrapping_sub(self.lsp_synced_revision) == recorded
@@ -481,11 +483,11 @@ impl Document {
         self.buffer.chars(start..end)
     }
 
-    pub fn handle(&self) -> DocumentHandle {
+    pub const fn handle(&self) -> DocumentHandle {
         self.handle
     }
 
-    pub fn set_handle(&mut self, handle: DocumentHandle) {
+    pub const fn set_handle(&mut self, handle: DocumentHandle) {
         self.handle = handle;
     }
 
@@ -493,7 +495,7 @@ impl Document {
         self.kind.descriptor()
     }
 
-    pub fn buffer_kind_id(&self) -> BufferKindId {
+    pub const fn buffer_kind_id(&self) -> BufferKindId {
         self.kind.id()
     }
 
@@ -644,7 +646,7 @@ impl Document {
         }
     }
 
-    pub fn set_read_only(&mut self, on: bool) {
+    pub const fn set_read_only(&mut self, on: bool) {
         self.readonly_override = on;
     }
 
@@ -684,7 +686,7 @@ impl Document {
     pub fn clipboard_entry(&self, idx: usize) -> Option<&[crate::character::Character]> {
         self.state
             .try_get(CLIPBOARD_STATE_KEY)
-            .and_then(|s| s.entries.get(idx).map(|v| v.as_slice()))
+            .and_then(|s| s.entries.get(idx).map(std::vec::Vec::as_slice))
     }
 
     state_get!(pub fn clipboard_entry_index(&self) -> Option<usize> = CLIPBOARD_ENTRY_STATE_KEY, |s| s.entry_index);
@@ -776,8 +778,7 @@ impl Document {
     pub fn git_blame_lines_len(&self) -> usize {
         self.state
             .try_get(GIT_BLAME_STATE_KEY)
-            .map(|s| s.lines.len())
-            .unwrap_or(0)
+            .map_or(0, |s| s.lines.len())
     }
 
     state_get_opt!(pub fn git_blame_wrap_key(&self) -> (DocumentId, usize, usize, u64) = GIT_BLAME_STATE_KEY, |s| s.wrap_key);

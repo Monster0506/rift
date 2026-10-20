@@ -8,6 +8,8 @@ license = "MIT"
 authors = ["monster0506 <tjraklovits@gmail.com>"]
 repository = "https://github.com/monster0506/rift"
 readme = "README.md"
+keywords = ["rift", "editor", "terminal", "tui", "text-editor"]
+categories = ["text-editors", "command-line-utilities"]
 
 [[bin]]
 name = "rift"

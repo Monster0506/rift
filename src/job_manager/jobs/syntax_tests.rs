@@ -10,12 +10,12 @@ fn make_signal() -> CancellationSignal {
 
 fn rust_language_and_query() -> (tree_sitter::Language, Arc<Query>) {
     let loader = LanguageLoader::new(PathBuf::from("."));
-    let loaded = loader.load_language("rust").expect("rust grammar");
+    let grammar = loader.load_language("rust").expect("rust grammar");
     let query_src = loader
         .load_query("rust", "highlights")
         .expect("rust highlights query");
-    let query = Query::new(&loaded.language, &query_src).expect("compile highlights query");
-    (loaded.language, Arc::new(query))
+    let query = Query::new(&grammar.language, &query_src).expect("compile highlights query");
+    (grammar.language, Arc::new(query))
 }
 
 fn make_buffer(src: &str) -> TextBuffer {
@@ -75,7 +75,7 @@ fn test_scoped_highlights_match_full_recompute_after_single_edit() {
 
     // Insert one character ("1" -> "11") inside the first literal.
     let insert_pos = initial_src.find("1;").unwrap() + 1;
-    let mut buffer2 = buffer1.clone();
+    let mut buffer2 = buffer1;
     buffer2.set_cursor(insert_pos).unwrap();
     buffer2.insert_str("1").unwrap();
 
@@ -96,7 +96,7 @@ fn test_scoped_highlights_match_full_recompute_after_single_edit() {
             column: insert_pos + 1,
         },
     };
-    let mut old_tree_edited = tree1.clone();
+    let mut old_tree_edited = tree1;
     old_tree_edited.edit(&edit);
 
     let mut parser2 = Parser::new();
@@ -110,10 +110,7 @@ fn test_scoped_highlights_match_full_recompute_after_single_edit() {
         crate::document::DocumentId::new(1),
         buffer2.revision,
     )
-    .with_highlights_context(
-        initial_highlights.clone().into(),
-        std::slice::from_ref(&edit),
-    );
+    .with_highlights_context(initial_highlights.into(), std::slice::from_ref(&edit));
 
     let result = run_job(job);
 
@@ -144,12 +141,11 @@ fn test_scoped_highlights_match_full_recompute_after_single_edit() {
 
 fn point_at(source: &[u8], byte: usize) -> tree_sitter::Point {
     let byte = byte.min(source.len());
-    let row = source[..byte].iter().filter(|&&b| b == b'\n').count();
+    let row = source[..byte].split(|&b| b == b'\n').count() - 1;
     let last_nl = source[..byte]
         .iter()
         .rposition(|&b| b == b'\n')
-        .map(|i| i + 1)
-        .unwrap_or(0);
+        .map_or(0, |i| i + 1);
     tree_sitter::Point {
         row,
         column: byte - last_nl,
@@ -173,16 +169,15 @@ fn test_scoped_highlights_do_not_recolor_unrelated_token_on_same_line() {
 
     let ok_start = initial_src.find("Ok(Action").unwrap();
     let ok_range = ok_start..ok_start + 2;
-    let initial_ok_capture: Vec<u32> = initial_highlights
+    let initial_ok_capture = initial_highlights
         .query(ok_range.clone())
         .into_iter()
         .filter(|(r, _)| *r == ok_range)
-        .map(|(_, c)| c)
-        .collect();
+        .count();
 
     // Insert one character right after "lsp" inside the string literal.
     let insert_pos = initial_src.find("lsp:diagnostics_panel").unwrap() + 3;
-    let mut buffer2 = buffer1.clone();
+    let mut buffer2 = buffer1;
     buffer2.set_cursor(insert_pos).unwrap();
     buffer2.insert_str("x").unwrap();
     let source2 = buffer2.to_logical_bytes();
@@ -195,7 +190,7 @@ fn test_scoped_highlights_do_not_recolor_unrelated_token_on_same_line() {
         old_end_position: point_at(&source1, insert_pos),
         new_end_position: point_at(&source2, insert_pos + 1),
     };
-    let mut old_tree_edited = tree1.clone();
+    let mut old_tree_edited = tree1;
     old_tree_edited.edit(&edit);
 
     let mut parser2 = Parser::new();
@@ -209,10 +204,7 @@ fn test_scoped_highlights_do_not_recolor_unrelated_token_on_same_line() {
         crate::document::DocumentId::new(1),
         buffer2.revision,
     )
-    .with_highlights_context(
-        initial_highlights.clone().into(),
-        std::slice::from_ref(&edit),
-    );
+    .with_highlights_context(initial_highlights.into(), std::slice::from_ref(&edit));
 
     let result = run_job(job);
 
@@ -236,8 +228,7 @@ fn test_scoped_highlights_do_not_recolor_unrelated_token_on_same_line() {
     // "Ok" matches both @constructor and @function; the render picks
     // whichever comes first, so order must match a full recompute.
     assert_eq!(
-        initial_ok_capture.len(),
-        2,
+        initial_ok_capture, 2,
         "test fixture must exercise a dual-capture token"
     );
     assert_eq!(
@@ -252,6 +243,8 @@ fn test_scoped_highlights_do_not_recolor_unrelated_token_on_same_line() {
     );
 }
 
+const DIAGNOSTICS_ARM: &str = "\"lsp:diagnostics_panel\" => ";
+
 #[test]
 fn test_scoped_highlights_real_file_diagnostics_panel_line() {
     let (language, query) = rust_language_and_query();
@@ -265,7 +258,7 @@ fn test_scoped_highlights_real_file_diagnostics_panel_line() {
     let initial_highlights = full_highlights(&language, &query, source1.as_slice());
 
     let insert_pos = initial_src.find("lsp:diagnostics_panel").unwrap() + 3;
-    let mut buffer2 = buffer1.clone();
+    let mut buffer2 = buffer1;
     buffer2.set_cursor(insert_pos).unwrap();
     buffer2.insert_str("x").unwrap();
     let source2 = buffer2.to_logical_bytes();
@@ -278,7 +271,7 @@ fn test_scoped_highlights_real_file_diagnostics_panel_line() {
         old_end_position: point_at(&source1, insert_pos),
         new_end_position: point_at(&source2, insert_pos + 1),
     };
-    let mut old_tree_edited = tree1.clone();
+    let mut old_tree_edited = tree1;
     old_tree_edited.edit(&edit);
 
     let mut parser2 = Parser::new();
@@ -292,25 +285,24 @@ fn test_scoped_highlights_real_file_diagnostics_panel_line() {
         crate::document::DocumentId::new(1),
         buffer2.revision,
     )
-    .with_highlights_context(
-        initial_highlights.clone().into(),
-        std::slice::from_ref(&edit),
-    );
+    .with_highlights_context(initial_highlights.into(), std::slice::from_ref(&edit));
 
     let result = run_job(job);
     let expected_highlights = full_highlights(&language, &query, source2.as_slice());
 
-    // "Ok" sits after the inserted character on the same line, so its
-    // post-edit position is shifted by one byte from its pre-edit offset.
-    let ok_start = initial_src
-        .find("Ok(Action::Editor(EditorAction::LspDiagnosticsPanel")
-        .unwrap()
-        + 1;
-    let ok_range = ok_start..ok_start + 2;
+    // The token after `=>` sits after the inserted character on the same line,
+    // so its post-edit position is shifted by one byte from its pre-edit offset.
+    let after_arrow = initial_src.find(DIAGNOSTICS_ARM).unwrap() + DIAGNOSTICS_ARM.len();
+    let rest = initial_src
+        .get(after_arrow..)
+        .expect("arm ends on a char boundary");
+    let token_len = rest.find(|c: char| !c.is_alphanumeric()).unwrap();
+    let token_start = after_arrow + 1;
+    let token_range = token_start..token_start + token_len;
     assert_eq!(
-        result.highlights.query(ok_range.clone()),
-        expected_highlights.query(ok_range),
-        "capture order for \"Ok\" diverged from a full recompute on the real file"
+        result.highlights.query(token_range.clone()),
+        expected_highlights.query(token_range),
+        "capture order after `=>` diverged from a full recompute on the real file"
     );
 
     assert_eq!(

@@ -1,6 +1,6 @@
 use super::Editor;
 use super::PostPasteState;
-#[allow(unused_imports)]
+use crate::action::{Action, EditorAction};
 use crate::buffer::api::BufferView;
 use crate::command::Command;
 use crate::document::{ActionDispatch, BufferKindId, NavigationPolicy};
@@ -66,8 +66,6 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn handle_action_inner(&mut self, action: &crate::action::Action) -> bool {
-        use crate::action::{Action, EditorAction};
-
         let editor_action = match action {
             Action::Editor(act) => act,
             Action::Buffer(id) => {
@@ -136,7 +134,10 @@ impl<T: TerminalBackend> Editor<T> {
         if is_region_building && !self.dot_repeat.is_replaying() {
             self.region_build_recording.push(action.clone());
         }
+        self.handle_motion_action(action, editor_action)
+    }
 
+    fn handle_motion_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
             EditorAction::Move(motion) => {
                 use crate::action::Motion;
@@ -148,8 +149,7 @@ impl<T: TerminalBackend> Editor<T> {
                     let has_regions = self
                         .document_manager
                         .active_document()
-                        .map(|d| !d.selection_set.is_empty())
-                        .unwrap_or(false);
+                        .is_some_and(|d| !d.selection_set.is_empty());
                     if has_regions {
                         let forward = matches!(motion, Motion::RepeatFindForward);
                         return self.cycle_to_region(forward);
@@ -175,49 +175,7 @@ impl<T: TerminalBackend> Editor<T> {
                     return true;
                 }
 
-                let resolved = match motion {
-                    Motion::RepeatFindForward => {
-                        if let Some((ch, forward, is_till)) = self.state.last_find_char {
-                            match (forward, is_till) {
-                                (true, false) => Motion::FindCharForward(ch),
-                                (true, true) => Motion::TillCharForward(ch),
-                                (false, false) => Motion::FindCharBackward(ch),
-                                (false, true) => Motion::TillCharBackward(ch),
-                            }
-                        } else {
-                            Motion::NextMatch
-                        }
-                    }
-                    Motion::RepeatFindBackward => {
-                        if let Some((ch, forward, is_till)) = self.state.last_find_char {
-                            match (forward, is_till) {
-                                (true, false) => Motion::FindCharBackward(ch),
-                                (true, true) => Motion::TillCharBackward(ch),
-                                (false, false) => Motion::FindCharForward(ch),
-                                (false, true) => Motion::TillCharForward(ch),
-                            }
-                        } else {
-                            Motion::PreviousMatch
-                        }
-                    }
-                    other => *other,
-                };
-
-                match motion {
-                    Motion::FindCharForward(ch) => {
-                        self.state.last_find_char = Some((*ch, true, false))
-                    }
-                    Motion::FindCharBackward(ch) => {
-                        self.state.last_find_char = Some((*ch, false, false))
-                    }
-                    Motion::TillCharForward(ch) => {
-                        self.state.last_find_char = Some((*ch, true, true))
-                    }
-                    Motion::TillCharBackward(ch) => {
-                        self.state.last_find_char = Some((*ch, false, true))
-                    }
-                    _ => {}
-                }
+                let resolved = self.resolve_motion(motion);
 
                 if self.current_mode == Mode::OperatorPending {
                     if let Some(op) = self.pending_operator {
@@ -237,6 +195,12 @@ impl<T: TerminalBackend> Editor<T> {
                 self.update_clipboard_preview();
                 consumed
             }
+            _ => self.handle_mode_enter_action(action, editor_action),
+        }
+    }
+
+    fn handle_mode_enter_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
+        match editor_action {
             EditorAction::EnterInsertMode => {
                 if self.try_multi_insert_for_command(crate::command::Command::EnterInsertMode) {
                     self.finish_region_build(Some(action.clone()));
@@ -298,6 +262,12 @@ impl<T: TerminalBackend> Editor<T> {
                 self.handle_mode_management(crate::command::Command::EnterSearchMode);
                 true
             }
+            _ => self.handle_mode_exit_action(action, editor_action),
+        }
+    }
+
+    fn handle_mode_exit_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
+        match editor_action {
             EditorAction::EnterNormalMode => {
                 if let Some(doc) = self.document_manager.active_document_mut() {
                     doc.commit_pending_ghost();
@@ -339,23 +309,28 @@ impl<T: TerminalBackend> Editor<T> {
                 self.do_quit(false);
                 true
             }
-            EditorAction::Submit =>
-            {
-                #[cfg_attr(not(feature = "lsp"), allow(clippy::needless_bool))]
-                if self.current_mode == Mode::Command {
+            EditorAction::Submit => match self.current_mode {
+                Mode::Command => {
                     self.handle_mode_management(crate::command::Command::ExecuteCommandLine);
                     true
-                } else if self.current_mode == Mode::Search {
+                }
+                Mode::Search => {
                     self.handle_mode_management(crate::command::Command::ExecuteSearch);
                     true
-                } else if self.current_mode == Mode::Rename {
+                }
+                Mode::Rename => {
                     #[cfg(feature = "lsp")]
                     self.execute_lsp_rename();
                     true
-                } else {
-                    false
                 }
-            }
+                _ => false,
+            },
+            _ => self.handle_edit_action(action, editor_action),
+        }
+    }
+
+    fn handle_edit_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
+        match editor_action {
             EditorAction::Delete(motion) => {
                 if self.current_mode == Mode::Command
                     || self.current_mode == Mode::Search
@@ -388,7 +363,8 @@ impl<T: TerminalBackend> Editor<T> {
                         )
                         .map(|range| crate::clipboard::capture_text(&doc.buffer, &range))
                     });
-                    let in_clipboard = self.active_doc_is(|d| d.is_any_clipboard());
+                    let in_clipboard =
+                        self.active_doc_is(super::super::document::Document::is_any_clipboard);
                     if let Some(text) = captured.filter(|s| !s.is_empty()) {
                         if !in_clipboard {
                             self.clipboard_ring.push(text);
@@ -427,6 +403,12 @@ impl<T: TerminalBackend> Editor<T> {
                 let command = crate::command::Command::InsertChar(*c);
                 self.execute_buffer_command(command)
             }
+            _ => self.handle_app_action(action, editor_action),
+        }
+    }
+
+    fn handle_app_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
+        match editor_action {
             EditorAction::BufferNext => {
                 self.do_buffer_next();
                 true
@@ -483,6 +465,12 @@ impl<T: TerminalBackend> Editor<T> {
                 self.handle_explorer_toggle_hidden();
                 true
             }
+            _ => self.handle_git_action(action, editor_action),
+        }
+    }
+
+    fn handle_git_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
+        match editor_action {
             EditorAction::GitStatus => {
                 self.open_git_status();
                 true
@@ -547,6 +535,12 @@ impl<T: TerminalBackend> Editor<T> {
                 self.open_git_help();
                 true
             }
+            _ => self.handle_ui_action(action, editor_action),
+        }
+    }
+
+    fn handle_ui_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
+        match editor_action {
             EditorAction::OpenUndoTree => {
                 self.open_undotree_split();
                 true
@@ -591,10 +585,15 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::RunCommand(cmd_str) => {
-                let cmd_str = cmd_str.clone();
                 self.execute_command_line(cmd_str);
                 true
             }
+            _ => self.handle_operator_action(action, editor_action),
+        }
+    }
+
+    fn handle_operator_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
+        match editor_action {
             EditorAction::GotoLine(n) => {
                 use crate::action::Motion;
                 let target_n = if self.pending_count > 0 {
@@ -664,6 +663,12 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::OperatorPending);
                 true
             }
+            _ => self.handle_history_action(action, editor_action),
+        }
+    }
+
+    fn handle_history_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
+        match editor_action {
             EditorAction::Command(cmd) => {
                 let command = *cmd.clone();
                 self.handle_mode_management(command);
@@ -674,8 +679,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .state
                     .completion_session
                     .as_ref()
-                    .map(|s| s.dropdown_open)
-                    .unwrap_or(false);
+                    .is_some_and(|s| s.dropdown_open);
                 if dropdown_open {
                     self.handle_mode_management(Command::TabCompletePrev);
                 } else {
@@ -688,8 +692,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .state
                     .completion_session
                     .as_ref()
-                    .map(|s| s.dropdown_open)
-                    .unwrap_or(false);
+                    .is_some_and(|s| s.dropdown_open);
                 if dropdown_open {
                     self.handle_mode_management(Command::TabComplete);
                 } else {
@@ -702,6 +705,12 @@ impl<T: TerminalBackend> Editor<T> {
                 self.should_quit = true;
                 true
             }
+            _ => self.handle_file_action(action, editor_action),
+        }
+    }
+
+    fn handle_file_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
+        match editor_action {
             EditorAction::OpenFile { path, force } => {
                 let path = path.clone();
                 let force = *force;
@@ -762,6 +771,12 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
 
+            _ => self.handle_paste_action(action, editor_action),
+        }
+    }
+
+    fn handle_paste_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
+        match editor_action {
             EditorAction::Put { before } => {
                 let active_doc_id = self.document_manager.active_document_id();
                 let cursor_before_resolve = self
@@ -797,8 +812,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let original_cursor = self
                     .document_manager
                     .active_document()
-                    .map(|d| d.buffer.cursor())
-                    .unwrap_or(0);
+                    .map_or(0, |d| d.buffer.cursor());
                 let result = if let Some(origin) = same_location_origin {
                     self.insert_ghost_text_verbatim(&text, origin)
                 } else {
@@ -822,7 +836,11 @@ impl<T: TerminalBackend> Editor<T> {
                     } else {
                         (state.ring_index + len - 1) % len
                     };
-                    if let Some(text) = self.clipboard_ring.get(next).map(|s| s.to_owned()) {
+                    if let Some(text) = self
+                        .clipboard_ring
+                        .get(next)
+                        .map(std::borrow::ToOwned::to_owned)
+                    {
                         if let Some(doc) = self.document_manager.active_document_mut() {
                             doc.undo();
                             let _ = doc.buffer.set_cursor(state.original_cursor);
@@ -844,6 +862,12 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
 
+            _ => self.handle_misc_action(action, editor_action),
+        }
+    }
+
+    fn handle_misc_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
+        match editor_action {
             EditorAction::PutSystemClipboard { before } => {
                 let text = crate::clipboard::read_system_clipboard_text();
                 if let Some(text) = text {
@@ -897,6 +921,12 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
 
+            _ => self.handle_lsp_action(editor_action),
+        }
+    }
+
+    fn handle_lsp_action(&mut self, editor_action: &EditorAction) -> bool {
+        match editor_action {
             EditorAction::LspGotoDefinition => {
                 #[cfg(feature = "lsp")]
                 if let Some((path, line, col)) = self.lsp_request_position() {
@@ -971,12 +1001,18 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
 
+            _ => self.handle_diag_annot_action(editor_action),
+        }
+    }
+
+    fn handle_diag_annot_action(&mut self, editor_action: &EditorAction) -> bool {
+        match editor_action {
             EditorAction::LspFormat => {
                 #[cfg(feature = "lsp")]
                 {
                     let info = self.document_manager.active_document().and_then(|doc| {
                         let path = doc.path()?.to_path_buf();
-                        let tab_size = doc.options.tab_width as u32;
+                        let tab_size = u32::try_from(doc.options.tab_width).unwrap_or(u32::MAX);
                         let insert_spaces = doc.options.expand_tabs;
                         Some((path, tab_size, insert_spaces))
                     });
@@ -1036,6 +1072,12 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
 
+            _ => self.handle_visual_action(editor_action),
+        }
+    }
+
+    fn handle_visual_action(&mut self, editor_action: &EditorAction) -> bool {
+        match editor_action {
             EditorAction::SurroundStart => {
                 let count = self.pending_count;
                 self.pending_count = 0;
@@ -1085,6 +1127,12 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::RegionsListDrop => self.drop_regions_window_entry(),
+            _ => self.handle_regions_list_action(editor_action),
+        }
+    }
+
+    fn handle_regions_list_action(&mut self, editor_action: &EditorAction) -> bool {
+        match editor_action {
             EditorAction::RegionsListDown
             | EditorAction::RegionsListUp
             | EditorAction::RegionsListSelect => {
@@ -1108,8 +1156,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let line = self
                     .document_manager
                     .active_document()
-                    .map(|d| d.buffer.line_index.get_line_at(d.buffer.cursor()))
-                    .unwrap_or(0);
+                    .map_or(0, |d| d.buffer.line_index.get_line_at(d.buffer.cursor()));
                 let region = self
                     .document_manager
                     .get_document(layout.preview_doc_id)
@@ -1140,6 +1187,12 @@ impl<T: TerminalBackend> Editor<T> {
                 let _ = doc.buffer.set_cursor(anchor);
                 true
             }
+            _ => self.handle_bank_action(editor_action),
+        }
+    }
+
+    fn handle_bank_action(&mut self, editor_action: &EditorAction) -> bool {
+        match editor_action {
             EditorAction::RegionBankOccurrenceNext | EditorAction::RegionBankOccurrencePrev => {
                 let forward = matches!(editor_action, EditorAction::RegionBankOccurrenceNext);
                 let Some(doc) = self.document_manager.active_document_mut() else {
@@ -1153,29 +1206,83 @@ impl<T: TerminalBackend> Editor<T> {
                     return false;
                 }
                 let buf_snapshot = doc.buffer.clone();
-                match doc.selection_set.bank_occurrence(&buf_snapshot, forward) {
-                    Some((region, needle)) => {
-                        let (start, _) = region.span();
-                        let _ = doc.buffer.set_cursor(start);
-                        self.state.notify(
-                            crate::notification::NotificationType::Info,
-                            format!("Banked occurrence of \"{}\"", needle),
-                        );
-                        true
-                    }
-                    None => {
-                        self.state.notify(
-                            crate::notification::NotificationType::Info,
-                            "No further occurrence to bank".to_string(),
-                        );
-                        false
-                    }
+                if let Some((region, needle)) =
+                    doc.selection_set.bank_occurrence(&buf_snapshot, forward)
+                {
+                    let (start, _) = region.span();
+                    let _ = doc.buffer.set_cursor(start);
+                    self.state.notify(
+                        crate::notification::NotificationType::Info,
+                        format!("Banked occurrence of \"{needle}\""),
+                    );
+                    true
+                } else {
+                    self.state.notify(
+                        crate::notification::NotificationType::Info,
+                        "No further occurrence to bank".to_string(),
+                    );
+                    false
                 }
             }
             EditorAction::AddSurroundToSet { ch, delim_count } => {
                 self.try_run_set_aware_add_surround(*ch, *delim_count)
             }
+            _ => {
+                self.state.notify(
+                    crate::notification::NotificationType::Error,
+                    "internal error: unhandled editor action".to_string(),
+                );
+                false
+            }
         }
+    }
+
+    const fn resolve_motion(&mut self, motion: &crate::action::Motion) -> crate::action::Motion {
+        use crate::action::Motion;
+
+        let resolved = match motion {
+            Motion::RepeatFindForward => {
+                if let Some((ch, forward, is_till)) = self.state.last_find_char {
+                    match (forward, is_till) {
+                        (true, false) => Motion::FindCharForward(ch),
+                        (true, true) => Motion::TillCharForward(ch),
+                        (false, false) => Motion::FindCharBackward(ch),
+                        (false, true) => Motion::TillCharBackward(ch),
+                    }
+                } else {
+                    Motion::NextMatch
+                }
+            }
+            Motion::RepeatFindBackward => {
+                if let Some((ch, forward, is_till)) = self.state.last_find_char {
+                    match (forward, is_till) {
+                        (true, false) => Motion::FindCharBackward(ch),
+                        (true, true) => Motion::TillCharBackward(ch),
+                        (false, false) => Motion::FindCharForward(ch),
+                        (false, true) => Motion::TillCharForward(ch),
+                    }
+                } else {
+                    Motion::PreviousMatch
+                }
+            }
+            other => *other,
+        };
+        match motion {
+            Motion::FindCharForward(ch) => {
+                self.state.last_find_char = Some((*ch, true, false));
+            }
+            Motion::FindCharBackward(ch) => {
+                self.state.last_find_char = Some((*ch, false, false));
+            }
+            Motion::TillCharForward(ch) => {
+                self.state.last_find_char = Some((*ch, true, true));
+            }
+            Motion::TillCharBackward(ch) => {
+                self.state.last_find_char = Some((*ch, false, true));
+            }
+            _ => {}
+        }
+        resolved
     }
 
     pub(super) fn enter_visual_or_resume(&mut self, mode: Mode) -> bool {

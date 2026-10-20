@@ -18,8 +18,9 @@ pub struct MockTerminal {
 
 impl MockTerminal {
     /// Create a new mock terminal with specified dimensions
+    #[must_use]
     pub fn new(rows: u16, cols: u16) -> Self {
-        MockTerminal {
+        Self {
             writes: Vec::new(),
             cursor_moves: Vec::new(),
             clear_screen_calls: 0,
@@ -28,11 +29,13 @@ impl MockTerminal {
     }
 
     /// Get all written bytes as a single vector
+    #[must_use]
     pub fn get_written_bytes(&self) -> Vec<u8> {
-        self.writes.iter().flatten().cloned().collect()
+        self.writes.iter().flatten().copied().collect()
     }
 
     /// Get all written bytes as a string (lossy UTF-8 conversion)
+    #[must_use]
     pub fn get_written_string(&self) -> String {
         String::from_utf8_lossy(&self.get_written_bytes()).to_string()
     }

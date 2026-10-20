@@ -33,7 +33,7 @@ pub struct CommandDef {
 impl CommandDef {
     /// Create a new command definition
     pub fn new(name: impl Into<String>) -> Self {
-        CommandDef {
+        Self {
             name: name.into(),
             aliases: Vec::new(),
             description: String::new(),
@@ -42,12 +42,14 @@ impl CommandDef {
     }
 
     /// Add a description
+    #[must_use]
     pub fn with_description(mut self, description: impl Into<String>) -> Self {
         self.description = description.into();
         self
     }
 
     /// Add an explicit alias
+    #[must_use]
     pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
         self.aliases.push(alias.into());
         self
@@ -63,7 +65,8 @@ impl CommandDef {
     }
 
     /// Add a subcommand
-    pub fn with_subcommand(mut self, cmd: CommandDef) -> Self {
+    #[must_use]
+    pub fn with_subcommand(mut self, cmd: Self) -> Self {
         let mut registry = self.subcommands.unwrap_or_default();
         registry = registry.register(cmd);
         self.subcommands = Some(registry);
@@ -80,8 +83,8 @@ pub struct CommandRegistry {
 impl CommandRegistry {
     /// Create a new empty registry
     #[must_use]
-    pub fn new() -> Self {
-        CommandRegistry {
+    pub const fn new() -> Self {
+        Self {
             commands: Vec::new(),
         }
     }

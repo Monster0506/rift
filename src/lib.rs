@@ -38,6 +38,7 @@ pub mod message;
 pub mod mode;
 pub mod movement;
 pub mod notification;
+pub mod num;
 pub mod paint;
 pub mod plugin;
 pub mod render;
@@ -60,7 +61,7 @@ pub mod wrap;
 #[cfg(test)]
 pub mod test_utils;
 
-/// Time a lexical scope and record a [`crate::perf::PerfEvent`] on exit.
+/// Time a lexical scope and record a `crate::perf::PerfEvent` on exit.
 /// Compiles to nothing (including `$fields`) when `perf_instrumentation` is off.
 #[macro_export]
 macro_rules! perf_span {

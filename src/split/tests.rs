@@ -1,6 +1,6 @@
 use super::layout::WindowLayout;
 use super::navigation::Direction;
-use super::tree::{SplitDirection, SplitTree};
+use super::tree::{cells_to_f64, SplitDirection, SplitTree};
 
 // --- Tree construction & manipulation ---
 
@@ -926,10 +926,10 @@ fn resize_clamps_at_bounds() {
 
     let layouts = tree.compute_layout(25, 80);
     let l1 = layouts.iter().find(|l| l.window_id == w1).unwrap();
-    let _l2 = layouts.iter().find(|l| l.window_id != w1).unwrap();
+    let l2 = layouts.iter().find(|l| l.window_id != w1).unwrap();
 
     assert!(l1.rows >= 3);
-    assert!(_l2.rows >= 3);
+    assert!(l2.rows >= 3);
 }
 
 // --- Previous window tracking ---
@@ -1125,8 +1125,8 @@ fn move_window_no_neighbor_preserves_ratio() {
     let l2_after = new_layouts.iter().find(|l| l.window_id == w2).unwrap().cols;
     // The ratio in the tree is preserved: the second child's share should match
     // what it was before (within rounding).
-    let ratio_before = l2_before as f64 / total_before as f64;
-    let ratio_after = l2_after as f64 / (l1_after + 1 + l2_after) as f64;
+    let ratio_before = cells_to_f64(l2_before) / cells_to_f64(total_before);
+    let ratio_after = cells_to_f64(l2_after) / cells_to_f64(l1_after + 1 + l2_after);
     assert!(
         (ratio_before - ratio_after).abs() < 0.05,
         "ratio should be approximately preserved"
@@ -1185,7 +1185,7 @@ fn move_window_preserves_size_when_has_neighbor() {
     let w1_cols_after = new_layouts.iter().find(|l| l.window_id == w1).unwrap().cols;
     // Allow +/- two columns for separator and rounding.
     assert!(
-        (w1_cols_after as i32 - w1_cols_before as i32).abs() <= 2,
+        w1_cols_after.abs_diff(w1_cols_before) <= 2,
         "w1 cols before={w1_cols_before} after={w1_cols_after}"
     );
 }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::document::DocumentId;
 
@@ -17,32 +17,37 @@ struct SplitPlacement {
     first_ratio: f64,
 }
 
+pub(super) fn cells_to_f64(cells: usize) -> f64 {
+    f64::from(u32::try_from(cells).unwrap_or(u32::MAX))
+}
+
 pub enum SplitNode {
     Leaf(WindowId),
     Split {
         direction: SplitDirection,
         ratio: f64,
-        first: Box<SplitNode>,
-        second: Box<SplitNode>,
+        first: Box<Self>,
+        second: Box<Self>,
     },
 }
 
 pub struct SplitTree {
     pub root: SplitNode,
-    pub windows: HashMap<WindowId, Window>,
+    pub windows: BTreeMap<WindowId, Window>,
     pub focused_window: WindowId,
     pub previous_window: Option<WindowId>,
     next_window_id: WindowId,
 }
 
 impl SplitTree {
+    #[must_use]
     pub fn new(doc_id: DocumentId, viewport_rows: usize, viewport_cols: usize) -> Self {
         let window_id = WindowId::new(1);
         let window = Window::new(window_id, doc_id, viewport_rows, viewport_cols);
-        let mut windows = HashMap::new();
+        let mut windows = BTreeMap::new();
         windows.insert(window_id, window);
 
-        SplitTree {
+        Self {
             root: SplitNode::Leaf(window_id),
             windows,
             focused_window: window_id,
@@ -131,17 +136,13 @@ impl SplitTree {
         let new_id = self.next_window_id;
         self.next_window_id = self.next_window_id.next();
 
-        let cursor_pos = self
-            .windows
-            .get(&target_id)
-            .map(|w| {
-                if w.document_id == new_doc_id {
-                    w.cursor_position
-                } else {
-                    0
-                }
-            })
-            .unwrap_or(0);
+        let cursor_pos = self.windows.get(&target_id).map_or(0, |w| {
+            if w.document_id == new_doc_id {
+                w.cursor_position
+            } else {
+                0
+            }
+        });
 
         let mut new_window = Window::new(new_id, new_doc_id, viewport_rows, viewport_cols);
         new_window.cursor_position = cursor_pos;
@@ -215,10 +216,14 @@ impl SplitTree {
                     first_ratio,
                 )),
             },
-            other => other,
+            other @ SplitNode::Leaf(_) => other,
         }
     }
 
+    /// Closes window `id`; returns `false` when it is the last window.
+    ///
+    /// # Panics
+    /// Panics only if no window remains to take focus, which the early return rules out.
     pub fn close_window(&mut self, id: WindowId) -> bool {
         if self.windows.len() <= 1 {
             return false;
@@ -285,19 +290,29 @@ impl SplitTree {
                     second: Box::new(Self::remove_leaf(*second, target_id)),
                 }
             }
-            other => other,
+            other @ SplitNode::Leaf(_) => other,
         }
     }
 
+    /// Returns the focused window.
+    ///
+    /// # Panics
+    /// Panics if the focused window id is missing from the window map.
+    #[must_use]
     pub fn focused_window(&self) -> &Window {
         self.windows.get(&self.focused_window).unwrap()
     }
 
+    /// Returns the focused window mutably.
+    ///
+    /// # Panics
+    /// Panics if the focused window id is missing from the window map.
     pub fn focused_window_mut(&mut self) -> &mut Window {
         self.windows.get_mut(&self.focused_window).unwrap()
     }
 
-    pub fn focused_window_id(&self) -> WindowId {
+    #[must_use]
+    pub const fn focused_window_id(&self) -> WindowId {
         self.focused_window
     }
 
@@ -353,19 +368,18 @@ impl SplitTree {
             let w_size = layouts
                 .iter()
                 .find(|l| l.window_id == focused_id)
-                .map(|l| match split_dir {
+                .map_or(1, |l| match split_dir {
                     SplitDirection::Vertical => l.cols,
                     SplitDirection::Horizontal => l.rows,
-                })
-                .unwrap_or(1);
+                });
             let total = match split_dir {
                 SplitDirection::Vertical => layouts.iter().map(|l| l.cols).max().unwrap_or(1),
                 SplitDirection::Horizontal => layouts.iter().map(|l| l.rows).max().unwrap_or(1),
             };
             let ratio = if focused_is_first {
-                (w_size as f64 / total as f64).clamp(0.1, 0.9)
+                (cells_to_f64(w_size) / cells_to_f64(total)).clamp(0.1, 0.9)
             } else {
-                ((total - w_size) as f64 / total as f64).clamp(0.1, 0.9)
+                (cells_to_f64(total - w_size) / cells_to_f64(total)).clamp(0.1, 0.9)
             };
 
             self.root = Self::remove_leaf(
@@ -494,10 +508,14 @@ impl SplitTree {
                     ratio,
                 )),
             },
-            other => other,
+            other @ SplitNode::Leaf(_) => other,
         }
     }
 
+    /// Swaps the documents and cursors of two windows.
+    ///
+    /// # Panics
+    /// Does not panic: both ids are verified present before the lookups.
     pub fn exchange_windows(&mut self, id1: WindowId, id2: WindowId) -> bool {
         if id1 == id2 || !self.windows.contains_key(&id1) || !self.windows.contains_key(&id2) {
             return false;
@@ -530,6 +548,7 @@ impl SplitTree {
         }
     }
 
+    #[must_use]
     pub fn windows_for_document(&self, doc_id: DocumentId) -> Vec<WindowId> {
         self.windows
             .iter()
@@ -538,6 +557,7 @@ impl SplitTree {
             .collect()
     }
 
+    #[must_use]
     pub fn window_count(&self) -> usize {
         self.windows.len()
     }
@@ -615,10 +635,12 @@ impl SplitTree {
         }
     }
 
+    #[must_use]
     pub fn all_window_ids(&self) -> Vec<WindowId> {
         self.windows.keys().copied().collect()
     }
 
+    #[must_use]
     pub fn get_window(&self, id: WindowId) -> Option<&Window> {
         self.windows.get(&id)
     }
@@ -698,7 +720,7 @@ impl SplitTree {
                     Self::accumulate_span(second, direction, layouts, &mut lo, &mut hi);
                     let available = hi.saturating_sub(lo).saturating_sub(1);
                     let delta_ratio = if available > 0 {
-                        delta_cells / available as f64
+                        delta_cells / cells_to_f64(available)
                     } else {
                         0.0
                     };
@@ -800,7 +822,7 @@ impl SplitTree {
                     let ss = Self::sum_leaf_cols(second, desired);
                     let total = fs + ss;
                     if total > 0 {
-                        *ratio = (fs as f64 / total as f64).clamp(0.1, 0.9);
+                        *ratio = (cells_to_f64(fs) / cells_to_f64(total)).clamp(0.1, 0.9);
                     }
                 }
                 Self::rebalance_cols(first, desired);
@@ -844,8 +866,8 @@ impl SplitTree {
                 ..
             } => {
                 *ratio = if proportional {
-                    let fc = Self::count_leaves(first) as f64;
-                    let sc = Self::count_leaves(second) as f64;
+                    let fc = cells_to_f64(Self::count_leaves(first));
+                    let sc = cells_to_f64(Self::count_leaves(second));
                     (fc / (fc + sc)).clamp(0.1, 0.9)
                 } else {
                     0.5

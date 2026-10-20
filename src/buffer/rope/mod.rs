@@ -5,6 +5,24 @@ use crate::character::Character;
 use std::cmp::max;
 use std::sync::Arc;
 
+// Code point thresholds where a char's UTF-8 encoding grows past 1, 2, 3 bytes.
+const UTF8_TWO_BYTE_MIN: u32 = 0x80;
+const UTF8_THREE_BYTE_MIN: u32 = 0x800;
+const UTF8_FOUR_BYTE_MIN: u32 = 0x1_0000;
+
+/// UTF-8 length of a character, computed without a narrowing cast.
+fn utf8_len(c: Character) -> u32 {
+    match c {
+        Character::Unicode(ch) => {
+            let v = u32::from(ch);
+            1 + u32::from(v >= UTF8_TWO_BYTE_MIN)
+                + u32::from(v >= UTF8_THREE_BYTE_MIN)
+                + u32::from(v >= UTF8_FOUR_BYTE_MIN)
+        }
+        Character::Byte(_) | Character::Tab | Character::Newline | Character::Control(_) => 1,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BufferSource {
     Original,
@@ -20,8 +38,8 @@ pub struct Piece {
 
 #[derive(Clone, Debug)]
 struct Node {
-    left: Option<Arc<Node>>,
-    right: Option<Arc<Node>>,
+    left: Option<Arc<Self>>,
+    right: Option<Arc<Self>>,
     piece: Piece,
 
     // Metadata
@@ -46,6 +64,7 @@ pub struct PieceTable {
 }
 
 impl PieceTable {
+    #[must_use]
     pub fn new(original: Vec<Character>) -> Self {
         let len = original.len();
         let (newlines, byte_len, original_byte_prefix, original_newline_prefix) =
@@ -84,7 +103,7 @@ impl PieceTable {
     }
 
     /// Appends `text` to `add` and extends its byte/newline prefix sums to match, so
-    /// position lookups for pieces in `add` stay O(1)/O(log piece_len) instead of an O(piece_len) scan.
+    /// position lookups for pieces in `add` stay O(1)/O(log `piece_len`) instead of an `O(piece_len)` scan.
     fn push_add(&mut self, text: &[Character]) {
         let add = Arc::make_mut(&mut self.add);
         let add_byte_prefix = Arc::make_mut(&mut self.add_byte_prefix);
@@ -96,7 +115,8 @@ impl PieceTable {
         let mut newlines = *add_newline_prefix.last().unwrap();
         for c in text {
             add.push(*c);
-            bytes += c.len_utf8() as u32;
+            let char_bytes = utf8_len(*c);
+            bytes += char_bytes;
             add_byte_prefix.push(bytes);
             if *c == Character::Newline {
                 newlines += 1;
@@ -105,14 +125,17 @@ impl PieceTable {
         }
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.root.as_ref().map_or(0, |n| n.len)
     }
 
+    #[must_use]
     pub fn byte_len(&self) -> usize {
         self.root.as_ref().map_or(0, |n| n.byte_len)
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -123,7 +146,8 @@ impl PieceTable {
         out
     }
 
-    pub fn chunks<'a>(&'a self) -> PieceTableChunkIterator<'a> {
+    #[must_use]
+    pub fn chunks(&self) -> PieceTableChunkIterator<'_> {
         PieceTableChunkIterator::new(self.root.as_deref(), &self.original, &self.add)
     }
 
@@ -167,7 +191,13 @@ impl PieceTable {
             height: 1,
         });
 
-        self.root = insert_node(self.root.take(), pos, new_node, &self.original, &self.add);
+        self.root = Some(insert_node(
+            self.root.take(),
+            pos,
+            new_node,
+            &self.original,
+            &self.add,
+        ));
 
         #[cfg(debug_assertions)]
         assert_tree_metadata(self.root.as_deref());
@@ -239,18 +269,21 @@ impl PieceTable {
         assert_tree_metadata(self.root.as_deref());
     }
 
+    #[must_use]
     pub fn get_line_count(&self) -> usize {
         self.root.as_ref().map_or(0, |n| n.newlines) + 1
     }
 
+    #[must_use]
+    /// # Panics
+    /// Panics if `pos` is not less than the buffer length.
     pub fn char_at(&self, pos: usize) -> Character {
-        if pos >= self.len() {
-            panic!("Index out of bounds");
-        }
+        assert!(pos < self.len(), "Index out of bounds");
         get_char_recursive(self.root.as_deref(), pos, &self.original, &self.add)
     }
 
     /// Get the Character at the given index.
+    #[must_use]
     pub fn get(&self, index: usize) -> Option<Character> {
         if index >= self.len() {
             None
@@ -259,6 +292,7 @@ impl PieceTable {
         }
     }
 
+    #[must_use]
     pub fn bytes_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
         let mut result = Vec::new();
         collect_bytes_range(
@@ -272,6 +306,7 @@ impl PieceTable {
     }
 
     /// Collect Characters in a range
+    #[must_use]
     pub fn chars_on_line(&self, line_idx: usize) -> Vec<Character> {
         let start = self.line_start_offset(line_idx);
         let end = if line_idx + 1 >= self.get_line_count() {
@@ -291,6 +326,7 @@ impl PieceTable {
         result
     }
 
+    #[must_use]
     pub fn line_start_offset(&self, line_idx: usize) -> usize {
         if line_idx == 0 {
             return 0;
@@ -306,6 +342,7 @@ impl PieceTable {
         )
     }
 
+    #[must_use]
     pub fn line_at_char(&self, pos: usize) -> usize {
         if pos >= self.len() {
             return self.get_line_count().saturating_sub(1);
@@ -320,6 +357,7 @@ impl PieceTable {
 
     /// Convert character index to byte offset. O(log n) to the target
     /// piece, then O(1) within it via `original_byte_prefix`/`add_byte_prefix`.
+    #[must_use]
     pub fn char_to_byte(&self, char_index: usize) -> usize {
         if char_index >= self.len() {
             return self.byte_len();
@@ -334,6 +372,7 @@ impl PieceTable {
 
     /// Convert byte offset to character index (the char containing the byte, or starting at
     /// it). O(log n) to the target piece, then a binary search within it instead of a scan.
+    #[must_use]
     pub fn byte_to_char(&self, byte_offset: usize) -> usize {
         if byte_offset >= self.byte_len() {
             return self.len();
@@ -347,35 +386,48 @@ impl PieceTable {
     }
 
     /// Get an O(N) iterator over the characters
+    #[must_use]
     pub fn iter(&self) -> PieceTableIterator<'_> {
         PieceTableIterator::new(self.root.as_deref(), &self.original, &self.add)
     }
 
     /// Collect all logical bytes (UTF-8) from the buffer
+    #[must_use]
     pub fn to_logical_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(self.byte_len());
-        for c in self.iter() {
+        for c in self {
             c.encode_utf8(&mut buf);
         }
         buf
     }
 
     /// Get an iterator starting at a specific character index
+    #[must_use]
     pub fn iter_at(&self, start_pos: usize) -> PieceTableIterator<'_> {
         PieceTableIterator::new_at(self.root.as_deref(), start_pos, &self.original, &self.add)
     }
 
     /// Get a chunk iterator starting at a specific character index
+    #[must_use]
     pub fn iter_chunks_at(&self, start_pos: usize) -> PieceTableChunkIterator<'_> {
         PieceTableChunkIterator::new_at(self.root.as_deref(), start_pos, &self.original, &self.add)
     }
 }
 
-/// efficient O(N) iterator for PieceTable
+impl<'a> IntoIterator for &'a PieceTable {
+    type Item = Character;
+    type IntoIter = PieceTableIterator<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+/// efficient O(N) iterator for `PieceTable`
 // Max stack depth for AVL tree iterator. 64 is sufficient for 2^64 elements.
 const MAX_STACK: usize = 64;
 
-/// efficient O(N) iterator for PieceTable
+/// efficient O(N) iterator for `PieceTable`
 #[derive(Clone)]
 pub struct PieceTableIterator<'a> {
     // Fixed size stack to avoid allocation on clone
@@ -472,7 +524,7 @@ impl<'a> PieceTableIterator<'a> {
         }
     }
 
-    fn pop_stack(&mut self) -> Option<&'a Node> {
+    const fn pop_stack(&mut self) -> Option<&'a Node> {
         if self.stack_top > 0 {
             self.stack_top -= 1;
             self.stack[self.stack_top]
@@ -482,7 +534,7 @@ impl<'a> PieceTableIterator<'a> {
     }
 }
 
-impl<'a> Iterator for PieceTableIterator<'a> {
+impl Iterator for PieceTableIterator<'_> {
     type Item = Character;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -492,9 +544,8 @@ impl<'a> Iterator for PieceTableIterator<'a> {
                     let c = slice[self.current_piece_idx];
                     self.current_piece_idx += 1;
                     return Some(c);
-                } else {
-                    self.current_piece = None;
                 }
+                self.current_piece = None;
             }
 
             if let Some(node) = self.pop_stack() {
@@ -502,15 +553,11 @@ impl<'a> Iterator for PieceTableIterator<'a> {
                 if !slice.is_empty() {
                     self.current_piece = Some(slice);
                     self.current_piece_idx = 0; // Start at 0
-                    if let Some(right) = &node.right {
-                        self.push_node(right);
-                    }
-                    // Loop again to consume from current_piece
-                } else {
-                    // Empty piece, just traverse right
-                    if let Some(right) = &node.right {
-                        self.push_node(right);
-                    }
+                                                // Loop again to consume from current_piece
+                }
+                // Empty pieces just traverse right
+                if let Some(right) = &node.right {
+                    self.push_node(right);
                 }
             } else {
                 return None;
@@ -580,7 +627,7 @@ impl<'a> PieceTableChunkIterator<'a> {
         iter
     }
 
-    fn push_stack(&mut self, node: &'a Node) {
+    const fn push_stack(&mut self, node: &'a Node) {
         if self.stack_top < MAX_STACK {
             self.stack[self.stack_top] = Some(node);
             self.stack_top += 1;
@@ -595,7 +642,7 @@ impl<'a> PieceTableChunkIterator<'a> {
         }
     }
 
-    fn pop_stack(&mut self) -> Option<&'a Node> {
+    const fn pop_stack(&mut self) -> Option<&'a Node> {
         if self.stack_top > 0 {
             self.stack_top -= 1;
             self.stack[self.stack_top]
@@ -617,9 +664,8 @@ impl<'a> Iterator for PieceTableChunkIterator<'a> {
                     // Advance index to end effectively consuming the chunk
                     self.current_piece_idx = slice.len();
                     return Some(chunk);
-                } else {
-                    self.current_piece = None;
                 }
+                self.current_piece = None;
             }
 
             // Fetch next piece from tree
@@ -698,7 +744,7 @@ fn trim_last_piece(
 ) -> Option<(usize, usize)> {
     if node.right.is_some() {
         let node_mut = Arc::make_mut(node);
-        let right = node_mut.right.as_mut().unwrap();
+        let right = node_mut.right.as_mut()?;
         if let Some((removed_nl, removed_bytes)) = trim_last_piece(right, count, original, add) {
             node_mut.len -= count;
             node_mut.byte_len -= removed_bytes;
@@ -727,8 +773,8 @@ fn trim_last_piece(
 
 // --- Tree Operations ---
 
-fn height(node: &Option<Arc<Node>>) -> usize {
-    node.as_ref().map_or(0, |n| n.height)
+fn height(node: Option<&Arc<Node>>) -> usize {
+    node.map_or(0, |n| n.height)
 }
 
 fn update(node: &mut Arc<Node>) {
@@ -738,7 +784,7 @@ fn update(node: &mut Arc<Node>) {
     let right_byte_len = node.right.as_ref().map_or(0, |n| n.byte_len);
     let left_nl = node.left.as_ref().map_or(0, |n| n.newlines);
     let right_nl = node.right.as_ref().map_or(0, |n| n.newlines);
-    let h = 1 + max(height(&node.left), height(&node.right));
+    let h = 1 + max(height(node.left.as_ref()), height(node.right.as_ref()));
 
     let node_mut = Arc::make_mut(node);
     node_mut.len = left_len + node_mut.piece.len + right_len;
@@ -749,21 +795,23 @@ fn update(node: &mut Arc<Node>) {
 
 fn balance(mut node: Arc<Node>) -> Arc<Node> {
     update(&mut node);
-    let balance_factor = height(&node.left) as isize - height(&node.right) as isize;
+    let balance_factor =
+        height(node.left.as_ref()).cast_signed() - height(node.right.as_ref()).cast_signed();
 
     if balance_factor > 1 {
-        if height(&node.left.as_ref().unwrap().left) >= height(&node.left.as_ref().unwrap().right) {
+        if height(node.left.as_ref().unwrap().left.as_ref())
+            >= height(node.left.as_ref().unwrap().right.as_ref())
+        {
             return rotate_right(node);
-        } else {
-            return rotate_left_right(node);
         }
+        return rotate_left_right(node);
     } else if balance_factor < -1 {
-        if height(&node.right.as_ref().unwrap().right) >= height(&node.right.as_ref().unwrap().left)
+        if height(node.right.as_ref().unwrap().right.as_ref())
+            >= height(node.right.as_ref().unwrap().left.as_ref())
         {
             return rotate_left(node);
-        } else {
-            return rotate_right_left(node);
         }
+        return rotate_right_left(node);
     }
     node
 }
@@ -806,98 +854,96 @@ fn split(
     original: &[Character],
     add: &[Character],
 ) -> (Option<Arc<Node>>, Option<Arc<Node>>) {
-    match root {
-        None => (None, None),
-        Some(mut node) => {
-            let left_len = node.left.as_ref().map_or(0, |n| n.len);
+    let Some(mut node) = root else {
+        return (None, None);
+    };
+    let left_len = node.left.as_ref().map_or(0, |n| n.len);
 
-            if pos < left_len {
-                // Split in left child
-                let taken_left = Arc::make_mut(&mut node).left.take();
-                let (l, r) = split(taken_left, pos, original, add);
-                Arc::make_mut(&mut node).left = r;
-                update(&mut node);
-                (l, Some(node))
-            } else if pos > left_len + node.piece.len {
-                // Split in right child
-                let taken_right = Arc::make_mut(&mut node).right.take();
-                let (l, r) = split(
-                    taken_right,
-                    pos - (left_len + node.piece.len),
-                    original,
-                    add,
-                );
-                Arc::make_mut(&mut node).right = l;
-                update(&mut node);
-                (Some(node), r)
-            } else {
-                // Split in this node's piece
-                let offset = pos - left_len;
-                let node_mut = Arc::make_mut(&mut node);
-                let right_child = node_mut.right.take();
-                let left_child = node_mut.left.take();
+    if pos < left_len {
+        // Split in left child
+        let taken_left = Arc::make_mut(&mut node).left.take();
+        let (l, r) = split(taken_left, pos, original, add);
+        Arc::make_mut(&mut node).left = r;
+        update(&mut node);
+        (l, Some(node))
+    } else if pos > left_len + node.piece.len {
+        // Split in right child
+        let taken_right = Arc::make_mut(&mut node).right.take();
+        let (l, r) = split(
+            taken_right,
+            pos - (left_len + node.piece.len),
+            original,
+            add,
+        );
+        Arc::make_mut(&mut node).right = l;
+        update(&mut node);
+        (Some(node), r)
+    } else {
+        // Split in this node's piece
+        let offset = pos - left_len;
+        let node_mut = Arc::make_mut(&mut node);
+        let right_child = node_mut.right.take();
+        let left_child = node_mut.left.take();
 
-                if offset == 0 {
-                    let node_mut = Arc::make_mut(&mut node);
-                    node_mut.left = None;
-                    node_mut.right = right_child;
-                    update(&mut node);
-                    (left_child, Some(node))
-                } else if offset == node.piece.len {
-                    let node_mut = Arc::make_mut(&mut node);
-                    node_mut.left = left_child;
-                    node_mut.right = None;
-                    update(&mut node);
-                    (Some(node), right_child)
-                } else {
-                    // Actual split of the piece. `split_piece_stats` derives both halves'
-                    // stats from cached totals (smaller-half scan) instead of an O(piece_len) rescan.
-                    let slice = get_piece_slice(&node.piece, original, add);
-                    let ((nl1, bytes1), (nl2, bytes2)) =
-                        split_piece_stats(slice, offset, node.piece_newlines, node.piece_byte_len);
+        if offset == 0 {
+            let node_mut = Arc::make_mut(&mut node);
+            node_mut.left = None;
+            node_mut.right = right_child;
+            update(&mut node);
+            (left_child, Some(node))
+        } else if offset == node.piece.len {
+            let node_mut = Arc::make_mut(&mut node);
+            node_mut.left = left_child;
+            node_mut.right = None;
+            update(&mut node);
+            (Some(node), right_child)
+        } else {
+            // Actual split of the piece. `split_piece_stats` derives both halves'
+            // stats from cached totals (smaller-half scan) instead of an O(piece_len) rescan.
+            let slice = get_piece_slice(&node.piece, original, add);
+            let ((nl1, bytes1), (nl2, bytes2)) =
+                split_piece_stats(slice, offset, node.piece_newlines, node.piece_byte_len);
 
-                    let p1 = Piece {
-                        source: node.piece.source,
-                        start: node.piece.start,
-                        len: offset,
-                    };
-                    let p2 = Piece {
-                        source: node.piece.source,
-                        start: node.piece.start + offset,
-                        len: node.piece.len - offset,
-                    };
+            let p1 = Piece {
+                source: node.piece.source,
+                start: node.piece.start,
+                len: offset,
+            };
+            let p2 = Piece {
+                source: node.piece.source,
+                start: node.piece.start + offset,
+                len: node.piece.len - offset,
+            };
 
-                    let n1 = Arc::new(Node {
-                        left: left_child,
-                        right: None,
-                        piece: p1,
-                        len: 0,
-                        byte_len: 0,
-                        newlines: 0,
-                        piece_newlines: 0, // will update
-                        piece_byte_len: 0,
-                        height: 1, // will update
-                    });
-                    let mut n1 = n1;
-                    update_node_metadata(&mut n1, nl1, bytes1);
+            let n1 = Arc::new(Node {
+                left: left_child,
+                right: None,
+                piece: p1,
+                len: 0,
+                byte_len: 0,
+                newlines: 0,
+                piece_newlines: 0, // will update
+                piece_byte_len: 0,
+                height: 1, // will update
+            });
+            let mut n1 = n1;
+            update_node_metadata(&mut n1, nl1, bytes1);
 
-                    let n2 = Arc::new(Node {
-                        left: None,
-                        right: right_child,
-                        piece: p2,
-                        len: 0,
-                        byte_len: 0,
-                        newlines: 0,
-                        piece_newlines: 0,
-                        piece_byte_len: 0,
-                        height: 1, // will update
-                    });
-                    let mut n2 = n2;
-                    update_node_metadata(&mut n2, nl2, bytes2);
+            let n2 = Arc::new(Node {
+                left: None,
+                right: right_child,
+                piece: p2,
+                len: 0,
+                byte_len: 0,
+                newlines: 0,
+                piece_newlines: 0,
+                piece_byte_len: 0,
+                height: 1, // will update
+            });
+            let mut n2 = n2;
+            update_node_metadata(&mut n2, nl2, bytes2);
 
-                    (Some(n1), Some(n2))
-                }
-            }
+            (Some(n1), Some(n2))
         }
     }
 }
@@ -930,10 +976,10 @@ fn join_with_root(
     mut center: Arc<Node>,
     right: Option<Arc<Node>>,
 ) -> Arc<Node> {
-    let lh = height(&left);
-    let rh = height(&right);
+    let lh = height(left.as_ref());
+    let rh = height(right.as_ref());
 
-    if (lh as isize - rh as isize).abs() <= 1 {
+    if (lh.cast_signed() - rh.cast_signed()).abs() <= 1 {
         let center_mut = Arc::make_mut(&mut center);
         center_mut.left = left;
         center_mut.right = right;
@@ -960,9 +1006,9 @@ fn insert_node(
     new_node: Arc<Node>,
     original: &[Character],
     add: &[Character],
-) -> Option<Arc<Node>> {
+) -> Arc<Node> {
     let (left, right) = split(root, pos, original, add);
-    Some(join_with_root(left, new_node, right))
+    join_with_root(left, new_node, right)
 }
 
 // --- Helpers ---
@@ -988,7 +1034,8 @@ fn count_stats_with_prefixes(chars: &[Character]) -> (usize, usize, Vec<u32>, Ve
     byte_prefix.push(0);
     newline_prefix.push(0);
     for c in chars {
-        byte_len += c.len_utf8() as u32;
+        let char_bytes = utf8_len(*c);
+        byte_len += char_bytes;
         byte_prefix.push(byte_len);
         if *c == Character::Newline {
             newlines += 1;
@@ -1021,7 +1068,7 @@ fn update_node_metadata(node: &mut Arc<Node>, piece_nl: usize, piece_bytes: usiz
     let right_byte_len = node.right.as_ref().map_or(0, |n| n.byte_len);
     let left_nl = node.left.as_ref().map_or(0, |n| n.newlines);
     let right_nl = node.right.as_ref().map_or(0, |n| n.newlines);
-    let h = 1 + max(height(&node.left), height(&node.right));
+    let h = 1 + max(height(node.left.as_ref()), height(node.right.as_ref()));
 
     let node_mut = Arc::make_mut(node);
     node_mut.len = left_len + node_mut.piece.len + right_len;
@@ -1032,8 +1079,8 @@ fn update_node_metadata(node: &mut Arc<Node>, piece_nl: usize, piece_bytes: usiz
     node_mut.height = h;
 }
 
-/// (newlines, byte_len) for both halves of a piece split at `offset`,
-/// scanning only the smaller half instead of an O(piece_len) rescan of the whole piece.
+/// (newlines, `byte_len`) for both halves of a piece split at `offset`,
+/// scanning only the smaller half instead of an `O(piece_len)` rescan of the whole piece.
 fn split_piece_stats(
     slice: &[Character],
     offset: usize,
@@ -1068,12 +1115,9 @@ fn get_char_recursive(
     original: &[Character],
     add: &[Character],
 ) -> Character {
-    let node = match node {
-        Some(n) => n,
-        None => {
-            debug_assert!(false, "rope traversal reached None unexpectedly");
-            return Character::from('\0');
-        }
+    let Some(node) = node else {
+        debug_assert!(false, "rope traversal reached None unexpectedly");
+        return Character::from('\0');
     };
     let left_len = node.left.as_ref().map_or(0, |n| n.len);
 
@@ -1175,12 +1219,9 @@ fn find_nth_newline_end(
     original_prefix: &[u32],
     add_prefix: &[u32],
 ) -> usize {
-    let node = match node {
-        Some(n) => n,
-        None => {
-            debug_assert!(false, "rope traversal reached None unexpectedly");
-            return 0;
-        }
+    let Some(node) = node else {
+        debug_assert!(false, "rope traversal reached None unexpectedly");
+        return 0;
     };
     let left_nl = node.left.as_ref().map_or(0, |n| n.newlines);
 
@@ -1192,7 +1233,8 @@ fn find_nth_newline_end(
         if target <= current_nl {
             // In this piece: binary search the piece's newline-count prefix
             // sum instead of an O(piece_len) scan.
-            let needed_in_piece = (target - left_nl) as u32;
+            // Piece-local offsets fit in u32; the prefix sums are u32.
+            let needed_in_piece = u32::try_from(target - left_nl).unwrap_or(u32::MAX);
             let prefix = match node.piece.source {
                 BufferSource::Original => original_prefix,
                 BufferSource::Add => add_prefix,
@@ -1228,12 +1270,9 @@ fn get_line_at_pos(
     original_prefix: &[u32],
     add_prefix: &[u32],
 ) -> usize {
-    let node = match node {
-        Some(n) => n,
-        None => {
-            debug_assert!(false, "rope traversal reached None unexpectedly");
-            return 0;
-        }
+    let Some(node) = node else {
+        debug_assert!(false, "rope traversal reached None unexpectedly");
+        return 0;
     };
     let left_len = node.left.as_ref().map_or(0, |n| n.len);
 
@@ -1271,12 +1310,9 @@ fn get_byte_offset_recursive(
     original_prefix: &[u32],
     add_prefix: &[u32],
 ) -> usize {
-    let node = match node {
-        Some(n) => n,
-        None => {
-            debug_assert!(false, "rope traversal reached None unexpectedly");
-            return 0;
-        }
+    let Some(node) = node else {
+        debug_assert!(false, "rope traversal reached None unexpectedly");
+        return 0;
     };
     let left_len = node.left.as_ref().map_or(0, |n| n.len);
     let left_byte_len = node.left.as_ref().map_or(0, |n| n.byte_len);
@@ -1311,12 +1347,9 @@ fn get_char_idx_recursive(
     original_prefix: &[u32],
     add_prefix: &[u32],
 ) -> usize {
-    let node = match node {
-        Some(n) => n,
-        None => {
-            debug_assert!(false, "rope traversal reached None unexpectedly");
-            return 0;
-        }
+    let Some(node) = node else {
+        debug_assert!(false, "rope traversal reached None unexpectedly");
+        return 0;
     };
     let left_byte_len = node.left.as_ref().map_or(0, |n| n.byte_len);
     let left_len = node.left.as_ref().map_or(0, |n| n.len);
@@ -1326,7 +1359,8 @@ fn get_char_idx_recursive(
     } else if byte_pos < left_byte_len + node.piece_byte_len {
         // In this piece: binary search the piece's byte-length prefix sum
         // instead of an O(piece_len) scan.
-        let target_in_piece = (byte_pos - left_byte_len) as u32;
+        // Piece-local offsets fit in u32; the prefix sums are u32.
+        let target_in_piece = u32::try_from(byte_pos - left_byte_len).unwrap_or(u32::MAX);
         let prefix = match node.piece.source {
             BufferSource::Original => original_prefix,
             BufferSource::Add => add_prefix,

@@ -7,8 +7,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn active_cursor(&mut self) -> usize {
         self.document_manager
             .active_document_mut()
-            .map(|d| d.buffer.cursor())
-            .unwrap_or(0)
+            .map_or(0, |d| d.buffer.cursor())
     }
 }
 
@@ -54,11 +53,10 @@ fn styled_view(e: &mut Editor<MockTerminal>) -> String {
         counts
             .into_iter()
             .max_by_key(|(_, n)| *n)
-            .map(|(v, _)| v)
-            .unwrap_or(None)
+            .and_then(|(v, _)| v)
     };
-    let default_bg = mode(&|c| c.bg);
-    let default_fg = mode(&|c| c.fg);
+    let default_background = mode(&|c| c.bg);
+    let default_foreground = mode(&|c| c.fg);
     let mut out = String::new();
     for r in 0..rows {
         let row: Vec<_> = (0..cols).map(|c| &cells[r * cols + c]).collect();
@@ -70,19 +68,19 @@ fn styled_view(e: &mut Editor<MockTerminal>) -> String {
             .iter()
             .map(|c| {
                 let a = c.attrs;
-                if a.reverse {
+                if a.is_reverse() {
                     'R'
-                } else if a.underline {
+                } else if a.is_underline() {
                     'U'
-                } else if a.bold {
+                } else if a.is_bold() {
                     'B'
-                } else if a.italic {
+                } else if a.is_italic() {
                     'I'
-                } else if a.strike {
+                } else if a.is_strike() {
                     'S'
-                } else if c.bg != default_bg {
+                } else if c.bg != default_background {
                     'H'
-                } else if c.fg != default_fg {
+                } else if c.fg != default_foreground {
                     'C'
                 } else if c.fg.is_some() {
                     '.'
@@ -99,9 +97,151 @@ fn styled_view(e: &mut Editor<MockTerminal>) -> String {
     out
 }
 
+fn demo_offset(content: &str, s: &str) -> usize {
+    content.find(s).expect("substring present")
+}
+
+fn demo_range(content: &str, s: &str) -> std::ops::Range<usize> {
+    let st = demo_offset(content, s);
+    st..st + s.len()
+}
+
+fn add_style_annotations(e: &mut Editor<MockTerminal>, content: &str) {
+    use crate::annotations::{Presentation, StyleOverride};
+
+    // --- Inline text styles -------------------------------------------
+    let styles: &[(&str, StyleOverride)] = &[
+        (
+            "bold",
+            StyleOverride {
+                attrs: crate::layer::CellAttrs::BOLD,
+                ..Default::default()
+            },
+        ),
+        (
+            "italic",
+            StyleOverride {
+                attrs: crate::layer::CellAttrs::ITALIC,
+                ..Default::default()
+            },
+        ),
+        (
+            "underline",
+            StyleOverride {
+                attrs: crate::layer::CellAttrs::UNDERLINE,
+                ..Default::default()
+            },
+        ),
+        (
+            "strike",
+            StyleOverride {
+                attrs: crate::layer::CellAttrs::STRIKE,
+                ..Default::default()
+            },
+        ),
+        (
+            "reverse",
+            StyleOverride {
+                attrs: crate::layer::CellAttrs::REVERSE,
+                ..Default::default()
+            },
+        ),
+    ];
+    for (word, style) in styles {
+        let r = demo_range(content, word);
+        e.active_document().annotations.add(
+            Annotation::new(
+                Kind::new("ui.style"),
+                Anchor::range(r.start, r.end),
+                AnnotationOwner::User,
+            )
+            .with_presentation(Presentation::with_style(*style)),
+        );
+    }
+}
+
+fn add_link_annotations(e: &mut Editor<MockTerminal>, content: &str) {
+    use crate::annotations::{FaceRef, Presentation, StyleOverride};
+
+    // --- Interactive links (blue + underline, activate -> follow) ------
+    for (word, href) in [("docs", "docs.md"), ("repo", "https://example.com")] {
+        let r = demo_range(content, word);
+        let mut pres = Presentation::with_face(FaceRef::new("link"));
+        pres.style = Some(StyleOverride {
+            attrs: crate::layer::CellAttrs::UNDERLINE,
+            ..Default::default()
+        });
+        let mut payload = Value::map();
+        payload.set("href", Value::Str(href.into()));
+        payload.set("tooltip", Value::Str(format!("link: {href}")));
+        e.active_document().annotations.add(
+            Annotation::new(
+                Kind::new("ui.link"),
+                Anchor::range(r.start, r.end),
+                AnnotationOwner::User,
+            )
+            .with_payload(payload)
+            .with_presentation(pres)
+            .with_actions(vec![Action::activate()]),
+        );
+    }
+}
+
+fn add_button_annotation(e: &mut Editor<MockTerminal>, content: &str) {
+    use crate::annotations::{Presentation, StyleOverride};
+    use crate::color::Color;
+
+    // --- A button (reverse video, interactive run action) -------------
+    let btn = demo_range(content, "Run Tests");
+    let mut btn_payload = Value::map();
+    btn_payload.set("tooltip", Value::Str("Run the test suite".into()));
+    e.active_document().annotations.add(
+        Annotation::new(
+            Kind::new("ui.button"),
+            Anchor::range(btn.start, btn.end),
+            AnnotationOwner::User,
+        )
+        .with_payload(btn_payload)
+        .with_presentation(Presentation::with_style(StyleOverride {
+            attrs: crate::layer::CellAttrs::REVERSE,
+            fg: Some(Color::Cyan),
+            ..Default::default()
+        }))
+        .with_actions(vec![Action::new("run").as_default()]),
+    );
+}
+
+fn add_checkbox_annotations(
+    e: &mut Editor<MockTerminal>,
+    content: &str,
+) -> Vec<crate::annotations::AnnotationId> {
+    use crate::annotations::{Adornment, Placement, Presentation};
+
+    // --- Checkboxes (overlay glyph + toggle action) -------------------
+    let mut checkbox_ids = Vec::new();
+    for task in ["[ ] pending item one", "[ ] pending item two"] {
+        let p = demo_offset(content, task);
+        let mut payload = Value::map();
+        payload.set("checked", Value::Bool(false));
+        let id = e.active_document().annotations.add(
+            Annotation::new(
+                Kind::new("ui.checkbox"),
+                Anchor::point(p),
+                AnnotationOwner::User,
+            )
+            .with_payload(payload)
+            .with_presentation(
+                Presentation::default().with_adornment(Adornment::new("[ ]", Placement::Overlay)),
+            )
+            .with_actions(vec![Action::new("toggle").as_default()]),
+        );
+        checkbox_ids.push(id);
+    }
+    checkbox_ids
+}
+
 #[test]
 fn demo_annotated_markdown_document() {
-    use crate::annotations::{Adornment, FaceRef, Placement, Presentation, StyleOverride, Value};
     use crate::color::Color;
 
     let content = "\
@@ -123,127 +263,17 @@ let total = ;
 Search: needle here and another needle over there.";
 
     let mut e = editor_with_text(content);
-    let range = |s: &str| {
-        let st = content.find(s).expect("substring present");
-        st..st + s.len()
-    };
-    let point = |s: &str| content.find(s).expect("substring present");
-
-    // --- Inline text styles -------------------------------------------
-    let styles: &[(&str, StyleOverride)] = &[
-        (
-            "bold",
-            StyleOverride {
-                bold: true,
-                ..Default::default()
-            },
-        ),
-        (
-            "italic",
-            StyleOverride {
-                italic: true,
-                ..Default::default()
-            },
-        ),
-        (
-            "underline",
-            StyleOverride {
-                underline: true,
-                ..Default::default()
-            },
-        ),
-        (
-            "strike",
-            StyleOverride {
-                strike: true,
-                ..Default::default()
-            },
-        ),
-        (
-            "reverse",
-            StyleOverride {
-                reverse: true,
-                ..Default::default()
-            },
-        ),
-    ];
-    for (word, style) in styles {
-        let r = range(word);
-        e.active_document().annotations.add(
-            Annotation::new(
-                Kind::new("ui.style"),
-                Anchor::range(r.start, r.end),
-                AnnotationOwner::User,
-            )
-            .with_presentation(Presentation::with_style(*style)),
-        );
-    }
-
-    // --- Interactive links (blue + underline, activate -> follow) ------
-    for (word, href) in [("docs", "docs.md"), ("repo", "https://example.com")] {
-        let r = range(word);
-        let mut pres = Presentation::with_face(FaceRef::new("link"));
-        pres.style = Some(StyleOverride {
-            underline: true,
-            ..Default::default()
-        });
-        let mut payload = Value::map();
-        payload.set("href", Value::Str(href.into()));
-        payload.set("tooltip", Value::Str(format!("link: {}", href)));
-        e.active_document().annotations.add(
-            Annotation::new(
-                Kind::new("ui.link"),
-                Anchor::range(r.start, r.end),
-                AnnotationOwner::User,
-            )
-            .with_payload(payload)
-            .with_presentation(pres)
-            .with_actions(vec![Action::activate()]),
-        );
-    }
-
-    // --- A button (reverse video, interactive run action) -------------
-    let btn = range("Run Tests");
-    let mut btn_payload = Value::map();
-    btn_payload.set("tooltip", Value::Str("Run the test suite".into()));
-    e.active_document().annotations.add(
-        Annotation::new(
-            Kind::new("ui.button"),
-            Anchor::range(btn.start, btn.end),
-            AnnotationOwner::User,
-        )
-        .with_payload(btn_payload)
-        .with_presentation(Presentation::with_style(StyleOverride {
-            reverse: true,
-            fg: Some(Color::Cyan),
-            ..Default::default()
-        }))
-        .with_actions(vec![Action::new("run").as_default()]),
-    );
-
-    // --- Checkboxes (overlay glyph + toggle action) -------------------
-    let mut checkbox_ids = Vec::new();
-    for task in ["[ ] pending item one", "[ ] pending item two"] {
-        let p = point(task);
-        let mut payload = Value::map();
-        payload.set("checked", Value::Bool(false));
-        let id = e.active_document().annotations.add(
-            Annotation::new(
-                Kind::new("ui.checkbox"),
-                Anchor::point(p),
-                AnnotationOwner::User,
-            )
-            .with_payload(payload)
-            .with_presentation(
-                Presentation::default().with_adornment(Adornment::new("[ ]", Placement::Overlay)),
-            )
-            .with_actions(vec![Action::new("toggle").as_default()]),
-        );
-        checkbox_ids.push(id);
-    }
+    add_style_annotations(&mut e, content);
+    add_link_annotations(&mut e, content);
+    add_button_annotation(&mut e, content);
+    let checkbox_ids = add_checkbox_annotations(&mut e, content);
 
     // --- A diagnostic (face + EOL message + hover) --------------------
-    let diag_line = content[..point("let total")].matches('\n').count();
+    let diag_line = content
+        .get(..demo_offset(content, "let total"))
+        .expect("demo offset on char boundary")
+        .matches('\n')
+        .count();
     e.active_document()
         .annotations
         .create_diagnostic(diag_line, 1, "expected expression");
@@ -254,15 +284,21 @@ Search: needle here and another needle over there.";
 
     // Render the whole thing and print the styled view.
     let view = styled_view(&mut e);
-    eprintln!("\n===== ANNOTATED MARKDOWN DEMO (initial) =====\n{}", view);
+    eprintln!("\n===== ANNOTATED MARKDOWN DEMO (initial) =====\n{view}");
 
     // Sanity checks across the feature set.
     let cells = e.render_system.compositor.get_composited_slice();
-    assert!(cells.iter().any(|c| c.attrs.underline), "underline present");
-    assert!(cells.iter().any(|c| c.attrs.bold), "bold present");
-    assert!(cells.iter().any(|c| c.attrs.italic), "italic present");
-    assert!(cells.iter().any(|c| c.attrs.strike), "strike present");
-    assert!(cells.iter().any(|c| c.attrs.reverse), "reverse present");
+    assert!(
+        cells.iter().any(|c| c.attrs.is_underline()),
+        "underline present"
+    );
+    assert!(cells.iter().any(|c| c.attrs.is_bold()), "bold present");
+    assert!(cells.iter().any(|c| c.attrs.is_italic()), "italic present");
+    assert!(cells.iter().any(|c| c.attrs.is_strike()), "strike present");
+    assert!(
+        cells.iter().any(|c| c.attrs.is_reverse()),
+        "reverse present"
+    );
     assert!(
         cells.iter().any(|c| c.bg == Some(Color::Yellow)),
         "search highlight present"
@@ -275,7 +311,7 @@ Search: needle here and another needle over there.";
     );
 
     // --- Demonstrate interactivity: toggle the first checkbox ----------
-    let cb_offset = point("[ ] pending item one");
+    let cb_offset = demo_offset(content, "[ ] pending item one");
     e.active_document().buffer.set_cursor(cb_offset).ok();
     assert!(e.activate_annotation_at_cursor(), "checkbox activates");
     let checked = e
@@ -320,8 +356,7 @@ fn eol_adornment_renders_as_virtual_text() {
     let out = screen(&mut e);
     assert!(
         out.contains("E: boom"),
-        "EOL adornment should render as virtual text; screen:\n{}",
-        out
+        "EOL adornment should render as virtual text; screen:\n{out}"
     );
 }
 
@@ -378,8 +413,7 @@ fn overlay_adornment_renders_at_anchor_column() {
     // "[x]" overlays content starting at the anchor column (over "234").
     assert!(
         out.contains("01[x]5"),
-        "overlay should render over content; screen:\n{}",
-        out
+        "overlay should render over content; screen:\n{out}"
     );
 }
 
@@ -398,8 +432,7 @@ fn text_attributes_emit_sgr_escape_codes() {
             AnnotationOwner::User,
         )
         .with_presentation(Presentation::with_style(StyleOverride {
-            bold: true,
-            underline: true,
+            attrs: crate::layer::CellAttrs::BOLD.union(crate::layer::CellAttrs::UNDERLINE),
             ..Default::default()
         })),
     );
@@ -407,12 +440,8 @@ fn text_attributes_emit_sgr_escape_codes() {
     let _ = e.render_to_terminal(true);
     let out = e.term.get_written_string();
     let bytes = out.escape_debug().collect::<String>();
-    assert!(out.contains("\u{1b}[1m"), "no bold SGR. bytes={}", bytes);
-    assert!(
-        out.contains("\u{1b}[4m"),
-        "no underline SGR. bytes={}",
-        bytes
-    );
+    assert!(out.contains("\u{1b}[1m"), "no bold SGR. bytes={bytes}");
+    assert!(out.contains("\u{1b}[4m"), "no underline SGR. bytes={bytes}");
 }
 
 #[test]
@@ -435,8 +464,7 @@ fn cursor_walks_through_leading_marker() {
         let expected = off + if off >= 4 { 3 } else { 0 };
         assert_eq!(
             e.state.cursor_pos.1, expected,
-            "cursor offset {} should map to visual column {}",
-            off, expected
+            "cursor offset {off} should map to visual column {expected}"
         );
     }
 }
@@ -522,8 +550,7 @@ fn leading_adornment_inserts_and_shifts_content() {
     let out = screen(&mut e);
     assert!(
         out.contains("The >>word here"),
-        "leading marker inserts before anchor without eating preceding text; screen:\n{}",
-        out
+        "leading marker inserts before anchor without eating preceding text; screen:\n{out}"
     );
 }
 
@@ -552,8 +579,7 @@ fn conceal_hides_markers_except_on_cursor_line() {
     let out = screen(&mut e);
     assert!(
         out.contains("a bold x"),
-        "markers hidden + reflowed on non-cursor line; screen:\n{}",
-        out
+        "markers hidden + reflowed on non-cursor line; screen:\n{out}"
     );
 
     // Cursor on line 0: its markers are revealed (concealcursor behavior).
@@ -561,8 +587,7 @@ fn conceal_hides_markers_except_on_cursor_line() {
     let out2 = screen(&mut e);
     assert!(
         out2.contains("a **bold** x"),
-        "markers revealed on the cursor's line; screen:\n{}",
-        out2
+        "markers revealed on the cursor's line; screen:\n{out2}"
     );
 }
 
@@ -602,8 +627,7 @@ fn conceal_reveal_unaffected_by_multibyte_chars_on_earlier_lines() {
     assert!(
         out.contains("**x**"),
         "markers must be revealed on the cursor's own line despite multibyte \
-         drift earlier in the document; screen:\n{}",
-        out
+         drift earlier in the document; screen:\n{out}"
     );
 
     // Cursor on line 2: line 1's markers are concealed again.
@@ -615,8 +639,7 @@ fn conceal_reveal_unaffected_by_multibyte_chars_on_earlier_lines() {
     let line1_row = out2.lines().nth(1).unwrap_or("");
     assert!(
         line1_row.trim_end().ends_with('x') && !line1_row.contains('*'),
-        "markers stay concealed off the cursor's line; screen:\n{}",
-        out2
+        "markers stay concealed off the cursor's line; screen:\n{out2}"
     );
 }
 
@@ -651,8 +674,7 @@ fn overlay_range_conceals_span_padding_and_truncating() {
     let out = screen(&mut e);
     assert!(
         out.contains("X  34LO789"),
-        "overlay conceals each span exactly (pad short, truncate long); screen:\n{}",
-        out
+        "overlay conceals each span exactly (pad short, truncate long); screen:\n{out}"
     );
 }
 
@@ -665,7 +687,7 @@ fn presentation_style_renders_fg_and_attrs_to_cells() {
     let mut e = editor_with_text("hello world");
     let style = StyleOverride {
         fg: Some(Color::Red),
-        underline: true,
+        attrs: crate::layer::CellAttrs::UNDERLINE,
         ..Default::default()
     };
     e.active_document().annotations.add(
@@ -680,7 +702,7 @@ fn presentation_style_renders_fg_and_attrs_to_cells() {
     let cells = e.render_system.compositor.get_composited_slice();
     let styled = cells
         .iter()
-        .find(|c| c.fg == Some(Color::Red) && c.attrs.underline);
+        .find(|c| c.fg == Some(Color::Red) && c.attrs.is_underline());
     assert!(styled.is_some(), "expected an underlined red cell");
     assert!("hello".contains(styled.unwrap().to_char()));
 }
@@ -694,12 +716,11 @@ fn diagnostic_renders_adornment_and_hover_tooltip() {
     e.active_document().buffer.set_cursor(0).ok();
     let out = screen(&mut e);
     // EOL adornment shows the bare message on the diagnostic line.
-    assert!(out.contains("type mismatch"), "adornment missing:\n{}", out);
+    assert!(out.contains("type mismatch"), "adornment missing:\n{out}");
     // Hover tooltip (cursor on the diagnostic line) shows the "[error]" form.
     assert!(
         out.contains("[error] type mismatch"),
-        "diagnostic hover tooltip missing; screen:\n{}",
-        out
+        "diagnostic hover tooltip missing; screen:\n{out}"
     );
 }
 
@@ -800,8 +821,7 @@ fn affordances_render_when_cursor_on_interactive_annotation() {
     let on = screen(&mut e);
     assert!(
         on.contains("Enter: stage") && on.contains("d: discard"),
-        "affordance hint should render; screen:\n{}",
-        on
+        "affordance hint should render; screen:\n{on}"
     );
 }
 

@@ -5,32 +5,37 @@ use crate::character::Character;
 use crate::color::Color;
 use crate::layer::Cell;
 use crate::mode::Mode;
+use crate::num::{f64_to_usize, usize_to_f64};
 
-pub fn is_software_cursor(mode: Mode) -> bool {
+#[must_use]
+pub const fn is_software_cursor(mode: Mode) -> bool {
     matches!(mode, Mode::Normal | Mode::OperatorPending)
 }
 
 pub struct SoftCursor;
 
 impl SoftCursor {
+    #[must_use]
     pub fn block_cell(
         underlying: Option<&Cell>,
         cursor_color: Option<Color>,
         editor_fg: Option<Color>,
-        editor_bg: Option<Color>,
+        editor_background: Option<Color>,
     ) -> Cell {
-        let (under_fg, under_bg, content) = match underlying {
-            Some(c) => (c.fg, c.bg, c.content),
-            None => (None, None, Character::from(' ')),
-        };
+        let (under_fg, under_background, content) = underlying.map_or_else(
+            || (None, None, Character::from(' ')),
+            |c| (c.fg, c.bg, c.content),
+        );
 
         let block_bg = cursor_color
             .or(under_fg)
             .or(editor_fg)
             .unwrap_or(Color::White);
-        let block_fg = under_bg.or(editor_bg).unwrap_or(Color::Black);
+        let block_text = under_background
+            .or(editor_background)
+            .unwrap_or(Color::Black);
 
-        Cell::new(content).with_fg(block_fg).with_bg(block_bg)
+        Cell::new(content).with_fg(block_text).with_bg(block_bg)
     }
 }
 
@@ -44,8 +49,14 @@ pub struct CursorAnimator {
     animating: bool,
 }
 
+// Screen coordinates stay far below 2^52, so the f64 conversion is exact.
+fn coord(v: usize) -> f64 {
+    usize_to_f64(v)
+}
+
 impl CursorAnimator {
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self {
             row: 0.0,
             col: 0.0,
@@ -58,8 +69,8 @@ impl CursorAnimator {
 
     pub fn set_target(&mut self, row: usize, col: usize) {
         if !self.initialized {
-            self.row = row as f64;
-            self.col = col as f64;
+            self.row = coord(row);
+            self.col = coord(col);
             self.target_row = row;
             self.target_col = col;
             self.initialized = true;
@@ -73,8 +84,8 @@ impl CursorAnimator {
     }
 
     pub fn snap_to(&mut self, row: usize, col: usize) {
-        self.row = row as f64;
-        self.col = col as f64;
+        self.row = coord(row);
+        self.col = coord(col);
         self.target_row = row;
         self.target_col = col;
         self.initialized = true;
@@ -85,26 +96,31 @@ impl CursorAnimator {
         if !self.animating {
             return;
         }
-        self.row += (self.target_row as f64 - self.row) * factor;
-        self.col += (self.target_col as f64 - self.col) * factor;
-        if (self.row - self.target_row as f64).abs() < 0.5
-            && (self.col - self.target_col as f64).abs() < 0.5
+        self.row += (coord(self.target_row) - self.row) * factor;
+        self.col += (coord(self.target_col) - self.col) * factor;
+        if (self.row - coord(self.target_row)).abs() < 0.5
+            && (self.col - coord(self.target_col)).abs() < 0.5
         {
-            self.row = self.target_row as f64;
-            self.col = self.target_col as f64;
+            self.row = coord(self.target_row);
+            self.col = coord(self.target_col);
             self.animating = false;
         }
     }
 
+    #[must_use]
     pub fn display_pos(&self) -> (usize, usize) {
-        (self.row.round() as usize, self.col.round() as usize)
+        (
+            f64_to_usize(self.row.round()),
+            f64_to_usize(self.col.round()),
+        )
     }
 
-    pub fn is_animating(&self) -> bool {
+    #[must_use]
+    pub const fn is_animating(&self) -> bool {
         self.animating
     }
 
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.initialized = false;
         self.animating = false;
     }

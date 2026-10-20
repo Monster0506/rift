@@ -29,7 +29,7 @@ fn movement_semantic(c: &mut Criterion) {
                 }
             },
             criterion::BatchSize::SmallInput,
-        )
+        );
     });
 
     group.bench_function("move_paragraph_forward", |b| {
@@ -42,7 +42,7 @@ fn movement_semantic(c: &mut Criterion) {
                 }
             },
             criterion::BatchSize::SmallInput,
-        )
+        );
     });
 
     group.finish();
@@ -74,7 +74,7 @@ fn movement_vertical(c: &mut Criterion) {
                 }
             },
             criterion::BatchSize::SmallInput,
-        )
+        );
     });
 
     group.finish();

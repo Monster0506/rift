@@ -70,14 +70,14 @@ fn test_log_job_event_appends_correctly() {
             assert!(!silent);
             assert_eq!(message, "fs-copy: started");
         }
-        _ => panic!("expected JobEvent"),
+        MessageEntry::Notification { .. } => panic!("expected JobEvent"),
     }
     match &log[2] {
         MessageEntry::JobEvent { kind, message, .. } => {
             assert_eq!(*kind, JobEventKind::Finished);
             assert_eq!(message, "fs-copy: finished");
         }
-        _ => panic!("expected JobEvent"),
+        MessageEntry::Notification { .. } => panic!("expected JobEvent"),
     }
 }
 
@@ -88,7 +88,7 @@ fn test_log_job_event_silent_flag() {
 
     match &mgr.message_log()[0] {
         MessageEntry::JobEvent { silent, .. } => assert!(*silent),
-        _ => panic!("expected JobEvent"),
+        MessageEntry::Notification { .. } => panic!("expected JobEvent"),
     }
 }
 
@@ -122,14 +122,14 @@ fn test_notification_add_also_logs() {
             assert_eq!(*kind, NotificationType::Info);
             assert_eq!(message, "Test");
         }
-        _ => panic!("expected Notification"),
+        MessageEntry::JobEvent { .. } => panic!("expected Notification"),
     }
     match &log[1] {
         MessageEntry::Notification { kind, message, .. } => {
             assert_eq!(*kind, NotificationType::Error);
             assert_eq!(message, "Oops");
         }
-        _ => panic!("expected Notification"),
+        MessageEntry::JobEvent { .. } => panic!("expected Notification"),
     }
 }
 
@@ -213,7 +213,7 @@ fn test_message_log_coalesces_progress_per_job() {
     assert_eq!(progress_entries.len(), 1);
     match progress_entries[0] {
         MessageEntry::JobEvent { kind, .. } => assert_eq!(*kind, JobEventKind::Progress(49)),
-        _ => panic!("expected JobEvent"),
+        MessageEntry::Notification { .. } => panic!("expected JobEvent"),
     }
 }
 
@@ -226,7 +226,7 @@ fn test_progress_job_event_stores_percentage() {
         MessageEntry::JobEvent { kind, .. } => {
             assert_eq!(*kind, JobEventKind::Progress(42));
         }
-        _ => panic!("expected JobEvent"),
+        MessageEntry::Notification { .. } => panic!("expected JobEvent"),
     }
 }
 
@@ -239,16 +239,16 @@ fn test_multiple_jobs_tracked_independently() {
     mgr.log_job_event(2, JobEventKind::Finished, false, "fs-copy: finished");
 
     let log = mgr.message_log();
-    let job1_entries: Vec<_> = log
+    let job1_count = log
         .iter()
         .filter(|e| matches!(e, MessageEntry::JobEvent { job_id: 1, .. }))
-        .collect();
-    let job2_entries: Vec<_> = log
+        .count();
+    let job2_count = log
         .iter()
         .filter(|e| matches!(e, MessageEntry::JobEvent { job_id: 2, .. }))
-        .collect();
-    assert_eq!(job1_entries.len(), 2);
-    assert_eq!(job2_entries.len(), 2);
+        .count();
+    assert_eq!(job1_count, 2);
+    assert_eq!(job2_count, 2);
 }
 
 #[test]
@@ -335,7 +335,7 @@ fn test_expiration_logic() {
         id: 1,
         message: "Expired".into(),
         kind: NotificationType::Info,
-        timestamp: now - Duration::from_millis(100),
+        timestamp: now.checked_sub(Duration::from_millis(100)).unwrap(),
         ttl: Some(ttl),
     };
 
@@ -351,7 +351,7 @@ fn test_expiration_logic() {
         id: 3,
         message: "Permanent".into(),
         kind: NotificationType::Info,
-        timestamp: now - Duration::from_secs(100),
+        timestamp: now.checked_sub(Duration::from_secs(100)).unwrap(),
         ttl: None,
     };
 

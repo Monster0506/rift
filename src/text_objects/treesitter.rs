@@ -61,12 +61,8 @@ fn node_at_cursor<'tree>(ctx: &SyntaxContext<'tree>, cursor_byte: usize) -> Node
 
 /// Walks up from `node` to the n-th ancestor (inclusive of `node` itself)
 /// matching `pred`, supporting nest-count for tree-sitter objects.
-fn find_ancestor_nth<'tree>(
-    node: Node<'tree>,
-    pred: impl Fn(&str) -> bool,
-    n: u8,
-) -> Option<Node<'tree>> {
-    let mut remaining = n.max(1) as i32;
+fn find_ancestor_nth(node: Node<'_>, pred: impl Fn(&str) -> bool, n: u8) -> Option<Node<'_>> {
+    let mut remaining = i32::from(n.max(1));
     let mut cur = Some(node);
     let mut last_match = None;
     while let Some(nd) = cur {
@@ -103,7 +99,7 @@ fn strip_outer_brackets(start: usize, end: usize, buf: &TextBuffer) -> Option<(u
     let (Some(first), Some(last)) = (buf.char_at(start), buf.char_at(end)) else {
         return Some((start, end));
     };
-    for &(open, close) in BRACKET_TRIM_PAIRS.iter() {
+    for &(open, close) in &BRACKET_TRIM_PAIRS {
         if first == Character::from(open) && last == Character::from(close) {
             if start + 1 > end - 1 {
                 return None;

@@ -94,21 +94,18 @@ pub(super) fn drain_jobs(editor: &mut Editor<MockTerminal>) {
     use std::time::{Duration, Instant};
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
-        match editor
+        if let Ok(msg) = editor
             .job_manager
             .receiver()
             .recv_timeout(Duration::from_millis(50))
         {
-            Ok(msg) => {
-                let _ = editor.handle_job_message(msg);
+            editor.handle_job_message(msg);
+        } else {
+            if Instant::now() >= deadline {
+                break;
             }
-            Err(_) => {
-                if Instant::now() >= deadline {
-                    break;
-                }
-                if editor.job_manager.receiver().try_recv().is_err() {
-                    break;
-                }
+            if editor.job_manager.receiver().try_recv().is_err() {
+                break;
             }
         }
     }
@@ -124,7 +121,7 @@ pub(super) fn drain_jobs_until_idle(editor: &mut Editor<MockTerminal>) {
             .receiver()
             .recv_timeout(Duration::from_millis(50))
         {
-            let _ = editor.handle_job_message(msg);
+            editor.handle_job_message(msg);
         }
         if !editor.job_manager.any_job_thread_alive() || Instant::now() >= deadline {
             break;
@@ -190,7 +187,7 @@ pub(super) fn measure_type(editor: &mut Editor<MockTerminal>, label: &str, n: us
         times.push(t.elapsed());
     }
     times.sort();
-    let avg = times.iter().sum::<std::time::Duration>() / n as u32;
+    let avg = times.iter().sum::<std::time::Duration>() / u32::try_from(n).unwrap_or(u32::MAX);
     eprintln!(
         "{label:<16} avg={avg:>9.2?} p50={:>9.2?} p95={:>9.2?} max={:>9.2?}",
         times[n / 2],

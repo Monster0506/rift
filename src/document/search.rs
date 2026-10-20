@@ -8,6 +8,10 @@ impl Document {
     /// Mirror search matches into `ui.search` annotations so highlighting renders
     /// through the presentation pipeline; `current` (if any) gets a distinct face.
     pub fn sync_search_annotations(&mut self, matches: &[SearchMatch], current: Option<usize>) {
+        // Cap highlight annotations: every edit clones the store for undo and
+        // shifts anchors, so an unbounded match count makes keystrokes O(matches).
+        const MAX_HIGHLIGHTED_MATCHES: usize = 10_000;
+
         use crate::annotations::{
             Anchor, Annotation, AnnotationOwner, Kind, Presentation, StyleOverride,
         };
@@ -23,9 +27,6 @@ impl Document {
             bg: Some(Color::Cyan),
             ..Default::default()
         };
-        // Cap highlight annotations: every edit clones the store for undo and
-        // shifts anchors, so an unbounded match count makes keystrokes O(matches).
-        const MAX_HIGHLIGHTED_MATCHES: usize = 10_000;
         for (i, m) in matches.iter().enumerate() {
             let is_current = current == Some(i);
             if i >= MAX_HIGHLIGHTED_MATCHES && !is_current {
@@ -56,6 +57,9 @@ impl Document {
     }
 
     /// Perform a search in the document.
+    ///
+    /// # Errors
+    /// Returns an error if the underlying search fails.
     pub fn perform_search(
         &self,
         query: &str,
@@ -85,6 +89,9 @@ impl Document {
     }
 
     /// Find all occurrences of the pattern in the document.
+    ///
+    /// # Errors
+    /// Returns an error if the underlying search fails.
     pub fn find_all_matches(
         &self,
         query: &str,

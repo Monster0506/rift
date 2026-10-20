@@ -172,8 +172,8 @@ fn apply_edit_rejects_mismatched_buffer() {
 fn apply_edit_matches_full_rebuild_random() {
     fn next(seed: &mut u64, m: usize) -> usize {
         *seed = seed
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
         ((*seed >> 33) as usize) % m.max(1)
     }
 
@@ -335,8 +335,8 @@ fn combine_char_edits_matches_full_rebuild_across_random_batches() {
 
     fn next(seed: &mut u64, m: usize) -> usize {
         *seed = seed
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
         ((*seed >> 33) as usize) % m.max(1)
     }
 
@@ -401,8 +401,8 @@ fn combine_char_edits_matches_full_rebuild_across_random_batches() {
 
 fn lcg_next(seed: &mut u64, m: usize) -> usize {
     *seed = seed
-        .wrapping_mul(6364136223846793005)
-        .wrapping_add(1442695040888963407);
+        .wrapping_mul(6_364_136_223_846_793_005)
+        .wrapping_add(1_442_695_040_888_963_407);
     ((*seed >> 33) as usize) % m.max(1)
 }
 
@@ -582,8 +582,8 @@ fn extend_to_row_stops_at_document_end_rather_than_looping() {
 
 #[test]
 fn test_range_kind_blockwise_variant_exists() {
-    let _blockwise = RangeKind::Blockwise;
-    assert_eq!(_blockwise, RangeKind::Blockwise);
+    let blockwise = RangeKind::Blockwise;
+    assert_eq!(blockwise, RangeKind::Blockwise);
 }
 
 #[test]

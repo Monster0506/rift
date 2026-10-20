@@ -84,7 +84,7 @@ fn process_jobs(editor: &mut Editor<QueueTerminal>) {
             .receiver()
             .recv_timeout(Duration::from_millis(50))
         {
-            editor.handle_job_message(msg).unwrap();
+            editor.handle_job_message(msg);
         }
         if !editor.job_manager.any_job_thread_alive() || Instant::now() >= deadline {
             break;
@@ -114,8 +114,7 @@ fn setup_two_pane() -> (Editor<QueueTerminal>, tempfile::TempDir, WindowId, Wind
     std::fs::write(&b, "B\n").unwrap();
 
     let term = QueueTerminal::new(50, 120);
-    let mut editor =
-        Editor::with_file(term, Some(a.to_str().unwrap().to_string())).expect("editor init");
+    let mut editor = Editor::with_file(term, Some(a.to_str().unwrap())).expect("editor init");
     process_jobs(&mut editor);
     let win_a = editor.split_tree.focused_window_id();
 
@@ -144,7 +143,7 @@ fn setup_four_pane() -> (Editor<QueueTerminal>, tempfile::TempDir, [WindowId; 4]
 
     let term = QueueTerminal::new(60, 160);
     let mut editor =
-        Editor::with_file(term, Some(paths[0].to_str().unwrap().to_string())).expect("editor init");
+        Editor::with_file(term, Some(paths[0].to_str().unwrap())).expect("editor init");
     process_jobs(&mut editor);
     let win_a = editor.split_tree.focused_window_id();
 
@@ -177,10 +176,10 @@ fn setup_four_pane() -> (Editor<QueueTerminal>, tempfile::TempDir, [WindowId; 4]
 
 #[test]
 fn rapid_ctrl_w_hjkl_toggle_matches_ctrl_held_form() {
+    const ROUNDS: u32 = 2_000;
     let (mut editor, _dir, win_a, win_b) = setup_two_pane();
     assert_eq!(editor.split_tree.focused_window_id(), win_a);
 
-    const ROUNDS: usize = 2_000;
     for i in 0..ROUNDS {
         // Alternate which of the two equivalent chord forms fires each round,
         // so the burst genuinely exercises both bindings under load.
@@ -211,8 +210,8 @@ fn rapid_ctrl_w_hjkl_toggle_matches_ctrl_held_form() {
     eprintln!(
         "rapid_ctrl_w_hjkl_toggle: {total_chords} nav chords ({total_keys} keys) in {elapsed:?} \
          ({:.0} chords/sec, {:.0} keys/sec)",
-        total_chords as f64 / elapsed.as_secs_f64(),
-        total_keys as f64 / elapsed.as_secs_f64(),
+        f64::from(total_chords) / elapsed.as_secs_f64(),
+        f64::from(total_keys) / elapsed.as_secs_f64(),
     );
 
     let _ = win_b; // used only to assert the layout was built correctly above
@@ -220,12 +219,12 @@ fn rapid_ctrl_w_hjkl_toggle_matches_ctrl_held_form() {
 
 #[test]
 fn rapid_ctrl_w_four_pane_survives_random_walk_without_corruption() {
+    const STEPS: u32 = 5_000;
     let (mut editor, _dir, wins) = setup_four_pane();
     let valid: std::collections::HashSet<WindowId> = wins.iter().copied().collect();
 
     // Deterministic pseudo-random walk over all 8 chord forms (plain +
     // ctrl-held, all 4 directions), less structured than the round-trip test above.
-    const STEPS: usize = 5_000;
     let plain = [
         Key::char('h'),
         Key::char('j'),
@@ -238,7 +237,7 @@ fn rapid_ctrl_w_four_pane_survives_random_walk_without_corruption() {
         Key::ctrl('k'),
         Key::ctrl('l'),
     ];
-    let mut seed: u64 = 0x9E3779B97F4A7C15;
+    let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
     for _ in 0..STEPS {
         // xorshift64 -- cheap, deterministic, good enough for test input mixing.
         seed ^= seed << 13;
@@ -275,7 +274,7 @@ fn rapid_ctrl_w_four_pane_survives_random_walk_without_corruption() {
     eprintln!(
         "rapid_ctrl_w_four_pane_random_walk: {STEPS} nav chords ({total_keys} keys) in {elapsed:?} \
          ({:.0} chords/sec, {:.0} keys/sec)",
-        STEPS as f64 / elapsed.as_secs_f64(),
-        total_keys as f64 / elapsed.as_secs_f64(),
+        f64::from(STEPS) / elapsed.as_secs_f64(),
+        f64::from(total_keys) / elapsed.as_secs_f64(),
     );
 }

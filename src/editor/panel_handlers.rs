@@ -1,6 +1,5 @@
 use super::Editor;
 use super::PanelKind;
-#[allow(unused_imports)]
 use crate::buffer::api::BufferView;
 use crate::term::TerminalBackend;
 
@@ -28,7 +27,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn handle_messages_buffer_action(&mut self, id: &str) {
         if id == "messages:refresh" {
-            self.refresh_messages_buffer_if_open()
+            self.refresh_messages_buffer_if_open();
         }
     }
 
@@ -44,14 +43,13 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn handle_clipboard_entry_action(&mut self, id: &str) {
         if id == "clipboard:entry:close" {
-            self.handle_clipboard_entry_close()
+            self.handle_clipboard_entry_close();
         }
     }
 
     pub(super) fn handle_clipboard_entry_close(&mut self) {
-        let layout = match self.panel_layout_of(PanelKind::Clipboard) {
-            Some(l) => l,
-            None => return,
+        let Some(layout) = self.panel_layout_of(PanelKind::Clipboard) else {
+            return;
         };
         self.split_tree.set_focus(layout.dir_win_id);
         let _ = self.document_manager.switch_to_document(layout.dir_doc_id);
@@ -60,9 +58,8 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub fn refresh_clipboard_buffer_if_open(&mut self) {
-        let layout = match self.panel_layout_of(PanelKind::Clipboard) {
-            Some(l) => l,
-            None => return,
+        let Some(layout) = self.panel_layout_of(PanelKind::Clipboard) else {
+            return;
         };
         let entries: std::collections::VecDeque<Vec<crate::character::Character>> =
             self.clipboard_ring.entries().iter().cloned().collect();
@@ -78,15 +75,13 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn handle_clipboard_select(&mut self) {
-        let layout = match self.panel_layout_of(PanelKind::Clipboard) {
-            Some(l) => l,
-            None => return,
+        let Some(layout) = self.panel_layout_of(PanelKind::Clipboard) else {
+            return;
         };
 
         let (entry_text, entry_index) = {
-            let doc = match self.document_manager.get_document(layout.dir_doc_id) {
-                Some(d) => d,
-                None => return,
+            let Some(doc) = self.document_manager.get_document(layout.dir_doc_id) else {
+                return;
             };
             let cursor = doc.buffer.cursor();
             let line_num = doc.buffer.line_index.get_line_at(cursor);
@@ -136,9 +131,8 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn handle_clipboard_new(&mut self) {
-        let layout = match self.panel_layout_of(PanelKind::Clipboard) {
-            Some(l) => l,
-            None => return,
+        let Some(layout) = self.panel_layout_of(PanelKind::Clipboard) else {
+            return;
         };
 
         if let Some(preview) = self
@@ -170,9 +164,8 @@ impl<T: TerminalBackend> Editor<T> {
     /// Save an edited clipboard entry back to the ring.
     pub(super) fn apply_clipboard_entry_save(&mut self) {
         let (entry_index, new_text) = {
-            let doc = match self.document_manager.active_document() {
-                Some(d) => d,
-                None => return,
+            let Some(doc) = self.document_manager.active_document() else {
+                return;
             };
             let Some(entry_index) = doc.clipboard_entry_index() else {
                 return;
@@ -227,9 +220,8 @@ impl<T: TerminalBackend> Editor<T> {
     /// Repopulate any open messages buffer with the current notification log.
     /// Preserves cursor position for background refreshes.
     pub(super) fn refresh_messages_buffer_if_open(&mut self) {
-        let doc_id = match self.document_manager.find_messages_doc_id() {
-            Some(id) => id,
-            None => return,
+        let Some(doc_id) = self.document_manager.find_messages_doc_id() else {
+            return;
         };
 
         let log = self.state.error_manager.notifications().message_log();
@@ -261,15 +253,13 @@ impl<T: TerminalBackend> Editor<T> {
 
     #[cfg(feature = "lsp")]
     fn handle_location_list_select(&mut self) {
-        let layout = match self.panel_layout_of(PanelKind::LocationList) {
-            Some(l) => l,
-            None => return,
+        let Some(layout) = self.panel_layout_of(PanelKind::LocationList) else {
+            return;
         };
 
         let entry = {
-            let doc = match self.document_manager.get_document(layout.dir_doc_id) {
-                Some(d) => d,
-                None => return,
+            let Some(doc) = self.document_manager.get_document(layout.dir_doc_id) else {
+                return;
             };
             let cursor = doc.buffer.cursor();
             let line_num = doc.buffer.line_index.get_line_at(cursor);
@@ -289,13 +279,12 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        let path = match crate::lsp::protocol::uri_to_path(&entry.uri) {
-            Some(p) => p,
-            None => return,
+        let Some(path) = crate::lsp::protocol::uri_to_path(&entry.uri) else {
+            return;
         };
 
         self.close_split_panel();
-        self.jump_to_location(path, entry.line as usize, entry.col);
+        self.jump_to_location(&path, entry.line as usize, entry.col);
     }
 
     pub(super) fn handle_regions_buffer_action(&mut self, id: &str) {
@@ -315,15 +304,13 @@ impl<T: TerminalBackend> Editor<T> {
     /// Space on a diagnostic entry: send a code action request scoped to that diagnostic.
     #[cfg(feature = "lsp")]
     fn handle_location_list_code_action(&mut self) {
-        let layout = match self.panel_layout_of(PanelKind::LocationList) {
-            Some(l) => l,
-            None => return,
+        let Some(layout) = self.panel_layout_of(PanelKind::LocationList) else {
+            return;
         };
 
         let entry = {
-            let doc = match self.document_manager.get_document(layout.dir_doc_id) {
-                Some(d) => d,
-                None => return,
+            let Some(doc) = self.document_manager.get_document(layout.dir_doc_id) else {
+                return;
             };
             let cursor = doc.buffer.cursor();
             let line_num = doc.buffer.line_index.get_line_at(cursor);
@@ -343,9 +330,8 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        let path = match crate::lsp::protocol::uri_to_path(&entry.uri) {
-            Some(p) => p,
-            None => return,
+        let Some(path) = crate::lsp::protocol::uri_to_path(&entry.uri) else {
+            return;
         };
 
         if self.lsp_manager.is_indexing_path(&path) {

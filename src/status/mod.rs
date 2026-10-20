@@ -11,20 +11,20 @@ use crate::render::{CursorInfo, StatusDrawState};
 
 /// First `max_chars` characters of `s` (never splits a multi-byte char).
 fn char_safe_prefix(s: &str, max_chars: usize) -> &str {
-    match s.char_indices().nth(max_chars) {
-        Some((idx, _)) => &s[..idx],
-        None => s,
-    }
+    s.char_indices()
+        .nth(max_chars)
+        .and_then(|(idx, _)| s.get(..idx))
+        .unwrap_or(s)
 }
 
 /// Last `max_chars` characters of `s` (never splits a multi-byte char).
 fn char_safe_suffix(s: &str, max_chars: usize) -> &str {
     let char_count = s.chars().count();
     let skip = char_count.saturating_sub(max_chars);
-    match s.char_indices().nth(skip) {
-        Some((idx, _)) => &s[idx..],
-        None => s,
-    }
+    s.char_indices()
+        .nth(skip)
+        .and_then(|(idx, _)| s.get(idx..))
+        .unwrap_or(s)
 }
 
 /// Status bar renderer
@@ -33,7 +33,7 @@ pub struct StatusBar;
 impl StatusBar {
     /// Format mode name for display
     #[must_use]
-    pub fn format_mode(mode: Mode) -> &'static str {
+    pub const fn format_mode(mode: Mode) -> &'static str {
         match mode {
             Mode::Normal => crate::constants::modes::NORMAL,
             Mode::Insert => crate::constants::modes::INSERT,
@@ -60,8 +60,8 @@ impl StatusBar {
             parts.push(format!("Last: {}", format_key(key)));
         }
         parts.push(format!("Pos: {}:{}", cursor.row + 1, cursor.col + 1));
-        parts.push(format!("Lines: {}", total_lines));
-        parts.push(format!("File: {}", file_name));
+        parts.push(format!("Lines: {total_lines}"));
+        parts.push(format!("File: {file_name}"));
         parts.join(" | ")
     }
 
@@ -76,7 +76,7 @@ impl StatusBar {
         crate::paint::rasterize(frame, layer);
     }
 
-    /// Builds the status bar's PaintFrame; render_to_layer rasterizes it.
+    /// Builds the status bar's `PaintFrame`; `render_to_layer` rasterizes it.
     fn render_to_paint_frame(
         frame: &mut crate::paint::PaintFrame,
         layer_rows: usize,
@@ -85,14 +85,14 @@ impl StatusBar {
         let status_row = layer_rows.saturating_sub(1);
         let visible_cols = state.cols;
 
-        if !state.show_status_line {
+        if !state.status_line.show_status_line {
             for col in 0..visible_cols {
                 frame.set_cell(status_row, col, Cell::new(Character::from(' ')));
             }
             return;
         }
 
-        let (fg, bg) = if state.reverse_video {
+        let (fg, bg) = if state.status_line.reverse_video {
             (
                 state.editor_bg.or(Some(Color::Black)),
                 state.editor_fg.or(Some(Color::White)),
@@ -126,6 +126,29 @@ impl StatusBar {
             col += pending_str.len();
         }
 
+        col = Self::write_search_segment(frame, status_row, col, state, fg, bg);
+        col = Self::write_lsp_segment(frame, status_row, col, state, fg, bg);
+
+        col = Self::write_tail_segment(frame, status_row, col, visible_cols, state, fg, bg);
+
+        while col < visible_cols {
+            frame.set_cell(
+                status_row,
+                col,
+                crate::layer::Cell::new(Character::from(' ')).with_colors(fg, bg),
+            );
+            col += 1;
+        }
+    }
+
+    fn write_search_segment(
+        frame: &mut crate::paint::PaintFrame,
+        status_row: usize,
+        mut col: usize,
+        state: &StatusDrawState,
+        fg: Option<Color>,
+        bg: Option<Color>,
+    ) -> usize {
         if let Some(query) = &state.search_query {
             if !query.is_empty() {
                 frame.set_cell(
@@ -145,17 +168,26 @@ impl StatusBar {
                 col += query.len();
 
                 if state.search_total_matches > 0 {
-                    let stats = if let Some(idx) = state.search_match_index {
-                        format!(" {}/{}", idx, state.search_total_matches)
-                    } else {
-                        format!(" ?/{}", state.search_total_matches)
-                    };
-                    frame.write_str_colored(status_row, col, &stats, fg, bg);
-                    col += stats.len();
+                    let match_text = state.search_match_index.map_or_else(
+                        || format!(" ?/{}", state.search_total_matches),
+                        |idx| format!(" {}/{}", idx, state.search_total_matches),
+                    );
+                    frame.write_str_colored(status_row, col, &match_text, fg, bg);
+                    col += match_text.len();
                 }
             }
         }
+        col
+    }
 
+    fn write_lsp_segment(
+        frame: &mut crate::paint::PaintFrame,
+        status_row: usize,
+        mut col: usize,
+        state: &StatusDrawState,
+        fg: Option<Color>,
+        bg: Option<Color>,
+    ) -> usize {
         if let Some(lsp) = &state.lsp_status {
             if !lsp.is_empty() {
                 frame.set_cell(
@@ -175,7 +207,18 @@ impl StatusBar {
                 col += lsp.len();
             }
         }
+        col
+    }
 
+    fn write_tail_segment(
+        frame: &mut crate::paint::PaintFrame,
+        status_row: usize,
+        mut col: usize,
+        visible_cols: usize,
+        state: &StatusDrawState,
+        fg: Option<Color>,
+        bg: Option<Color>,
+    ) -> usize {
         let used_cols = col;
         let available_cols = visible_cols.saturating_sub(used_cols);
 
@@ -211,8 +254,9 @@ impl StatusBar {
                 frame.write_str_colored(status_row, col, &truncated, fg, bg);
                 col += truncated.len();
             }
-        } else if state.show_filename {
-            let display_name = if state.is_dirty && state.show_dirty_indicator {
+        } else if state.status_line.segments.show_filename {
+            let display_name = if state.is_dirty && state.status_line.segments.show_dirty_indicator
+            {
                 format!("{}*", state.file_name)
             } else {
                 state.file_name.clone()
@@ -246,15 +290,7 @@ impl StatusBar {
                 col += truncated.len();
             }
         }
-
-        while col < visible_cols {
-            frame.set_cell(
-                status_row,
-                col,
-                crate::layer::Cell::new(Character::from(' ')).with_colors(fg, bg),
-            );
-            col += 1;
-        }
+        col
     }
 }
 

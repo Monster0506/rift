@@ -37,7 +37,7 @@ impl<T: TerminalBackend> crate::editor_api::EditorContext for Editor<T> {
     }
 
     fn execute_command_line(&mut self, cmd: String) {
-        self.execute_command_line(cmd);
+        self.execute_command_line(&cmd);
     }
 
     fn perform_search(&mut self, query: &str, direction: crate::search::SearchDirection) {

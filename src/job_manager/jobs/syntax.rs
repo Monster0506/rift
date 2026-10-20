@@ -39,7 +39,7 @@ pub struct SyntaxParseJob {
     single_edit: Option<InputEdit>,
     /// Keeps `parser`'s language's backing dynamic library alive for the job's
     /// lifetime; runs on a background thread detached from the `Syntax` that spawned it.
-    _lib: Option<Arc<RawLib>>,
+    lib_handle: Option<Arc<RawLib>>,
     /// Highlights as of `old_tree`, plus the single edit since then (if
     /// exactly one landed); otherwise the highlights query rescans everything.
     old_highlights: Arc<IntervalTree<u32>>,
@@ -56,7 +56,7 @@ impl std::fmt::Debug for SyntaxParseJob {
                 "has_cached_logical_bytes",
                 &self.cached_logical_bytes.is_some(),
             )
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -80,26 +80,29 @@ impl SyntaxParseJob {
             revision,
             cached_logical_bytes: None,
             single_edit: None,
-            _lib: None,
+            lib_handle: None,
             old_highlights: Arc::new(IntervalTree::default()),
             token: None,
         }
     }
 
-    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+    #[must_use]
+    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
         self.token = Some(token);
         self
     }
 
     /// Attach the backing library handle for `parser`'s language, if it was
     /// loaded dynamically, so it stays mapped for the lifetime of this job.
+    #[must_use]
     pub fn with_lib(mut self, lib: Option<Arc<RawLib>>) -> Self {
-        self._lib = lib;
+        self.lib_handle = lib;
         self
     }
 
     /// Attach the previous highlights and edits since the last completed parse,
     /// so highlights can be scoped to the changed region (only 1 edit is optimized).
+    #[must_use]
     pub fn with_highlights_context(
         mut self,
         old_highlights: Arc<IntervalTree<u32>>,
@@ -114,6 +117,7 @@ impl SyntaxParseJob {
     }
     /// Attach a prior logical-bytes buffer and the edit since it was captured,
     /// so `run()` can patch instead of rebuilding; `None`/`None` forces a full rebuild.
+    #[must_use]
     pub fn with_incremental_bytes(
         mut self,
         cached_logical_bytes: Option<Arc<Vec<u8>>>,
@@ -148,13 +152,13 @@ impl Job for SyntaxParseJob {
         crate::perf_span!(
             "syntax_reparse_job",
             crate::perf::PerfFields {
-                bytes: Some(self.buffer.byte_len() as u32),
+                bytes: Some(u32::try_from(self.buffer.byte_len()).unwrap_or(u32::MAX)),
                 ..Default::default()
             }
         );
 
         // Destructure to avoid partial moves
-        let SyntaxParseJob {
+        let Self {
             buffer,
             mut parser,
             old_tree,
@@ -164,7 +168,7 @@ impl Job for SyntaxParseJob {
             revision,
             cached_logical_bytes,
             single_edit,
-            _lib,
+            lib_handle: _lib,
             old_highlights,
             token,
         } = *self;
@@ -173,13 +177,15 @@ impl Job for SyntaxParseJob {
         // the query cursor's coordinate space (control chars differ in byte width).
         let text = buffer;
         let source_bytes = {
-            #[cfg_attr(not(feature = "perf_instrumentation"), allow(unused_variables))]
-            let will_patch = cached_logical_bytes.is_some() && single_edit.is_some();
             crate::perf_span!(
                 "syntax_reparse_job_to_bytes",
                 crate::perf::PerfFields {
-                    bytes: Some(text.byte_len() as u32),
-                    tag: Some(if will_patch { "patch_attempt" } else { "full" }),
+                    bytes: Some(u32::try_from(text.byte_len()).unwrap_or(u32::MAX)),
+                    tag: Some(if cached_logical_bytes.is_some() && single_edit.is_some() {
+                        "patch_attempt"
+                    } else {
+                        "full"
+                    }),
                     ..Default::default()
                 }
             );
@@ -200,7 +206,7 @@ impl Job for SyntaxParseJob {
             crate::perf_span!(
                 "syntax_reparse_job_parse",
                 crate::perf::PerfFields {
-                    bytes: Some(source_bytes.len() as u32),
+                    bytes: Some(u32::try_from(source_bytes.len()).unwrap_or(u32::MAX)),
                     tag: Some(if old_tree.is_some() {
                         "incremental"
                     } else {
@@ -218,53 +224,23 @@ impl Job for SyntaxParseJob {
 
         // On a single-edit incremental reparse, scope the query to what
         // tree-sitter says changed and reuse the rest of the old highlights.
-        let mut highlights = Vec::new();
-        if let (Some(tree), Some(query)) = (&tree, &highlights_query) {
-            let scoped = match (old_tree.as_ref(), single_edit) {
-                (Some(prev_tree), Some(edit)) => Some((prev_tree, edit)),
-                _ => None,
-            };
-            crate::perf_span!(
-                "syntax_reparse_job_highlights",
-                crate::perf::PerfFields {
-                    bytes: Some(source_bytes.len() as u32),
-                    tag: Some(if scoped.is_some() { "scoped" } else { "full" }),
-                    ..Default::default()
-                }
-            );
-            let root_node = tree.root_node();
-
-            // Single-range vec matches the Vec<Range<usize>> the scoped arm returns.
-            #[allow(clippy::single_range_in_vec_init)]
-            let query_ranges: Vec<std::ops::Range<usize>> = match scoped {
-                Some((prev_tree, edit)) => {
-                    crate::syntax::scoped_query_ranges(prev_tree, tree, edit)
-                }
-                None => vec![0..source_bytes.len()],
-            };
-
-            let mut fresh: Vec<(std::ops::Range<usize>, u32, usize)> = Vec::new();
-            for range in &query_ranges {
-                let mut cursor = QueryCursor::new();
-                cursor.set_byte_range(range.clone());
-                let mut matches = cursor.matches(query, root_node, source_bytes.as_slice());
-                while let Some(m) = matches.next() {
-                    if signal.is_cancelled() {
-                        return;
-                    }
-                    let pattern_index = m.pattern_index;
-                    for capture in m.captures() {
-                        fresh.push((capture.node.byte_range(), capture.index, pattern_index));
-                    }
-                }
+        let highlights = match (&tree, &highlights_query) {
+            (Some(tree), Some(query)) => {
+                let Some(found) = collect_highlights(
+                    tree,
+                    query,
+                    &source_bytes,
+                    old_tree.as_ref(),
+                    single_edit,
+                    &old_highlights,
+                    &signal,
+                ) else {
+                    return;
+                };
+                found
             }
-
-            if let Some((_, edit)) = scoped {
-                let kept = crate::syntax::scoped_kept_items(&old_highlights, edit, &query_ranges);
-                highlights.extend(kept.into_iter().map(|(r, c)| (r, c, 0)));
-            }
-            highlights.extend(fresh);
-        }
+            _ => Vec::new(),
+        };
 
         let result = SyntaxParseResult {
             tree,
@@ -285,6 +261,60 @@ impl Job for SyntaxParseJob {
     fn is_silent(&self) -> bool {
         true
     }
+}
+
+/// Collects highlight captures, rescanning only the edited range when one incremental edit is known.
+fn collect_highlights(
+    tree: &Tree,
+    query: &Query,
+    source_bytes: &[u8],
+    old_tree: Option<&Tree>,
+    single_edit: Option<InputEdit>,
+    old_highlights: &Arc<IntervalTree<u32>>,
+    signal: &CancellationSignal,
+) -> Option<Vec<(std::ops::Range<usize>, u32, usize)>> {
+    let scoped = match (old_tree, single_edit) {
+        (Some(prev_tree), Some(edit)) => Some((prev_tree, edit)),
+        _ => None,
+    };
+    crate::perf_span!(
+        "syntax_reparse_job_highlights",
+        crate::perf::PerfFields {
+            bytes: Some(u32::try_from(source_bytes.len()).unwrap_or(u32::MAX)),
+            tag: Some(if scoped.is_some() { "scoped" } else { "full" }),
+            ..Default::default()
+        }
+    );
+    let root_node = tree.root_node();
+
+    let query_ranges: Vec<std::ops::Range<usize>> = match scoped {
+        Some((prev_tree, edit)) => crate::syntax::scoped_query_ranges(prev_tree, tree, edit),
+        None => std::iter::once(0..source_bytes.len()).collect(),
+    };
+
+    let mut fresh: Vec<(std::ops::Range<usize>, u32, usize)> = Vec::new();
+    for range in &query_ranges {
+        let mut cursor = QueryCursor::new();
+        cursor.set_byte_range(range.clone());
+        let mut matches = cursor.matches(query, root_node, source_bytes);
+        while let Some(m) = matches.next() {
+            if signal.is_cancelled() {
+                return None;
+            }
+            let pattern_index = m.pattern_index;
+            for capture in m.captures() {
+                fresh.push((capture.node.byte_range(), capture.index, pattern_index));
+            }
+        }
+    }
+
+    let mut highlights = Vec::new();
+    if let Some((_, edit)) = scoped {
+        let kept = crate::syntax::scoped_kept_items(old_highlights, edit, &query_ranges);
+        highlights.extend(kept.into_iter().map(|(r, c)| (r, c, 0)));
+    }
+    highlights.extend(fresh);
+    Some(highlights)
 }
 
 #[cfg(test)]

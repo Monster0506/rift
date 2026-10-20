@@ -102,11 +102,11 @@ fn oracle_starts(text: &[char]) -> Vec<usize> {
 #[test]
 fn test_incremental_line_cache_matches_oracle_under_random_edits() {
     // Tiny deterministic LCG so the sequence is reproducible without a dep.
-    let mut seed: u64 = 0x9E3779B97F4A7C15;
+    let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
     let mut rng = || {
         seed = seed
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
         (seed >> 33) as usize
     };
 

@@ -72,11 +72,11 @@ fn flag_is_published_before_os_handler_is_installed() {
 
 #[test]
 fn forward_key_blocks_instead_of_dropping_under_burst() {
-    let (input_tx, input_rx) = sync_channel::<InputEvent>(64);
     const TOTAL: usize = 100;
+    let (input_tx, input_rx) = sync_channel::<InputEvent>(64);
     let sender = std::thread::spawn(move || {
         for i in 0..TOTAL {
-            let c = char::from_u32('a' as u32 + (i % 26) as u32).unwrap();
+            let c = char::from(b'a' + u8::try_from(i % 26).unwrap());
             assert!(forward_key(&input_tx, Key::char(c)));
         }
     });

@@ -15,7 +15,8 @@ pub struct ChannelBackend {
 }
 
 impl ChannelBackend {
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         input_rx: Receiver<InputEvent>,
         output_tx: Sender<Vec<u8>>,
         detach_tx: SyncSender<()>,
@@ -71,7 +72,7 @@ impl TerminalBackend for ChannelBackend {
         let bytes = std::mem::take(&mut self.render_buf);
         self.output_tx
             .send(bytes)
-            .map_err(|_| "output channel disconnected".into())
+            .map_err(|e| format!("output channel disconnected: {e}").into())
     }
 
     fn get_size(&self) -> Result<Size, RiftError> {

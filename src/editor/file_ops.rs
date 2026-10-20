@@ -57,7 +57,20 @@ pub(super) fn native_save_handlers<T: TerminalBackend>(
     handlers
 }
 
-pub(super) type NativeReloadHandler<T> = fn(&mut Editor<T>) -> Result<(), RiftError>;
+// One table holds both shapes; only the undo-file view reload can fail.
+pub(super) enum NativeReloadHandler<T: TerminalBackend> {
+    Infallible(fn(&mut Editor<T>)),
+    Fallible(fn(&mut Editor<T>) -> Result<(), RiftError>),
+}
+
+// Manual impls: derive would require `T: Copy`, which the backend does not satisfy.
+impl<T: TerminalBackend> Clone for NativeReloadHandler<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: TerminalBackend> Copy for NativeReloadHandler<T> {}
 
 fn reload_undo_file_view_handler<T: TerminalBackend>(
     editor: &mut Editor<T>,
@@ -69,27 +82,23 @@ fn reload_undo_file_view_handler<T: TerminalBackend>(
     doc.reload_undo_file_view()
 }
 
-fn reload_directory<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), RiftError> {
+fn reload_directory<T: TerminalBackend>(editor: &mut Editor<T>) {
     editor.handle_explorer_refresh();
-    Ok(())
 }
 
-fn reload_undotree<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), RiftError> {
+fn reload_undotree<T: TerminalBackend>(editor: &mut Editor<T>) {
     editor.handle_undotree_refresh();
-    Ok(())
 }
 
-fn reload_messages<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), RiftError> {
+fn reload_messages<T: TerminalBackend>(editor: &mut Editor<T>) {
     editor.refresh_messages_buffer_if_open();
-    Ok(())
 }
 
-fn reload_clipboard<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), RiftError> {
+fn reload_clipboard<T: TerminalBackend>(editor: &mut Editor<T>) {
     editor.refresh_clipboard_buffer_if_open();
-    Ok(())
 }
 
-fn reload_git_status<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), RiftError> {
+fn reload_git_status<T: TerminalBackend>(editor: &mut Editor<T>) {
     let doc_id = editor.active_document_id();
     let Some(repo_root) = editor
         .document_manager
@@ -97,27 +106,25 @@ fn reload_git_status<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), R
         .and_then(|d| d.git_repo_root())
         .map(std::path::Path::to_path_buf)
     else {
-        return Ok(());
+        return;
     };
     editor.refresh_git_status_buffers_for(&repo_root);
-    Ok(())
 }
 
-fn reload_git_log<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), RiftError> {
+fn reload_git_log<T: TerminalBackend>(editor: &mut Editor<T>) {
     let doc_id = editor.active_document_id();
     let Some((repo_root, path)) = editor.document_manager.get_document(doc_id).and_then(|d| {
         let repo_root = d.git_repo_root()?.to_path_buf();
         let path = d.git_log_path().flatten().map(std::path::Path::to_path_buf);
         Some((repo_root, path))
     }) else {
-        return Ok(());
+        return;
     };
     let job = crate::job_manager::jobs::git::GitLogJob::new(doc_id, repo_root, path);
     editor.job_manager.spawn(job);
-    Ok(())
 }
 
-fn reload_git_blame<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), RiftError> {
+fn reload_git_blame<T: TerminalBackend>(editor: &mut Editor<T>) {
     let doc_id = editor.active_document_id();
     let Some((repo_root, path, at_commit)) =
         editor.document_manager.get_document(doc_id).and_then(|d| {
@@ -127,16 +134,14 @@ fn reload_git_blame<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), Ri
             Some((repo_root, path, at_commit))
         })
     else {
-        return Ok(());
+        return;
     };
     let job = crate::job_manager::jobs::git::GitBlameJob::new(doc_id, repo_root, path, at_commit);
     editor.job_manager.spawn(job);
-    Ok(())
 }
 
-fn reload_buffer_list<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), RiftError> {
+fn reload_buffer_list<T: TerminalBackend>(editor: &mut Editor<T>) {
     editor.refresh_buffer_list_panel();
-    Ok(())
 }
 
 pub(super) fn native_reload_handlers<T: TerminalBackend>(
@@ -146,39 +151,39 @@ pub(super) fn native_reload_handlers<T: TerminalBackend>(
     let mut handlers = std::collections::HashMap::new();
     handlers.insert(
         BufferKindId::UNDO_FILE_VIEW,
-        reload_undo_file_view_handler::<T> as NativeReloadHandler<T>,
+        NativeReloadHandler::Fallible(reload_undo_file_view_handler::<T>),
     );
     handlers.insert(
         BufferKindId::DIRECTORY,
-        reload_directory::<T> as NativeReloadHandler<T>,
+        NativeReloadHandler::Infallible(reload_directory::<T>),
     );
     handlers.insert(
         BufferKindId::UNDO_TREE,
-        reload_undotree::<T> as NativeReloadHandler<T>,
+        NativeReloadHandler::Infallible(reload_undotree::<T>),
     );
     handlers.insert(
         BufferKindId::MESSAGES,
-        reload_messages::<T> as NativeReloadHandler<T>,
+        NativeReloadHandler::Infallible(reload_messages::<T>),
     );
     handlers.insert(
         BufferKindId::CLIPBOARD,
-        reload_clipboard::<T> as NativeReloadHandler<T>,
+        NativeReloadHandler::Infallible(reload_clipboard::<T>),
     );
     handlers.insert(
         BufferKindId::GIT_STATUS,
-        reload_git_status::<T> as NativeReloadHandler<T>,
+        NativeReloadHandler::Infallible(reload_git_status::<T>),
     );
     handlers.insert(
         BufferKindId::GIT_LOG,
-        reload_git_log::<T> as NativeReloadHandler<T>,
+        NativeReloadHandler::Infallible(reload_git_log::<T>),
     );
     handlers.insert(
         BufferKindId::GIT_BLAME,
-        reload_git_blame::<T> as NativeReloadHandler<T>,
+        NativeReloadHandler::Infallible(reload_git_blame::<T>),
     );
     handlers.insert(
         BufferKindId::BUFFER_LIST,
-        reload_buffer_list::<T> as NativeReloadHandler<T>,
+        NativeReloadHandler::Infallible(reload_buffer_list::<T>),
     );
     handlers
 }
@@ -236,7 +241,7 @@ impl<T: TerminalBackend> Editor<T> {
                 } else if let Some(handle) = self
                     .document_manager
                     .active_document()
-                    .map(|document| document.handle())
+                    .map(super::super::document::Document::handle)
                 {
                     handler(handle)
                 } else {
@@ -383,20 +388,16 @@ impl<T: TerminalBackend> Editor<T> {
         let in_clipboard_entry = self
             .document_manager
             .active_document()
-            .is_some_and(|doc| doc.is_clipboard_entry());
+            .is_some_and(super::super::document::Document::is_clipboard_entry);
         if in_clipboard_entry {
             self.handle_clipboard_entry_close();
             return;
         }
 
-        let in_explorer = self
-            .panel_layout
-            .as_ref()
-            .map(|l| {
-                let fid = self.split_tree.focused_window_id();
-                fid == l.dir_win_id || fid == l.preview_win_id
-            })
-            .unwrap_or(false);
+        let in_explorer = self.panel_layout.as_ref().is_some_and(|l| {
+            let fid = self.split_tree.focused_window_id();
+            fid == l.dir_win_id || fid == l.preview_win_id
+        });
         if in_explorer {
             self.close_split_panel();
             return;
@@ -438,19 +439,18 @@ impl<T: TerminalBackend> Editor<T> {
             } else {
                 self.remove_document(doc_id)
             };
-            match result {
-                Err(e) => self.state.handle_error(e),
-                Ok(()) => {
-                    if let Some(new_doc_id) = self.document_manager.active_document_id() {
-                        self.split_tree.set_focused_document(new_doc_id);
-                        self.plugin_host
-                            .dispatch(&crate::plugin::EditorEvent::BufEnter { buf: new_doc_id });
-                        self.apply_plugin_mutations();
-                    }
-                    self.sync_state_with_active_document();
-                    if let Err(e) = self.force_full_redraw() {
-                        self.state.handle_error(e);
-                    }
+            if let Err(e) = result {
+                self.state.handle_error(e);
+            } else {
+                if let Some(new_doc_id) = self.document_manager.active_document_id() {
+                    self.split_tree.set_focused_document(new_doc_id);
+                    self.plugin_host
+                        .dispatch(&crate::plugin::EditorEvent::BufEnter { buf: new_doc_id });
+                    self.apply_plugin_mutations();
+                }
+                self.sync_state_with_active_document();
+                if let Err(e) = self.force_full_redraw() {
+                    self.state.handle_error(e);
                 }
             }
         }
@@ -545,12 +545,13 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn do_buffer_delete(&mut self, index: Option<usize>, force: bool) {
         let target = match index {
-            Some(i) => match self
-                .document_manager
-                .get_document_id_at(i.saturating_sub(1))
-            {
-                Some(id) => id,
-                None => {
+            Some(i) => {
+                if let Some(id) = self
+                    .document_manager
+                    .get_document_id_at(i.saturating_sub(1))
+                {
+                    id
+                } else {
                     self.state.notify(
                         crate::notification::NotificationType::Warning,
                         format!("Buffer {i} does not exist"),
@@ -558,7 +559,7 @@ impl<T: TerminalBackend> Editor<T> {
                     self.state.clear_command_line();
                     return;
                 }
-            },
+            }
             None => self.active_document_id(),
         };
 
@@ -577,29 +578,30 @@ impl<T: TerminalBackend> Editor<T> {
             self.remove_document(target)
         };
 
-        match result {
-            Err(e) => self.state.handle_error(e),
-            Ok(()) => {
-                self.state.clear_command_line();
-                if let Err(e) = self.force_full_redraw() {
-                    self.state.handle_error(e);
-                }
+        if let Err(e) = result {
+            self.state.handle_error(e);
+        } else {
+            self.state.clear_command_line();
+            if let Err(e) = self.force_full_redraw() {
+                self.state.handle_error(e);
             }
         }
     }
 
     pub(super) fn do_show_buffer_list(&mut self) {
+        use std::fmt::Write as _;
         let buffers = self.document_manager.get_buffer_list();
         let mut message = String::new();
         for info in buffers {
-            let dirty = if info.is_dirty { "+" } else { " " };
-            let read_only = if info.is_read_only { "R" } else { " " };
+            let dirty = if info.status.is_dirty { "+" } else { " " };
+            let read_only = if info.status.is_read_only { "R" } else { " " };
             let current = if info.is_current { "%" } else { " " };
-            let special = if info.is_special { "~" } else { " " };
+            let special = if info.status.is_special { "~" } else { " " };
             if !message.is_empty() {
                 message.push('\n');
             }
-            message.push_str(&format!(
+            let _ = write!(
+                message,
                 "[{}] {}: {}{}{}{}",
                 info.index + 1,
                 info.name,
@@ -607,7 +609,7 @@ impl<T: TerminalBackend> Editor<T> {
                 dirty,
                 read_only,
                 special,
-            ));
+            );
         }
         self.state
             .notify(crate::notification::NotificationType::Info, message);
@@ -648,51 +650,7 @@ impl<T: TerminalBackend> Editor<T> {
                     self.switch_focus(new_id);
                 }
             }
-            SplitSubcommand::File(path) => {
-                let path_buf = std::path::PathBuf::from(&path);
-                if !path_buf.exists() {
-                    self.state.handle_error(crate::error::RiftError::new(
-                        crate::error::ErrorType::Io,
-                        "FILE_NOT_FOUND",
-                        format!("No such file: {path}"),
-                    ));
-                    return;
-                }
-                let doc_id = if let Some(id) =
-                    self.document_manager.find_open_document_id(&path_buf)
-                {
-                    id
-                } else {
-                    match self.document_manager.create_placeholder(&path) {
-                        Ok(id) => {
-                            let job = crate::job_manager::jobs::file_operations::FileLoadJob::new(
-                                id, path_buf,
-                            );
-                            self.job_manager.spawn(job);
-                            id
-                        }
-                        Err(e) => {
-                            self.state.handle_error(e);
-                            return;
-                        }
-                    }
-                };
-                let focused_id = self.split_tree.focused_window_id();
-                let size = self
-                    .term
-                    .get_size()
-                    .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
-                let new_id = self.split_tree.split(
-                    direction,
-                    focused_id,
-                    doc_id,
-                    size.rows as usize,
-                    size.cols as usize,
-                );
-                if let Some(new_id) = new_id {
-                    self.switch_focus(new_id);
-                }
-            }
+            SplitSubcommand::File(path) => self.split_file_window(direction, &path),
             SplitSubcommand::Navigate(dir) => {
                 let size = self
                     .term
@@ -714,7 +672,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .split_tree
                     .compute_layout(size.rows as usize, size.cols as usize);
                 self.split_tree
-                    .resize_focused(direction, delta as f64, &layouts);
+                    .resize_focused(direction, f64::from(delta), &layouts);
                 self.render_system.viewport.mark_needs_full_redraw();
             }
             SplitSubcommand::Move(dir) => {
@@ -740,27 +698,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.split_tree.equalize(proportional);
                 self.render_system.viewport.mark_needs_full_redraw();
             }
-            SplitSubcommand::Exchange => {
-                let focused_id = self.split_tree.focused_window_id();
-                if let Some(prev_id) = self.split_tree.previous_window {
-                    if self.split_tree.exchange_windows(focused_id, prev_id) {
-                        let new_doc = self.split_tree.focused_window().document_id;
-                        let new_cursor = self.split_tree.focused_window().cursor_position;
-                        let _ = self.document_manager.switch_to_document(new_doc);
-                        if let Some(doc) = self.document_manager.get_document_mut(new_doc) {
-                            let _ = doc.buffer.set_cursor(new_cursor);
-                        }
-                        self.sync_state_with_active_document();
-                        self.render_system.viewport.mark_needs_full_redraw();
-                        self.plugin_host
-                            .dispatch(&crate::plugin::EditorEvent::WinSwapped {
-                                win1: focused_id.get(),
-                                win2: prev_id.get(),
-                            });
-                        self.apply_plugin_mutations();
-                    }
-                }
-            }
+            SplitSubcommand::Exchange => self.exchange_focused_window(),
             SplitSubcommand::PreviousWindow => {
                 if let Some(target_id) = self.split_tree.previous_window {
                     self.switch_focus(target_id);
@@ -768,5 +706,70 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
         self.state.clear_command_line();
+    }
+
+    fn split_file_window(&mut self, direction: crate::split::tree::SplitDirection, path: &str) {
+        let path_buf = std::path::PathBuf::from(path);
+        if !path_buf.exists() {
+            self.state.handle_error(crate::error::RiftError::new(
+                crate::error::ErrorType::Io,
+                "FILE_NOT_FOUND",
+                format!("No such file: {path}"),
+            ));
+            return;
+        }
+        let doc_id = if let Some(id) = self.document_manager.find_open_document_id(&path_buf) {
+            id
+        } else {
+            match self.document_manager.create_placeholder(path) {
+                Ok(id) => {
+                    let job =
+                        crate::job_manager::jobs::file_operations::FileLoadJob::new(id, path_buf);
+                    self.job_manager.spawn(job);
+                    id
+                }
+                Err(e) => {
+                    self.state.handle_error(e);
+                    return;
+                }
+            }
+        };
+        let focused_id = self.split_tree.focused_window_id();
+        let size = self
+            .term
+            .get_size()
+            .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
+        let new_id = self.split_tree.split(
+            direction,
+            focused_id,
+            doc_id,
+            size.rows as usize,
+            size.cols as usize,
+        );
+        if let Some(new_id) = new_id {
+            self.switch_focus(new_id);
+        }
+    }
+
+    fn exchange_focused_window(&mut self) {
+        let focused_id = self.split_tree.focused_window_id();
+        if let Some(prev_id) = self.split_tree.previous_window {
+            if self.split_tree.exchange_windows(focused_id, prev_id) {
+                let new_doc = self.split_tree.focused_window().document_id;
+                let new_cursor = self.split_tree.focused_window().cursor_position;
+                let _ = self.document_manager.switch_to_document(new_doc);
+                if let Some(doc) = self.document_manager.get_document_mut(new_doc) {
+                    let _ = doc.buffer.set_cursor(new_cursor);
+                }
+                self.sync_state_with_active_document();
+                self.render_system.viewport.mark_needs_full_redraw();
+                self.plugin_host
+                    .dispatch(&crate::plugin::EditorEvent::WinSwapped {
+                        win1: focused_id.get(),
+                        win2: prev_id.get(),
+                    });
+                self.apply_plugin_mutations();
+            }
+        }
     }
 }

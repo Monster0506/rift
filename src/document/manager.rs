@@ -1,6 +1,6 @@
 use crate::document::{Document, DocumentHandle, DocumentId};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 pub(crate) fn parent_dir_missing(path: &Path) -> bool {
@@ -14,7 +14,8 @@ pub enum RemovalIntent {
 }
 
 impl RemovalIntent {
-    pub fn is_forced(self) -> bool {
+    #[must_use]
+    pub const fn is_forced(self) -> bool {
         matches!(self, Self::Force)
     }
 }
@@ -26,14 +27,17 @@ pub struct CreationReservation {
 }
 
 impl CreationReservation {
+    #[must_use]
     pub const fn new(id: DocumentId, handle: DocumentHandle) -> Self {
         Self { id, handle }
     }
 
+    #[must_use]
     pub const fn id(&self) -> DocumentId {
         self.id
     }
 
+    #[must_use]
     pub const fn handle(&self) -> DocumentHandle {
         self.handle
     }
@@ -45,6 +49,9 @@ pub struct DocumentDraft {
 }
 
 impl DocumentDraft {
+    /// # Errors
+    /// Returns an error if the document ID or state key does not match the reservation or
+    /// descriptor.
     pub fn new(reservation: CreationReservation, document: Document) -> Result<Self, RiftError> {
         if document.id != reservation.id() {
             return Err(RiftError::new(
@@ -76,15 +83,15 @@ impl DocumentDraft {
         })
     }
 
-    pub fn reservation(&self) -> CreationReservation {
+    pub const fn reservation(&self) -> CreationReservation {
         self.reservation
     }
 
-    pub fn document(&self) -> &Document {
+    pub const fn document(&self) -> &Document {
         &self.document
     }
 
-    pub fn document_mut(&mut self) -> &mut Document {
+    pub const fn document_mut(&mut self) -> &mut Document {
         &mut self.document
     }
 
@@ -120,11 +127,11 @@ impl std::fmt::Debug for PreparedRemoval {
 pub type RemovalPlan = PreparedRemoval;
 
 impl PreparedRemoval {
-    pub fn id(&self) -> DocumentId {
+    pub const fn id(&self) -> DocumentId {
         self.id
     }
 
-    pub fn intent(&self) -> RemovalIntent {
+    pub const fn intent(&self) -> RemovalIntent {
         self.intent
     }
 
@@ -132,53 +139,58 @@ impl PreparedRemoval {
         self.replacement.as_ref().map(|d| d.id)
     }
 
-    pub fn has_replacement(&self) -> bool {
+    pub const fn has_replacement(&self) -> bool {
         self.replacement.is_some()
     }
 }
 
 pub struct DocumentManager {
-    documents: HashMap<DocumentId, Document>,
+    documents: BTreeMap<DocumentId, Document>,
     tab_order: Vec<DocumentId>,
     current_tab: usize,
     next_document_id: DocumentId,
-    private_document_ids: HashSet<DocumentId>,
+    private_document_ids: BTreeSet<DocumentId>,
     most_recent_ghost_doc: Option<DocumentId>,
     next_instance: u64,
     handles: HashMap<DocumentId, DocumentHandle>,
 }
 
 impl DocumentManager {
+    #[must_use]
     pub fn new() -> Self {
         Self {
-            documents: HashMap::new(),
+            documents: BTreeMap::new(),
             tab_order: Vec::new(),
             current_tab: 0,
             next_document_id: DocumentId::new(1),
-            private_document_ids: HashSet::new(),
+            private_document_ids: BTreeSet::new(),
             most_recent_ghost_doc: None,
             next_instance: 1,
             handles: HashMap::new(),
         }
     }
 
-    pub fn most_recent_ghost_doc(&self) -> Option<DocumentId> {
+    #[must_use]
+    pub const fn most_recent_ghost_doc(&self) -> Option<DocumentId> {
         self.most_recent_ghost_doc
     }
 
-    pub fn set_most_recent_ghost_doc(&mut self, id: Option<DocumentId>) {
+    pub const fn set_most_recent_ghost_doc(&mut self, id: Option<DocumentId>) {
         self.most_recent_ghost_doc = id;
     }
 
+    #[must_use]
     pub fn get_handle(&self, id: DocumentId) -> Option<DocumentHandle> {
         self.handles.get(&id).copied()
     }
 
+    #[must_use]
     pub fn active_document_handle(&self) -> Option<DocumentHandle> {
         let id = self.active_document_id()?;
         self.get_handle(id)
     }
 
+    #[must_use]
     pub fn get_document_by_handle(&self, handle: DocumentHandle) -> Option<&Document> {
         if self.handles.get(&handle.doc_id) == Some(&handle) {
             self.documents.get(&handle.doc_id)
@@ -195,7 +207,7 @@ impl DocumentManager {
         }
     }
 
-    pub fn reserve_creation(&mut self) -> CreationReservation {
+    pub const fn reserve_creation(&mut self) -> CreationReservation {
         let id = self.next_document_id;
         self.next_document_id = self.next_document_id.next();
         let instance = self.next_instance;
@@ -278,6 +290,7 @@ impl DocumentManager {
         self.tab_order.push(id);
     }
 
+    #[must_use]
     pub fn active_document_id(&self) -> Option<DocumentId> {
         if self.tab_order.is_empty() {
             None
@@ -286,6 +299,7 @@ impl DocumentManager {
         }
     }
 
+    #[must_use]
     pub fn active_document(&self) -> Option<&Document> {
         let id = self.active_document_id()?;
         self.documents.get(&id)
@@ -296,6 +310,7 @@ impl DocumentManager {
         self.documents.get_mut(&id)
     }
 
+    #[must_use]
     pub fn get_document(&self, id: DocumentId) -> Option<&Document> {
         self.documents.get(&id)
     }
@@ -374,6 +389,7 @@ impl DocumentManager {
         out
     }
 
+    #[must_use]
     pub fn find_messages_doc_id(&self) -> Option<DocumentId> {
         self.documents
             .iter()
@@ -381,10 +397,13 @@ impl DocumentManager {
             .map(|(id, _)| *id)
     }
 
-    pub fn next_id(&self) -> DocumentId {
+    #[must_use]
+    pub const fn next_id(&self) -> DocumentId {
         self.next_document_id
     }
 
+    /// # Errors
+    /// Returns an error if `id` is not in the tab order.
     pub fn switch_to_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
         if let Some(pos) = self.tab_order.iter().position(|&x| x == id) {
             self.current_tab = pos;
@@ -393,11 +412,14 @@ impl DocumentManager {
             Err(RiftError::new(
                 ErrorType::Internal,
                 crate::constants::errors::INTERNAL_ERROR,
-                format!("Document {} not found in tabs", id),
+                format!("Document {id} not found in tabs"),
             ))
         }
     }
 
+    /// # Errors
+    /// Returns an error if the document is missing or not in the tab order, has unsaved changes
+    /// under a `Normal` removal, or its replacement cannot be created.
     pub fn prepare_removal(
         &self,
         id: DocumentId,
@@ -407,7 +429,7 @@ impl DocumentManager {
             RiftError::new(
                 ErrorType::Internal,
                 crate::constants::errors::INTERNAL_ERROR,
-                format!("Document {} not found", id),
+                format!("Document {id} not found"),
             )
         })?;
 
@@ -415,7 +437,7 @@ impl DocumentManager {
             return Err(RiftError::new(
                 ErrorType::Internal,
                 crate::constants::errors::INTERNAL_ERROR,
-                format!("Document {} in storage but not in tab order", id),
+                format!("Document {id} in storage but not in tab order"),
             ));
         }
 
@@ -476,6 +498,9 @@ impl DocumentManager {
         self.documents.remove(&plan.id)
     }
 
+    /// # Errors
+    /// Returns an error if the document has unsaved changes, is not in the tab order, or its
+    /// replacement cannot be created.
     pub fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
         if !self.documents.contains_key(&id) {
             return Ok(());
@@ -485,6 +510,9 @@ impl DocumentManager {
         Ok(())
     }
 
+    /// # Errors
+    /// Returns an error if the document is not in the tab order or its replacement cannot be
+    /// created.
     pub fn remove_document_force(&mut self, id: DocumentId) -> Result<(), RiftError> {
         if !self.documents.contains_key(&id) {
             return Ok(());
@@ -542,6 +570,7 @@ impl DocumentManager {
         }
     }
 
+    #[must_use]
     pub fn tab_count(&self) -> usize {
         self.tab_order
             .iter()
@@ -549,7 +578,8 @@ impl DocumentManager {
             .count()
     }
 
-    pub fn active_tab_index(&self) -> usize {
+    #[must_use]
+    pub const fn active_tab_index(&self) -> usize {
         self.current_tab
     }
 
@@ -561,6 +591,7 @@ impl DocumentManager {
         self.documents.values_mut()
     }
 
+    #[must_use]
     pub fn get_document_id_at(&self, index: usize) -> Option<DocumentId> {
         if index < self.tab_order.len() {
             Some(self.tab_order[index])
@@ -569,6 +600,9 @@ impl DocumentManager {
         }
     }
 
+    /// # Errors
+    /// Returns an error if the file cannot be opened or reloaded, including when the path is
+    /// a directory, its parent is missing, or there are unsaved changes without `force`.
     pub fn open_file(&mut self, file_path: Option<String>, force: bool) -> Result<(), RiftError> {
         if let Some(path_str) = file_path {
             let path = PathBuf::from(&path_str);
@@ -659,6 +693,9 @@ impl DocumentManager {
         }
         Ok(())
     }
+    /// # Panics
+    /// Panics if a tab ID has no stored document, which the manager's invariants rule out.
+    #[must_use]
     pub fn get_buffer_list(&self) -> Vec<BufferInfo> {
         self.tab_order
             .iter()
@@ -669,19 +706,23 @@ impl DocumentManager {
                     id,
                     index: i,
                     name: doc.display_name().to_string(),
-                    is_dirty: doc.is_dirty(),
-                    is_read_only: doc.is_read_only(),
                     is_current: i == self.current_tab,
-                    is_special: doc.is_special(),
+                    status: BufferStatus {
+                        is_dirty: doc.is_dirty(),
+                        is_read_only: doc.is_read_only(),
+                        is_special: doc.is_special(),
+                    },
                 }
             })
             .collect()
     }
 
+    #[must_use]
     pub fn has_unsaved_changes(&self) -> bool {
-        self.documents.values().any(|doc| doc.is_dirty())
+        self.documents.values().any(super::Document::is_dirty)
     }
 
+    #[must_use]
     pub fn get_unsaved_documents(&self) -> Vec<String> {
         self.documents
             .values()
@@ -695,13 +736,20 @@ pub struct BufferInfo {
     pub id: DocumentId,
     pub index: usize,
     pub name: String,
+    pub is_current: bool,
+    pub status: BufferStatus,
+}
+
+/// Document-derived state of one buffer list entry.
+pub struct BufferStatus {
     pub is_dirty: bool,
     pub is_read_only: bool,
-    pub is_current: bool,
     pub is_special: bool,
 }
 
 impl DocumentManager {
+    /// # Errors
+    /// Returns an error if the new document cannot be created.
     pub fn create_private_document(
         &mut self,
         source_buffer: &crate::buffer::TextBuffer,
@@ -726,6 +774,7 @@ impl DocumentManager {
         }
     }
 
+    #[must_use]
     pub fn is_private(&self, id: DocumentId) -> bool {
         self.private_document_ids.contains(&id)
     }
@@ -751,6 +800,8 @@ impl DocumentManager {
         id
     }
 
+    /// # Errors
+    /// Returns an error if the new document cannot be created.
     pub fn create_placeholder(&mut self, path: impl AsRef<Path>) -> Result<DocumentId, RiftError> {
         let mut doc = Document::new(self.next_document_id).map_err(|e| {
             RiftError::new(
@@ -765,10 +816,12 @@ impl DocumentManager {
         Ok(id)
     }
 
+    #[must_use]
     pub fn find_open_document_index(&self, path: &Path) -> Option<usize> {
         self.find_open_document(path)
     }
 
+    #[must_use]
     pub fn find_open_document_id(&self, path: &Path) -> Option<DocumentId> {
         self.find_open_document(path).map(|idx| self.tab_order[idx])
     }

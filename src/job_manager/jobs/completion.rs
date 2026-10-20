@@ -31,7 +31,7 @@ pub struct CompletionJob {
     pub input: String,
     pub current_settings: Option<UserSettings>,
     pub current_doc_options: Option<DocumentOptions>,
-    /// Plugin commands: (name, description, arg_type).
+    /// Plugin commands: (name, description, `arg_type`).
     pub plugin_commands: Vec<(String, String, Option<String>)>,
     /// Total number of lines in the active buffer (for `int` / `range` completion).
     pub line_count: usize,
@@ -57,10 +57,9 @@ impl Job for CompletionJob {
                     .iter()
                     .filter(|(name, _, _)| name.to_lowercase().starts_with(&prefix_lower))
                     .map(|(name, desc, arg_type)| {
-                        let description = match arg_type.as_deref() {
-                            Some(t) => format!("{}  <{}>", desc, t),
-                            None => desc.clone(),
-                        };
+                        let description = arg_type
+                            .as_deref()
+                            .map_or_else(|| desc.clone(), |t| format!("{desc}  <{t}>"));
                         CompletionCandidate {
                             text: name.clone(),
                             description,
@@ -171,23 +170,34 @@ fn complete_plugin_args(
     let prefix_lower = prefix.to_lowercase();
 
     match arg_type {
-        Some("file") | Some("dir") | Some("path") => {
+        Some("file" | "dir" | "path") => {
             let filter = match arg_type {
                 Some("file") => PathFilter::FilesOnly,
-                Some("dir") | Some("directory") => PathFilter::DirectoriesOnly,
+                Some("dir" | "directory") => PathFilter::DirectoriesOnly,
                 _ => PathFilter::Both,
             };
             let (dir, file_prefix) = split_path_prefix(prefix);
             complete_filepath(&dir, &file_prefix, filter, signal)
         }
+        _ => complete_arg_candidates(arg_type, line_count, prefix, &prefix_lower, buf_words),
+    }
+}
 
+fn complete_arg_candidates(
+    arg_type: Option<&str>,
+    line_count: usize,
+    prefix: &str,
+    prefix_lower: &str,
+    buf_words: &[String],
+) -> CompletionResult {
+    match arg_type {
         Some("int") => {
             if line_count == 0 {
                 return CompletionResult::empty();
             }
             let candidates: Vec<CompletionCandidate> = (1..=line_count)
                 .map(|n| n.to_string())
-                .filter(|s| s.starts_with(&prefix_lower))
+                .filter(|s| s.starts_with(prefix_lower))
                 .take(200)
                 .map(|n| CompletionCandidate {
                     text: n,
@@ -211,7 +221,7 @@ fn complete_plugin_args(
             ];
             let candidates: Vec<CompletionCandidate> = presets
                 .iter()
-                .map(|(s, e, label)| (format!("{},{}", s, e), *label))
+                .map(|(s, e, label)| (format!("{s},{e}"), *label))
                 .filter(|(range, _)| range.starts_with(prefix))
                 .map(|(range, label)| CompletionCandidate {
                     text: range,
@@ -222,10 +232,10 @@ fn complete_plugin_args(
             CompletionResult::from_candidates(candidates)
         }
 
-        Some("word") | Some("string") => {
+        Some("word" | "string") => {
             let candidates: Vec<CompletionCandidate> = buf_words
                 .iter()
-                .filter(|w| w.to_lowercase().starts_with(&prefix_lower))
+                .filter(|w| w.to_lowercase().starts_with(prefix_lower))
                 .map(|w| CompletionCandidate {
                     text: w.clone(),
                     description: String::new(),
@@ -235,10 +245,10 @@ fn complete_plugin_args(
             CompletionResult::from_candidates(candidates)
         }
 
-        Some("bool") | Some("boolean") => {
+        Some("bool" | "boolean") => {
             let candidates: Vec<CompletionCandidate> = ["true", "false"]
                 .iter()
-                .filter(|s| s.starts_with(&prefix_lower))
+                .filter(|s| s.starts_with(prefix_lower))
                 .map(|s| CompletionCandidate {
                     text: s.to_string(),
                     description: String::new(),
@@ -269,7 +279,7 @@ fn complete_plugin_args(
             ];
             let candidates: Vec<CompletionCandidate> = COLORS
                 .iter()
-                .filter(|c| c.starts_with(&prefix_lower))
+                .filter(|c| c.starts_with(prefix_lower))
                 .map(|c| CompletionCandidate {
                     text: c.to_string(),
                     description: String::new(),
@@ -278,12 +288,11 @@ fn complete_plugin_args(
                 .collect();
             CompletionResult::from_candidates(candidates)
         }
-
         _ => CompletionResult::empty(),
     }
 }
 
-/// Directory entries for completion, as (name, is_dir) pairs.
+/// Directory entries for completion, as (name, `is_dir`) pairs.
 fn completion_entries(dir: &str) -> Option<Vec<(String, bool)>> {
     let entries = crate::fs_backend::backend()
         .list_children(std::path::Path::new(dir))
@@ -321,16 +330,16 @@ fn complete_filepath(
 
         let text = if dir == "." {
             if is_dir {
-                format!("{}/", name_str)
+                format!("{name_str}/")
             } else {
                 name_str.clone()
             }
         } else {
             let dir_clean = dir.trim_end_matches('/');
             if is_dir {
-                format!("{}/{}/", dir_clean, name_str)
+                format!("{dir_clean}/{name_str}/")
             } else {
-                format!("{}/{}", dir_clean, name_str)
+                format!("{dir_clean}/{name_str}")
             }
         };
 

@@ -45,15 +45,53 @@ pub struct FileDiff {
     /// `None` when the file doesn't exist on the new side (deleted file, or
     /// the `+++ /dev/null` line was seen).
     pub new_path: Option<PathBuf>,
-    pub is_new_file: bool,
-    pub is_deleted_file: bool,
-    pub is_rename: bool,
-    pub is_binary: bool,
+    // Markers can combine (e.g. rename plus binary), so they are flags, not an enum.
+    pub markers: FileMarkers,
     pub old_mode: Option<String>,
     pub new_mode: Option<String>,
     /// `similarity index NN%` from a rename/copy header, if present.
     pub similarity: Option<u8>,
     pub hunks: Vec<Hunk>,
+}
+
+/// Header markers for one file. Several can hold at once (a rename can also be
+/// binary), so this is a bitset rather than an enum.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FileMarkers(u8);
+
+impl FileMarkers {
+    const NEW_FILE: Self = Self(1);
+    const DELETED_FILE: Self = Self(1 << 1);
+    const RENAME: Self = Self(1 << 2);
+    const BINARY: Self = Self(1 << 3);
+
+    const fn insert(&mut self, flag: Self) {
+        self.0 |= flag.0;
+    }
+
+    const fn contains(self, flag: Self) -> bool {
+        (self.0 & flag.0) != 0
+    }
+
+    #[must_use]
+    pub const fn is_new_file(self) -> bool {
+        self.contains(Self::NEW_FILE)
+    }
+
+    #[must_use]
+    pub const fn is_deleted_file(self) -> bool {
+        self.contains(Self::DELETED_FILE)
+    }
+
+    #[must_use]
+    pub const fn is_rename(self) -> bool {
+        self.contains(Self::RENAME)
+    }
+
+    #[must_use]
+    pub const fn is_binary(self) -> bool {
+        self.contains(Self::BINARY)
+    }
 }
 
 /// One gutter-diff sign kind for a changed line.
@@ -65,6 +103,7 @@ pub enum GutterSignKind {
 }
 
 /// Classify each hunk into 0-indexed buffer line(s) plus a sign kind. A pure addition signs every added line `Add`; a pure deletion signs one `Delete` marker at the line immediately before the deletion point (gitsigns.nvim convention; there's no added line to anchor to); a mixed hunk signs every line on the.
+#[must_use]
 pub fn classify_gutter_signs(hunks: &[Hunk]) -> Vec<(usize, GutterSignKind)> {
     let mut signs = Vec::new();
     for hunk in hunks {
@@ -88,16 +127,21 @@ pub fn classify_gutter_signs(hunks: &[Hunk]) -> Vec<(usize, GutterSignKind)> {
 }
 
 /// Build a sub-hunk containing only the `+`/`-` lines at `selected` (indices into `hunk.lines`), for per-line staging: the same algorithm `git add -p` uses when you deselect part of a hunk. An unselected addition is dropped entirely (as if it were never added); an unselected deletion becomes context (as if it.
-pub fn filter_hunk_to_lines(hunk: &Hunk, selected: &std::collections::HashSet<usize>) -> Hunk {
+#[must_use]
+pub fn filter_hunk_to_lines<S: std::hash::BuildHasher>(
+    hunk: &Hunk,
+    selected: &std::collections::HashSet<usize, S>,
+) -> Hunk {
     let filtered: Vec<DiffLine> = hunk
         .lines
         .iter()
         .enumerate()
         .filter_map(|(i, line)| match line.kind {
             DiffLineKind::Context => Some(line.clone()),
-            DiffLineKind::Addition if selected.contains(&i) => Some(line.clone()),
+            DiffLineKind::Addition | DiffLineKind::Deletion if selected.contains(&i) => {
+                Some(line.clone())
+            }
             DiffLineKind::Addition => None,
-            DiffLineKind::Deletion if selected.contains(&i) => Some(line.clone()),
             DiffLineKind::Deletion => Some(DiffLine {
                 kind: DiffLineKind::Context,
                 content: line.content.clone(),
@@ -106,14 +150,20 @@ pub fn filter_hunk_to_lines(hunk: &Hunk, selected: &std::collections::HashSet<us
             }),
         })
         .collect();
-    let old_lines = filtered
-        .iter()
-        .filter(|l| matches!(l.kind, DiffLineKind::Context | DiffLineKind::Deletion))
-        .count() as u32;
-    let new_lines = filtered
-        .iter()
-        .filter(|l| matches!(l.kind, DiffLineKind::Context | DiffLineKind::Addition))
-        .count() as u32;
+    let old_lines = u32::try_from(
+        filtered
+            .iter()
+            .filter(|l| matches!(l.kind, DiffLineKind::Context | DiffLineKind::Deletion))
+            .count(),
+    )
+    .unwrap_or(u32::MAX);
+    let new_lines = u32::try_from(
+        filtered
+            .iter()
+            .filter(|l| matches!(l.kind, DiffLineKind::Context | DiffLineKind::Addition))
+            .count(),
+    )
+    .unwrap_or(u32::MAX);
     Hunk {
         old_start: hunk.old_start,
         old_lines,
@@ -125,6 +175,7 @@ pub fn filter_hunk_to_lines(hunk: &Hunk, selected: &std::collections::HashSet<us
 }
 
 /// The contiguous run of non-context lines around `line_index` (inclusive), as indices into `hunk.lines`; the unit a single cursor line expands to for per-line staging. A lone `+`/`-` line stays a unit of one. A run that's purely deletions or purely additions (no opposite-kind neighbor, e.g. a brand-new file's.
+#[must_use]
 pub fn diff_line_change_block(hunk: &Hunk, line_index: usize) -> std::collections::HashSet<usize> {
     let mut block = std::collections::HashSet::new();
     if hunk
@@ -154,6 +205,7 @@ pub fn diff_line_change_block(hunk: &Hunk, line_index: usize) -> std::collection
 }
 
 /// Parse the full stdout of `git diff --no-ext-diff` (any number of files).
+#[must_use]
 pub fn parse_unified_diff(input: &str) -> Vec<FileDiff> {
     let mut files = Vec::new();
     let mut lines = input.lines().peekable();
@@ -176,10 +228,7 @@ fn parse_one_file<'a, I: Iterator<Item = &'a str>>(
     let mut file = FileDiff {
         old_path: fallback_old,
         new_path: fallback_new,
-        is_new_file: false,
-        is_deleted_file: false,
-        is_rename: false,
-        is_binary: false,
+        markers: FileMarkers::default(),
         old_mode: None,
         new_mode: None,
         similarity: None,
@@ -191,12 +240,10 @@ fn parse_one_file<'a, I: Iterator<Item = &'a str>>(
             break;
         }
         if let Some(hunk_start) = line.strip_prefix("@@ ") {
+            lines.next();
             if let Some(mut hunk) = parse_hunk_header(hunk_start) {
-                lines.next();
                 consume_hunk_body(&mut hunk, lines);
                 file.hunks.push(hunk);
-            } else {
-                lines.next();
             }
             continue;
         }
@@ -214,16 +261,16 @@ fn apply_header_line(file: &mut FileDiff, line: &str) {
     } else if let Some(mode) = line.strip_prefix("new mode ") {
         file.new_mode = Some(mode.to_string());
     } else if let Some(mode) = line.strip_prefix("deleted file mode ") {
-        file.is_deleted_file = true;
+        file.markers.insert(FileMarkers::DELETED_FILE);
         file.old_mode = Some(mode.to_string());
     } else if let Some(mode) = line.strip_prefix("new file mode ") {
-        file.is_new_file = true;
+        file.markers.insert(FileMarkers::NEW_FILE);
         file.new_mode = Some(mode.to_string());
     } else if let Some(path) = line.strip_prefix("rename from ") {
-        file.is_rename = true;
+        file.markers.insert(FileMarkers::RENAME);
         file.old_path = Some(PathBuf::from(path));
     } else if let Some(path) = line.strip_prefix("rename to ") {
-        file.is_rename = true;
+        file.markers.insert(FileMarkers::RENAME);
         file.new_path = Some(PathBuf::from(path));
     } else if let Some(path) = line.strip_prefix("copy from ") {
         file.old_path = Some(PathBuf::from(path));
@@ -235,7 +282,7 @@ fn apply_header_line(file: &mut FileDiff, line: &str) {
     {
         file.similarity = pct.parse().ok();
     } else if line.starts_with("Binary files ") && line.ends_with(" differ") {
-        file.is_binary = true;
+        file.markers.insert(FileMarkers::BINARY);
     } else if let Some(path) = line.strip_prefix("--- ") {
         file.old_path = (path != "/dev/null").then(|| strip_ab_prefix(path));
     } else if let Some(path) = line.strip_prefix("+++ ") {
@@ -259,19 +306,16 @@ fn parse_diff_git_paths(line: &str) -> (Option<PathBuf>, Option<PathBuf>) {
     let Some(a_rest) = rest.strip_prefix("a/") else {
         return (None, None);
     };
-    let Some(idx) = a_rest.find(" b/") else {
+    let Some((old, new)) = a_rest.split_once(" b/") else {
         return (None, None);
     };
-    let old = &a_rest[..idx];
-    let new = &a_rest[idx + " b/".len()..];
     (Some(PathBuf::from(old)), Some(PathBuf::from(new)))
 }
 
 /// Parse everything after `"@@ "` up to and including the closing `@@`.
 fn parse_hunk_header(rest: &str) -> Option<Hunk> {
-    let end = rest.find(" @@")?;
-    let ranges = &rest[..end];
-    let header = rest[end + " @@".len()..].trim_start().to_string();
+    let (ranges, after) = rest.split_once(" @@")?;
+    let header = after.trim_start().to_string();
 
     let mut parts = ranges.split_whitespace();
     let old = parts.next()?.strip_prefix('-')?;

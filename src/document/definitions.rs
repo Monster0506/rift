@@ -10,10 +10,11 @@ pub enum WrapMode {
 }
 
 impl WrapMode {
+    #[must_use]
     pub fn resolve(&self, terminal_width: usize) -> usize {
         match self {
-            WrapMode::Off => 0,
-            WrapMode::Expr(s) => crate::eval::eval(s, &|kw| {
+            Self::Off => 0,
+            Self::Expr(s) => crate::eval::eval(s, &|kw| {
                 if kw == "auto" {
                     Some(terminal_width)
                 } else {
@@ -44,7 +45,7 @@ pub struct DocumentOptions {
 
 impl Default for DocumentOptions {
     fn default() -> Self {
-        DocumentOptions {
+        Self {
             line_ending: LineEnding::LF,
             tab_width: 4,
             expand_tabs: true,
@@ -54,17 +55,17 @@ impl Default for DocumentOptions {
     }
 }
 
-fn get_tab_width(options: &DocumentOptions) -> SettingValue {
+const fn get_tab_width(options: &DocumentOptions) -> SettingValue {
     SettingValue::Integer(options.tab_width)
 }
 
-fn get_expand_tabs(options: &DocumentOptions) -> SettingValue {
+const fn get_expand_tabs(options: &DocumentOptions) -> SettingValue {
     SettingValue::Bool(options.expand_tabs)
 }
 
-fn set_tab_width(options: &mut DocumentOptions, value: SettingValue) -> Result<(), SettingError> {
+fn set_tab_width(options: &mut DocumentOptions, value: &SettingValue) -> Result<(), SettingError> {
     match value {
-        SettingValue::Integer(n) => {
+        &SettingValue::Integer(n) => {
             if n == 0 {
                 return Err(SettingError::ValidationError(
                     "tabwidth must be greater than 0".to_string(),
@@ -78,9 +79,13 @@ fn set_tab_width(options: &mut DocumentOptions, value: SettingValue) -> Result<(
         )),
     }
 }
-fn set_expand_tabs(options: &mut DocumentOptions, value: SettingValue) -> Result<(), SettingError> {
+
+fn set_expand_tabs(
+    options: &mut DocumentOptions,
+    value: &SettingValue,
+) -> Result<(), SettingError> {
     match value {
-        SettingValue::Bool(b) => {
+        &SettingValue::Bool(b) => {
             options.expand_tabs = b;
             Ok(())
         }
@@ -90,9 +95,9 @@ fn set_expand_tabs(options: &mut DocumentOptions, value: SettingValue) -> Result
     }
 }
 
-fn set_number(options: &mut DocumentOptions, value: SettingValue) -> Result<(), SettingError> {
+fn set_number(options: &mut DocumentOptions, value: &SettingValue) -> Result<(), SettingError> {
     match value {
-        SettingValue::Bool(b) => {
+        &SettingValue::Bool(b) => {
             options.show_line_numbers = b;
             Ok(())
         }
@@ -102,7 +107,10 @@ fn set_number(options: &mut DocumentOptions, value: SettingValue) -> Result<(), 
     }
 }
 
-fn set_line_ending(options: &mut DocumentOptions, value: SettingValue) -> Result<(), SettingError> {
+fn set_line_ending(
+    options: &mut DocumentOptions,
+    value: &SettingValue,
+) -> Result<(), SettingError> {
     match value {
         SettingValue::Enum(s) => match s.to_lowercase().as_str() {
             "lf" | "unix" => {
@@ -114,8 +122,7 @@ fn set_line_ending(options: &mut DocumentOptions, value: SettingValue) -> Result
                 Ok(())
             }
             _ => Err(SettingError::ValidationError(format!(
-                "Invalid line ending: {}. Expected 'lf' or 'crlf'",
-                s
+                "Invalid line ending: {s}. Expected 'lf' or 'crlf'"
             ))),
         },
         _ => Err(SettingError::ValidationError(
@@ -129,20 +136,19 @@ fn get_wrap(options: &DocumentOptions) -> SettingValue {
         None | Some(WrapMode::Off) => return SettingValue::Integer(0),
         Some(WrapMode::Expr(s)) => s,
     };
-    match expr.trim().parse::<usize>() {
-        Ok(n) => SettingValue::Integer(n),
-        Err(_) => SettingValue::Enum(expr.clone()),
-    }
+    expr.trim()
+        .parse::<usize>()
+        .map_or_else(|_| SettingValue::Enum(expr.clone()), SettingValue::Integer)
 }
 
-fn set_wrap(options: &mut DocumentOptions, value: SettingValue) -> Result<(), SettingError> {
+fn set_wrap(options: &mut DocumentOptions, value: &SettingValue) -> Result<(), SettingError> {
     let expr = match value {
-        SettingValue::Integer(0) => {
+        &SettingValue::Integer(0) => {
             options.wrap = Some(WrapMode::Off);
             return Ok(());
         }
-        SettingValue::Integer(n) => n.to_string(),
-        SettingValue::Enum(s) => s,
+        &SettingValue::Integer(n) => n.to_string(),
+        SettingValue::Enum(s) => s.clone(),
         _ => {
             return Err(SettingError::ValidationError(
                 "Expected integer or expression".to_string(),
@@ -154,7 +160,7 @@ fn set_wrap(options: &mut DocumentOptions, value: SettingValue) -> Result<(), Se
 }
 
 /// Document-specific settings
-/// LOCAL_SETTINGS
+/// `LOCAL_SETTINGS`
 const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
     SettingDescriptor {
         name: "number",
@@ -212,6 +218,7 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
     },
 ];
 
-pub fn create_document_settings_registry() -> SettingsRegistry<DocumentOptions> {
+#[must_use]
+pub const fn create_document_settings_registry() -> SettingsRegistry<DocumentOptions> {
     SettingsRegistry::new(DOCUMENT_SETTINGS)
 }

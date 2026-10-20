@@ -6,7 +6,7 @@ use crate::command_line::settings::registry::SettingsRegistry;
 use crate::floating_window::BorderChars;
 use crate::state::UserSettings;
 
-fn create_unicode_border() -> BorderChars {
+const fn create_unicode_border() -> BorderChars {
     BorderChars {
         top_left: '╭',
         top_right: '╮',
@@ -17,7 +17,7 @@ fn create_unicode_border() -> BorderChars {
     }
 }
 
-fn create_ascii_border() -> BorderChars {
+const fn create_ascii_border() -> BorderChars {
     BorderChars {
         top_left: '+',
         top_right: '+',
@@ -28,7 +28,7 @@ fn create_ascii_border() -> BorderChars {
     }
 }
 
-fn set_border_style(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+fn set_border_style(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
     match value {
         SettingValue::Enum(style) => {
             settings.default_border_chars = match style.as_str() {
@@ -48,10 +48,10 @@ fn set_border_style(settings: &mut UserSettings, value: SettingValue) -> Result<
 
 fn set_cmd_window_width_ratio(
     settings: &mut UserSettings,
-    value: SettingValue,
+    value: &SettingValue,
 ) -> Result<(), SettingError> {
     match value {
-        SettingValue::Float(f) => {
+        &SettingValue::Float(f) => {
             settings.command_line_window.width_ratio = f;
             Ok(())
         }
@@ -61,10 +61,10 @@ fn set_cmd_window_width_ratio(
 
 fn set_cmd_window_min_width(
     settings: &mut UserSettings,
-    value: SettingValue,
+    value: &SettingValue,
 ) -> Result<(), SettingError> {
     match value {
-        SettingValue::Integer(n) => {
+        &SettingValue::Integer(n) => {
             settings.command_line_window.min_width = n;
             Ok(())
         }
@@ -75,10 +75,10 @@ fn set_cmd_window_min_width(
 }
 fn set_clipboard_size(
     settings: &mut UserSettings,
-    value: SettingValue,
+    value: &SettingValue,
 ) -> Result<(), SettingError> {
     match value {
-        SettingValue::Integer(n) => {
+        &SettingValue::Integer(n) => {
             if n < 1 {
                 return Err(SettingError::ValidationError(
                     "clipboard.size must be at least 1".to_string(),
@@ -93,13 +93,13 @@ fn set_clipboard_size(
     }
 }
 
-fn get_clipboard_size(s: &UserSettings) -> SettingValue {
+const fn get_clipboard_size(s: &UserSettings) -> SettingValue {
     SettingValue::Integer(s.clipboard_ring_size)
 }
 
-fn set_poll_rate(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+fn set_poll_rate(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
     match value {
-        SettingValue::Integer(n) => {
+        &SettingValue::Integer(n) => {
             settings.poll_timeout_ms = n as u64;
             Ok(())
         }
@@ -111,10 +111,10 @@ fn set_poll_rate(settings: &mut UserSettings, value: SettingValue) -> Result<(),
 
 fn set_cmd_window_height(
     settings: &mut UserSettings,
-    value: SettingValue,
+    value: &SettingValue,
 ) -> Result<(), SettingError> {
     match value {
-        SettingValue::Integer(n) => {
+        &SettingValue::Integer(n) => {
             if n == 0 {
                 return Err(SettingError::ValidationError(
                     "height must be greater than 0".to_string(),
@@ -131,10 +131,10 @@ fn set_cmd_window_height(
 
 fn set_cmd_window_border(
     settings: &mut UserSettings,
-    value: SettingValue,
+    value: &SettingValue,
 ) -> Result<(), SettingError> {
     match value {
-        SettingValue::Bool(b) => {
+        &SettingValue::Bool(b) => {
             settings.command_line_window.border = b;
             Ok(())
         }
@@ -146,10 +146,10 @@ fn set_cmd_window_border(
 
 fn set_cmd_window_reverse_video(
     settings: &mut UserSettings,
-    value: SettingValue,
+    value: &SettingValue,
 ) -> Result<(), SettingError> {
     match value {
-        SettingValue::Bool(b) => {
+        &SettingValue::Bool(b) => {
             settings.command_line_window.reverse_video = b;
             Ok(())
         }
@@ -159,9 +159,9 @@ fn set_cmd_window_reverse_video(
     }
 }
 
-fn set_editor_bg(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+fn set_editor_bg(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
     match value {
-        SettingValue::Color(color) => {
+        &SettingValue::Color(color) => {
             settings.editor_bg = if color == crate::color::Color::Reset {
                 None
             } else {
@@ -173,9 +173,9 @@ fn set_editor_bg(settings: &mut UserSettings, value: SettingValue) -> Result<(),
     }
 }
 
-fn set_editor_fg(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+fn set_editor_fg(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
     match value {
-        SettingValue::Color(color) => {
+        &SettingValue::Color(color) => {
             settings.editor_fg = if color == crate::color::Color::Reset {
                 None
             } else {
@@ -187,30 +187,34 @@ fn set_editor_fg(settings: &mut UserSettings, value: SettingValue) -> Result<(),
     }
 }
 
-fn set_theme(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+fn set_theme(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
     match value {
-        SettingValue::Enum(theme_name) => {
-            if let Some(theme) = crate::color::Theme::by_name(&theme_name) {
-                theme.apply_to_settings(settings);
-                Ok(())
-            } else {
+        SettingValue::Enum(theme_name) => crate::color::Theme::by_name(theme_name).map_or_else(
+            || {
                 Err(SettingError::ValidationError(format!(
                     "Unknown theme: {}. Available themes: {}",
                     theme_name,
                     crate::color::Theme::available_themes().join(", ")
                 )))
-            }
-        }
+            },
+            |theme| {
+                theme.apply_to_settings(settings);
+                Ok(())
+            },
+        ),
         _ => Err(SettingError::ValidationError(
             "Expected theme name".to_string(),
         )),
     }
 }
 
-fn set_show_filename(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+fn set_show_filename(
+    settings: &mut UserSettings,
+    value: &SettingValue,
+) -> Result<(), SettingError> {
     match value {
-        SettingValue::Bool(b) => {
-            settings.status_line.show_filename = b;
+        &SettingValue::Bool(b) => {
+            settings.status_line.segments.show_filename = b;
             Ok(())
         }
         _ => Err(SettingError::ValidationError(
@@ -221,11 +225,11 @@ fn set_show_filename(settings: &mut UserSettings, value: SettingValue) -> Result
 
 fn set_show_dirty_indicator(
     settings: &mut UserSettings,
-    value: SettingValue,
+    value: &SettingValue,
 ) -> Result<(), SettingError> {
     match value {
-        SettingValue::Bool(b) => {
-            settings.status_line.show_dirty_indicator = b;
+        &SettingValue::Bool(b) => {
+            settings.status_line.segments.show_dirty_indicator = b;
             Ok(())
         }
         _ => Err(SettingError::ValidationError(
@@ -236,10 +240,10 @@ fn set_show_dirty_indicator(
 
 fn set_show_line_numbers(
     settings: &mut UserSettings,
-    value: SettingValue,
+    value: &SettingValue,
 ) -> Result<(), SettingError> {
     match value {
-        SettingValue::Bool(b) => {
+        &SettingValue::Bool(b) => {
             settings.show_line_numbers = b;
             Ok(())
         }
@@ -251,10 +255,10 @@ fn set_show_line_numbers(
 
 fn set_status_line_reverse_video(
     settings: &mut UserSettings,
-    value: SettingValue,
+    value: &SettingValue,
 ) -> Result<(), SettingError> {
     match value {
-        SettingValue::Bool(b) => {
+        &SettingValue::Bool(b) => {
             settings.status_line.reverse_video = b;
             Ok(())
         }
@@ -266,10 +270,10 @@ fn set_status_line_reverse_video(
 
 fn set_show_status_line(
     settings: &mut UserSettings,
-    value: SettingValue,
+    value: &SettingValue,
 ) -> Result<(), SettingError> {
     match value {
-        SettingValue::Bool(b) => {
+        &SettingValue::Bool(b) => {
             settings.status_line.show_status_line = b;
             Ok(())
         }
@@ -279,20 +283,20 @@ fn set_show_status_line(
     }
 }
 
-fn get_cmd_window_width_ratio(s: &UserSettings) -> SettingValue {
+const fn get_cmd_window_width_ratio(s: &UserSettings) -> SettingValue {
     SettingValue::Float(s.command_line_window.width_ratio)
 }
 
-fn get_cmd_window_min_width(s: &UserSettings) -> SettingValue {
+const fn get_cmd_window_min_width(s: &UserSettings) -> SettingValue {
     SettingValue::Integer(s.command_line_window.min_width)
 }
 
-fn get_cmd_window_height(s: &UserSettings) -> SettingValue {
+const fn get_cmd_window_height(s: &UserSettings) -> SettingValue {
     SettingValue::Integer(s.command_line_window.height)
 }
 
 fn get_poll_rate(s: &UserSettings) -> SettingValue {
-    SettingValue::Integer(s.poll_timeout_ms as usize)
+    SettingValue::Integer(usize::try_from(s.poll_timeout_ms).unwrap_or(usize::MAX))
 }
 
 fn get_editor_bg(s: &UserSettings) -> SettingValue {
@@ -303,9 +307,9 @@ fn get_editor_fg(s: &UserSettings) -> SettingValue {
     SettingValue::Color(s.editor_fg.unwrap_or(Color::Reset))
 }
 
-fn set_cursor_color(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+fn set_cursor_color(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
     match value {
-        SettingValue::Color(color) => {
+        &SettingValue::Color(color) => {
             settings.cursor_color = if color == Color::Reset {
                 None
             } else {
@@ -321,9 +325,9 @@ fn get_cursor_color(s: &UserSettings) -> SettingValue {
     SettingValue::Color(s.cursor_color.unwrap_or(Color::Reset))
 }
 
-fn set_cursor_speed(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+fn set_cursor_speed(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
     match value {
-        SettingValue::Float(f) => {
+        &SettingValue::Float(f) => {
             settings.cursor_speed = f;
             Ok(())
         }
@@ -331,16 +335,16 @@ fn set_cursor_speed(settings: &mut UserSettings, value: SettingValue) -> Result<
     }
 }
 
-fn get_cursor_speed(s: &UserSettings) -> SettingValue {
+const fn get_cursor_speed(s: &UserSettings) -> SettingValue {
     SettingValue::Float(s.cursor_speed)
 }
 
 fn set_equalize_proportional(
     settings: &mut UserSettings,
-    value: SettingValue,
+    value: &SettingValue,
 ) -> Result<(), SettingError> {
     match value {
-        SettingValue::Bool(b) => {
+        &SettingValue::Bool(b) => {
             settings.equalize_proportional = b;
             Ok(())
         }
@@ -350,10 +354,13 @@ fn set_equalize_proportional(
     }
 }
 
-fn set_lsp_debug_log(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+fn set_lsp_debug_log(
+    settings: &mut UserSettings,
+    value: &SettingValue,
+) -> Result<(), SettingError> {
     match value {
-        SettingValue::Bool(b) => {
-            settings.lsp_debug_log = b;
+        &SettingValue::Bool(b) => {
+            settings.lsp.debug_log = b;
             Ok(())
         }
         _ => Err(SettingError::ValidationError(
@@ -364,11 +371,11 @@ fn set_lsp_debug_log(settings: &mut UserSettings, value: SettingValue) -> Result
 
 fn set_lsp_virtual_text(
     settings: &mut UserSettings,
-    value: SettingValue,
+    value: &SettingValue,
 ) -> Result<(), SettingError> {
     match value {
-        SettingValue::Bool(b) => {
-            settings.lsp_virtual_text = b;
+        &SettingValue::Bool(b) => {
+            settings.lsp.virtual_text = b;
             Ok(())
         }
         _ => Err(SettingError::ValidationError(
@@ -379,11 +386,11 @@ fn set_lsp_virtual_text(
 
 fn set_lsp_diagnostic_tooltip(
     settings: &mut UserSettings,
-    value: SettingValue,
+    value: &SettingValue,
 ) -> Result<(), SettingError> {
     match value {
-        SettingValue::Bool(b) => {
-            settings.lsp_diagnostic_tooltip = b;
+        &SettingValue::Bool(b) => {
+            settings.lsp.diagnostic_tooltip = b;
             Ok(())
         }
         _ => Err(SettingError::ValidationError(
@@ -392,10 +399,10 @@ fn set_lsp_diagnostic_tooltip(
     }
 }
 
-fn set_ghost_cut(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+fn set_ghost_cut(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
     match value {
-        SettingValue::Bool(b) => {
-            settings.ghost_cut = b;
+        &SettingValue::Bool(b) => {
+            settings.editing.ghost_cut = b;
             Ok(())
         }
         _ => Err(SettingError::ValidationError(
@@ -406,11 +413,11 @@ fn set_ghost_cut(settings: &mut UserSettings, value: SettingValue) -> Result<(),
 
 fn set_persistent_undo(
     settings: &mut UserSettings,
-    value: SettingValue,
+    value: &SettingValue,
 ) -> Result<(), SettingError> {
     match value {
-        SettingValue::Bool(b) => {
-            settings.persistent_undo = b;
+        &SettingValue::Bool(b) => {
+            settings.undo.persistent = b;
             Ok(())
         }
         _ => Err(SettingError::ValidationError(
@@ -419,11 +426,11 @@ fn set_persistent_undo(
     }
 }
 
-fn set_undo_dir(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+fn set_undo_dir(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
     match value {
         SettingValue::Path(s) => {
             let s = s.trim();
-            settings.undo_dir = if s.is_empty() {
+            settings.undo.dir = if s.is_empty() {
                 None
             } else {
                 Some(crate::history::persist::expand_tilde(s))
@@ -436,7 +443,8 @@ fn set_undo_dir(settings: &mut UserSettings, value: SettingValue) -> Result<(), 
 
 fn get_undo_dir(s: &UserSettings) -> SettingValue {
     SettingValue::Path(
-        s.undo_dir
+        s.undo
+            .dir
             .as_deref()
             .map(|p| p.display().to_string())
             .unwrap_or_default(),
@@ -699,6 +707,6 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
 ];
 
 #[must_use]
-pub fn create_settings_registry() -> SettingsRegistry<UserSettings> {
+pub const fn create_settings_registry() -> SettingsRegistry<UserSettings> {
     SettingsRegistry::new(SETTINGS)
 }

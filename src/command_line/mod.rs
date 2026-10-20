@@ -1,12 +1,14 @@
 //! Command line management
-//! Handles rendering, cursor positioning, and command parsing for the command line input window
-
+//!
+//! Handles rendering, cursor positioning, and command parsing for the command line input window.
+//!
 //! Rendering only displays state (never mutates it) and only runs in Command
 //! mode; cursor position is derived from window dimensions and content.
 
 use crate::color::Color;
 use crate::floating_window::{BorderChars, FloatingWindow, WindowPosition, WindowStyle};
 use crate::layer::Layer;
+use crate::num::{f64_to_usize, usize_to_f64};
 use crate::state::CommandLineWindowSettings;
 use crate::viewport::Viewport;
 
@@ -44,9 +46,11 @@ impl CommandLine {
         } = options;
 
         // Calculate width based on settings: ratio of terminal width, clamped to min/max
-        let cmd_width = ((viewport.visible_cols() as f64 * window_settings.width_ratio) as usize)
-            .max(window_settings.min_width)
-            .min(viewport.visible_cols());
+        // Saturating float-to-usize; the `min` below caps the width.
+        let cmd_width =
+            f64_to_usize(usize_to_f64(viewport.visible_cols()) * window_settings.width_ratio)
+                .max(window_settings.min_width)
+                .min(viewport.visible_cols());
 
         let mut style = WindowStyle::default()
             .with_border(window_settings.border)
@@ -102,7 +106,10 @@ impl CommandLine {
         cmd_window.render_with_border_chars(layer, &[content_line], default_border_chars);
 
         // Calculate window position for cursor positioning
-        let window_pos = cmd_window.calculate_position(layer.rows() as u16, layer.cols() as u16);
+        let window_pos = cmd_window.calculate_position(
+            u16::try_from(layer.rows()).unwrap_or(u16::MAX),
+            u16::try_from(layer.cols()).unwrap_or(u16::MAX),
+        );
 
         // Pass offset to cursor calculation
         (window_pos.0, window_pos.1, cmd_width, offset)
@@ -120,15 +127,18 @@ impl CommandLine {
         let (window_row, window_col) = window_pos;
 
         // Content start position depends on border
-        let border_offset = if has_border { 1 } else { 0 };
-        let content_row = window_row + border_offset as u16;
+        let border_offset = usize::from(has_border);
+        let content_row = window_row + u16::from(has_border);
         let content_start_col = window_col as usize + border_offset;
 
         // Visual cursor position: start_col + prompt (1) + (cursor_pos - offset)
         let visual_index = cursor_pos.saturating_sub(offset);
         let visual_cursor_col = content_start_col + 1 + visual_index;
 
-        (content_row, visual_cursor_col as u16)
+        (
+            content_row,
+            u16::try_from(visual_cursor_col).unwrap_or(u16::MAX),
+        )
     }
 }
 

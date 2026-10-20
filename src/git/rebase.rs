@@ -12,27 +12,29 @@ pub enum RebaseVerb {
 }
 
 impl RebaseVerb {
-    pub fn as_str(self) -> &'static str {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
         match self {
-            RebaseVerb::Pick => "pick",
-            RebaseVerb::Squash => "squash",
-            RebaseVerb::Fixup => "fixup",
-            RebaseVerb::Reword => "reword",
-            RebaseVerb::Edit => "edit",
-            RebaseVerb::Drop => "drop",
+            Self::Pick => "pick",
+            Self::Squash => "squash",
+            Self::Fixup => "fixup",
+            Self::Reword => "reword",
+            Self::Edit => "edit",
+            Self::Drop => "drop",
         }
     }
 
     /// Parse a verb from its full word or git's single-letter abbreviation
     /// (`p`/`s`/`f`/`r`/`e`/`d`), case-insensitively.
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s.to_ascii_lowercase().as_str() {
-            "pick" | "p" => Some(RebaseVerb::Pick),
-            "squash" | "s" => Some(RebaseVerb::Squash),
-            "fixup" | "f" => Some(RebaseVerb::Fixup),
-            "reword" | "r" => Some(RebaseVerb::Reword),
-            "edit" | "e" => Some(RebaseVerb::Edit),
-            "drop" | "d" => Some(RebaseVerb::Drop),
+            "pick" | "p" => Some(Self::Pick),
+            "squash" | "s" => Some(Self::Squash),
+            "fixup" | "f" => Some(Self::Fixup),
+            "reword" | "r" => Some(Self::Reword),
+            "edit" | "e" => Some(Self::Edit),
+            "drop" | "d" => Some(Self::Drop),
             _ => None,
         }
     }
@@ -62,6 +64,7 @@ pub enum RebasePause {
 
 /// Build the initial todo list from `git log --format=<sha>\x1f<subject> base..head`
 /// oldest-first output (a rebase replays oldest to newest), all steps `Pick`.
+#[must_use]
 pub fn initial_todo_from_log(commits: &[crate::git::log::CommitSummary]) -> Vec<RebaseStep> {
     commits
         .iter()
@@ -76,11 +79,12 @@ pub fn initial_todo_from_log(commits: &[crate::git::log::CommitSummary]) -> Vec<
 
 /// Render a todo list as `<verb> <short-sha> <subject>` lines, git's own
 /// `rebase -i` visual format (we parse and execute it ourselves, not git).
+#[must_use]
 pub fn render_todo(steps: &[RebaseStep]) -> String {
     steps
         .iter()
         .map(|s| {
-            let short = &s.sha[..s.sha.len().min(8)];
+            let short = s.sha.get(..8).unwrap_or(s.sha.as_str());
             format!("{} {short} {}", s.verb.as_str(), s.subject)
         })
         .collect::<Vec<_>>()
@@ -88,6 +92,7 @@ pub fn render_todo(steps: &[RebaseStep]) -> String {
 }
 
 /// Parse an edited todo buffer back into steps. Unrecognized lines (bad verb, too few tokens, blank/comment lines) are skipped; a rebase todo, like a git status buffer, tolerates stray text without failing the whole parse. `sha` fields may be abbreviated; resolve with `resolve_short_shas` before executing.
+#[must_use]
 pub fn parse_todo(text: &str) -> Vec<RebaseStep> {
     text.lines()
         .filter_map(|line| {
@@ -105,6 +110,7 @@ pub fn parse_todo(text: &str) -> Vec<RebaseStep> {
 }
 
 /// Combines squash messages with a blank line and without an editor prompt.
+#[must_use]
 pub fn combine_squash_messages(into: &str, incoming: &str) -> String {
     let into = into.trim_end();
     let incoming = incoming.trim();

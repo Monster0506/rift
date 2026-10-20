@@ -4,6 +4,7 @@ use std::hint::black_box;
 use monster_rift::buffer::TextBuffer;
 
 fn buffer_insertion(c: &mut Criterion) {
+    static TEXT: &str = "The quick brown fox jumps over the lazy dog. ";
     let mut group = c.benchmark_group("buffer_insertion");
 
     // Benchmark single char insertion at end
@@ -16,11 +17,10 @@ fn buffer_insertion(c: &mut Criterion) {
                 }
             },
             criterion::BatchSize::SmallInput,
-        )
+        );
     });
 
     // Benchmark string insertion
-    static TEXT: &str = "The quick brown fox jumps over the lazy dog. ";
     group.throughput(Throughput::Bytes(TEXT.len() as u64));
     group.bench_function("insert_str_small", |b| {
         b.iter_batched(
@@ -29,7 +29,7 @@ fn buffer_insertion(c: &mut Criterion) {
                 buf.insert_str(black_box(TEXT)).unwrap();
             },
             criterion::BatchSize::SmallInput,
-        )
+        );
     });
 
     group.finish();
@@ -57,7 +57,7 @@ fn buffer_deletion(c: &mut Criterion) {
                 }
             },
             criterion::BatchSize::SmallInput,
-        )
+        );
     });
 
     group.finish();
@@ -79,10 +79,10 @@ fn buffer_access(c: &mut Criterion) {
     group.bench_function("iter_full", |b| {
         let buf = setup_large_buf();
         b.iter(|| {
-            for c in buf.iter() {
+            for c in &buf {
                 black_box(c);
             }
-        })
+        });
     });
 
     group.bench_function("get_line_bytes_random", |b| {
@@ -93,7 +93,7 @@ fn buffer_access(c: &mut Criterion) {
             // Pseudo-random access
             i = (i + 13) % total_lines;
             black_box(buf.get_line_bytes(i));
-        })
+        });
     });
 
     group.finish();
@@ -154,7 +154,7 @@ fn buffer_edit_latency(c: &mut Criterion) {
                 buf
             },
             criterion::BatchSize::SmallInput,
-        )
+        );
     });
 
     group.bench_function("insert_newline_mid", |b| {
@@ -168,7 +168,7 @@ fn buffer_edit_latency(c: &mut Criterion) {
                 buf
             },
             criterion::BatchSize::SmallInput,
-        )
+        );
     });
 
     group.bench_function("delete_char_mid", |b| {
@@ -181,7 +181,7 @@ fn buffer_edit_latency(c: &mut Criterion) {
                 buf
             },
             criterion::BatchSize::SmallInput,
-        )
+        );
     });
 
     group.finish();

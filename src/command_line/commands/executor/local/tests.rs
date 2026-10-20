@@ -6,6 +6,7 @@ use crate::state::State;
 
 #[test]
 fn test_execute_setlocal_line_ending() {
+    use crate::document::LineEnding;
     let mut state = State::new();
     // Default is LF
 
@@ -19,7 +20,6 @@ fn test_execute_setlocal_line_ending() {
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
 
     // Verify default
-    use crate::document::LineEnding;
     assert_eq!(document.options.line_ending, LineEnding::LF);
 
     let result = execute_local_command(

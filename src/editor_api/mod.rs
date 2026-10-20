@@ -14,6 +14,9 @@ pub trait EditorContext {
     fn active_document_mut(&mut self) -> Option<&mut Document>;
 
     /// Open a file
+    ///
+    /// # Errors
+    /// Returns an error if the existing document cannot be reopened, the undo file is invalid, or the parent directory is missing.
     fn open_file(&mut self, path: Option<String>, force: bool) -> Result<(), RiftError>;
 
     /// Spawn a background job
@@ -26,6 +29,9 @@ pub trait EditorContext {
     fn notify(&mut self, kind: crate::notification::NotificationType, message: String);
 
     /// Force a full redraw
+    ///
+    /// # Errors
+    /// Returns an error if the screen cannot be redrawn.
     fn force_redraw(&mut self) -> Result<(), RiftError>;
 
     /// Quit the editor

@@ -1,5 +1,5 @@
 //! Tests for test utilities
-//! These tests verify that MockTerminal works correctly
+//! These tests verify that `MockTerminal` works correctly
 
 use crate::term::TerminalBackend;
 use crate::test_utils::MockTerminal;

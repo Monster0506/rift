@@ -367,7 +367,7 @@ mod treesitter_tests {
             tree,
             source: src.as_bytes(),
         };
-        resolve(spec, &buf, 1, Some(ctx)).map(|r| (r.anchor, r.new_cursor, r.inclusive))
+        resolve(spec, &buf, 1, Some(&ctx)).map(|r| (r.anchor, r.new_cursor, r.inclusive))
     }
 
     #[test]
@@ -421,7 +421,7 @@ mod treesitter_tests {
         let src = "fn outer() {\n    foo();\n}\n";
         let tree = rust_tree(src);
         let r = res_ts(inner(ObjectKind::FunctionDef), &tree, src, 18).unwrap();
-        assert_eq!(&src[r.0..=r.1], "\n    foo();\n");
+        assert_eq!(src.get(r.0..=r.1), Some("\n    foo();\n"));
     }
 
     #[test]
@@ -429,7 +429,7 @@ mod treesitter_tests {
         let src = "fn outer() {\n    foo();\n}\n";
         let tree = rust_tree(src);
         let r = res_ts(around(ObjectKind::FunctionDef), &tree, src, 18).unwrap();
-        assert_eq!(&src[r.0..=r.1], "fn outer() {\n    foo();\n}");
+        assert_eq!(src.get(r.0..=r.1), Some("fn outer() {\n    foo();\n}"));
     }
 
     #[test]
@@ -437,7 +437,7 @@ mod treesitter_tests {
         let src = "struct Point { x: i32 }\n";
         let tree = rust_tree(src);
         let r = res_ts(inner(ObjectKind::Class), &tree, src, 16).unwrap();
-        assert_eq!(&src[r.0..=r.1], " x: i32 ");
+        assert_eq!(src.get(r.0..=r.1), Some(" x: i32 "));
     }
 
     #[test]
@@ -445,7 +445,7 @@ mod treesitter_tests {
         let src = "fn outer() {\n    let n = 1;\n}\n";
         let tree = rust_tree(src);
         let r = res_ts(inner(ObjectKind::Block), &tree, src, 18).unwrap();
-        assert_eq!(&src[r.0..=r.1], "\n    let n = 1;\n");
+        assert_eq!(src.get(r.0..=r.1), Some("\n    let n = 1;\n"));
     }
 
     #[test]
@@ -460,7 +460,10 @@ mod treesitter_tests {
         };
         let inner_cursor = src.find("foo()").unwrap();
         let r = res_ts(spec, &tree, src, inner_cursor).unwrap();
-        assert_eq!(&src[r.0..=r.1], "\n    if true {\n        foo();\n    }\n");
+        assert_eq!(
+            src.get(r.0..=r.1),
+            Some("\n    if true {\n        foo();\n    }\n")
+        );
     }
 
     #[test]
@@ -468,7 +471,7 @@ mod treesitter_tests {
         let src = "let n = 42;";
         let tree = rust_tree(src);
         let r = res_ts(inner(ObjectKind::Number), &tree, src, 9).unwrap();
-        assert_eq!(&src[r.0..=r.1], "42");
+        assert_eq!(src.get(r.0..=r.1), Some("42"));
     }
 
     #[test]
@@ -476,7 +479,7 @@ mod treesitter_tests {
         let src = "<div><p>hello</p></div>";
         let tree = html_tree(src);
         let r = res_ts(inner(ObjectKind::Tag), &tree, src, 9).unwrap();
-        assert_eq!(&src[r.0..=r.1], "hello");
+        assert_eq!(src.get(r.0..=r.1), Some("hello"));
     }
 
     #[test]
@@ -484,7 +487,7 @@ mod treesitter_tests {
         let src = "<div><p>hello</p></div>";
         let tree = html_tree(src);
         let r = res_ts(around(ObjectKind::Tag), &tree, src, 9).unwrap();
-        assert_eq!(&src[r.0..=r.1], "<p>hello</p>");
+        assert_eq!(src.get(r.0..=r.1), Some("<p>hello</p>"));
     }
 
     #[test]
@@ -500,6 +503,6 @@ mod treesitter_tests {
             kind: ObjectKind::Tag,
         };
         let r = res_ts(spec, &tree, src, 9).unwrap();
-        assert_eq!(&src[r.0..=r.1], "<div><p>hello</p></div>");
+        assert_eq!(src.get(r.0..=r.1), Some("<div><p>hello</p></div>"));
     }
 }

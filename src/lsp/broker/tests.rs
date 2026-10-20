@@ -4,7 +4,7 @@ fn req(id: u64, method: &str) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "method": method, "params": {}})
 }
 
-fn resp(id: u64, result: Value) -> Value {
+fn resp(id: u64, result: &Value) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "result": result})
 }
 
@@ -39,10 +39,10 @@ fn client_request_ids_are_remapped_and_mapped_back() {
     };
     let bid = fwd["id"].as_u64().unwrap();
 
-    let actions = s.on_server(resp(bid, json!({"contents": "hi"})));
+    let actions = s.on_server(resp(bid, &json!({"contents": "hi"})));
     assert_eq!(
         actions,
-        vec![Action::ToClient(resp(7, json!({"contents": "hi"})))],
+        vec![Action::ToClient(resp(7, &json!({"contents": "hi"})))],
         "response must carry the client's original id"
     );
 }
@@ -57,7 +57,7 @@ fn second_initialize_is_answered_from_cache_without_touching_the_server() {
         panic!("expected forward")
     };
     let bid = fwd["id"].as_u64().unwrap();
-    s.on_server(resp(bid, json!({"capabilities": {"hoverProvider": true}})));
+    s.on_server(resp(bid, &json!({"capabilities": {"hoverProvider": true}})));
 
     // It detaches; a new session attaches and initializes again.
     s.on_client_detach();
@@ -67,7 +67,7 @@ fn second_initialize_is_answered_from_cache_without_touching_the_server() {
         actions,
         vec![Action::ToClient(resp(
             1,
-            json!({"capabilities": {"hoverProvider": true}})
+            &json!({"capabilities": {"hoverProvider": true}})
         ))],
         "cached initialize result, nothing sent to the server"
     );
@@ -87,10 +87,10 @@ fn initialize_queued_while_first_is_in_flight_gets_answered_on_arrival() {
     s.on_client_attach();
     assert_eq!(s.on_client(req(9, "initialize")), vec![], "queued");
 
-    let actions = s.on_server(resp(bid, json!({"capabilities": {}})));
+    let actions = s.on_server(resp(bid, &json!({"capabilities": {}})));
     assert_eq!(
         actions,
-        vec![Action::ToClient(resp(9, json!({"capabilities": {}})))],
+        vec![Action::ToClient(resp(9, &json!({"capabilities": {}})))],
         "queued initialize answered once the first response lands"
     );
 }
@@ -102,7 +102,7 @@ fn shutdown_and_exit_never_reach_the_server() {
     let actions = s.on_client(req(5, "shutdown"));
     assert_eq!(
         actions,
-        vec![Action::ToClient(resp(5, Value::Null))],
+        vec![Action::ToClient(resp(5, &Value::Null))],
         "shutdown is answered locally"
     );
 
@@ -146,7 +146,7 @@ fn detach_closes_open_docs_and_answers_outstanding_server_requests() {
         "open doc must be closed on the server: {actions:?}"
     );
     assert!(
-        actions.contains(&Action::ToServer(resp(42, Value::Null))),
+        actions.contains(&Action::ToServer(resp(42, &Value::Null))),
         "outstanding server request must be unblocked: {actions:?}"
     );
 }
@@ -183,7 +183,7 @@ fn responses_for_a_dead_client_generation_are_dropped() {
     s.on_client_detach();
     s.on_client_attach();
     assert_eq!(
-        s.on_server(resp(bid, json!("late"))),
+        s.on_server(resp(bid, &json!("late"))),
         vec![],
         "a late response must not reach the wrong client"
     );
@@ -202,7 +202,7 @@ fn server_traffic_while_detached_is_dropped_or_answered() {
     }));
     assert_eq!(
         actions,
-        vec![Action::ToServer(resp(8, Value::Null))],
+        vec![Action::ToServer(resp(8, &Value::Null))],
         "server request answered null so it does not hang"
     );
 }
@@ -235,7 +235,7 @@ fn serve_acks_the_right_token_and_rejects_the_rest() {
         dir: dir.path().to_path_buf(),
         idle_timeout: Duration::from_millis(600),
     };
-    let handle = std::thread::spawn(move || serve(params));
+    let handle = std::thread::spawn(move || serve(&params));
 
     let desc_path = dir.path().join(format!("{key}.json"));
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -245,9 +245,11 @@ fn serve_acks_the_right_token_and_rejects_the_rest() {
                 break d;
             }
         }
-        if handle.is_finished() {
-            panic!("serve exited early: {:?}", handle.join());
-        }
+        assert!(
+            !handle.is_finished(),
+            "serve exited early: {:?}",
+            handle.join()
+        );
         assert!(Instant::now() < deadline, "descriptor never appeared");
         std::thread::sleep(Duration::from_millis(25));
     };
@@ -353,7 +355,7 @@ fn try_connect_clears_the_timeout_on_the_reader_handle_not_just_its_clone() {
     let desc = BrokerDescriptor {
         pid: std::process::id(),
         port: addr.port(),
-        token: token.clone(),
+        token,
     };
     let dir = tempfile::tempdir().unwrap();
     let desc_path = dir.path().join("test.json");

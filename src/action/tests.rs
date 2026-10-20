@@ -51,7 +51,7 @@ fn test_all_motions_debug_and_clone() {
     for motion in motions {
         let cloned = motion;
         assert_eq!(motion, cloned);
-        assert_eq!(format!("{:?}", motion), format!("{:?}", cloned));
+        assert_eq!(format!("{motion:?}"), format!("{:?}", cloned));
     }
 }
 
@@ -309,9 +309,7 @@ fn test_hierarchical_motion_string_mappings() {
         assert_eq!(
             action,
             Action::Editor(EditorAction::Move(*expected)),
-            "hierarchical string '{}' should map to {:?}",
-            key,
-            expected
+            "hierarchical string '{key}' should map to {expected:?}"
         );
     }
 }

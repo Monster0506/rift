@@ -2,23 +2,26 @@
 
 use super::diff::{DiffLineKind, Hunk};
 use crate::error::{ErrorType, RiftError};
+use std::fmt::Write as _;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
 /// Render `hunk` as a standalone unified-diff patch for `path`, suitable for `git apply`. A hunk never changes a file's path (renames are a whole-file operation elsewhere), so `path` is used verbatim on both sides. `is_new_file` selects the header `git apply --cached` needs to create a brand-new index entry for.
+#[must_use]
 pub fn render_patch(path: &str, hunk: &Hunk, is_new_file: bool) -> String {
     let mut out = String::new();
-    out.push_str(&format!("diff --git a/{path} b/{path}\n"));
+    let _ = writeln!(out, "diff --git a/{path} b/{path}");
     if is_new_file {
         out.push_str("new file mode 100644\n");
         out.push_str("--- /dev/null\n");
     } else {
-        out.push_str(&format!("--- a/{path}\n"));
+        let _ = writeln!(out, "--- a/{path}");
     }
-    out.push_str(&format!("+++ b/{path}\n"));
-    out.push_str(&format!(
-        "@@ -{},{} +{},{} @@{}\n",
+    let _ = writeln!(out, "+++ b/{path}");
+    let _ = writeln!(
+        out,
+        "@@ -{},{} +{},{} @@{}",
         hunk.old_start,
         hunk.old_lines,
         hunk.new_start,
@@ -28,7 +31,7 @@ pub fn render_patch(path: &str, hunk: &Hunk, is_new_file: bool) -> String {
         } else {
             format!(" {}", hunk.header)
         }
-    ));
+    );
     for line in &hunk.lines {
         let marker = match line.kind {
             DiffLineKind::Context => ' ',
@@ -95,6 +98,9 @@ fn apply_patch(repo_root: &Path, patch: &str, extra_args: &[&str]) -> Result<(),
 }
 
 /// Stages exactly `hunk` with `git apply --cached`. `is_new_file` emits a new-file patch header.
+///
+/// # Errors
+/// Returns `Err` when `git apply --cached` cannot be spawned or rejects the patch.
 pub fn stage_hunk(
     repo_root: &Path,
     path: &str,
@@ -109,6 +115,9 @@ pub fn stage_hunk(
 }
 
 /// Unstage exactly `hunk`, leaving the worktree untouched (`git apply --cached -R`).
+///
+/// # Errors
+/// Returns `Err` when `git apply --cached -R` cannot be spawned or rejects the patch.
 pub fn unstage_hunk(repo_root: &Path, path: &str, hunk: &Hunk) -> Result<(), RiftError> {
     apply_patch(
         repo_root,
@@ -119,6 +128,9 @@ pub fn unstage_hunk(repo_root: &Path, path: &str, hunk: &Hunk) -> Result<(), Rif
 
 /// Reverse-apply `hunk` from the worktree only (`git apply -R`), discarding
 /// it from an unstaged diff.
+///
+/// # Errors
+/// Returns `Err` when `git apply -R` cannot be spawned or rejects the patch.
 pub fn discard_hunk_worktree(repo_root: &Path, path: &str, hunk: &Hunk) -> Result<(), RiftError> {
     apply_patch(repo_root, &render_patch(path, hunk, false), &["-R"])
 }

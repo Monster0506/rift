@@ -13,29 +13,29 @@ impl SettingValue {
     pub fn to_display_string(&self) -> String {
         use crate::color::Color;
         match self {
-            SettingValue::Bool(b) => b.to_string(),
-            SettingValue::Integer(n) => n.to_string(),
-            SettingValue::Float(f) => f.to_string(),
-            SettingValue::Enum(s) | SettingValue::Path(s) => s.clone(),
-            SettingValue::Color(Color::Reset) => "none".to_string(),
-            SettingValue::Color(Color::Black) => "black".to_string(),
-            SettingValue::Color(Color::DarkGrey) => "darkgrey".to_string(),
-            SettingValue::Color(Color::Red) => "red".to_string(),
-            SettingValue::Color(Color::DarkRed) => "darkred".to_string(),
-            SettingValue::Color(Color::Green) => "green".to_string(),
-            SettingValue::Color(Color::DarkGreen) => "darkgreen".to_string(),
-            SettingValue::Color(Color::Yellow) => "yellow".to_string(),
-            SettingValue::Color(Color::DarkYellow) => "darkyellow".to_string(),
-            SettingValue::Color(Color::Blue) => "blue".to_string(),
-            SettingValue::Color(Color::DarkBlue) => "darkblue".to_string(),
-            SettingValue::Color(Color::Magenta) => "magenta".to_string(),
-            SettingValue::Color(Color::DarkMagenta) => "darkmagenta".to_string(),
-            SettingValue::Color(Color::Cyan) => "cyan".to_string(),
-            SettingValue::Color(Color::DarkCyan) => "darkcyan".to_string(),
-            SettingValue::Color(Color::White) => "white".to_string(),
-            SettingValue::Color(Color::Grey) => "grey".to_string(),
-            SettingValue::Color(Color::Ansi256(n)) => format!("ansi256({n})"),
-            SettingValue::Color(Color::Rgb { r, g, b }) => format!("#{r:02x}{g:02x}{b:02x}"),
+            Self::Bool(b) => b.to_string(),
+            Self::Integer(n) => n.to_string(),
+            Self::Float(f) => f.to_string(),
+            Self::Enum(s) | Self::Path(s) => s.clone(),
+            Self::Color(Color::Reset) => "none".to_string(),
+            Self::Color(Color::Black) => "black".to_string(),
+            Self::Color(Color::DarkGrey) => "darkgrey".to_string(),
+            Self::Color(Color::Red) => "red".to_string(),
+            Self::Color(Color::DarkRed) => "darkred".to_string(),
+            Self::Color(Color::Green) => "green".to_string(),
+            Self::Color(Color::DarkGreen) => "darkgreen".to_string(),
+            Self::Color(Color::Yellow) => "yellow".to_string(),
+            Self::Color(Color::DarkYellow) => "darkyellow".to_string(),
+            Self::Color(Color::Blue) => "blue".to_string(),
+            Self::Color(Color::DarkBlue) => "darkblue".to_string(),
+            Self::Color(Color::Magenta) => "magenta".to_string(),
+            Self::Color(Color::DarkMagenta) => "darkmagenta".to_string(),
+            Self::Color(Color::Cyan) => "cyan".to_string(),
+            Self::Color(Color::DarkCyan) => "darkcyan".to_string(),
+            Self::Color(Color::White) => "white".to_string(),
+            Self::Color(Color::Grey) => "grey".to_string(),
+            Self::Color(Color::Ansi256(n)) => format!("ansi256({n})"),
+            Self::Color(Color::Rgb { r, g, b }) => format!("#{r:02x}{g:02x}{b:02x}"),
         }
     }
 }
@@ -73,30 +73,30 @@ pub enum SettingError {
 impl std::fmt::Display for SettingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SettingError::ParseError(msg) => write!(f, "Parse error: {msg}"),
-            SettingError::ValidationError(msg) => write!(f, "Validation error: {msg}"),
-            SettingError::UnknownOption(name) => write!(f, "Unknown option: {name}"),
+            Self::ParseError(msg) => write!(f, "Parse error: {msg}"),
+            Self::ValidationError(msg) => write!(f, "Validation error: {msg}"),
+            Self::UnknownOption(name) => write!(f, "Unknown option: {name}"),
         }
     }
 }
 
 impl From<SettingError> for crate::error::RiftError {
     fn from(err: SettingError) -> Self {
-        use crate::error::{ErrorSeverity, ErrorType, RiftError};
+        use crate::error::{ErrorSeverity, ErrorType};
         match err {
-            SettingError::ParseError(msg) => RiftError {
+            SettingError::ParseError(msg) => Self {
                 severity: ErrorSeverity::Error,
                 kind: ErrorType::Parse,
                 code: "SETTING_PARSE_ERROR".to_string(),
                 message: msg,
             },
-            SettingError::ValidationError(msg) => RiftError {
+            SettingError::ValidationError(msg) => Self {
                 severity: ErrorSeverity::Error,
                 kind: ErrorType::Settings,
                 code: "SETTING_VALIDATION_ERROR".to_string(),
                 message: msg,
             },
-            SettingError::UnknownOption(name) => RiftError {
+            SettingError::UnknownOption(name) => Self {
                 severity: ErrorSeverity::Error,
                 kind: ErrorType::Settings,
                 code: "UNKNOWN_SETTING".to_string(),
@@ -106,7 +106,7 @@ impl From<SettingError> for crate::error::RiftError {
     }
 }
 
-pub type SettingSetter<T> = fn(&mut T, SettingValue) -> Result<(), SettingError>;
+pub type SettingSetter<T> = fn(&mut T, &SettingValue) -> Result<(), SettingError>;
 
 pub type SettingGetter<T> = fn(&T) -> SettingValue;
 

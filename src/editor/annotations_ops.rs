@@ -26,10 +26,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .interactive_at(cursor_byte)
                 .or_else(|| doc.annotations.interactive_at_line(line))
                 .and_then(|a| {
-                    let act = match verb {
-                        Some(v) => a.action_for_verb(v),
-                        None => a.default_action(),
-                    };
+                    let act = verb.map_or_else(|| a.default_action(), |v| a.action_for_verb(v));
                     act.map(|act| (a.id, a.kind.clone(), act.verb.clone()))
                 })
         };
@@ -39,42 +36,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         match self.dispatch_registry.resolve(&kind, &verb).cloned() {
             Some(Handler::Builtin(Builtin::ToggleChecked)) => {
-                // Prefer flipping a literal "[ ]"/"[x]" in the buffer at the anchor;
-                // fall back to a payload/overlay-only toggle when there is none.
-                let anchor = self
-                    .document_manager
-                    .active_document_mut()
-                    .and_then(|doc| doc.annotations.get(ann_id))
-                    .map(|a| match a.anchor {
-                        crate::annotations::Anchor::Point(p) => p.offset,
-                        crate::annotations::Anchor::Range(s, _) => s.offset,
-                        crate::annotations::Anchor::Line(_) => 0,
-                    });
-                let buffer_checked = anchor.and_then(|off| self.toggle_buffer_checkbox(off));
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    doc.annotations.update(ann_id, |a| {
-                        let checked = match buffer_checked {
-                            Some(c) => {
-                                a.payload.set("checked", crate::annotations::Value::Bool(c));
-                                c
-                            }
-                            None => {
-                                crate::annotations::registry::toggle_checked(&mut a.payload);
-                                a.payload
-                                    .get("checked")
-                                    .and_then(|v| v.as_bool())
-                                    .unwrap_or(false)
-                            }
-                        };
-                        // Keep any overlay glyph in sync with the new state.
-                        if let Some(ad) = a.presentation.as_mut().and_then(|p| p.adornment.as_mut())
-                        {
-                            ad.text = if checked { "[x]".into() } else { "[ ]".into() };
-                        }
-                    });
-                }
-                let _ = self.update_and_render();
-                true
+                self.toggle_checked_annotation(ann_id)
             }
             Some(Handler::Builtin(Builtin::FollowLink)) => {
                 let href = self
@@ -82,40 +44,13 @@ impl<T: TerminalBackend> Editor<T> {
                     .active_document_mut()
                     .and_then(|doc| doc.annotations.get(ann_id))
                     .and_then(|a| a.payload.get("href").and_then(|v| v.as_str()))
-                    .map(|s| s.to_string());
-                if let Some(href) = href {
+                    .map(std::string::ToString::to_string);
+                href.is_some_and(|href| {
                     let _ = self.open_file(Some(href), false);
                     true
-                } else {
-                    false
-                }
+                })
             }
-            Some(Handler::Builtin(Builtin::OpenEntry)) => {
-                // Descend into a directory entry or open a file entry, from the
-                // active directory buffer's path + the fs.entry payload.
-                let doc_id = self.active_document_id();
-                let info = self.document_manager.active_document_mut().and_then(|doc| {
-                    let dir = doc.directory_path()?.clone();
-                    let ann = doc.annotations.get(ann_id)?;
-                    let name = crate::annotations::payload::fs::name(&ann.payload)?.to_string();
-                    let is_dir =
-                        crate::annotations::payload::fs::is_dir(&ann.payload).unwrap_or(false);
-                    Some((dir, name, is_dir))
-                });
-                let Some((dir, name, is_dir)) = info else {
-                    return false;
-                };
-                let target = dir.join(&name);
-                if is_dir {
-                    self.reload_directory_buffer(doc_id, target);
-                } else if let Err(e) = self.open_file(Some(target.display().to_string()), false) {
-                    self.state.handle_error(e);
-                } else {
-                    self.state.clear_command_line();
-                }
-                let _ = self.force_full_redraw();
-                true
-            }
+            Some(Handler::Builtin(Builtin::OpenEntry)) => self.open_entry_annotation(ann_id),
             Some(Handler::Lua) => {
                 let ctx = {
                     let Some(doc) = self.document_manager.active_document_mut() else {
@@ -128,8 +63,7 @@ impl<T: TerminalBackend> Editor<T> {
                     };
                     let params = ann
                         .action_for_verb(&verb)
-                        .map(|a| a.params.clone())
-                        .unwrap_or(crate::annotations::Value::Null);
+                        .map_or(crate::annotations::Value::Null, |a| a.params.clone());
                     crate::plugin::AnnotationActionCtx {
                         annotation_id: ann_id.get(),
                         kind: kind.as_str().to_string(),
@@ -151,7 +85,7 @@ impl<T: TerminalBackend> Editor<T> {
                 if cmd.is_empty() {
                     return false;
                 }
-                self.execute_command_line(cmd);
+                self.execute_command_line(&cmd);
                 let _ = self.update_and_render();
                 true
             }
@@ -160,7 +94,68 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Flip a literal "[ ]"/"[x]" at byte offset `byte_off` in place (length-
+    fn toggle_checked_annotation(&mut self, ann_id: crate::annotations::AnnotationId) -> bool {
+        // Prefer flipping a literal "[ ]"/"[x]" in the buffer at the anchor;
+        // fall back to a payload/overlay-only toggle when there is none.
+        let anchor = self
+            .document_manager
+            .active_document_mut()
+            .and_then(|doc| doc.annotations.get(ann_id))
+            .map(|a| match a.anchor {
+                crate::annotations::Anchor::Point(p) => p.offset,
+                crate::annotations::Anchor::Range(s, _) => s.offset,
+                crate::annotations::Anchor::Line(_) => 0,
+            });
+        let buffer_checked = anchor.and_then(|off| self.toggle_buffer_checkbox(off));
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            doc.annotations.update(ann_id, |a| {
+                let checked = if let Some(c) = buffer_checked {
+                    a.payload.set("checked", crate::annotations::Value::Bool(c));
+                    c
+                } else {
+                    crate::annotations::registry::toggle_checked(&mut a.payload);
+                    a.payload
+                        .get("checked")
+                        .and_then(super::super::annotations::value::Value::as_bool)
+                        .unwrap_or(false)
+                };
+                // Keep any overlay glyph in sync with the new state.
+                if let Some(ad) = a.presentation.as_mut().and_then(|p| p.adornment.as_mut()) {
+                    ad.text = if checked { "[x]".into() } else { "[ ]".into() };
+                }
+            });
+        }
+        let _ = self.update_and_render();
+        true
+    }
+
+    fn open_entry_annotation(&mut self, ann_id: crate::annotations::AnnotationId) -> bool {
+        // Descend into a directory entry or open a file entry, from the
+        // active directory buffer's path + the fs.entry payload.
+        let doc_id = self.active_document_id();
+        let info = self.document_manager.active_document_mut().and_then(|doc| {
+            let dir = doc.directory_path()?.clone();
+            let ann = doc.annotations.get(ann_id)?;
+            let name = crate::annotations::payload::fs::name(&ann.payload)?.to_string();
+            let is_dir = crate::annotations::payload::fs::is_dir(&ann.payload).unwrap_or(false);
+            Some((dir, name, is_dir))
+        });
+        let Some((dir, name, is_dir)) = info else {
+            return false;
+        };
+        let target = dir.join(&name);
+        if is_dir {
+            self.reload_directory_buffer(doc_id, target);
+        } else if let Err(e) = self.open_file(Some(target.display().to_string()), false) {
+            self.state.handle_error(e);
+        } else {
+            self.state.clear_command_line();
+        }
+        let _ = self.force_full_redraw();
+        true
+    }
+
+    /// Flip a literal `[ ]`/`[x]` at byte offset `byte_off` in place (length-
     /// preserving, so markers hold), returning the new state, or None if absent.
     fn toggle_buffer_checkbox(&mut self, byte_off: usize) -> Option<bool> {
         let doc = self.document_manager.active_document_mut()?;

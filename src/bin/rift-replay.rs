@@ -5,12 +5,9 @@ use monster_rift::replay::{self, RunReport};
 use std::time::Duration;
 
 fn main() {
-    let path = match std::env::args().nth(1) {
-        Some(p) => p,
-        None => {
-            eprintln!("usage: rift-replay <script-file>");
-            std::process::exit(2);
-        }
+    let Some(path) = std::env::args().nth(1) else {
+        eprintln!("usage: rift-replay <script-file>");
+        std::process::exit(2);
     };
 
     let source = std::fs::read_to_string(&path).unwrap_or_else(|e| {
@@ -35,13 +32,14 @@ fn main() {
 
 #[cfg(feature = "perf_instrumentation")]
 fn print_span_alloc_stats() {
+    use monster_rift::num::u64_to_f64;
     let mut stats = monster_rift::perf::span_stats();
     if stats.is_empty() {
         return;
     }
     stats.sort_by(|a, b| {
-        let ta = a.1.avg_allocs * a.1.count as f64;
-        let tb = b.1.avg_allocs * b.1.count as f64;
+        let ta = a.1.avg_allocs * u64_to_f64(a.1.count);
+        let tb = b.1.avg_allocs * u64_to_f64(b.1.count);
         tb.partial_cmp(&ta).unwrap_or(std::cmp::Ordering::Equal)
     });
     println!("\nper-span allocs (by total allocs):");
@@ -65,14 +63,16 @@ fn print_span_alloc_stats() {
 }
 
 #[cfg(not(feature = "perf_instrumentation"))]
-fn print_span_alloc_stats() {}
+const fn print_span_alloc_stats() {}
 
 #[cfg(feature = "perf_instrumentation")]
 fn print_frame_stats() {
+    use monster_rift::num::u64_to_f64;
     let s = monster_rift::perf::frame_stats();
     if s.count == 0 {
         return;
     }
+    let count = u64_to_f64(s.count);
     println!("\nframe stats (update_and_render, n={}):", s.count);
     println!(
         "  time:   avg={:.3}ms min={:.3}ms max={:.3}ms",
@@ -106,23 +106,22 @@ fn print_frame_stats() {
     println!(
         "  cursor advances (render decorators, whole run): total={} avg/frame={:.1}",
         cursor_advances,
-        cursor_advances as f64 / s.count as f64
+        u64_to_f64(cursor_advances) / count
     );
     let (rows_painted, rows_skipped) = monster_rift::perf::row_paint_counts();
     let rows_total = rows_painted + rows_skipped;
     let skip_pct = if rows_total == 0 {
         0.0
     } else {
-        rows_skipped as f64 / rows_total as f64 * 100.0
+        u64_to_f64(rows_skipped) / u64_to_f64(rows_total) * 100.0
     };
     println!(
-        "  content rows: painted={} blit-skipped={} ({:.1}% skipped)",
-        rows_painted, rows_skipped, skip_pct
+        "  content rows: painted={rows_painted} blit-skipped={rows_skipped} ({skip_pct:.1}% skipped)"
     );
 }
 
 #[cfg(not(feature = "perf_instrumentation"))]
-fn print_frame_stats() {}
+const fn print_frame_stats() {}
 
 fn print_report(report: &RunReport) {
     if report.marks.is_empty() {
@@ -190,4 +189,4 @@ fn print_perf_summary(report: &RunReport) {
 }
 
 #[cfg(not(feature = "perf_instrumentation"))]
-fn print_perf_summary(_report: &RunReport) {}
+const fn print_perf_summary(_report: &RunReport) {}

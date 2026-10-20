@@ -7,7 +7,7 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn do_undo(&mut self, count: Option<u64>) {
         crate::perf_span!("history_undo", crate::perf::PerfFields::default());
         let doc = self.document_manager.active_document_mut().unwrap();
-        let count = count.unwrap_or(1) as usize;
+        let count = usize::try_from(count.unwrap_or(1)).unwrap_or(usize::MAX);
         let mut undone = 0;
         for _ in 0..count {
             if doc.undo() {
@@ -33,7 +33,7 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn do_redo(&mut self, count: Option<u64>) {
         crate::perf_span!("history_redo", crate::perf::PerfFields::default());
         let doc = self.document_manager.active_document_mut().unwrap();
-        let count = count.unwrap_or(1) as usize;
+        let count = usize::try_from(count.unwrap_or(1)).unwrap_or(usize::MAX);
         let mut redone = 0;
         for _ in 0..count {
             if doc.redo() {
@@ -62,7 +62,7 @@ impl<T: TerminalBackend> Editor<T> {
             Ok(()) => {
                 self.state.notify(
                     crate::notification::NotificationType::Info,
-                    format!("Jumped to edit #{}", seq),
+                    format!("Jumped to edit #{seq}"),
                 );
                 self.do_incremental_syntax_parse();
                 if let Some(doc_id) = self.document_manager.active_document_id() {
@@ -95,7 +95,7 @@ impl<T: TerminalBackend> Editor<T> {
         history.start_navigation(current_line);
         if let Some(entry) = history.prev_match() {
             let entry = entry.to_string();
-            self.state.command_line = entry.clone();
+            self.state.command_line.clone_from(&entry);
             // Clamp cursor to new line length
             self.state.command_line_cursor = self.state.command_line_cursor.min(entry.len());
         }
@@ -113,7 +113,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         if let Some(entry) = history.next_match() {
             let entry = entry.to_string();
-            self.state.command_line = entry.clone();
+            self.state.command_line.clone_from(&entry);
             // Clamp cursor to new line length
             self.state.command_line_cursor = self.state.command_line_cursor.min(entry.len());
         }

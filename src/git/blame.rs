@@ -110,6 +110,7 @@ fn parse_header(line: &str) -> Option<(String, u32, u32)> {
 }
 
 /// Parse the full stdout of `git blame --porcelain`. Malformed or truncated input degrades gracefully (missing fields default to empty/zero) rather than panicking; blame is advisory display data, not something worth failing the whole request over.
+#[must_use]
 pub fn parse_blame(input: &str) -> Vec<BlameLine> {
     let lines: Vec<&str> = input.lines().collect();
     let mut seen: HashMap<String, Arc<BlameCommit>> = HashMap::new();

@@ -9,6 +9,8 @@ const ALWAYS_LOADED_LIB: &str = "libSystem.B.dylib";
 
 #[test]
 fn arc_rawlib_outlives_original_storage_slot() {
+    // SAFETY: the C library is already loaded in this process, so opening it
+    // only bumps its refcount and runs no new initializers.
     let lib = unsafe { RawLib::open(ALWAYS_LOADED_LIB) }.expect("open a system library");
     let lib = Arc::new(lib);
 

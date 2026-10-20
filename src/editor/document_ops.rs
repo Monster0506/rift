@@ -1,3 +1,4 @@
+use super::file_ops::NativeReloadHandler;
 use super::Editor;
 use crate::action::{Action, EditorAction};
 use crate::document::DocumentId;
@@ -21,10 +22,7 @@ fn resolve_link_path_in(path_str: String, base_dir: Option<&std::path::Path>) ->
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn active_doc_is(&self, pred: impl Fn(&crate::document::Document) -> bool) -> bool {
-        self.document_manager
-            .active_document()
-            .map(pred)
-            .unwrap_or(false)
+        self.document_manager.active_document().is_some_and(pred)
     }
 
     pub(super) fn reject_read_only_edit(&mut self) {
@@ -34,6 +32,9 @@ impl<T: TerminalBackend> Editor<T> {
         );
     }
 
+    /// # Errors
+    /// Returns `Err` when the document is unknown, not in tab order, has unsaved changes
+    /// on a normal removal, or a replacement buffer cannot be created.
     pub fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
         self.remove_document_with_intent(id, crate::document::RemovalIntent::Normal)
     }
@@ -82,11 +83,7 @@ impl<T: TerminalBackend> Editor<T> {
         #[cfg(feature = "lsp")]
         {
             self.lsp_notify_close(id);
-            if self
-                .pending_goto_target
-                .map(|(d, ..)| d == id)
-                .unwrap_or(false)
-            {
+            if self.pending_goto_target.is_some_and(|(d, ..)| d == id) {
                 self.pending_goto_target = None;
             }
         }
@@ -100,18 +97,13 @@ impl<T: TerminalBackend> Editor<T> {
         if self.pending_text_changed == Some(id) {
             self.pending_text_changed = None;
         }
-        if self
-            .pending_cursor_moved
-            .map(|(d, ..)| d == id)
-            .unwrap_or(false)
-        {
+        if self.pending_cursor_moved.is_some_and(|(d, ..)| d == id) {
             self.pending_cursor_moved = None;
         }
         if self
             .search_highlights_synced
             .as_ref()
-            .map(|(d, ..)| *d == id)
-            .unwrap_or(false)
+            .is_some_and(|(d, ..)| *d == id)
         {
             self.search_highlights_synced = None;
         }
@@ -144,10 +136,14 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .active_document()
             .and_then(|d| d.path())
-            .and_then(|p| p.parent().map(|x| x.to_path_buf()));
+            .and_then(|p| p.parent().map(std::path::Path::to_path_buf));
         resolve_link_path_in(path_str, base.as_deref())
     }
 
+    /// # Errors
+    /// Returns `Err` when an undo file cannot be opened, a placeholder cannot be created,
+    /// the parent directory is missing, or the active document cannot be reloaded
+    /// (unsaved changes without `force`, or reload unsupported).
     pub fn open_file(&mut self, file_path: Option<String>, force: bool) -> Result<(), RiftError> {
         if let Some(path_str) = file_path {
             let path_str = self.resolve_link_path(path_str);
@@ -219,28 +215,7 @@ impl<T: TerminalBackend> Editor<T> {
             } else {
                 let kind_id = doc.buffer_kind_id();
                 let reload_dispatch = doc.descriptor().reload_dispatch;
-                match reload_dispatch {
-                    crate::document::ReloadDispatch::Native(_) => {
-                        let handler = self.native_reload_handlers.get(&kind_id).copied();
-                        match handler {
-                            Some(handler) => handler(self)?,
-                            None => {
-                                return Err(RiftError::new(
-                                    ErrorType::Execution,
-                                    crate::constants::errors::RELOAD_UNSUPPORTED,
-                                    crate::constants::errors::MSG_RELOAD_UNSUPPORTED,
-                                ))
-                            }
-                        }
-                    }
-                    crate::document::ReloadDispatch::Unsupported => {
-                        return Err(RiftError::new(
-                            ErrorType::Execution,
-                            crate::constants::errors::RELOAD_UNSUPPORTED,
-                            crate::constants::errors::MSG_RELOAD_UNSUPPORTED,
-                        ));
-                    }
-                }
+                self.reload_native_document(kind_id, reload_dispatch)?;
             }
         } else {
             return Err(RiftError::new(
@@ -257,6 +232,39 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
+    fn reload_native_document(
+        &mut self,
+        kind_id: crate::document::BufferKindId,
+        reload_dispatch: crate::document::ReloadDispatch,
+    ) -> Result<(), RiftError> {
+        match reload_dispatch {
+            crate::document::ReloadDispatch::Native(_) => {
+                let handler = self.native_reload_handlers.get(&kind_id).copied();
+                match handler {
+                    Some(NativeReloadHandler::Infallible(handler)) => handler(self),
+                    Some(NativeReloadHandler::Fallible(handler)) => handler(self)?,
+                    None => {
+                        return Err(RiftError::new(
+                            ErrorType::Execution,
+                            crate::constants::errors::RELOAD_UNSUPPORTED,
+                            crate::constants::errors::MSG_RELOAD_UNSUPPORTED,
+                        ))
+                    }
+                }
+            }
+            crate::document::ReloadDispatch::Unsupported => {
+                return Err(RiftError::new(
+                    ErrorType::Execution,
+                    crate::constants::errors::RELOAD_UNSUPPORTED,
+                    crate::constants::errors::MSG_RELOAD_UNSUPPORTED,
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// # Errors
+    /// Returns `Err` when the scratch document cannot be created or switched to.
     pub fn create_scratch_buffer(
         &mut self,
         title: String,
@@ -278,6 +286,11 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(id)
     }
 
+    /// # Errors
+    /// Returns `Err` when the terminal size cannot be read or the terminal document
+    /// cannot be created.
+    /// # Panics
+    /// Panics if the new terminal document has no handle (`terminal_emulation` builds).
     pub fn open_terminal(&mut self, shell_cmd: Option<String>) -> Result<(), RiftError> {
         let size = self
             .term
@@ -294,12 +307,11 @@ impl<T: TerminalBackend> Editor<T> {
         let terminal_cols = layouts
             .iter()
             .find(|l| l.window_id == focused_id)
-            .map(|l| l.cols)
-            .unwrap_or(size.cols as usize);
+            .map_or(size.cols as usize, |l| l.cols);
         let (doc, rx) = crate::document::Document::new_terminal(
             id,
-            terminal_rows as u16,
-            terminal_cols as u16,
+            u16::try_from(terminal_rows).unwrap_or(u16::MAX),
+            u16::try_from(terminal_cols).unwrap_or(u16::MAX),
             shell_cmd,
         )?;
 
@@ -354,7 +366,7 @@ impl<T: TerminalBackend> Editor<T> {
             Err(e) => {
                 self.state.notify(
                     crate::notification::NotificationType::Error,
-                    format!("Search error: {}", e),
+                    format!("Search error: {e}"),
                 );
                 false
             }

@@ -12,7 +12,8 @@ pub struct CacheWarmingJob {
 }
 
 impl CacheWarmingJob {
-    pub fn new(piece_table: PieceTable, revision: u64) -> Self {
+    #[must_use]
+    pub const fn new(piece_table: PieceTable, revision: u64) -> Self {
         Self {
             piece_table,
             revision,

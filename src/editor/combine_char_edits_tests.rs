@@ -61,15 +61,15 @@ fn delete_then_insert_same_position_combines_as_replace() {
 fn adjacent_multi_char_edits_of_different_sizes_combine() {
     // The `dd` shape: a bulk line-content delete followed by a separate
     // 1-char newline delete immediately to its left, in current coords.
-    let edits = [edit(1202714, 1362, 0), edit(1202713, 1, 0)];
-    assert_eq!(combine_char_edits(&edits), Some(edit(1202713, 1363, 0)));
+    let edits = [edit(1_202_714, 1362, 0), edit(1_202_713, 1, 0)];
+    assert_eq!(combine_char_edits(&edits), Some(edit(1_202_713, 1363, 0)));
 }
 
 #[test]
 fn adjacent_multi_char_inserts_of_different_sizes_combine() {
     // Two adjacent insertions restore a single deleted range.
-    let edits = [edit(1202713, 0, 1), edit(1202714, 0, 1362)];
-    assert_eq!(combine_char_edits(&edits), Some(edit(1202713, 0, 1363)));
+    let edits = [edit(1_202_713, 0, 1), edit(1_202_714, 0, 1362)];
+    assert_eq!(combine_char_edits(&edits), Some(edit(1_202_713, 0, 1363)));
 }
 
 #[test]

@@ -5,7 +5,7 @@ use crate::render::Color;
 use std::iter::Iterator;
 use unicode_width::UnicodeWidthChar;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderItem {
     pub char: Character,
     pub fg: Option<Color>,
@@ -17,6 +17,7 @@ pub struct RenderItem {
 }
 
 impl RenderItem {
+    #[must_use]
     pub fn new(char: Character, byte_offset: usize, len_bytes: usize, char_offset: usize) -> Self {
         Self {
             char,
@@ -37,10 +38,10 @@ pub struct LineSource<'a, I: Iterator<Item = Character>> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
-pub fn new_line_source<'a>(
-    buf: &'a TextBuffer,
+pub fn new_line_source(
+    buf: &TextBuffer,
     line_idx: usize,
-) -> LineSource<'a, impl Iterator<Item = Character> + 'a> {
+) -> LineSource<'_, impl Iterator<Item = Character> + '_> {
     let line_start = buf.line_index.get_start(line_idx).unwrap_or(0);
     let line_end = buf
         .line_index
@@ -59,7 +60,7 @@ pub fn new_line_source<'a>(
     }
 }
 
-impl<'a, I: Iterator<Item = Character>> Iterator for LineSource<'a, I> {
+impl<I: Iterator<Item = Character>> Iterator for LineSource<'_, I> {
     type Item = RenderItem;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -84,7 +85,7 @@ pub struct SyntaxDecorator<'a, I: Iterator<Item = RenderItem>> {
 }
 
 impl<'a, I: Iterator<Item = RenderItem>> SyntaxDecorator<'a, I> {
-    pub fn new(
+    pub const fn new(
         input: I,
         highlights: &'a [(std::ops::Range<usize>, u32)],
         idx: &'a mut usize,
@@ -101,7 +102,7 @@ impl<'a, I: Iterator<Item = RenderItem>> SyntaxDecorator<'a, I> {
     }
 }
 
-impl<'a, I: Iterator<Item = RenderItem>> Iterator for SyntaxDecorator<'a, I> {
+impl<I: Iterator<Item = RenderItem>> Iterator for SyntaxDecorator<'_, I> {
     type Item = RenderItem;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -146,7 +147,7 @@ pub struct InjectionDecorator<'a, I: Iterator<Item = RenderItem>> {
 }
 
 impl<'a, I: Iterator<Item = RenderItem>> InjectionDecorator<'a, I> {
-    pub fn new(
+    pub const fn new(
         input: I,
         highlights: &'a [(std::ops::Range<usize>, String)],
         idx: &'a mut usize,
@@ -161,7 +162,7 @@ impl<'a, I: Iterator<Item = RenderItem>> InjectionDecorator<'a, I> {
     }
 }
 
-impl<'a, I: Iterator<Item = RenderItem>> Iterator for InjectionDecorator<'a, I> {
+impl<I: Iterator<Item = RenderItem>> Iterator for InjectionDecorator<'_, I> {
     type Item = RenderItem;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -201,7 +202,7 @@ pub struct ColorDecorator<'a, I: Iterator<Item = RenderItem>> {
 }
 
 impl<'a, I: Iterator<Item = RenderItem>> ColorDecorator<'a, I> {
-    pub fn new(
+    pub const fn new(
         input: I,
         highlights: &'a [(std::ops::Range<usize>, Color)],
         idx: &'a mut usize,
@@ -214,7 +215,7 @@ impl<'a, I: Iterator<Item = RenderItem>> ColorDecorator<'a, I> {
     }
 }
 
-impl<'a, I: Iterator<Item = RenderItem>> Iterator for ColorDecorator<'a, I> {
+impl<I: Iterator<Item = RenderItem>> Iterator for ColorDecorator<'_, I> {
     type Item = RenderItem;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -245,7 +246,7 @@ pub struct PresentationDecorator<'a, I: Iterator<Item = RenderItem>> {
 }
 
 impl<'a, I: Iterator<Item = RenderItem>> PresentationDecorator<'a, I> {
-    pub fn new(
+    pub const fn new(
         input: I,
         styles: &'a [(std::ops::Range<usize>, crate::layer::CellStyle)],
         idx: &'a mut usize,
@@ -254,7 +255,7 @@ impl<'a, I: Iterator<Item = RenderItem>> PresentationDecorator<'a, I> {
     }
 }
 
-impl<'a, I: Iterator<Item = RenderItem>> Iterator for PresentationDecorator<'a, I> {
+impl<I: Iterator<Item = RenderItem>> Iterator for PresentationDecorator<'_, I> {
     type Item = RenderItem;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -286,12 +287,16 @@ pub struct TerminalColorDecorator<'a, I: Iterator<Item = RenderItem>> {
 }
 
 impl<'a, I: Iterator<Item = RenderItem>> TerminalColorDecorator<'a, I> {
-    pub fn new(input: I, colors: &'a [crate::color::CellColorSpan], idx: &'a mut usize) -> Self {
+    pub const fn new(
+        input: I,
+        colors: &'a [crate::color::CellColorSpan],
+        idx: &'a mut usize,
+    ) -> Self {
         Self { input, colors, idx }
     }
 }
 
-impl<'a, I: Iterator<Item = RenderItem>> Iterator for TerminalColorDecorator<'a, I> {
+impl<I: Iterator<Item = RenderItem>> Iterator for TerminalColorDecorator<'_, I> {
     type Item = RenderItem;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -325,7 +330,11 @@ pub struct SearchDecorator<'a, I: Iterator<Item = RenderItem>> {
 }
 
 impl<'a, I: Iterator<Item = RenderItem>> SearchDecorator<'a, I> {
-    pub fn new(input: I, matches: &'a [crate::search::SearchMatch], idx: &'a mut usize) -> Self {
+    pub const fn new(
+        input: I,
+        matches: &'a [crate::search::SearchMatch],
+        idx: &'a mut usize,
+    ) -> Self {
         Self {
             input,
             matches,
@@ -334,7 +343,7 @@ impl<'a, I: Iterator<Item = RenderItem>> SearchDecorator<'a, I> {
     }
 }
 
-impl<'a, I: Iterator<Item = RenderItem>> Iterator for SearchDecorator<'a, I> {
+impl<I: Iterator<Item = RenderItem>> Iterator for SearchDecorator<'_, I> {
     type Item = RenderItem;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -368,7 +377,7 @@ pub struct TabLayout<I: Iterator<Item = RenderItem>> {
 }
 
 impl<I: Iterator<Item = RenderItem>> TabLayout<I> {
-    pub fn new(input: I, tab_width: usize) -> Self {
+    pub const fn new(input: I, tab_width: usize) -> Self {
         Self {
             input,
             tab_width,
@@ -399,10 +408,9 @@ impl<I: Iterator<Item = RenderItem>> Iterator for TabLayout<I> {
             match item.char {
                 Character::Unicode(c) if c.is_ascii() => 1,
                 Character::Unicode(c) => UnicodeWidthChar::width(c).unwrap_or(0),
-                Character::Byte(_) => 4,    // \xNN
-                Character::Control(_) => 2, // ^C
-                Character::Newline => 0,
-                Character::Tab => 0, // handled above
+                Character::Byte(_) => 4,                  // \xNN
+                Character::Control(_) => 2,               // ^C
+                Character::Newline | Character::Tab => 0, // Tab handled above
             }
         };
 

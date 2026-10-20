@@ -25,7 +25,8 @@ pub struct GitStatusJob {
 }
 
 impl GitStatusJob {
-    pub fn new(doc_id: DocumentId, repo_root: PathBuf) -> Self {
+    #[must_use]
+    pub const fn new(doc_id: DocumentId, repo_root: PathBuf) -> Self {
         Self {
             doc_id,
             repo_root,
@@ -33,7 +34,8 @@ impl GitStatusJob {
         }
     }
 
-    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+    #[must_use]
+    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
         self.token = Some(token);
         self
     }
@@ -124,7 +126,8 @@ pub struct GitDiffJob {
 }
 
 impl GitDiffJob {
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         doc_id: DocumentId,
         repo_root: PathBuf,
         path: PathBuf,
@@ -141,7 +144,8 @@ impl GitDiffJob {
         }
     }
 
-    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+    #[must_use]
+    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
         self.token = Some(token);
         self
     }
@@ -248,7 +252,8 @@ pub struct GitBlameJob {
 }
 
 impl GitBlameJob {
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         doc_id: DocumentId,
         repo_root: PathBuf,
         path: PathBuf,
@@ -263,7 +268,8 @@ impl GitBlameJob {
         }
     }
 
-    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+    #[must_use]
+    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
         self.token = Some(token);
         self
     }
@@ -340,7 +346,8 @@ pub struct GitLogJob {
 }
 
 impl GitLogJob {
-    pub fn new(doc_id: DocumentId, repo_root: PathBuf, path: Option<PathBuf>) -> Self {
+    #[must_use]
+    pub const fn new(doc_id: DocumentId, repo_root: PathBuf, path: Option<PathBuf>) -> Self {
         Self {
             doc_id,
             repo_root,
@@ -349,7 +356,8 @@ impl GitLogJob {
         }
     }
 
-    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+    #[must_use]
+    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
         self.token = Some(token);
         self
     }
@@ -427,7 +435,8 @@ pub struct GitShowJob {
 }
 
 impl GitShowJob {
-    pub fn new(doc_id: DocumentId, repo_root: PathBuf, sha: String) -> Self {
+    #[must_use]
+    pub const fn new(doc_id: DocumentId, repo_root: PathBuf, sha: String) -> Self {
         Self {
             doc_id,
             repo_root,
@@ -436,7 +445,8 @@ impl GitShowJob {
         }
     }
 
-    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+    #[must_use]
+    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
         self.token = Some(token);
         self
     }
@@ -508,7 +518,8 @@ pub struct GitCommandJob {
 }
 
 impl GitCommandJob {
-    pub fn new(origin_doc_id: DocumentId, repo_root: PathBuf, args: String) -> Self {
+    #[must_use]
+    pub const fn new(origin_doc_id: DocumentId, repo_root: PathBuf, args: String) -> Self {
         Self {
             origin_doc_id,
             repo_root,
@@ -577,7 +588,8 @@ pub struct GitGutterDiffJob {
 }
 
 impl GitGutterDiffJob {
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         doc_id: DocumentId,
         revision: u64,
         repo_root: PathBuf,
@@ -594,7 +606,8 @@ impl GitGutterDiffJob {
         }
     }
 
-    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+    #[must_use]
+    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
         self.token = Some(token);
         self
     }

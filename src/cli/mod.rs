@@ -2,14 +2,14 @@
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Goto {
     LastLine,
     Line(usize),
 }
 
 /// Parsed CLI arguments.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct Args {
     pub file: Option<String>,
     pub goto: Option<Goto>,
@@ -22,23 +22,12 @@ pub struct Args {
     pub lsp_broker: Option<String>,
 }
 
-pub fn parse() -> Args {
+pub const USAGE: &str = "Usage: rift [+] [+N] [+/pattern] [-c cmd] [--cmd cmd] [-v|--version] [--daemon] [-d|--detach] [--connect [user@]host] [--list-sessions] [file]";
+
+pub fn parse() -> Result<Option<Args>, String> {
     let raw: Vec<String> = std::env::args().skip(1).collect();
     let strs: Vec<&str> = raw.iter().map(String::as_str).collect();
-    match parse_args(&strs) {
-        Ok(None) => {
-            println!("rift v{VERSION}");
-            std::process::exit(0);
-        }
-        Ok(Some(args)) => args,
-        Err(e) => {
-            eprintln!("rift: {e}");
-            eprintln!(
-                "Usage: rift [+] [+N] [+/pattern] [-c cmd] [--cmd cmd] [-v|--version] [--daemon] [-d|--detach] [--connect [user@]host] [--list-sessions] [file]"
-            );
-            std::process::exit(1);
-        }
-    }
+    parse_args(&strs)
 }
 
 pub fn parse_args(args: &[&str]) -> Result<Option<Args>, String> {

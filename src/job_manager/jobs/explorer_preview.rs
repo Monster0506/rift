@@ -37,7 +37,8 @@ pub struct ExplorerPreviewJob {
 }
 
 impl ExplorerPreviewJob {
-    pub fn new(right_doc_id: DocumentId, path: PathBuf, show_hidden: bool) -> Self {
+    #[must_use]
+    pub const fn new(right_doc_id: DocumentId, path: PathBuf, show_hidden: bool) -> Self {
         Self {
             right_doc_id,
             path,
@@ -46,7 +47,8 @@ impl ExplorerPreviewJob {
         }
     }
 
-    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+    #[must_use]
+    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
         self.token = Some(token);
         self
     }
@@ -126,17 +128,20 @@ impl Job for ExplorerPreviewJob {
                     _ => ("<corrupt undo file>".to_string(), None),
                 }
             } else {
-                let text = match prefix {
-                    Err(_) => "<cannot open file>".to_string(),
-                    Ok(bytes) => match decode_preview_text(&bytes) {
-                        Some(s) => s
-                            .lines()
-                            .take(FILE_PREVIEW_LINES)
-                            .collect::<Vec<_>>()
-                            .join("\n"),
-                        None => "<binary file>".to_string(),
+                let text = prefix.map_or_else(
+                    |_| "<cannot open file>".to_string(),
+                    |bytes| {
+                        decode_preview_text(&bytes).map_or_else(
+                            || "<binary file>".to_string(),
+                            |s| {
+                                s.lines()
+                                    .take(FILE_PREVIEW_LINES)
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            },
+                        )
                     },
-                };
+                );
                 (text, None)
             };
 

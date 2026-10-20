@@ -55,7 +55,11 @@ impl<T: TerminalBackend> Editor<T> {
             self.job_manager.cancel_job(job_id);
         }
 
-        let Some(rel_path) = path.strip_prefix(&repo_root).ok().map(|p| p.to_path_buf()) else {
+        let Some(rel_path) = path
+            .strip_prefix(&repo_root)
+            .ok()
+            .map(std::path::Path::to_path_buf)
+        else {
             return;
         };
         let buffer_text: String = {
@@ -93,7 +97,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(cached) = self.git_gutter_repo_cache.get(&doc_id) {
             return cached.clone();
         }
-        let base = path.parent().unwrap_or(std::path::Path::new("."));
+        let base = path.parent().unwrap_or_else(|| std::path::Path::new("."));
         // Canonicalize through the same backend `Document::path()` uses (on Windows, `git rev-parse --show-toplevel`'s plain path and `std::fs::canonicalize`'s `\\?\`-prefixed form otherwise fail to `strip_prefix` against each other even when they name the same dir).
         let root = crate::git::discover_repo(base)
             .ok()

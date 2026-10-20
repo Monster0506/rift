@@ -33,7 +33,7 @@ fn test_styled_line_per_char() {
         StyledChar::new(b'h', ColorStyle::fg(Color::Red)),
         StyledChar::new(b'e', ColorStyle::fg(Color::Blue)),
     ];
-    let line = StyledLine::per_char(chars.clone());
+    let line = StyledLine::per_char(chars);
     assert_eq!(line.len(), 2);
     assert_eq!(line.as_bytes(), b"he".to_vec());
 }
@@ -45,7 +45,7 @@ fn test_styled_line_per_span() {
         ColorSpan::new(0, 5, ColorStyle::fg(Color::Red)),
         ColorSpan::new(6, 11, ColorStyle::fg(Color::Blue)),
     ];
-    let line = StyledLine::per_span(text.clone(), spans);
+    let line = StyledLine::per_span(text, spans);
     assert_eq!(line.len(), 11);
     assert_eq!(line.get_style_at(0).fg, Some(Color::Red));
     assert_eq!(line.get_style_at(6).fg, Some(Color::Blue));

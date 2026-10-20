@@ -273,8 +273,7 @@ fn test_complete_buffer_no_ls_alias() {
 #[test]
 fn test_complete_vsplit_subcommands() {
     let result = complete_subcommand("vsplit", "");
-    let names: Vec<&str> = result.candidates.iter().map(|c| c.text.as_str()).collect();
-    assert!(names.contains(&"down"));
+    assert!(result.candidates.iter().any(|c| c.text == "down"));
 }
 
 #[test]

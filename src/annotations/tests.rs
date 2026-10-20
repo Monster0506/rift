@@ -610,11 +610,11 @@ fn test_adornment_falls_back_to_dark_grey() {
 /// a from-scratch rebuild, checked against a hand-computed expectation.
 #[test]
 fn test_resync_index_matches_full_rebuild_after_shift_edits() {
-    let mut store = AnnotationStore::new();
-    let mut ids = Vec::new();
     // Start well past the edit point so every marker offset strictly exceeds
     // it, giving a uniform shift with no left-gravity boundary case.
     const BASE: usize = 100;
+    let mut store = AnnotationStore::new();
+    let mut ids = Vec::new();
     for i in 0..20 {
         let start = BASE + i * 10;
         let mut a = Annotation::new(
@@ -855,7 +855,7 @@ fn test_viewport_restricted_queries_exclude_offscreen_annotations() {
             AnnotationOwner::User,
         )
         .with_presentation(Presentation::with_style(StyleOverride {
-            underline: true,
+            attrs: crate::layer::CellAttrs::UNDERLINE,
             ..Default::default()
         })),
     );
@@ -866,7 +866,7 @@ fn test_viewport_restricted_queries_exclude_offscreen_annotations() {
             AnnotationOwner::User,
         )
         .with_presentation(Presentation::with_style(StyleOverride {
-            bold: true,
+            attrs: crate::layer::CellAttrs::BOLD,
             ..Default::default()
         })),
     );
@@ -914,7 +914,7 @@ fn test_revision_unchanged_on_true_noop_calls() {
     store.undo_line_inserted(100);
     store.on_edit(3, 3, 3);
     store.update(crate::annotations::AnnotationId::new(999), |a| {
-        a.visible = false
+        a.visible = false;
     }); // no such id
 
     assert_eq!(

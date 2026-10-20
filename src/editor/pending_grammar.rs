@@ -50,21 +50,18 @@ impl<T: TerminalBackend> Editor<T> {
         match grammar {
             PendingGrammar::ReplaceChar => {
                 if let Some(ch) = key.text() {
-                    if !self.try_run_set_aware_replace_char(ch) {
+                    if self.try_run_set_aware_replace_char(ch) {
+                        self.finish_region_build(Some(Action::Editor(
+                            EditorAction::ReplaceCharPending,
+                        )));
+                    } else {
                         let count = if self.pending_count > 0 {
                             self.pending_count
                         } else {
                             1
                         };
                         let command = Command::ReplaceChar(ch, count);
-                        let result = self.execute_buffer_command(command);
-                        if result && !self.dot_repeat.is_replaying() {
-                            self.dot_repeat.record_single(command);
-                        }
-                    } else {
-                        self.finish_region_build(Some(Action::Editor(
-                            EditorAction::ReplaceCharPending,
-                        )));
+                        self.execute_and_record(command);
                     }
                 }
                 self.pending_count = 0;
@@ -91,39 +88,15 @@ impl<T: TerminalBackend> Editor<T> {
                     self.pending_count = 0;
                 }
             },
-            PendingGrammar::SurroundVerb { count } => {
-                match key.text() {
-                    Some('d') => {
-                        let count = if count > 0 { count } else { 1 };
-                        self.pending_grammar = Some(PendingGrammar::DeleteSurround { count });
-                    }
-                    Some('c') => {
-                        let count = if count > 0 { count } else { 1 };
-                        self.pending_grammar = Some(PendingGrammar::ChangeSurroundFrom { count });
-                    }
-                    Some('g') => {
-                        let delim_count = if count > 0 { count } else { 1 };
-                        self.pending_operator =
-                            Some(super::PendingOperator::SurroundAdd(delim_count));
-                        self.set_mode(Mode::OperatorPending);
-                    }
-                    _ => {
-                        self.set_mode(Mode::Normal);
-                    }
-                }
-                self.pending_count = 0;
-            }
+            PendingGrammar::SurroundVerb { count } => self.advance_surround_verb(count, key),
             PendingGrammar::DeleteSurround { count } => {
                 self.set_mode(Mode::Normal);
                 if let Some(ch) = key.text() {
-                    if !self.try_run_set_aware_delete_surround(ch, count) {
-                        let command = Command::DeleteSurround(ch, count);
-                        let result = self.execute_buffer_command(command);
-                        if result && !self.dot_repeat.is_replaying() {
-                            self.dot_repeat.record_single(command);
-                        }
-                    } else {
+                    if self.try_run_set_aware_delete_surround(ch, count) {
                         self.finish_region_build(None);
+                    } else {
+                        let command = Command::DeleteSurround(ch, count);
+                        self.execute_and_record(command);
                     }
                 }
                 self.pending_count = 0;
@@ -139,14 +112,11 @@ impl<T: TerminalBackend> Editor<T> {
             PendingGrammar::ChangeSurroundTo { from, count } => {
                 self.set_mode(Mode::Normal);
                 if let Some(to) = key.text() {
-                    if !self.try_run_set_aware_change_surround(from, to, count) {
-                        let command = Command::ChangeSurround(from, to, count);
-                        let result = self.execute_buffer_command(command);
-                        if result && !self.dot_repeat.is_replaying() {
-                            self.dot_repeat.record_single(command);
-                        }
-                    } else {
+                    if self.try_run_set_aware_change_surround(from, to, count) {
                         self.finish_region_build(None);
+                    } else {
+                        let command = Command::ChangeSurround(from, to, count);
+                        self.execute_and_record(command);
                     }
                 }
                 self.pending_count = 0;
@@ -158,20 +128,46 @@ impl<T: TerminalBackend> Editor<T> {
             } => {
                 self.set_mode(Mode::Normal);
                 if let Some(ch) = key.text() {
-                    if !self.try_run_set_aware_add_surround(ch, delim_count) {
-                        let command = Command::AddSurround(motion, count, ch, delim_count);
-                        let result = self.execute_buffer_command(command);
-                        if result && !self.dot_repeat.is_replaying() {
-                            self.dot_repeat.record_single(command);
-                        }
-                    } else {
+                    if self.try_run_set_aware_add_surround(ch, delim_count) {
                         self.finish_region_build(Some(Action::Editor(
                             EditorAction::AddSurroundToSet { ch, delim_count },
                         )));
+                    } else {
+                        let command = Command::AddSurround(motion, count, ch, delim_count);
+                        self.execute_and_record(command);
                     }
                 }
                 self.pending_count = 0;
             }
+        }
+    }
+
+    fn advance_surround_verb(&mut self, count: usize, key: Key) {
+        match key.text() {
+            Some('d') => {
+                let count = if count > 0 { count } else { 1 };
+                self.pending_grammar = Some(PendingGrammar::DeleteSurround { count });
+            }
+            Some('c') => {
+                let count = if count > 0 { count } else { 1 };
+                self.pending_grammar = Some(PendingGrammar::ChangeSurroundFrom { count });
+            }
+            Some('g') => {
+                let delim_count = if count > 0 { count } else { 1 };
+                self.pending_operator = Some(super::PendingOperator::SurroundAdd(delim_count));
+                self.set_mode(Mode::OperatorPending);
+            }
+            _ => {
+                self.set_mode(Mode::Normal);
+            }
+        }
+        self.pending_count = 0;
+    }
+
+    fn execute_and_record(&mut self, command: Command) {
+        let result = self.execute_buffer_command(command);
+        if result && !self.dot_repeat.is_replaying() {
+            self.dot_repeat.record_single(command);
         }
     }
 }

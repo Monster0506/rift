@@ -67,7 +67,7 @@ pub struct RiftError {
     pub severity: ErrorSeverity,
     /// What kind of error occurred
     pub kind: ErrorType,
-    /// Machine-readable error code (e.g., "E001", "FILE_NOT_FOUND")
+    /// Machine-readable error code (e.g., "E001", "`FILE_NOT_FOUND`")
     pub code: String,
     /// Human-readable description
     pub message: String,
@@ -105,6 +105,7 @@ impl RiftError {
     }
 
     /// Check if the message contains a substring (useful for tests)
+    #[must_use]
     pub fn contains_msg(&self, sub: &str) -> bool {
         self.message.contains(sub)
     }
@@ -143,7 +144,7 @@ impl From<std::io::Error> for RiftError {
 /// Result alias for Rift operations
 pub type Result<T> = std::result::Result<T, RiftError>;
 
-/// Helper trait to convert various error types into RiftError
+/// Helper trait to convert various error types into `RiftError`
 pub trait ToRiftError {
     fn to_rift_error(self) -> RiftError;
 }

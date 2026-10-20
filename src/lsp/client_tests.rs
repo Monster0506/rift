@@ -11,7 +11,7 @@ impl LspClient {
 
         Self {
             language: "test".to_string(),
-            _process: None,
+            process: None,
             writer_tx,
             _writer_thread: writer_thread,
             next_id: 1,
@@ -25,13 +25,12 @@ impl LspClient {
 
     /// OS process id of the server, for tests verifying it doesn't leak.
     pub(crate) fn pid(&self) -> u32 {
-        self._process.as_ref().expect("stdio client").id()
+        self.process.as_ref().expect("stdio client").id()
     }
 }
 
 fn msg(id: Option<Value>, method: Option<&str>) -> JsonRpcMessage {
     JsonRpcMessage {
-        jsonrpc: "2.0".to_string(),
         id,
         method: method.map(str::to_string),
         params: Some(Value::Null),

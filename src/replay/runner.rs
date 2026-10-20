@@ -58,6 +58,7 @@ pub struct RunReport {
 impl RunReport {
     /// Latency percentiles across every scripted keypress, or `None` if the
     /// script never typed anything.
+    #[must_use]
     pub fn tick_percentiles(&self) -> Option<Percentiles> {
         if self.ticks.is_empty() {
             return None;
@@ -65,7 +66,7 @@ impl RunReport {
         let mut sorted: Vec<Duration> = self.ticks.iter().map(|t| t.duration).collect();
         sorted.sort();
         let n = sorted.len();
-        let avg = sorted.iter().sum::<Duration>() / n as u32;
+        let avg = sorted.iter().sum::<Duration>() / u32::try_from(n).unwrap_or(u32::MAX);
         Some(Percentiles {
             avg,
             p50: sorted[n / 2],
@@ -77,6 +78,7 @@ impl RunReport {
     /// Perf spans from every mark, grouped by name and sorted by total time
     /// descending, biggest contributors to the run first.
     #[cfg(feature = "perf_instrumentation")]
+    #[must_use]
     pub fn perf_summary(&self) -> Vec<PerfSpanSummary> {
         use std::collections::HashMap;
 
@@ -97,7 +99,7 @@ impl RunReport {
                     name,
                     count: n,
                     total,
-                    avg: total / n as u32,
+                    avg: total / u32::try_from(n).unwrap_or(u32::MAX),
                     p95: durations[(n * 95 / 100).min(n - 1)],
                     max: durations[n - 1],
                 }
@@ -114,6 +116,12 @@ const IDLE_POLL_MS: u64 = 5;
 
 /// Run `ops` against a fresh headless `Editor`, encoding output through
 /// `writer` via the real `CrosstermBackend` serialization path.
+///
+/// # Errors
+/// Returns the `RiftError` from the first op that fails to run.
+///
+/// # Panics
+/// Panics only if `start` fails to install the editor, an internal invariant.
 pub fn run<W: Write>(ops: &[ScriptOp], writer: W) -> Result<RunReport, RiftError> {
     let mut rows = DEFAULT_ROWS;
     let mut cols = DEFAULT_COLS;
@@ -151,7 +159,7 @@ pub fn run<W: Write>(ops: &[ScriptOp], writer: W) -> Result<RunReport, RiftError
                 ));
             }
             ScriptOp::Keys(keys) => {
-                ed.term.push_keys(keys.iter().cloned());
+                ed.term.push_keys(keys.iter().copied());
                 for key in keys {
                     let started = Instant::now();
                     ed.tick()?;
@@ -200,8 +208,7 @@ fn drain_background_jobs<W: Write>(ed: &mut Editor<ReplayBackend<W>>, timeout: D
     while ed.job_manager.any_job_thread_alive() {
         if start.elapsed() >= timeout {
             eprintln!(
-                "rift-replay: gave up waiting for background jobs after {:?} - report may still undercount in-flight work",
-                timeout
+                "rift-replay: gave up waiting for background jobs after {timeout:?} - report may still undercount in-flight work"
             );
             return;
         }
@@ -224,7 +231,7 @@ fn start<W: Write>(
     }
     let writer = writer.take().expect("writer consumed at most once");
     let backend = ReplayBackend::new(writer, rows, cols);
-    *editor = Some(Editor::with_file(backend, open_path.take())?);
+    *editor = Some(Editor::with_file(backend, open_path.take().as_deref())?);
     Ok(())
 }
 

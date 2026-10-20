@@ -137,7 +137,7 @@ fn test_multiple_aliases() {
     for alias in &["q", "exit", "bye"] {
         match registry.match_command(alias) {
             MatchResult::Exact(name) => assert_eq!(name, "quit"),
-            _ => panic!("Expected exact match for alias '{}'", alias),
+            _ => panic!("Expected exact match for alias '{alias}'"),
         }
     }
 }

@@ -75,7 +75,7 @@ fn char_bytes(c: char, mods: Mods) -> Vec<u8> {
 }
 
 /// Control byte for Ctrl+`c`; digits and other symbols have none.
-fn ctrl_byte(c: char) -> Option<u8> {
+const fn ctrl_byte(c: char) -> Option<u8> {
     match c.to_ascii_lowercase() {
         'a'..='z' | '[' | '\\' | ']' | '^' | '_' => Some(c.to_ascii_lowercase() as u8 & CTRL_MASK),
         ' ' | '@' => Some(0),
@@ -85,7 +85,7 @@ fn ctrl_byte(c: char) -> Option<u8> {
 }
 
 /// xterm modifier parameter: 1 + shift(1) + alt(2) + ctrl(4).
-fn mod_param(mods: Mods) -> u8 {
+const fn mod_param(mods: Mods) -> u8 {
     let mut param = 1;
     if mods.contains(Mods::SHIFT) {
         param += 1;

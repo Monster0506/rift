@@ -9,7 +9,7 @@ fn test_explorer_toggle_hidden_flips_show_hidden() {
     let mut editor = create_editor();
 
     let tmp = std::env::temp_dir();
-    editor.open_explorer(tmp.clone());
+    editor.open_explorer(tmp);
 
     let layout = editor
         .panel_layout
@@ -120,10 +120,10 @@ fn test_explorer_split_select_does_not_follow_swapped_symlink() {
     }
     editor.handle_explorer_split_select();
 
-    let descended = match editor.document_manager.get_document(layout.dir_doc_id) {
-        Some(doc) => doc.directory_path().is_some_and(|path| *path != base),
-        None => false,
-    };
+    let descended = editor
+        .document_manager
+        .get_document(layout.dir_doc_id)
+        .is_some_and(|doc| doc.directory_path().is_some_and(|path| *path != base));
 
     assert!(
         !descended,
@@ -222,9 +222,7 @@ fn test_explorer_preview_discards_stale_result() {
             undo_file: None,
         },
     );
-    editor
-        .handle_job_message(crate::job_manager::JobMessage::Custom(10000, fresh_result))
-        .unwrap();
+    editor.handle_job_message(crate::job_manager::JobMessage::Custom(10000, fresh_result));
 
     let stale_result = Box::new(
         crate::job_manager::jobs::explorer_preview::ExplorerPreviewResult {
@@ -235,9 +233,7 @@ fn test_explorer_preview_discards_stale_result() {
             undo_file: None,
         },
     );
-    editor
-        .handle_job_message(crate::job_manager::JobMessage::Custom(9999, stale_result))
-        .unwrap();
+    editor.handle_job_message(crate::job_manager::JobMessage::Custom(9999, stale_result));
 
     let preview_doc = editor
         .document_manager
@@ -375,7 +371,7 @@ fn test_explorer_preview_renders_a_persisted_undo_file_not_as_binary() {
     crate::history::persist::save(&undo_dir, &source_path, &tree, hash).unwrap();
 
     let mut editor = create_editor();
-    editor.open_explorer(undo_dir.clone());
+    editor.open_explorer(undo_dir);
     drain_jobs(&mut editor);
 
     let layout = editor.panel_layout.as_ref().unwrap().clone();

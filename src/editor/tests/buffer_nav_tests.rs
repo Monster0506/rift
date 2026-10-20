@@ -185,9 +185,7 @@ fn test_cancelled_save_clears_pending_quit_job_id() {
     let job_id = 42;
     editor.pending_quit_job_id = Some(job_id);
 
-    editor
-        .handle_job_message(crate::job_manager::JobMessage::Cancelled(job_id))
-        .unwrap();
+    editor.handle_job_message(crate::job_manager::JobMessage::Cancelled(job_id));
 
     assert_eq!(
         editor.pending_quit_job_id, None,
@@ -248,15 +246,15 @@ fn test_buffer_goto_jumps_by_b_list_index() {
         .unwrap();
     assert_eq!(editor.document_manager.active_tab_index(), 2);
 
-    editor.execute_command_line("b 1".to_string());
+    editor.execute_command_line("b 1");
     assert_eq!(editor.document_manager.active_tab_index(), 0);
     assert_eq!(editor.active_document().display_name(), "[No Name]");
 
-    editor.execute_command_line("buffer 3".to_string());
+    editor.execute_command_line("buffer 3");
     assert_eq!(editor.document_manager.active_tab_index(), 2);
     assert_eq!(editor.active_document().display_name(), "doc2.txt");
 
-    editor.execute_command_line("b 99".to_string());
+    editor.execute_command_line("b 99");
     assert_eq!(editor.document_manager.active_tab_index(), 2);
 }
 
@@ -271,7 +269,7 @@ fn test_bdelete_removes_current_buffer_and_shows_neighbor() {
         .unwrap();
     assert_eq!(editor.document_manager.tab_count(), 3);
 
-    editor.execute_command_line("bdelete".to_string());
+    editor.execute_command_line("bdelete");
     assert_eq!(editor.document_manager.tab_count(), 2);
     assert_eq!(editor.active_document().display_name(), "doc1.txt");
 }
@@ -287,7 +285,7 @@ fn test_bd_by_index_deletes_a_non_current_buffer() {
         .unwrap();
     assert_eq!(editor.document_manager.active_tab_index(), 2);
 
-    editor.execute_command_line("bd 2".to_string());
+    editor.execute_command_line("bd 2");
     assert_eq!(editor.document_manager.tab_count(), 2);
     assert_eq!(editor.active_document().display_name(), "doc2.txt");
     assert_eq!(editor.document_manager.active_tab_index(), 1);
@@ -299,14 +297,14 @@ fn test_bdelete_refuses_dirty_buffer_without_bang() {
     editor.active_document().insert_char('x').unwrap();
     assert_eq!(editor.document_manager.tab_count(), 1);
 
-    editor.execute_command_line("bdelete".to_string());
+    editor.execute_command_line("bdelete");
     assert_eq!(
         editor.document_manager.tab_count(),
         1,
         "dirty buffer must survive a bare :bdelete"
     );
 
-    editor.execute_command_line("bdelete!".to_string());
+    editor.execute_command_line("bdelete!");
     assert_eq!(editor.active_document().buffer.to_string(), "");
 }
 
@@ -322,7 +320,7 @@ fn test_open_buffer_list_panel_shows_status_and_enter_switches() {
     editor.active_document().insert_char('x').unwrap();
     let doc1_id = editor.document_manager.get_document_id_at(1).unwrap();
 
-    editor.execute_command_line("buffer".to_string());
+    editor.execute_command_line("buffer");
 
     let layout = editor
         .panel_layout_of(crate::editor::PanelKind::BufferList)
@@ -364,7 +362,7 @@ fn test_buffer_list_j_snaps_between_entries_and_updates_preview() {
         .unwrap();
     let doc1_id = editor.document_manager.get_document_id_at(1).unwrap();
 
-    editor.execute_command_line("buffer".to_string());
+    editor.execute_command_line("buffer");
     let layout = editor
         .panel_layout_of(crate::editor::PanelKind::BufferList)
         .unwrap();
@@ -401,7 +399,7 @@ fn test_read_only_buffer_refuses_to_enter_insert_mode() {
     editor
         .open_file(Some("doc1.txt".to_string()), false)
         .unwrap();
-    editor.execute_command_line("buffer".to_string());
+    editor.execute_command_line("buffer");
     assert!(editor
         .panel_layout_of(crate::editor::PanelKind::BufferList)
         .is_some());

@@ -1,5 +1,5 @@
 //! Edit-tracked anchor endpoints: a byte offset plus insertion bias (sec 7).
-//! The edit pipeline calls on_edit for every edit so ranges move correctly.
+//! The edit pipeline calls `on_edit` for every edit so ranges move correctly.
 
 use serde::{Deserialize, Serialize};
 
@@ -21,19 +21,22 @@ pub struct Marker {
 }
 
 impl Marker {
-    pub fn new(offset: usize, gravity: Gravity) -> Self {
-        Marker { offset, gravity }
+    #[must_use]
+    pub const fn new(offset: usize, gravity: Gravity) -> Self {
+        Self { offset, gravity }
     }
 
-    pub fn left(offset: usize) -> Self {
-        Marker::new(offset, Gravity::Left)
+    #[must_use]
+    pub const fn left(offset: usize) -> Self {
+        Self::new(offset, Gravity::Left)
     }
 
-    pub fn right(offset: usize) -> Self {
-        Marker::new(offset, Gravity::Right)
+    #[must_use]
+    pub const fn right(offset: usize) -> Self {
+        Self::new(offset, Gravity::Right)
     }
 
-    /// Update for an edit that replaced bytes [start, old_end) with new_end-start
+    /// Update for an edit that replaced bytes [start, `old_end`) with new_end-start
     /// bytes. Modeled as delete-then-insert for correctness across replacements.
     pub fn on_edit(&mut self, start: usize, old_end: usize, new_end: usize) {
         debug_assert!(start <= old_end, "edit range must be ordered");

@@ -46,16 +46,18 @@ fn adornment_color(
 pub struct AnnotationId(u64);
 
 impl AnnotationId {
+    #[must_use]
     pub const fn new(id: u64) -> Self {
-        AnnotationId(id)
+        Self(id)
     }
 
+    #[must_use]
     pub const fn get(self) -> u64 {
         self.0
     }
 
-    pub(crate) fn next(self) -> Self {
-        AnnotationId(self.0 + 1)
+    pub(crate) const fn next(self) -> Self {
+        Self(self.0 + 1)
     }
 }
 
@@ -75,23 +77,25 @@ pub enum AnnotationOwner {
 }
 
 impl AnnotationOwner {
-    pub fn rank(&self) -> u8 {
+    #[must_use]
+    pub const fn rank(&self) -> u8 {
         match self {
-            AnnotationOwner::System => 0,
-            AnnotationOwner::Lsp => 1,
-            AnnotationOwner::Plugin(_) => 2,
-            AnnotationOwner::User => 3,
-            AnnotationOwner::Remote(_) => 4,
+            Self::System => 0,
+            Self::Lsp => 1,
+            Self::Plugin(_) => 2,
+            Self::User => 3,
+            Self::Remote(_) => 4,
         }
     }
 
-    pub fn as_str(&self) -> &'static str {
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            AnnotationOwner::System => "system",
-            AnnotationOwner::Lsp => "lsp",
-            AnnotationOwner::Plugin(_) => "plugin",
-            AnnotationOwner::User => "user",
-            AnnotationOwner::Remote(_) => "remote",
+            Self::System => "system",
+            Self::Lsp => "lsp",
+            Self::Plugin(_) => "plugin",
+            Self::User => "user",
+            Self::Remote(_) => "remote",
         }
     }
 }
@@ -104,12 +108,14 @@ pub enum Anchor {
 }
 
 impl Anchor {
-    pub fn point(offset: usize) -> Self {
-        Anchor::Point(Marker::left(offset))
+    #[must_use]
+    pub const fn point(offset: usize) -> Self {
+        Self::Point(Marker::left(offset))
     }
 
-    pub fn range(start: usize, end: usize) -> Self {
-        Anchor::Range(Marker::left(start), Marker::right(end))
+    #[must_use]
+    pub const fn range(start: usize, end: usize) -> Self {
+        Self::Range(Marker::left(start), Marker::right(end))
     }
 }
 
@@ -136,8 +142,9 @@ pub struct Annotation {
 }
 
 impl Annotation {
-    pub fn new(kind: Kind, anchor: Anchor, owner: AnnotationOwner) -> Self {
-        Annotation {
+    #[must_use]
+    pub const fn new(kind: Kind, anchor: Anchor, owner: AnnotationOwner) -> Self {
+        Self {
             id: AnnotationId::new(0),
             anchor,
             kind,
@@ -151,55 +158,64 @@ impl Annotation {
         }
     }
 
+    #[must_use]
     pub fn with_payload(mut self, payload: Value) -> Self {
         self.payload = payload;
         self
     }
 
-    pub fn with_stickiness(mut self, stickiness: Stickiness) -> Self {
+    #[must_use]
+    pub const fn with_stickiness(mut self, stickiness: Stickiness) -> Self {
         self.stickiness = stickiness;
         self
     }
 
-    pub fn with_visible(mut self, visible: bool) -> Self {
+    #[must_use]
+    pub const fn with_visible(mut self, visible: bool) -> Self {
         self.visible = visible;
         self
     }
 
-    pub fn with_read_only(mut self, read_only: bool) -> Self {
+    #[must_use]
+    pub const fn with_read_only(mut self, read_only: bool) -> Self {
         self.read_only = read_only;
         self
     }
 
+    #[must_use]
     pub fn with_presentation(mut self, presentation: Presentation) -> Self {
         self.presentation = Some(presentation);
         self
     }
 
+    #[must_use]
     pub fn with_actions(mut self, actions: Vec<Action>) -> Self {
         self.actions = actions;
         self
     }
 
-    pub fn is_interactive(&self) -> bool {
+    #[must_use]
+    pub const fn is_interactive(&self) -> bool {
         !self.actions.is_empty()
     }
 
+    #[must_use]
     pub fn default_action(&self) -> Option<&Action> {
-        self.actions
-            .iter()
-            .find(|a| a.default)
-            .or(if self.actions.len() == 1 {
+        self.actions.iter().find(|a| a.default).or_else(|| {
+            if self.actions.len() == 1 {
                 self.actions.first()
             } else {
                 None
-            })
+            }
+        })
     }
 
+    #[must_use]
     pub fn action_for_verb(&self, verb: &str) -> Option<&Action> {
         self.actions.iter().find(|a| a.verb == verb)
     }
 
+    #[must_use]
     pub fn affordance_line(&self, activate_key: &str) -> Option<String> {
         if self.actions.is_empty() {
             return None;
@@ -239,6 +255,7 @@ impl Default for AnnotationStore {
 }
 
 impl AnnotationStore {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             annotations: Vec::new(),
@@ -259,7 +276,7 @@ impl AnnotationStore {
         self.revision += 1;
     }
 
-    pub fn revision(&self) -> u64 {
+    pub const fn revision(&self) -> u64 {
         self.revision
     }
 
@@ -288,7 +305,7 @@ impl AnnotationStore {
         self.ensure_aux();
         let mut items: Vec<(std::ops::Range<usize>, AnnotationId)> = Vec::new();
         let mut starts: Vec<(usize, AnnotationId)> = Vec::new();
-        for a in self.annotations.iter() {
+        for a in &self.annotations {
             let start = match a.anchor {
                 Anchor::Point(p) => {
                     items.push((p.offset..p.offset + 1, a.id));
@@ -337,7 +354,7 @@ impl AnnotationStore {
         id
     }
 
-    pub fn peek_next_id(&self) -> AnnotationId {
+    pub const fn peek_next_id(&self) -> AnnotationId {
         self.next_id
     }
 
@@ -684,7 +701,7 @@ impl AnnotationStore {
                 .and_then(|f| presentation::resolve_face(f, colors));
             let fg = pres.style.as_ref().and_then(|s| s.fg).or(face_fg);
             let bg = pres.style.as_ref().and_then(|s| s.bg);
-            let attrs = pres.style.as_ref().map(|s| s.attrs()).unwrap_or_default();
+            let attrs = pres.style.as_ref().map(|s| s.attrs).unwrap_or_default();
             if fg.is_some() || bg.is_some() || !attrs.is_empty() {
                 let style = crate::layer::CellStyle { fg, bg, attrs };
                 cands.push((start, end, style, pres.priority, a.owner.rank(), a.id));
@@ -769,20 +786,19 @@ impl AnnotationStore {
         message: &str,
     ) -> Annotation {
         let sev_str = match severity {
-            1 => "error",
             2 => "warning",
             3 => "info",
             4 => "hint",
             _ => "error",
         };
         let message = message.trim();
-        let face = FaceRef::new(format!("diag.{}", sev_str));
+        let face = FaceRef::new(format!("diag.{sev_str}"));
         let mut payload = Value::map();
         payload.set("severity", Value::Int(severity));
         payload.set("message", Value::Str(message.to_string()));
-        payload.set("tooltip", Value::Str(format!("[{}] {}", sev_str, message)));
+        payload.set("tooltip", Value::Str(format!("[{sev_str}] {message}")));
         let underline = presentation::StyleOverride {
-            underline: true,
+            attrs: crate::layer::CellAttrs::UNDERLINE,
             ..Default::default()
         };
         let presentation = Presentation::with_style(underline).with_adornment(
@@ -868,7 +884,7 @@ impl AnnotationStore {
 
     pub fn create_directory_entry(&mut self, line: usize, entry_id: u16) -> AnnotationId {
         let mut payload = Value::map();
-        payload.set("entry_id", Value::Int(entry_id as i64));
+        payload.set("entry_id", Value::Int(i64::from(entry_id)));
         self.add(
             Annotation::new(
                 Kind::new(well_known::FS_ENTRY),
@@ -890,7 +906,7 @@ impl AnnotationStore {
         is_dir: bool,
     ) -> AnnotationId {
         let mut payload = Value::map();
-        payload.set("entry_id", Value::Int(entry_id as i64));
+        payload.set("entry_id", Value::Int(i64::from(entry_id)));
         payload.set("name", Value::Str(name.to_string()));
         payload.set("is_dir", Value::Bool(is_dir));
         self.add(
@@ -913,7 +929,7 @@ impl AnnotationStore {
         doc_id: crate::document::DocumentId,
     ) -> AnnotationId {
         let mut payload = Value::map();
-        payload.set("doc_id", Value::Int(doc_id.get() as i64));
+        payload.set("doc_id", Value::Int(doc_id.get().cast_signed()));
         self.add(
             Annotation::new(
                 Kind::new(well_known::BUFFER_ENTRY),
@@ -1018,7 +1034,7 @@ impl AnnotationStore {
         })?;
         let path = payload::git::path(&a.payload)?.to_string();
         let section = payload::git::section(&a.payload)?.to_string();
-        let orig_path = payload::git::orig_path(&a.payload).map(|s| s.to_string());
+        let orig_path = payload::git::orig_path(&a.payload).map(std::string::ToString::to_string);
         Some((path, section, orig_path))
     }
 
@@ -1032,7 +1048,10 @@ impl AnnotationStore {
         let mut payload = Value::map();
         payload.set("path", Value::Str(path.to_string()));
         payload.set("staged_side", Value::Bool(staged_side));
-        payload.set("hunk_index", Value::Int(hunk_index as i64));
+        payload.set(
+            "hunk_index",
+            Value::Int(i64::try_from(hunk_index).unwrap_or(i64::MAX)),
+        );
         self.add(
             Annotation::new(
                 Kind::new(well_known::GIT_HUNK),
@@ -1068,8 +1087,14 @@ impl AnnotationStore {
         let mut payload = Value::map();
         payload.set("path", Value::Str(path.to_string()));
         payload.set("staged_side", Value::Bool(staged_side));
-        payload.set("hunk_index", Value::Int(hunk_index as i64));
-        payload.set("line_index", Value::Int(line_index as i64));
+        payload.set(
+            "hunk_index",
+            Value::Int(i64::try_from(hunk_index).unwrap_or(i64::MAX)),
+        );
+        payload.set(
+            "line_index",
+            Value::Int(i64::try_from(line_index).unwrap_or(i64::MAX)),
+        );
         self.add(
             Annotation::new(
                 Kind::new(well_known::GIT_HUNK_LINE),
@@ -1121,7 +1146,10 @@ impl AnnotationStore {
     ) -> AnnotationId {
         let mut payload = Value::map();
         payload.set("sha", Value::Str(sha.to_string()));
-        payload.set("source_line", Value::Int(source_line as i64));
+        payload.set(
+            "source_line",
+            Value::Int(i64::try_from(source_line).unwrap_or(i64::MAX)),
+        );
         self.add(
             Annotation::new(
                 Kind::new(well_known::GIT_BLAME),
@@ -1141,7 +1169,7 @@ impl AnnotationStore {
             .annotations
             .iter()
             .find(|a| a.kind.as_str() == well_known::GIT_BLAME && a.anchor == Anchor::Line(line))?;
-        payload::git::sha(&a.payload).map(|s| s.to_string())
+        payload::git::sha(&a.payload).map(std::string::ToString::to_string)
     }
 
     pub fn git_blame_source_line_at_line(&self, line: usize) -> Option<usize> {
@@ -1193,7 +1221,7 @@ impl AnnotationStore {
         let a = self.annotations.iter().find(|a| {
             a.kind.as_str() == well_known::GIT_LOG_COMMIT && a.anchor == Anchor::Line(line)
         })?;
-        payload::git::sha(&a.payload).map(|s| s.to_string())
+        payload::git::sha(&a.payload).map(std::string::ToString::to_string)
     }
 
     pub fn create_git_rebase_step(&mut self, line: usize, sha: &str) -> AnnotationId {
@@ -1217,7 +1245,7 @@ impl AnnotationStore {
         let a = self.annotations.iter().find(|a| {
             a.kind.as_str() == well_known::GIT_REBASE_STEP && a.anchor == Anchor::Line(line)
         })?;
-        payload::git::sha(&a.payload).map(|s| s.to_string())
+        payload::git::sha(&a.payload).map(std::string::ToString::to_string)
     }
 
     pub fn git_rebase_steps_by_line(&self) -> Vec<(usize, String)> {
@@ -1287,7 +1315,7 @@ impl AnnotationStore {
         signs
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.annotations.is_empty()
     }
 
@@ -1361,7 +1389,10 @@ impl AnnotationStore {
             if let Some(ids) = line_index.get_mut(&old_line) {
                 ids.retain(|&i| i != id);
             }
-            if line_index.get(&old_line).is_some_and(|v| v.is_empty()) {
+            if line_index
+                .get(&old_line)
+                .is_some_and(std::vec::Vec::is_empty)
+            {
                 line_index.remove(&old_line);
             }
             line_index.entry(new_line).or_default().push(id);
@@ -1396,7 +1427,10 @@ impl AnnotationStore {
             if let Some(ids) = line_index.get_mut(&old_line) {
                 ids.retain(|&i| i != id);
             }
-            if line_index.get(&old_line).is_some_and(|v| v.is_empty()) {
+            if line_index
+                .get(&old_line)
+                .is_some_and(std::vec::Vec::is_empty)
+            {
                 line_index.remove(&old_line);
             }
             line_index.entry(old_line + 1).or_default().push(id);
@@ -1431,7 +1465,10 @@ impl AnnotationStore {
             if let Some(ids) = line_index.get_mut(&old_line) {
                 ids.retain(|&i| i != id);
             }
-            if line_index.get(&old_line).is_some_and(|v| v.is_empty()) {
+            if line_index
+                .get(&old_line)
+                .is_some_and(std::vec::Vec::is_empty)
+            {
                 line_index.remove(&old_line);
             }
             line_index.entry(old_line - 1).or_default().push(id);
@@ -1472,11 +1509,11 @@ impl AnnotationStore {
                 Anchor::Line(_) => {}
             }
         }
-        if !to_remove.is_empty() {
+        if to_remove.is_empty() {
+            self.resync_index();
+        } else {
             self.annotations.retain(|a| !to_remove.contains(&a.id));
             self.invalidate_index();
-        } else {
-            self.resync_index();
         }
     }
 

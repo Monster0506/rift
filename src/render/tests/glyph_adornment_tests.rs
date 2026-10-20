@@ -11,7 +11,7 @@ fn test_tab_rendered_as_space_not_raw_tab() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,
@@ -96,7 +96,7 @@ fn test_tab_straddling_left_col_does_not_shift_text() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,
@@ -151,7 +151,7 @@ fn test_wide_char_straddling_left_col_renders_as_space() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,
@@ -209,7 +209,7 @@ fn test_zero_width_char_does_not_write_stray_cell() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,

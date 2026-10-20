@@ -1,5 +1,6 @@
 use crate::error::{ErrorType, RiftError};
 use std::collections::HashMap;
+#[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
 #[cfg(feature = "treesitter")]
@@ -20,7 +21,8 @@ pub struct LoadedLanguage {
 }
 
 impl LoadedLanguage {
-    #[allow(dead_code)]
+    #[cfg(feature = "treesitter")]
+    #[must_use]
     pub fn bundled(language: Language, name: &str) -> Self {
         Self {
             language,
@@ -51,6 +53,7 @@ pub struct LanguageLoader {
 }
 
 impl LanguageLoader {
+    #[must_use]
     pub fn new(grammar_dir: PathBuf) -> Self {
         Self {
             _grammar_dir: grammar_dir,
@@ -64,7 +67,10 @@ impl LanguageLoader {
     // Dynamic registration (called from plugin mutations)
 
     pub fn register_filetype(&self, ext: &str, lang_name: &str) {
-        let mut reg = self.dynamic.write().unwrap_or_else(|e| e.into_inner());
+        let mut reg = self
+            .dynamic
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         reg.filetype_map
             .insert(ext.to_string(), lang_name.to_string());
     }
@@ -73,7 +79,10 @@ impl LanguageLoader {
         let ext = path.extension()?.to_str()?;
         // Dynamic registry (from plugins) takes priority.
         {
-            let reg = self.dynamic.read().unwrap_or_else(|e| e.into_inner());
+            let reg = self
+                .dynamic
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(name) = reg.filetype_map.get(ext) {
                 return Some(name.clone());
             }
@@ -108,17 +117,27 @@ impl LanguageLoader {
     }
 
     pub fn register_language_query(&self, lang_name: &str, query_src: &str) {
-        let mut reg = self.dynamic.write().unwrap_or_else(|e| e.into_inner());
+        let mut reg = self
+            .dynamic
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         reg.highlights_overrides
             .insert(lang_name.to_string(), query_src.to_string());
     }
 
     pub fn register_injections_query(&self, lang_name: &str, query_src: &str) {
-        let mut reg = self.dynamic.write().unwrap_or_else(|e| e.into_inner());
+        let mut reg = self
+            .dynamic
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         reg.injections_queries
             .insert(lang_name.to_string(), query_src.to_string());
     }
 
+    /// Load a grammar shared object and register it under `lang_name`.
+    ///
+    /// # Errors
+    /// Returns `Err` when the library or its language symbol cannot be loaded.
     #[cfg(feature = "treesitter")]
     pub fn register_grammar(
         &self,
@@ -126,41 +145,44 @@ impl LanguageLoader {
         so_path: &str,
         fn_name: &str,
     ) -> Result<(), String> {
+        type LangFn = unsafe extern "C" fn() -> *const tree_sitter::ffi::TSLanguage;
+
         if self
             .dynamic_languages
             .read()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .contains_key(lang_name)
         {
             return Ok(());
         }
 
+        // SAFETY: so_path is a user-installed grammar library; dlopen runs its initializers.
         let lib =
-            unsafe { RawLib::open(so_path).map_err(|e| format!("dlopen '{}': {}", so_path, e))? };
+            unsafe { RawLib::open(so_path) }.map_err(|e| format!("dlopen '{so_path}': {e}"))?;
 
-        let language: Language = unsafe {
-            type LangFn = unsafe extern "C" fn() -> *const tree_sitter::ffi::TSLanguage;
-            let sym = lib
-                .sym(fn_name.as_bytes())
-                .map_err(|e| format!("symbol '{}' in '{}': {}", fn_name, so_path, e))?;
-            let f: LangFn = std::mem::transmute(sym);
-            let ptr = f();
-            if ptr.is_null() {
-                return Err(format!("'{}' returned a null TSLanguage pointer", fn_name));
-            }
-            Language::from_raw(ptr)
-        };
+        // SAFETY: lib holds a live handle from open; CString rejects interior NULs.
+        let sym = unsafe { lib.sym(fn_name.as_bytes()) }
+            .map_err(|e| format!("symbol '{fn_name}' in '{so_path}': {e}"))?;
+        // SAFETY: tree-sitter grammars export this symbol with the LangFn signature.
+        let f: LangFn = unsafe { std::mem::transmute(sym) };
+        // SAFETY: f is the grammar entry point and lib stays loaded for this call.
+        let ptr = unsafe { f() };
+        if ptr.is_null() {
+            return Err(format!("'{fn_name}' returned a null TSLanguage pointer"));
+        }
+        // SAFETY: ptr is non-null static grammar data kept alive by lib.
+        let language: Language = unsafe { Language::from_raw(ptr) };
 
         let lib = Arc::new(lib);
 
         self.loaded_libs
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(lib.clone());
 
         self.dynamic_languages
             .write()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(
                 lang_name.to_string(),
                 LoadedLanguage {
@@ -174,6 +196,9 @@ impl LanguageLoader {
     }
 
     /// No-op when tree-sitter is compiled out: there is no grammar type to load into.
+    ///
+    /// # Errors
+    /// Always returns `Err`.
     #[cfg(not(feature = "treesitter"))]
     pub fn register_grammar(
         &self,
@@ -187,6 +212,9 @@ impl LanguageLoader {
     // Language loading
 
     /// Load a language based on file extension, checking the dynamic registry first.
+    ///
+    /// # Errors
+    /// Returns `Err` when the path has no extension or its language cannot be loaded.
     pub fn load_language_for_file(&self, path: &Path) -> Result<LoadedLanguage, RiftError> {
         let extension = path.extension().and_then(|e| e.to_str()).ok_or_else(|| {
             RiftError::new(ErrorType::Internal, "NO_EXTENSION", "File has no extension")
@@ -194,7 +222,10 @@ impl LanguageLoader {
 
         // Dynamic registry takes priority.
         let dyn_lang = {
-            let reg = self.dynamic.read().unwrap_or_else(|e| e.into_inner());
+            let reg = self
+                .dynamic
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             reg.filetype_map.get(extension).cloned()
         };
 
@@ -228,7 +259,7 @@ impl LanguageLoader {
                     return Err(RiftError::new(
                         ErrorType::Internal,
                         "UNKNOWN_EXTENSION",
-                        format!("Unknown extension: {}", extension),
+                        format!("Unknown extension: {extension}"),
                     ))
                 }
             }
@@ -238,13 +269,15 @@ impl LanguageLoader {
     }
 
     /// Load a specific language by name (e.g., "rust").
-    #[allow(unused_variables)]
+    ///
+    /// # Errors
+    /// Returns `Err` when neither a dynamic nor a bundled grammar exists for `lang_name`.
     pub fn load_language(&self, lang_name: &str) -> Result<LoadedLanguage, RiftError> {
         {
             let langs = self
                 .dynamic_languages
                 .read()
-                .unwrap_or_else(|e| e.into_inner());
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(loaded) = langs.get(lang_name).cloned() {
                 return Ok(loaded);
             }
@@ -258,18 +291,23 @@ impl LanguageLoader {
         Err(RiftError::new(
             ErrorType::Internal,
             "LANGUAGE_NOT_FOUND",
-            format!("Language {} not found or feature not enabled", lang_name),
+            format!("Language {lang_name} not found or feature not enabled"),
         ))
     }
 
     // Query loading
 
     /// Load a highlights query, checking dynamic overrides first.
-    #[allow(unused_variables)]
+    ///
+    /// # Errors
+    /// Returns `Err` when no highlights override or bundled query exists for the language.
     pub fn load_query(&self, lang_name: &str, query_name: &str) -> Result<String, RiftError> {
         // Check highlights overrides from plugins.
         if query_name == "highlights" {
-            let reg = self.dynamic.read().unwrap_or_else(|e| e.into_inner());
+            let reg = self
+                .dynamic
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(q) = reg.highlights_overrides.get(lang_name) {
                 return Ok(q.clone());
             }
@@ -331,10 +369,7 @@ impl LanguageLoader {
         Err(RiftError::new(
             ErrorType::Io,
             "QUERY_NOT_FOUND",
-            format!(
-                "Query {} for {} not found (bundled only)",
-                query_name, lang_name
-            ),
+            format!("Query {query_name} for {lang_name} not found (bundled only)"),
         ))
     }
 
@@ -343,7 +378,10 @@ impl LanguageLoader {
     pub fn load_injections_query(&self, lang_name: &str) -> Option<String> {
         // Plugin-registered injections take priority.
         {
-            let reg = self.dynamic.read().unwrap_or_else(|e| e.into_inner());
+            let reg = self
+                .dynamic
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(q) = reg.injections_queries.get(lang_name) {
                 return Some(q.clone());
             }
@@ -472,22 +510,24 @@ fn get_bundled_injections_query(lang_name: &str) -> Option<&'static str> {
 
 pub struct RawLib(*mut std::ffi::c_void);
 
+// SAFETY: dlopen/LoadLibrary handles are process-wide; dlsym/dlclose are thread-safe.
 unsafe impl Send for RawLib {}
+// SAFETY: RawLib is never mutated after open, so shared &self access is sound.
 unsafe impl Sync for RawLib {}
 
 impl RawLib {
-    #[cfg_attr(not(any(test, feature = "treesitter")), allow(dead_code))]
+    #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
     unsafe fn open(path: &str) -> Result<Self, String> {
         let c = CString::new(path).map_err(|e| e.to_string())?;
         let h = sys::open(c.as_ptr());
         if h.is_null() {
-            Err(format!("could not open '{}'", path))
+            Err(format!("could not open '{path}'"))
         } else {
             Ok(Self(h))
         }
     }
 
-    #[cfg_attr(not(feature = "treesitter"), allow(dead_code))]
+    #[cfg(feature = "treesitter")]
     unsafe fn sym(&self, name: &[u8]) -> Result<*mut std::ffi::c_void, String> {
         let c = CString::new(name).map_err(|e| e.to_string())?;
         let s = sys::sym(self.0, c.as_ptr());
@@ -501,6 +541,7 @@ impl RawLib {
 
 impl Drop for RawLib {
     fn drop(&mut self) {
+        // SAFETY: self.0 came from a successful open, and Drop runs exactly once.
         unsafe { sys::close(self.0) };
     }
 }
@@ -508,17 +549,17 @@ impl Drop for RawLib {
 #[cfg(unix)]
 mod sys {
     extern "C" {
-        #[cfg_attr(not(any(test, feature = "treesitter")), allow(dead_code))]
+        #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
         fn dlopen(path: *const i8, flags: i32) -> *mut std::ffi::c_void;
-        #[cfg_attr(not(feature = "treesitter"), allow(dead_code))]
+        #[cfg(feature = "treesitter")]
         fn dlsym(h: *mut std::ffi::c_void, sym: *const i8) -> *mut std::ffi::c_void;
         fn dlclose(h: *mut std::ffi::c_void) -> i32;
     }
-    #[cfg_attr(not(any(test, feature = "treesitter")), allow(dead_code))]
+    #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
     pub unsafe fn open(path: *const i8) -> *mut std::ffi::c_void {
         dlopen(path, 2)
     } // RTLD_NOW
-    #[cfg_attr(not(feature = "treesitter"), allow(dead_code))]
+    #[cfg(feature = "treesitter")]
     pub unsafe fn sym(h: *mut std::ffi::c_void, s: *const i8) -> *mut std::ffi::c_void {
         dlsym(h, s)
     }
@@ -530,17 +571,17 @@ mod sys {
 #[cfg(windows)]
 mod sys {
     extern "system" {
-        #[cfg_attr(not(any(test, feature = "treesitter")), allow(dead_code))]
+        #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
         fn LoadLibraryA(path: *const i8) -> *mut std::ffi::c_void;
-        #[cfg_attr(not(feature = "treesitter"), allow(dead_code))]
+        #[cfg(feature = "treesitter")]
         fn GetProcAddress(h: *mut std::ffi::c_void, sym: *const i8) -> *mut std::ffi::c_void;
         fn FreeLibrary(h: *mut std::ffi::c_void) -> i32;
     }
-    #[cfg_attr(not(any(test, feature = "treesitter")), allow(dead_code))]
+    #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
     pub unsafe fn open(path: *const i8) -> *mut std::ffi::c_void {
         LoadLibraryA(path)
     }
-    #[cfg_attr(not(feature = "treesitter"), allow(dead_code))]
+    #[cfg(feature = "treesitter")]
     pub unsafe fn sym(h: *mut std::ffi::c_void, s: *const i8) -> *mut std::ffi::c_void {
         GetProcAddress(h, s)
     }
@@ -551,9 +592,11 @@ mod sys {
 
 #[cfg(not(any(unix, windows)))]
 mod sys {
+    #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
     pub unsafe fn open(_: *const i8) -> *mut std::ffi::c_void {
         std::ptr::null_mut()
     }
+    #[cfg(feature = "treesitter")]
     pub unsafe fn sym(_: *mut std::ffi::c_void, _: *const i8) -> *mut std::ffi::c_void {
         std::ptr::null_mut()
     }

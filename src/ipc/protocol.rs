@@ -38,13 +38,14 @@ pub struct SessionEndingParams {
 
 pub const ERR_UNAUTHORIZED: i64 = -32003;
 
+#[must_use]
 pub fn b64_encode(bytes: &[u8]) -> String {
     const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
-        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+        let b0 = u32::from(chunk[0]);
+        let b1 = u32::from(chunk.get(1).copied().unwrap_or(0));
+        let b2 = u32::from(chunk.get(2).copied().unwrap_or(0));
         let n = (b0 << 16) | (b1 << 8) | b2;
         out.push(T[((n >> 18) & 63) as usize] as char);
         out.push(T[((n >> 12) & 63) as usize] as char);
@@ -62,8 +63,9 @@ pub fn b64_encode(bytes: &[u8]) -> String {
     out
 }
 
+#[must_use]
 pub fn b64_decode(s: &str) -> Option<Vec<u8>> {
-    fn val(b: u8) -> Option<u8> {
+    const fn val(b: u8) -> Option<u8> {
         match b {
             b'A'..=b'Z' => Some(b - b'A'),
             b'a'..=b'z' => Some(b - b'a' + 26),

@@ -1,11 +1,11 @@
 //! LSP keepalive broker: a detached `rift --lsp-broker <key>` process owns a
 //! language server and proxies it over localhost TCP, one editor at a time.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::io::BufReader;
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::process::{ChildStdin, Stdio};
+use std::process::{ChildStdin, ExitCode, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -29,17 +29,19 @@ struct BrokerDescriptor {
     token: String,
 }
 
+#[must_use]
 pub fn broker_dir() -> PathBuf {
     crate::ipc::session::data_dir().join("lsp")
 }
 
 /// Stable cache key for one (server command, args, project root) combination.
+#[must_use]
 pub fn broker_key(command: &str, args: &[String], root_uri: Option<&str>) -> String {
     // FNV-1a: deterministic across processes and rift builds.
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     let mut eat = |bytes: &[u8]| {
         for &b in bytes {
-            h ^= b as u64;
+            h ^= u64::from(b);
             h = h.wrapping_mul(0x0000_0100_0000_01b3);
         }
         h ^= 0xff;
@@ -58,13 +60,16 @@ pub fn broker_key(command: &str, args: &[String], root_uri: Option<&str>) -> Str
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
         .collect();
-    format!("{}-{:016x}", stem, h)
+    format!("{stem}-{h:016x}")
 }
 
 // --- Editor-side attach ---
 
 /// Connect to the keepalive broker for this server, spawning one if needed;
 /// the editor exiting only drops the socket, so the server stays warm.
+///
+/// # Errors
+/// Returns an error if keepalive is disabled or no broker connection can be made.
 pub fn attach(
     command: &str,
     args: &[String],
@@ -201,7 +206,7 @@ pub(crate) struct ProxyState {
     next_broker_id: u64,
     inflight: HashMap<u64, Inflight>,
     /// URIs currently open on the server, so a detach can close them.
-    open_docs: HashSet<String>,
+    open_docs: BTreeSet<String>,
     /// Ids of server-to-client requests awaiting a client response.
     outstanding_server_reqs: Vec<Value>,
     generation: u64,
@@ -209,7 +214,7 @@ pub(crate) struct ProxyState {
 }
 
 impl ProxyState {
-    pub(crate) fn on_client_attach(&mut self) {
+    pub(crate) const fn on_client_attach(&mut self) {
         self.client_attached = true;
     }
 
@@ -375,8 +380,9 @@ pub struct BrokerParams {
     pub idle_timeout: Duration,
 }
 
-/// Entry point for `rift --lsp-broker <key>`. Never returns.
-pub fn run(key: &str) -> ! {
+/// Entry point for `rift --lsp-broker <key>`; the result is the process exit status.
+#[must_use]
+pub fn run(key: &str) -> ExitCode {
     let idle_secs = std::env::var("RIFT_LSP_BROKER_IDLE_SECS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
@@ -386,11 +392,11 @@ pub fn run(key: &str) -> ! {
         dir: broker_dir(),
         idle_timeout: Duration::from_secs(idle_secs),
     };
-    match serve(params) {
-        Ok(()) => std::process::exit(0),
+    match serve(&params) {
+        Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("rift lsp broker: {e}");
-            std::process::exit(1);
+            ExitCode::FAILURE
         }
     }
 }
@@ -403,7 +409,65 @@ enum Ev {
     ServerGone,
 }
 
-pub fn serve(params: BrokerParams) -> anyhow::Result<()> {
+fn spawn_server_reader(server_stdout: std::process::ChildStdout, tx: mpsc::Sender<Ev>) {
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(server_stdout);
+        loop {
+            if let Ok(body) = read_framed(&mut reader) {
+                if tx.send(Ev::Server(body)).is_err() {
+                    return;
+                }
+            } else {
+                let _ = tx.send(Ev::ServerGone);
+                return;
+            }
+        }
+    });
+}
+
+fn spawn_acceptor(listener: TcpListener, tx: mpsc::Sender<Ev>) {
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(stream) = stream else { continue };
+            if tx.send(Ev::NewClient(stream)).is_err() {
+                return;
+            }
+        }
+    });
+}
+
+fn spawn_client_reader(mut reader: BufReader<TcpStream>, tx: mpsc::Sender<Ev>, gen: u64) {
+    std::thread::spawn(move || loop {
+        if let Ok(body) = read_framed(&mut reader) {
+            if tx.send(Ev::Client(gen, body)).is_err() {
+                return;
+            }
+        } else {
+            let _ = tx.send(Ev::ClientGone(gen));
+            return;
+        }
+    });
+}
+
+fn descriptor_owned_by_other(desc_path: &std::path::Path) -> bool {
+    let Ok(back) = std::fs::read_to_string(desc_path) else {
+        return false;
+    };
+    let Ok(d) = serde_json::from_str::<BrokerDescriptor>(&back) else {
+        return false;
+    };
+    d.pid != std::process::id()
+}
+
+/// Runs the broker for one server until it exits or goes idle.
+///
+/// # Errors
+/// Returns an error if the request file is unreadable or invalid, or if the
+/// server, listener, or descriptor cannot be set up.
+///
+/// # Panics
+/// Panics if the spawned server does not expose piped stdin and stdout.
+pub fn serve(params: &BrokerParams) -> anyhow::Result<()> {
     let req_path = params.dir.join(format!("{}.req.json", params.key));
     let desc_path = params.dir.join(format!("{}.json", params.key));
     let req: BrokerRequest = serde_json::from_str(&std::fs::read_to_string(&req_path)?)?;
@@ -431,45 +495,17 @@ pub fn serve(params: BrokerParams) -> anyhow::Result<()> {
         })?,
     )?;
     // If a concurrent broker for the same key won the descriptor race, defer.
-    if let Ok(back) = std::fs::read_to_string(&desc_path) {
-        if let Ok(d) = serde_json::from_str::<BrokerDescriptor>(&back) {
-            if d.pid != std::process::id() {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Ok(());
-            }
-        }
+    if descriptor_owned_by_other(&desc_path) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Ok(());
     }
 
     let (tx, rx) = mpsc::channel::<Ev>();
 
-    let tx_srv = tx.clone();
-    std::thread::spawn(move || {
-        let mut reader = BufReader::new(server_stdout);
-        loop {
-            match read_framed(&mut reader) {
-                Ok(body) => {
-                    if tx_srv.send(Ev::Server(body)).is_err() {
-                        return;
-                    }
-                }
-                Err(_) => {
-                    let _ = tx_srv.send(Ev::ServerGone);
-                    return;
-                }
-            }
-        }
-    });
+    spawn_server_reader(server_stdout, tx.clone());
 
-    let tx_acc = tx.clone();
-    std::thread::spawn(move || {
-        for stream in listener.incoming() {
-            let Ok(stream) = stream else { continue };
-            if tx_acc.send(Ev::NewClient(stream)).is_err() {
-                return;
-            }
-        }
-    });
+    spawn_acceptor(listener, tx.clone());
 
     let mut state = ProxyState::default();
     let mut active_writer: Option<TcpStream> = None;
@@ -485,23 +521,7 @@ pub fn serve(params: BrokerParams) -> anyhow::Result<()> {
                 if let Some((writer, reader)) = handshake(stream, &token) {
                     cur_gen += 1;
                     let gen = cur_gen;
-                    let tx_cli = tx.clone();
-                    std::thread::spawn(move || {
-                        let mut reader = reader;
-                        loop {
-                            match read_framed(&mut reader) {
-                                Ok(body) => {
-                                    if tx_cli.send(Ev::Client(gen, body)).is_err() {
-                                        return;
-                                    }
-                                }
-                                Err(_) => {
-                                    let _ = tx_cli.send(Ev::ClientGone(gen));
-                                    return;
-                                }
-                            }
-                        }
-                    });
+                    spawn_client_reader(reader, tx.clone(), gen);
                     active_writer = Some(writer);
                     state.on_client_attach();
                 }
@@ -530,7 +550,7 @@ pub fn serve(params: BrokerParams) -> anyhow::Result<()> {
                     apply_actions(actions, &mut server_stdin, &mut active_writer);
                 }
             }
-            Ok(Ev::ServerGone) => break,
+            Ok(Ev::ServerGone) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 if active_writer.is_none() && idle_since.elapsed() > params.idle_timeout {
                     let _ = write_framed(
@@ -545,7 +565,6 @@ pub fn serve(params: BrokerParams) -> anyhow::Result<()> {
                     break;
                 }
             }
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }
 
@@ -592,10 +611,9 @@ fn apply_actions(
                 let _ = write_framed(server_stdin, &msg);
             }
             Action::ToClient(msg) => {
-                let failed = match active_writer.as_mut() {
-                    Some(w) => write_framed(w, &msg).is_err(),
-                    None => false,
-                };
+                let failed = active_writer
+                    .as_mut()
+                    .is_some_and(|w| write_framed(w, &msg).is_err());
                 // Reader thread will follow up with ClientGone for cleanup.
                 if failed {
                     *active_writer = None;

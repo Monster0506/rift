@@ -12,9 +12,10 @@ pub struct KeyHint(pub String);
 
 impl KeyHint {
     pub fn new(s: impl Into<String>) -> Self {
-        KeyHint(s.into())
+        Self(s.into())
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -36,7 +37,7 @@ pub struct Action {
 
 impl Action {
     pub fn new(verb: impl Into<String>) -> Self {
-        Action {
+        Self {
             verb: verb.into(),
             default: false,
             key_hint: None,
@@ -45,8 +46,9 @@ impl Action {
     }
 
     /// A default "activate" action bound to the generic activate key.
+    #[must_use]
     pub fn activate() -> Self {
-        Action {
+        Self {
             verb: "activate".to_string(),
             default: true,
             key_hint: None,
@@ -54,16 +56,19 @@ impl Action {
         }
     }
 
-    pub fn as_default(mut self) -> Self {
+    #[must_use]
+    pub const fn as_default(mut self) -> Self {
         self.default = true;
         self
     }
 
+    #[must_use]
     pub fn with_key_hint(mut self, hint: KeyHint) -> Self {
         self.key_hint = Some(hint);
         self
     }
 
+    #[must_use]
     pub fn with_params(mut self, params: Value) -> Self {
         self.params = params;
         self

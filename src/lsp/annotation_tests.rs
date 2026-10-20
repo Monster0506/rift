@@ -37,7 +37,7 @@ fn clear_lsp_diagnostics_removes_only_lsp_annotations() {
 fn multiple_diagnostics_on_different_lines() {
     let mut store = AnnotationStore::new();
     for line in 0..10 {
-        store.create_lsp_diagnostic(line, format!("error at line {}", line));
+        store.create_lsp_diagnostic(line, format!("error at line {line}"));
     }
     assert_eq!(store.lsp_diagnostics().count(), 10);
 }
@@ -232,7 +232,7 @@ fn ranged_diagnostics_underline_their_span_and_still_resolve_by_line() {
     let spans = store.presentation_spans(None, None, 0..100);
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].0, 10..14);
-    assert!(spans[0].1.attrs.underline);
+    assert!(spans[0].1.attrs.is_underline());
     assert_eq!(spans[0].1.fg, None);
 
     // Line-based consumers map the span start through `line_of`.

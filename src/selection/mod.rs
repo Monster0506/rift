@@ -12,7 +12,8 @@ pub struct Region {
 }
 
 impl Region {
-    pub fn new(anchor: usize, cursor: usize, kind: RangeKind) -> Self {
+    #[must_use]
+    pub const fn new(anchor: usize, cursor: usize, kind: RangeKind) -> Self {
         Self {
             anchor,
             cursor,
@@ -21,6 +22,7 @@ impl Region {
     }
 
     /// Ordered exclusive-end span for selection bookkeeping.
+    #[must_use]
     pub fn span(&self) -> (usize, usize) {
         (
             self.anchor.min(self.cursor),
@@ -48,7 +50,7 @@ impl Region {
         }
     }
 
-    fn overlaps(&self, other: &Region) -> bool {
+    fn overlaps(&self, other: &Self) -> bool {
         if self.kind != other.kind {
             return false;
         }
@@ -83,7 +85,8 @@ pub struct SelectionSet {
 }
 
 impl SelectionSet {
-    pub fn is_empty(&self) -> bool {
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
         self.regions.is_empty() && self.active.is_none()
     }
 
@@ -112,6 +115,7 @@ impl SelectionSet {
         }
     }
 
+    #[must_use]
     pub fn sorted(&self) -> Vec<Region> {
         let mut v = self.regions.clone();
         v.sort_by_key(|r| r.span().0);
@@ -119,7 +123,7 @@ impl SelectionSet {
     }
 
     /// Dedupes by `buffer_span` so same-line Linewise regions (identical
-    /// buffer_span, non-overlapping raw span) aren't applied twice.
+    /// `buffer_span`, non-overlapping raw span) aren't applied twice.
     pub fn take_for_batch(&mut self, buf: &TextBuffer) -> Vec<Region> {
         self.commit_active();
         let mut v = std::mem::take(&mut self.regions);
@@ -129,6 +133,7 @@ impl SelectionSet {
         v
     }
 
+    #[must_use]
     pub fn region_containing(&self, offset: usize) -> Option<usize> {
         self.regions.iter().position(|r| {
             let (s, e) = r.span();
@@ -136,6 +141,7 @@ impl SelectionSet {
         })
     }
 
+    #[must_use]
     pub fn next_region(&self, after: usize) -> Option<Region> {
         let sorted = self.sorted();
         if sorted.is_empty() {
@@ -144,10 +150,11 @@ impl SelectionSet {
         sorted
             .iter()
             .find(|r| r.span().0 > after)
-            .or(sorted.first())
+            .or_else(|| sorted.first())
             .copied()
     }
 
+    #[must_use]
     pub fn prev_region(&self, before: usize) -> Option<Region> {
         let sorted = self.sorted();
         if sorted.is_empty() {
@@ -157,7 +164,7 @@ impl SelectionSet {
             .iter()
             .rev()
             .find(|r| r.span().1 <= before)
-            .or(sorted.last())
+            .or_else(|| sorted.last())
             .copied()
     }
 

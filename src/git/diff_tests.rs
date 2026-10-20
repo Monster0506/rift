@@ -16,7 +16,9 @@ fn parses_single_hunk_modification() {
     let file = &files[0];
     assert_eq!(file.old_path, Some(PathBuf::from("src/main.rs")));
     assert_eq!(file.new_path, Some(PathBuf::from("src/main.rs")));
-    assert!(!file.is_new_file && !file.is_deleted_file && !file.is_rename);
+    assert!(
+        !file.markers.is_new_file() && !file.markers.is_deleted_file() && !file.markers.is_rename()
+    );
 
     assert_eq!(file.hunks.len(), 1);
     let hunk = &file.hunks[0];
@@ -64,7 +66,7 @@ fn parses_new_file() {
     let files = parse_unified_diff(input);
     assert_eq!(files.len(), 1);
     let file = &files[0];
-    assert!(file.is_new_file);
+    assert!(file.markers.is_new_file());
     assert_eq!(file.new_mode.as_deref(), Some("100644"));
     assert_eq!(file.old_path, None);
     assert_eq!(file.new_path, Some(PathBuf::from("new.txt")));
@@ -89,7 +91,7 @@ fn parses_deleted_file() {
                   -line2\n";
     let files = parse_unified_diff(input);
     let file = &files[0];
-    assert!(file.is_deleted_file);
+    assert!(file.markers.is_deleted_file());
     assert_eq!(file.old_mode.as_deref(), Some("100644"));
     assert_eq!(file.old_path, Some(PathBuf::from("gone.txt")));
     assert_eq!(file.new_path, None);
@@ -115,7 +117,7 @@ fn parses_rename_with_similarity_and_modification() {
                   +new content\n";
     let files = parse_unified_diff(input);
     let file = &files[0];
-    assert!(file.is_rename);
+    assert!(file.markers.is_rename());
     assert_eq!(file.similarity, Some(92));
     assert_eq!(file.old_path, Some(PathBuf::from("old_name.rs")));
     assert_eq!(file.new_path, Some(PathBuf::from("new_name.rs")));
@@ -130,7 +132,7 @@ fn parses_binary_file_diff_with_no_hunks() {
                   Binary files a/image.png and b/image.png differ\n";
     let files = parse_unified_diff(input);
     let file = &files[0];
-    assert!(file.is_binary);
+    assert!(file.markers.is_binary());
     assert!(file.hunks.is_empty());
 }
 
@@ -152,7 +154,7 @@ fn parses_multiple_files_in_one_diff() {
     assert_eq!(files.len(), 2);
     assert_eq!(files[0].new_path, Some(PathBuf::from("a.txt")));
     assert_eq!(files[1].new_path, Some(PathBuf::from("b.txt")));
-    assert!(files[1].is_new_file);
+    assert!(files[1].markers.is_new_file());
 }
 
 #[test]
@@ -267,7 +269,7 @@ fn filter_hunk_to_lines_keeps_only_the_selected_addition() {
             diff_line(DiffLineKind::Context, "b"),
         ],
     };
-    let selected: std::collections::HashSet<usize> = [1].into_iter().collect();
+    let selected: std::collections::HashSet<usize> = std::iter::once(1).collect();
     let sub = filter_hunk_to_lines(&h, &selected);
     assert_eq!(sub.old_start, 5);
     assert_eq!(sub.new_start, 5);
@@ -298,7 +300,7 @@ fn filter_hunk_to_lines_turns_an_unselected_deletion_into_context() {
         ],
     };
     // Select only the second deletion; the first must survive as context.
-    let selected: std::collections::HashSet<usize> = [1].into_iter().collect();
+    let selected: std::collections::HashSet<usize> = std::iter::once(1).collect();
     let sub = filter_hunk_to_lines(&h, &selected);
     assert_eq!(
         sub.lines[0].kind,
@@ -414,7 +416,7 @@ fn diff_line_change_block_keeps_a_pure_addition_run_per_line() {
         ],
     };
     for i in 0..3 {
-        assert_eq!(diff_line_change_block(&h, i), [i].into_iter().collect());
+        assert_eq!(diff_line_change_block(&h, i), std::iter::once(i).collect());
     }
 }
 
@@ -433,7 +435,7 @@ fn diff_line_change_block_keeps_a_pure_deletion_run_per_line() {
         ],
     };
     for i in 0..3 {
-        assert_eq!(diff_line_change_block(&h, i), [i].into_iter().collect());
+        assert_eq!(diff_line_change_block(&h, i), std::iter::once(i).collect());
     }
 }
 

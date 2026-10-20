@@ -94,11 +94,11 @@ fn bench_redundant_builds(c: &mut Criterion) {
         });
     });
 
-    let buf_sp = make_buf_single_piece(1_205, 61);
+    let buf_single = make_buf_single_piece(1_205, 61);
     group.bench_function("2x_build_single_piece_1205lines", |b| {
         b.iter(|| {
             for _ in 0..2 {
-                black_box(DisplayMap::build(&buf_sp, 80, 4));
+                black_box(DisplayMap::build(&buf_single, 80, 4));
             }
         });
     });

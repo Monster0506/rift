@@ -54,7 +54,7 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(range) = crate::text_objects::resolve(spec, &doc.buffer, 1, None) else {
                 continue;
             };
-            let end_offset = if range.inclusive { 1 } else { 0 };
+            let end_offset = usize::from(range.inclusive);
             let s = range.anchor.min(range.new_cursor);
             let e = (range.anchor.max(range.new_cursor) + end_offset).min(doc.buffer.len());
             let strictly_larger =
@@ -165,10 +165,10 @@ impl<T: TerminalBackend> Editor<T> {
             for region in batch {
                 let len_before = doc.buffer.len();
                 let new_anchor = anchor_for(doc, region);
-                let delta = len_before as i64 - doc.buffer.len() as i64;
+                let delta = len_before.cast_signed() - doc.buffer.len().cast_signed();
                 if delta != 0 {
-                    for a in anchors.iter_mut() {
-                        *a = (*a as i64 - delta) as usize;
+                    for a in &mut anchors {
+                        *a = ((*a).cast_signed() - delta).cast_unsigned();
                     }
                 }
                 anchors.push(new_anchor);
@@ -213,7 +213,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .document_manager
                 .active_document()
                 .is_some_and(|d| !d.selection_set.is_empty());
-        if !has_candidate || self.active_doc_is(|d| d.is_read_only()) {
+        if !has_candidate || self.active_doc_is(super::super::document::Document::is_read_only) {
             return false;
         }
 
@@ -222,8 +222,7 @@ impl<T: TerminalBackend> Editor<T> {
         let is_empty = self
             .document_manager
             .active_document()
-            .map(|d| d.selection_set.is_empty())
-            .unwrap_or(true);
+            .is_none_or(|d| d.selection_set.is_empty());
         if is_empty {
             return false;
         }
@@ -272,8 +271,7 @@ impl<T: TerminalBackend> Editor<T> {
         let is_empty = self
             .document_manager
             .active_document()
-            .map(|d| d.selection_set.is_empty())
-            .unwrap_or(true);
+            .is_none_or(|d| d.selection_set.is_empty());
         if is_empty {
             return false;
         }
@@ -313,8 +311,8 @@ impl<T: TerminalBackend> Editor<T> {
                 let ghost_allowed = self
                     .document_manager
                     .active_document()
-                    .is_some_and(|doc| doc.ghost_cut_allowed());
-                if self.state.settings.ghost_cut && ghost_allowed {
+                    .is_some_and(super::super::document::Document::ghost_cut_allowed);
+                if self.state.settings.editing.ghost_cut && ghost_allowed {
                     let cursor_target = ranges.iter().map(|&(s, _)| s).min();
                     let ghosted_doc = self.document_manager.active_document_mut().map(|doc| {
                         doc.create_ghosts(&ranges);
@@ -368,8 +366,7 @@ impl<T: TerminalBackend> Editor<T> {
         let is_empty = self
             .document_manager
             .active_document()
-            .map(|d| d.selection_set.is_empty())
-            .unwrap_or(true);
+            .is_none_or(|d| d.selection_set.is_empty());
         if is_empty {
             return false;
         }
@@ -415,8 +412,7 @@ impl<T: TerminalBackend> Editor<T> {
         let is_empty = self
             .document_manager
             .active_document()
-            .map(|d| d.selection_set.is_empty())
-            .unwrap_or(true);
+            .is_none_or(|d| d.selection_set.is_empty());
         if is_empty {
             return false;
         }
@@ -467,8 +463,7 @@ impl<T: TerminalBackend> Editor<T> {
         let is_empty = self
             .document_manager
             .active_document()
-            .map(|d| d.selection_set.is_empty())
-            .unwrap_or(true);
+            .is_none_or(|d| d.selection_set.is_empty());
         if is_empty {
             return false;
         }
@@ -492,8 +487,7 @@ impl<T: TerminalBackend> Editor<T> {
         let is_empty = self
             .document_manager
             .active_document()
-            .map(|d| d.selection_set.is_empty())
-            .unwrap_or(true);
+            .is_none_or(|d| d.selection_set.is_empty());
         if is_empty {
             return false;
         }
@@ -618,12 +612,11 @@ impl<T: TerminalBackend> Editor<T> {
         let line = self
             .document_manager
             .active_document()
-            .map(|d| d.buffer.line_index.get_line_at(d.buffer.cursor()))
-            .unwrap_or(0);
+            .map_or(0, |d| d.buffer.line_index.get_line_at(d.buffer.cursor()));
         let Some(source_doc_id) = self
             .document_manager
             .active_document()
-            .and_then(|doc| doc.regions_source_doc_id())
+            .and_then(super::super::document::Document::regions_source_doc_id)
         else {
             return false;
         };

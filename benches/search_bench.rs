@@ -7,16 +7,16 @@ fn search_compilation(c: &mut Criterion) {
     let mut group = c.benchmark_group("search_compilation");
 
     group.bench_function("compile_literal", |b| {
-        b.iter(|| black_box(compile_regex("simple_literal")))
+        b.iter(|| black_box(compile_regex("simple_literal")));
     });
 
     group.bench_function("compile_regex_simple", |b| {
-        b.iter(|| black_box(compile_regex(r"\w+\s+\d+")))
+        b.iter(|| black_box(compile_regex(r"\w+\s+\d+")));
     });
 
     group.bench_function("compile_regex_complex", |b| {
         // A more complex regex that might trigger different paths
-        b.iter(|| black_box(compile_regex(r"^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$")))
+        b.iter(|| black_box(compile_regex(r"^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$")));
     });
 
     group.finish();
@@ -29,7 +29,7 @@ fn search_execution(c: &mut Criterion) {
         let mut buf = TextBuffer::new(1024 * 1024).unwrap();
         // 1000 iterations of a pattern
         for i in 0..1000 {
-            buf.insert_str(&format!("Prefix match_{} Suffix\n", i))
+            buf.insert_str(&format!("Prefix match_{i} Suffix\n"))
                 .unwrap();
         }
         // Fill some noise
@@ -44,7 +44,7 @@ fn search_execution(c: &mut Criterion) {
         let buf = setup_text();
         b.iter(|| {
             black_box(find_all(&buf, "match_500").unwrap());
-        })
+        });
     });
 
     group.bench_function("find_all_regex_anchored", |b| {
@@ -53,7 +53,7 @@ fn search_execution(c: &mut Criterion) {
         // Let's search for "Prefix match_\d+"
         b.iter(|| {
             black_box(find_all(&buf, r"match_\d+").unwrap());
-        })
+        });
     });
 
     group.bench_function("find_all_regex_complex", |b| {
@@ -61,7 +61,7 @@ fn search_execution(c: &mut Criterion) {
         // Case insensitive search for "calculon" (Removed (?i) as it panicked, using literal for now)
         b.iter(|| {
             black_box(find_all(&buf, "calculon").unwrap());
-        })
+        });
     });
 
     group.finish();

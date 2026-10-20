@@ -168,6 +168,7 @@ fn test_theme_variant() {
 #[cfg(feature = "treesitter")]
 fn test_theme_coverage() {
     use crate::syntax::loader::LanguageLoader;
+    use std::io::Write;
     use std::path::PathBuf;
 
     let languages = vec![
@@ -203,11 +204,8 @@ fn test_theme_coverage() {
 
     for lang in languages {
         // Load highlights query
-        let query_source = match loader.load_query(lang, "highlights") {
-            Ok(q) => q,
-            Err(_) => {
-                continue;
-            }
+        let Ok(query_source) = loader.load_query(lang, "highlights") else {
+            continue;
         };
 
         // Simple parser to extract @capture.name
@@ -220,13 +218,13 @@ fn test_theme_coverage() {
                 while let Some(&(j, ch)) = chars.peek() {
                     if ch.is_alphanumeric() || ch == '.' || ch == '_' || ch == '-' {
                         chars.next();
-                        end = j + 1;
+                        end = j + ch.len_utf8();
                     } else {
                         break;
                     }
                 }
 
-                let capture = &query_source[start..end];
+                let capture = query_source.get(start..end).expect("char boundary");
                 // capture includes leading @
                 if capture.trim_start_matches('@').trim().is_empty() {
                     continue;
@@ -234,7 +232,7 @@ fn test_theme_coverage() {
 
                 // Verify if theme handles it
                 if syntax.get_color(capture).is_none() {
-                    missing_captures.push(format!("{} in {}", capture, lang));
+                    missing_captures.push(format!("{capture} in {lang}"));
                 }
             }
         }
@@ -246,10 +244,9 @@ fn test_theme_coverage() {
         missing_captures.dedup();
 
         // Write to file
-        use std::io::Write;
         let mut file = std::fs::File::create("missing_captures.txt").unwrap();
         for capture in &missing_captures {
-            writeln!(file, "{}", capture).unwrap();
+            writeln!(file, "{capture}").unwrap();
         }
 
         panic!(

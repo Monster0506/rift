@@ -5,7 +5,9 @@ mod cli;
 use monster_rift::editor::Editor;
 use monster_rift::term::crossterm::CrosstermBackend;
 
-fn main() {
+use std::process::ExitCode;
+
+fn main() -> ExitCode {
     // Raw mode swallows stderr, so log panics to a file.
     std::panic::set_hook(Box::new(|info| {
         let backtrace = std::backtrace::Backtrace::capture();
@@ -17,20 +19,31 @@ fn main() {
         );
         let _ = std::fs::write(std::env::temp_dir().join("rift-panic.log"), &msg);
         let _ = std::fs::write("rift-panic.log", &msg);
-        eprintln!("{}", msg);
+        eprintln!("{msg}");
     }));
 
-    let args = cli::parse();
+    let args = match cli::parse() {
+        Ok(Some(args)) => args,
+        Ok(None) => {
+            println!("rift v{}", cli::VERSION);
+            return ExitCode::SUCCESS;
+        }
+        Err(e) => {
+            eprintln!("rift: {e}");
+            eprintln!("{}", cli::USAGE);
+            return ExitCode::FAILURE;
+        }
+    };
 
     // Internal mode: proxy one language server for editors to reattach to.
     #[cfg(feature = "lsp")]
     if let Some(key) = args.lsp_broker {
-        monster_rift::lsp::broker::run(&key);
+        return monster_rift::lsp::broker::run(&key);
     }
 
     #[cfg(feature = "ipc")]
     if args.list_sessions {
-        monster_rift::ipc::session::print_newest();
+        return monster_rift::ipc::session::print_newest();
     }
 
     // daemon mode
@@ -39,15 +52,15 @@ fn main() {
         if args.detach {
             if let Err(e) = monster_rift::ipc::daemon::detach() {
                 eprintln!("detach error: {e}");
-                std::process::exit(1);
+                return ExitCode::FAILURE;
             }
-            return;
+            return ExitCode::SUCCESS;
         }
-        if let Err(e) = monster_rift::ipc::daemon::run(args.file) {
+        if let Err(e) = monster_rift::ipc::daemon::run(args.file.as_deref()) {
             eprintln!("daemon error: {e}");
-            std::process::exit(1);
+            return ExitCode::FAILURE;
         }
-        return;
+        return ExitCode::SUCCESS;
     }
 
     // All interactive paths share one terminal backend.
@@ -55,26 +68,28 @@ fn main() {
         Ok(b) => b,
         Err(e) => {
             eprintln!("Failed to create terminal backend: {e}");
-            std::process::exit(1);
+            return ExitCode::FAILURE;
         }
     };
 
     // --connect [user@]host: SSH to find or start a session, then attach via tunnel.
     #[cfg(feature = "ipc")]
     if let Some(target) = args.connect {
-        if let Err(e) = monster_rift::ipc::client::connect_remote(&target, args.file, backend) {
+        if let Err(e) =
+            monster_rift::ipc::client::connect_remote(&target, args.file.as_deref(), backend)
+        {
             eprintln!("connect error: {e}");
-            std::process::exit(1);
+            return ExitCode::FAILURE;
         }
-        return;
+        return ExitCode::SUCCESS;
     }
 
     // local editor
-    let mut editor = match Editor::with_file(backend, args.file) {
+    let mut editor = match Editor::with_file(backend, args.file.as_deref()) {
         Ok(e) => e,
         Err(e) => {
             eprintln!("Initialization Error [{}]: {}", e.code, e.message);
-            std::process::exit(1);
+            return ExitCode::FAILURE;
         }
     };
 
@@ -93,6 +108,8 @@ fn main() {
 
     if let Err(e) = editor.run() {
         eprintln!("Editor Error [{}]: {}", e.code, e.message);
-        std::process::exit(1);
+        return ExitCode::FAILURE;
     }
+
+    ExitCode::SUCCESS
 }

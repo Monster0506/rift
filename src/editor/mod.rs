@@ -70,16 +70,13 @@ use std::sync::Arc;
 pub(crate) fn user_config_dir() -> std::path::PathBuf {
     if cfg!(windows) {
         std::env::var("APPDATA")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+            .map_or_else(|_| std::path::PathBuf::from("."), std::path::PathBuf::from)
             .join("rift")
     } else {
-        let base = std::env::var("XDG_CONFIG_HOME")
-            .ok()
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| {
-                std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config")
-            });
+        let base = std::env::var("XDG_CONFIG_HOME").ok().map_or_else(
+            || std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config"),
+            std::path::PathBuf::from,
+        );
         base.join("rift")
     }
 }
@@ -180,7 +177,7 @@ pub struct Editor<T: TerminalBackend> {
     #[cfg(feature = "lsp")]
     pub(crate) lsp_manager: crate::lsp::LspManager,
     #[cfg(feature = "lsp")]
-    lsp_diagnostics: std::collections::HashMap<String, Vec<crate::lsp::protocol::LspDiagnostic>>,
+    lsp_diagnostics: std::collections::BTreeMap<String, Vec<crate::lsp::protocol::LspDiagnostic>>,
     #[cfg(feature = "lsp")]
     lsp_ready_servers: std::collections::HashSet<String>,
     #[cfg(feature = "lsp")]

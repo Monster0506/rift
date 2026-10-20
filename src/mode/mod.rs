@@ -13,7 +13,7 @@ pub enum Mode {
     Search,
     /// Operator pending mode (e.g. after pressing 'd')
     OperatorPending,
-    /// LSP rename dialog (entered with <Space>rn, prompt char @)
+    /// LSP rename dialog (entered with `<Space>rn`, prompt char @)
     Rename,
     /// Replace mode (entered with R): each char overwrites instead of inserting
     Replace,
@@ -26,31 +26,34 @@ pub enum Mode {
 }
 
 impl Mode {
-    /// Returns the lowercase mode name for Lua state. OperatorPending uses `"normal"`.
-    pub fn as_str(self) -> &'static str {
+    /// Returns the lowercase mode name for Lua state. `OperatorPending` uses `"normal"`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
         match self {
-            Mode::Normal | Mode::OperatorPending => "normal",
-            Mode::Insert => "insert",
-            Mode::Command => "command",
-            Mode::Search => "search",
-            Mode::Rename => "rename",
-            Mode::Replace => "replace",
-            Mode::Visual | Mode::VisualLine | Mode::VisualBlock => "visual",
+            Self::Normal | Self::OperatorPending => "normal",
+            Self::Insert => "insert",
+            Self::Command => "command",
+            Self::Search => "search",
+            Self::Rename => "rename",
+            Self::Replace => "replace",
+            Self::Visual | Self::VisualLine | Self::VisualBlock => "visual",
         }
     }
 
     /// True for any of the three Visual-family modes.
-    pub fn is_visual(self) -> bool {
-        matches!(self, Mode::Visual | Mode::VisualLine | Mode::VisualBlock)
+    #[must_use]
+    pub const fn is_visual(self) -> bool {
+        matches!(self, Self::Visual | Self::VisualLine | Self::VisualBlock)
     }
 
     /// The `RangeKind` a region built from this mode should use, or `None`
     /// for non-visual modes.
-    pub fn visual_range_kind(self) -> Option<crate::wrap::RangeKind> {
+    #[must_use]
+    pub const fn visual_range_kind(self) -> Option<crate::wrap::RangeKind> {
         match self {
-            Mode::Visual => Some(crate::wrap::RangeKind::Charwise),
-            Mode::VisualLine => Some(crate::wrap::RangeKind::Linewise),
-            Mode::VisualBlock => Some(crate::wrap::RangeKind::Blockwise),
+            Self::Visual => Some(crate::wrap::RangeKind::Charwise),
+            Self::VisualLine => Some(crate::wrap::RangeKind::Linewise),
+            Self::VisualBlock => Some(crate::wrap::RangeKind::Blockwise),
             _ => None,
         }
     }

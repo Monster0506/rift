@@ -31,6 +31,9 @@ mod literal_search;
 use crate::search::literal_search::find_literal;
 
 /// Find all occurrences of the pattern in the buffer.
+///
+/// # Errors
+/// Returns an error if `query` does not compile as a pattern.
 pub fn find_all(
     buffer: &impl BufferView,
     query: &str,
@@ -38,7 +41,7 @@ pub fn find_all(
     crate::perf_span!(
         "search_find_all",
         crate::perf::PerfFields {
-            bytes: Some(query.len() as u32),
+            bytes: Some(u32::try_from(query.len()).unwrap_or(u32::MAX)),
             ..Default::default()
         }
     );
@@ -48,20 +51,13 @@ pub fn find_all(
 
     match tier {
         SearchTier::Literal => {
-            let pattern_orig = extract_pattern(query);
-            let (pattern_raw, check_anchor) =
-                if pattern_orig.starts_with('^') && is_literal(&pattern_orig[1..]) {
-                    (pattern_orig[1..].to_string(), true)
-                } else {
-                    (pattern_orig, false)
-                };
-            let pattern = unescape_literal(&pattern_raw);
+            let (pattern, check_anchor) = literal_pattern(query);
 
             if pattern.is_empty() {
                 return Ok((
                     Vec::new(),
                     SearchStats {
-                        compilation_time: crate::time::Instant::now() - t0,
+                        compilation_time: t0.elapsed(),
                         index_time: std::time::Duration::from_nanos(0),
                         search_time: std::time::Duration::from_nanos(0),
                     },
@@ -137,9 +133,9 @@ fn find_all_materialized(
     let mut base_byte = 0usize;
     let mut base_char = 0usize;
     for m in re.find_all(&text) {
-        base_char += text[base_byte..m.start].chars().count();
+        base_char += chars_between(&text, base_byte, m.start);
         base_byte = m.start;
-        let end_char = base_char + text[m.start..m.end].chars().count();
+        let end_char = base_char + chars_between(&text, m.start, m.end);
         matches.push(SearchMatch {
             range: base_char..end_char,
         });
@@ -166,7 +162,7 @@ enum SearchTier {
 
 fn classify_query(query: &str) -> SearchTier {
     let pattern = extract_pattern(query);
-    if pattern.starts_with('^') && pattern.len() > 1 && is_literal(&pattern[1..]) {
+    if anchored_literal(&pattern).is_some_and(|rest| !rest.is_empty()) {
         return SearchTier::Literal;
     }
     if is_literal(&pattern) {
@@ -184,11 +180,9 @@ use monster_regex::{AstNode, CharClass, Parser};
 
 fn check_complexity(pattern: &str) -> bool {
     let mut parser = Parser::new(pattern, monster_regex::Flags::default());
-    if let Ok(ast) = parser.parse() {
-        ast.iter().any(is_node_complex)
-    } else {
-        false
-    }
+    parser
+        .parse()
+        .is_ok_and(|ast| ast.iter().any(is_node_complex))
 }
 
 fn is_node_complex(node: &AstNode) -> bool {
@@ -210,7 +204,7 @@ fn is_node_complex(node: &AstNode) -> bool {
     }
 }
 
-fn is_broad_match(node: &AstNode) -> bool {
+const fn is_broad_match(node: &AstNode) -> bool {
     matches!(node, AstNode::CharClass(CharClass::Dot))
 }
 
@@ -228,15 +222,14 @@ fn extract_pattern(query: &str) -> String {
 fn is_literal(pattern: &str) -> bool {
     const UNESCAPED_SPECIALS: &str = ".^$*+?()[]{}|";
 
-    let mut chars = pattern.chars().peekable();
+    let mut chars = pattern.chars();
     while let Some(c) = chars.next() {
         if c == '\\' {
             match chars.next() {
-                Some('b') | Some('B') | Some('d') | Some('D') | Some('w') | Some('W')
-                | Some('s') | Some('S') | Some('A') | Some('Z') | Some('z') | Some('G') => {
-                    return false;
-                }
-                Some('n') | Some('t') | Some('r') => {
+                Some(
+                    'b' | 'B' | 'd' | 'D' | 'w' | 'W' | 's' | 'S' | 'A' | 'Z' | 'z' | 'G' | 'n'
+                    | 't' | 'r',
+                ) => {
                     return false;
                 }
                 Some(_) => {}
@@ -299,6 +292,9 @@ fn required_literal(query: &str) -> Option<String> {
 }
 
 /// Find the next occurrence of the pattern in the buffer.
+///
+/// # Errors
+/// Returns an error if `query` does not compile as a pattern.
 pub fn find_next(
     buffer: &impl BufferView,
     start_pos: usize,
@@ -308,12 +304,12 @@ pub fn find_next(
     crate::perf_span!(
         "search_find_next",
         crate::perf::PerfFields {
-            bytes: Some(query.len() as u32),
+            bytes: Some(u32::try_from(query.len()).unwrap_or(u32::MAX)),
             ..Default::default()
         }
     );
-    if let SearchTier::Literal = classify_query(query) {
-        return find_next_literal(buffer, start_pos, query, direction);
+    if matches!(classify_query(query), SearchTier::Literal) {
+        return Ok(find_next_literal(buffer, start_pos, query, direction));
     }
 
     if let Some(lit) = required_literal(query) {
@@ -384,23 +380,29 @@ pub fn find_next(
 /// Convert a byte range within a materialized string into a `SearchMatch` whose
 /// range is expressed in absolute code-point (char) offsets.
 fn byte_range_to_char_match(text: &str, (byte_start, byte_end): (usize, usize)) -> SearchMatch {
-    let char_start = text[..byte_start].chars().count();
-    let char_end = char_start + text[byte_start..byte_end].chars().count();
+    let char_start = chars_between(text, 0, byte_start);
+    let char_end = char_start + chars_between(text, byte_start, byte_end);
     SearchMatch {
         range: char_start..char_end,
     }
+}
+
+/// Counts chars in `text[from..to]`; regex offsets always sit on char boundaries.
+fn chars_between(text: &str, from: usize, to: usize) -> usize {
+    text.get(from..to).map_or(0, |s| s.chars().count())
+}
+
+/// Returns the literal after a leading `^` anchor, if there is one.
+fn anchored_literal(pattern: &str) -> Option<&str> {
+    pattern.strip_prefix('^').filter(|rest| is_literal(rest))
 }
 
 /// Extract the literal pattern (and anchor flag) from a query already classified
 /// as `SearchTier::Literal`, mirroring the logic in `find_all`'s literal branch.
 fn literal_pattern(query: &str) -> (String, bool) {
     let pattern_orig = extract_pattern(query);
-    let (pattern_raw, check_anchor) =
-        if pattern_orig.starts_with('^') && is_literal(&pattern_orig[1..]) {
-            (pattern_orig[1..].to_string(), true)
-        } else {
-            (pattern_orig, false)
-        };
+    let anchored = anchored_literal(&pattern_orig).map(str::to_string);
+    let (pattern_raw, check_anchor) = anchored.map_or((pattern_orig, false), |rest| (rest, true));
     (unescape_literal(&pattern_raw), check_anchor)
 }
 
@@ -419,8 +421,7 @@ fn next_literal_match(
                 || buffer
                     .iter_at(m.range.start - 1)
                     .next()
-                    .map(|c| c.to_char_lossy() == '\n')
-                    .unwrap_or(false);
+                    .is_some_and(|c| c.to_char_lossy() == '\n');
             if !is_start {
                 start_pos = m.range.start + 1;
                 continue;
@@ -438,7 +439,7 @@ fn find_next_literal(
     start_pos: usize,
     query: &str,
     direction: SearchDirection,
-) -> Result<(Option<SearchMatch>, SearchStats), RiftError> {
+) -> (Option<SearchMatch>, SearchStats) {
     let t0 = crate::time::Instant::now();
     let (pattern, check_anchor) = literal_pattern(query);
     let t1 = crate::time::Instant::now();
@@ -468,19 +469,19 @@ fn find_next_literal(
     };
 
     let t2 = crate::time::Instant::now();
-    Ok((
+    (
         result,
         SearchStats {
             compilation_time: t1 - t0,
             index_time: std::time::Duration::from_nanos(0),
             search_time: t2 - t1,
         },
-    ))
+    )
 }
 
 fn convert_match<B: BufferView + ?Sized>(
     haystack: &BufferHaystack<B>,
-    m: monster_regex::Match,
+    m: &monster_regex::Match,
 ) -> SearchMatch {
     let char_start = haystack.byte_offset_to_char_abs(m.start);
     let char_end = haystack.byte_offset_to_char_abs(m.end);
@@ -501,13 +502,14 @@ pub enum RiftRegex {
 }
 
 impl RiftRegex {
+    #[must_use]
     pub fn find_all<'a>(
         &'a self,
         text: &'a str,
     ) -> Box<dyn Iterator<Item = monster_regex::Match> + 'a> {
         match self {
-            RiftRegex::Linear(re) => Box::new(re.as_ref().find_all(text)),
-            RiftRegex::Backtracking(re) => Box::new(re.as_ref().find_all(text)),
+            Self::Linear(re) => Box::new(re.as_ref().find_all(text)),
+            Self::Backtracking(re) => Box::new(re.as_ref().find_all(text)),
         }
     }
 
@@ -522,8 +524,8 @@ impl RiftRegex {
             monster_regex::engine::CompiledRegexHaystack,
     {
         match self {
-            RiftRegex::Linear(re) => Box::new(re.as_ref().find_all_from(haystack)),
-            RiftRegex::Backtracking(re) => Box::new(re.as_ref().find_all_from(haystack)),
+            Self::Linear(re) => Box::new(re.as_ref().find_all_from(haystack)),
+            Self::Backtracking(re) => Box::new(re.as_ref().find_all_from(haystack)),
         }
     }
 
@@ -539,8 +541,8 @@ impl RiftRegex {
             monster_regex::engine::CompiledRegexHaystack,
     {
         match self {
-            RiftRegex::Linear(re) => re.as_ref().find_from_at(haystack, start),
-            RiftRegex::Backtracking(re) => re.as_ref().find_from_at(haystack, start),
+            Self::Linear(re) => re.as_ref().find_from_at(haystack, start),
+            Self::Backtracking(re) => re.as_ref().find_from_at(haystack, start),
         }
     }
 
@@ -552,32 +554,23 @@ impl RiftRegex {
             monster_regex::engine::CompiledRegexHaystack,
     {
         match self {
-            RiftRegex::Linear(re) => re.as_ref().find_from(haystack),
-            RiftRegex::Backtracking(re) => re.as_ref().find_from(haystack),
+            Self::Linear(re) => re.as_ref().find_from(haystack),
+            Self::Backtracking(re) => re.as_ref().find_from(haystack),
         }
     }
 
+    #[must_use]
     pub fn find_at(&self, text: &str, start: usize) -> Option<monster_regex::Match> {
-        if start > text.len() {
-            return None;
-        }
+        let rest = text.get(start..)?;
         match self {
-            RiftRegex::Linear(re) => {
-                re.as_ref()
-                    .find(&text[start..])
-                    .map(|m| monster_regex::Match {
-                        start: m.start + start,
-                        end: m.end + start,
-                    })
-            }
-            RiftRegex::Backtracking(re) => {
-                re.as_ref()
-                    .find(&text[start..])
-                    .map(|m| monster_regex::Match {
-                        start: m.start + start,
-                        end: m.end + start,
-                    })
-            }
+            Self::Linear(re) => re.as_ref().find(rest).map(|m| monster_regex::Match {
+                start: m.start + start,
+                end: m.end + start,
+            }),
+            Self::Backtracking(re) => re.as_ref().find(rest).map(|m| monster_regex::Match {
+                start: m.start + start,
+                end: m.end + start,
+            }),
         }
     }
 }
@@ -591,7 +584,8 @@ pub struct IncrementalSearch<'a, B: BufferView + ?Sized> {
 }
 
 impl<'a, B: BufferView + ?Sized> IncrementalSearch<'a, B> {
-    pub fn new(regex: RiftRegex, haystack: BufferHaystack<'a, B>) -> Self {
+    #[must_use]
+    pub const fn new(regex: RiftRegex, haystack: BufferHaystack<'a, B>) -> Self {
         Self {
             regex,
             haystack,
@@ -600,7 +594,7 @@ impl<'a, B: BufferView + ?Sized> IncrementalSearch<'a, B> {
     }
 }
 
-impl<'a, B: BufferView + ?Sized> Iterator for IncrementalSearch<'a, B> {
+impl<B: BufferView + ?Sized> Iterator for IncrementalSearch<'_, B> {
     type Item = SearchMatch;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -612,13 +606,16 @@ impl<'a, B: BufferView + ?Sized> Iterator for IncrementalSearch<'a, B> {
             self.pos = m.end;
         }
 
-        Some(convert_match(&self.haystack, m))
+        Some(convert_match(&self.haystack, &m))
     }
 }
 
 /// Create an incremental search iterator over a pre-built `BufferHaystackContext`.
-pub fn find_iter<'a, 'c, B: BufferView + ?Sized>(
-    context: &'c BufferHaystackContext<'a, B>,
+///
+/// # Errors
+/// Returns an error if `query` does not compile as a pattern.
+pub fn find_iter<'c, B: BufferView + ?Sized>(
+    context: &'c BufferHaystackContext<'_, B>,
     query: &str,
 ) -> Result<IncrementalSearch<'c, B>, RiftError> {
     let (re, _) = compile_regex(query)?;
@@ -627,18 +624,21 @@ pub fn find_iter<'a, 'c, B: BufferView + ?Sized>(
 }
 
 /// Compile query into Regex
+///
+/// # Errors
+/// Returns an error if `query` is not a valid rift-format or regex pattern.
 pub fn compile_regex(query: &str) -> Result<(RiftRegex, String), RiftError> {
     let is_rift_format = query.starts_with('/');
 
     let (pattern, mut flags) = if is_rift_format {
         let (pat, flags) = parse_rift_format(query).map_err(|e| {
-            RiftError::new(ErrorType::Internal, "REGEX_PARSE_ERROR", format!("{:?}", e))
+            RiftError::new(ErrorType::Internal, "REGEX_PARSE_ERROR", format!("{e:?}"))
         })?;
         (pat, flags)
     } else {
         let mut flags = monster_regex::Flags::default();
         if flags.ignore_case.is_none() {
-            flags.ignore_case = Some(!query.chars().any(|c| c.is_uppercase()));
+            flags.ignore_case = Some(!query.chars().any(char::is_uppercase));
         }
         (query.to_string(), flags)
     };
@@ -647,27 +647,18 @@ pub fn compile_regex(query: &str) -> Result<(RiftRegex, String), RiftError> {
 
     if pattern.contains('^') || pattern.contains('$') {
         let re = Regex::new(&pattern, flags).map_err(|e| {
-            RiftError::new(
-                ErrorType::Internal,
-                "REGEX_COMPILE_ERROR",
-                format!("{:?}", e),
-            )
+            RiftError::new(ErrorType::Internal, "REGEX_COMPILE_ERROR", format!("{e:?}"))
         })?;
         return Ok((RiftRegex::Backtracking(Arc::new(re)), pattern));
     }
 
-    match Regex::new_linear(&pattern, flags) {
-        Ok(re) => Ok((RiftRegex::Linear(Arc::new(re)), pattern)),
-        Err(_) => {
-            let re = Regex::new(&pattern, flags).map_err(|e| {
-                RiftError::new(
-                    ErrorType::Internal,
-                    "REGEX_COMPILE_ERROR",
-                    format!("{:?}", e),
-                )
-            })?;
-            Ok((RiftRegex::Backtracking(Arc::new(re)), pattern))
-        }
+    if let Ok(re) = Regex::new_linear(&pattern, flags) {
+        Ok((RiftRegex::Linear(Arc::new(re)), pattern))
+    } else {
+        let re = Regex::new(&pattern, flags).map_err(|e| {
+            RiftError::new(ErrorType::Internal, "REGEX_COMPILE_ERROR", format!("{e:?}"))
+        })?;
+        Ok((RiftRegex::Backtracking(Arc::new(re)), pattern))
     }
 }
 

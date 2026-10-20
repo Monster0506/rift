@@ -60,7 +60,7 @@ fn test_rift_error_warning() {
 #[test]
 fn test_rift_error_display() {
     let err = RiftError::new(ErrorType::Io, "E001", "test msg");
-    assert_eq!(format!("{}", err), "[ERROR] IO(E001): test msg");
+    assert_eq!(format!("{err}"), "[ERROR] IO(E001): test msg");
 }
 
 #[test]
@@ -134,7 +134,7 @@ fn test_rift_error_traits() {
 
     // std::error::Error
     let std_err: &dyn std::error::Error = &err1;
-    assert_eq!(format!("{}", std_err), "[ERROR] IO(E1): msg");
+    assert_eq!(format!("{std_err}"), "[ERROR] IO(E1): msg");
 }
 
 #[test]

@@ -3,6 +3,7 @@ use crate::editor::Editor;
 use crate::invariants::InvariantTier;
 use crate::key::{format_key, Key};
 
+#[must_use]
 pub fn reproduces_area(keys: &[Key], target_area: &'static str) -> bool {
     let backend = ReplayBackend::new(std::io::sink(), 24, 80);
     let Ok(mut ed) = Editor::with_file(backend, None) else {
@@ -25,6 +26,10 @@ pub fn reproduces_area(keys: &[Key], target_area: &'static str) -> bool {
     false
 }
 
+/// Shrinks `keys` with delta debugging while `reproduces` still holds.
+///
+/// # Panics
+/// Panics if `reproduces` does not hold for the initial `keys`.
 pub fn ddmin(mut keys: Vec<Key>, reproduces: impl Fn(&[Key]) -> bool) -> Vec<Key> {
     assert!(
         reproduces(&keys),
@@ -42,7 +47,7 @@ pub fn ddmin(mut keys: Vec<Key>, reproduces: impl Fn(&[Key]) -> bool) -> Vec<Key
             let complement: Vec<Key> = keys[..chunk_start]
                 .iter()
                 .chain(keys[chunk_end..].iter())
-                .cloned()
+                .copied()
                 .collect();
             if !complement.is_empty() && reproduces(&complement) {
                 keys = complement;

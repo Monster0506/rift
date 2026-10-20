@@ -1,7 +1,6 @@
 use super::Editor;
-#[allow(unused_imports)]
-use crate::buffer::api::BufferView;
 use crate::test_utils::MockTerminal;
+use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -19,7 +18,7 @@ fn drain_jobs(editor: &mut Editor<MockTerminal>) {
             .recv_timeout(Duration::from_millis(50))
         {
             Ok(msg) => {
-                let _ = editor.handle_job_message(msg);
+                editor.handle_job_message(msg);
             }
             Err(_) => {
                 if !editor.job_manager.any_job_thread_alive() {
@@ -89,8 +88,7 @@ fn cursor_stage_action_runs_git_add_and_refreshes_the_buffer() {
             .find(|&l| {
                 doc.annotations
                     .git_status_entry_at_line(l)
-                    .map(|(p, ..)| p == "new.txt")
-                    .unwrap_or(false)
+                    .is_some_and(|(p, ..)| p == "new.txt")
             })
             .expect("must find new.txt line");
         let start = doc.buffer.line_index.get_start(target_line).unwrap();
@@ -283,8 +281,7 @@ fn discard_untracked_entry_deletes_the_file_from_disk() {
             .find(|&l| {
                 doc.annotations
                     .git_status_entry_at_line(l)
-                    .map(|(p, ..)| p == "scratch.txt")
-                    .unwrap_or(false)
+                    .is_some_and(|(p, ..)| p == "scratch.txt")
             })
             .expect("scratch.txt entry line");
         let start = doc.buffer.line_index.get_start(target_line).unwrap();
@@ -379,8 +376,7 @@ fn cursor_stage_action_on_a_single_diff_line_stages_only_that_line() {
             .find(|&l| {
                 doc.annotations
                     .git_hunk_line_at_line(l)
-                    .map(|(_, _, _, line_index)| line_index == 1)
-                    .unwrap_or(false)
+                    .is_some_and(|(_, _, _, line_index)| line_index == 1)
             })
             .expect("must find the '+A' hunk line");
         let start = doc.buffer.line_index.get_start(target_line).unwrap();
@@ -429,8 +425,7 @@ fn expanding_an_untracked_files_entry_shows_its_hunk_diff() {
             .find(|&l| {
                 doc.annotations
                     .git_status_entry_at_line(l)
-                    .map(|(path, section, _)| path == "new.txt" && section == "untracked")
-                    .unwrap_or(false)
+                    .is_some_and(|(path, section, _)| path == "new.txt" && section == "untracked")
             })
             .expect("must find the untracked new.txt entry line");
         let start = doc.buffer.line_index.get_start(entry_line).unwrap();
@@ -467,8 +462,7 @@ fn cursor_stage_action_on_an_untracked_files_hunk_line_stages_only_that_line() {
             .find(|&l| {
                 doc.annotations
                     .git_status_entry_at_line(l)
-                    .map(|(path, section, _)| path == "new.txt" && section == "untracked")
-                    .unwrap_or(false)
+                    .is_some_and(|(path, section, _)| path == "new.txt" && section == "untracked")
             })
             .expect("must find the untracked new.txt entry line");
         let start = doc.buffer.line_index.get_start(entry_line).unwrap();
@@ -483,8 +477,7 @@ fn cursor_stage_action_on_an_untracked_files_hunk_line_stages_only_that_line() {
             .find(|&l| {
                 doc.annotations
                     .git_hunk_line_at_line(l)
-                    .map(|(_, _, _, line_index)| line_index == 1)
-                    .unwrap_or(false)
+                    .is_some_and(|(_, _, _, line_index)| line_index == 1)
             })
             .expect("must find the '+two' hunk line");
         let start = doc.buffer.line_index.get_start(target_line).unwrap();
@@ -540,8 +533,7 @@ fn discard_on_an_untracked_files_hunk_line_is_not_supported_and_leaves_it_untouc
             .find(|&l| {
                 doc.annotations
                     .git_status_entry_at_line(l)
-                    .map(|(path, section, _)| path == "new.txt" && section == "untracked")
-                    .unwrap_or(false)
+                    .is_some_and(|(path, section, _)| path == "new.txt" && section == "untracked")
             })
             .expect("must find the untracked new.txt entry line");
         let start = doc.buffer.line_index.get_start(entry_line).unwrap();
@@ -556,8 +548,7 @@ fn discard_on_an_untracked_files_hunk_line_is_not_supported_and_leaves_it_untouc
             .find(|&l| {
                 doc.annotations
                     .git_hunk_line_at_line(l)
-                    .map(|(_, _, _, line_index)| line_index == 1)
-                    .unwrap_or(false)
+                    .is_some_and(|(_, _, _, line_index)| line_index == 1)
             })
             .expect("must find the '+two' hunk line");
         let start = doc.buffer.line_index.get_start(target_line).unwrap();
@@ -689,6 +680,39 @@ fn git_blame_uses_a_third_of_its_parent_split_width() {
     );
 }
 
+fn assert_blame_spacer_rows(
+    editor: &Editor<MockTerminal>,
+    blame_doc_id: crate::document::DocumentId,
+) -> (usize, usize) {
+    let doc = editor.document_manager.get_document(blame_doc_id).unwrap();
+    let first = doc.annotations.git_blame_line_for_source_line(0).unwrap();
+    let second = doc.annotations.git_blame_line_for_source_line(1).unwrap();
+    assert!(
+        second > first + 1,
+        "wrapped source line must insert blank blame rows"
+    );
+    let rendered = doc.buffer.to_string();
+    let rendered_lines: Vec<_> = rendered.lines().collect();
+    for spacer in first + 1..second {
+        assert_eq!(
+            rendered_lines.get(spacer).copied().unwrap_or_default(),
+            "",
+            "blame continuation row {spacer} must be empty"
+        );
+        assert!(
+            doc.annotations.git_blame_sha_at_line(spacer).is_none(),
+            "blame continuation rows must not be actionable"
+        );
+    }
+    (first, second)
+}
+
+fn move_cursor(editor: &mut Editor<MockTerminal>, motion: crate::action::Motion) {
+    editor.handle_action(&crate::action::Action::Editor(
+        crate::action::EditorAction::Move(motion),
+    ));
+}
+
 #[test]
 fn git_blame_inserts_and_skips_source_soft_wrap_spacers() {
     let dir = tempfile::tempdir().unwrap();
@@ -706,34 +730,10 @@ fn git_blame_inserts_and_skips_source_soft_wrap_spacers() {
     editor.update_and_render().unwrap();
 
     let blame_doc_id = editor.active_document_id();
-    let (first_source_line, second_source_line) = {
-        let doc = editor.document_manager.get_document(blame_doc_id).unwrap();
-        let first = doc.annotations.git_blame_line_for_source_line(0).unwrap();
-        let second = doc.annotations.git_blame_line_for_source_line(1).unwrap();
-        assert!(
-            second > first + 1,
-            "wrapped source line must insert blank blame rows"
-        );
-        let rendered = doc.buffer.to_string();
-        let rendered_lines: Vec<_> = rendered.lines().collect();
-        for spacer in first + 1..second {
-            assert_eq!(
-                rendered_lines.get(spacer).copied().unwrap_or_default(),
-                "",
-                "blame continuation row {spacer} must be empty"
-            );
-            assert!(
-                doc.annotations.git_blame_sha_at_line(spacer).is_none(),
-                "blame continuation rows must not be actionable"
-            );
-        }
-        (first, second)
-    };
+    let (first_source_line, second_source_line) = assert_blame_spacer_rows(&editor, blame_doc_id);
     assert_eq!(first_source_line, 0);
 
-    editor.handle_action(&crate::action::Action::Editor(
-        crate::action::EditorAction::Move(crate::action::Motion::Down),
-    ));
+    move_cursor(&mut editor, crate::action::Motion::Down);
     let doc = editor.document_manager.get_document(blame_doc_id).unwrap();
     assert_eq!(doc.buffer.get_line(), second_source_line);
     assert_eq!(
@@ -753,9 +753,7 @@ fn git_blame_inserts_and_skips_source_soft_wrap_spacers() {
         "source cursor must follow the selected blame metadata row"
     );
 
-    editor.handle_action(&crate::action::Action::Editor(
-        crate::action::EditorAction::Move(crate::action::Motion::Up),
-    ));
+    move_cursor(&mut editor, crate::action::Motion::Up);
     assert_eq!(
         editor
             .document_manager
@@ -768,9 +766,7 @@ fn git_blame_inserts_and_skips_source_soft_wrap_spacers() {
     );
 
     for _ in 0..2 {
-        editor.handle_action(&crate::action::Action::Editor(
-            crate::action::EditorAction::Move(crate::action::Motion::Down),
-        ));
+        move_cursor(&mut editor, crate::action::Motion::Down);
     }
     let last_metadata_line = editor
         .document_manager
@@ -788,9 +784,7 @@ fn git_blame_inserts_and_skips_source_soft_wrap_spacers() {
             .get_line(),
         last_metadata_line
     );
-    editor.handle_action(&crate::action::Action::Editor(
-        crate::action::EditorAction::Move(crate::action::Motion::Down),
-    ));
+    move_cursor(&mut editor, crate::action::Motion::Down);
     assert_eq!(
         editor
             .document_manager
@@ -827,9 +821,10 @@ fn git_blame_keeps_source_scrolled_to_its_logical_line() {
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
     let path = dir.path().join("tracked.txt");
-    let content = (0..80)
-        .map(|line| format!("line {line}\n"))
-        .collect::<String>();
+    let mut content = String::new();
+    for line in 0..80 {
+        let _ = writeln!(content, "line {line}");
+    }
     std::fs::write(&path, content).unwrap();
     crate::git::run_checked(dir.path(), &["commit", "-am", "add lines", "--quiet"]).unwrap();
 
@@ -910,7 +905,7 @@ fn git_blame_replay_renders_metadata_to_the_left_of_source() {
     init_repo_with_commit(dir.path());
     let path = dir.path().join("tracked.txt");
     let backend = ReplayBackend::new(Vec::new(), 24, 160);
-    let mut editor = Editor::with_file(backend, Some(path.display().to_string())).unwrap();
+    let mut editor = Editor::with_file(backend, Some(&path.display().to_string())).unwrap();
     drain_jobs_replay(&mut editor);
 
     let keys = crate::key::parse_key_sequence(":G blame<CR>").unwrap();
@@ -926,7 +921,9 @@ fn git_blame_replay_renders_metadata_to_the_left_of_source() {
         .to_string()
         .lines()
         .next()
-        .unwrap()[..8]
+        .unwrap()
+        .get(..8)
+        .expect("sha prefix")
         .to_owned();
     editor.update_and_render().unwrap();
     let rows = editor.render_system.compositor.rows();
@@ -1535,7 +1532,7 @@ fn running_a_git_command_from_the_command_line_returns_to_normal_mode() {
 
     for cmd in ["G", "Git log", "Git log -1"] {
         editor.current_mode = crate::mode::Mode::Command;
-        editor.execute_command_line(cmd.to_string());
+        editor.execute_command_line(cmd);
         drain_jobs(&mut editor);
         assert_eq!(
             editor.current_mode,
@@ -1639,7 +1636,7 @@ fn expanding_a_hunk_via_real_keys_lets_one_j_reach_the_first_hunk_line() {
     let backend = ReplayBackend::new(Vec::new(), 40, 120);
     let mut editor = Editor::with_file(
         backend,
-        Some(dir.path().join("multi.txt").display().to_string()),
+        Some(&dir.path().join("multi.txt").display().to_string()),
     )
     .unwrap();
     drain_jobs_replay(&mut editor);
@@ -1700,7 +1697,7 @@ fn drain_jobs_replay<W: std::io::Write>(
             .recv_timeout(Duration::from_millis(50))
         {
             Ok(msg) => {
-                let _ = editor.handle_job_message(msg);
+                editor.handle_job_message(msg);
             }
             Err(_) => {
                 if !editor.job_manager.any_job_thread_alive() {

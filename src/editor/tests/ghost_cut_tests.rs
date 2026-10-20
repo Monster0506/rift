@@ -268,8 +268,8 @@ fn set_noghostcut_makes_dw_delete_immediately() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "abcdef");
-    editor.execute_command_line("set noghostcut".to_string());
-    assert!(!editor.state.settings.ghost_cut);
+    editor.execute_command_line("set noghostcut");
+    assert!(!editor.state.settings.editing.ghost_cut);
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
@@ -291,7 +291,7 @@ fn set_noghostcut_makes_dd_delete_immediately() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "one\ntwo\nthree\n");
-    editor.execute_command_line("set noghostcut".to_string());
+    editor.execute_command_line("set noghostcut");
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
@@ -312,7 +312,7 @@ fn set_noghostcut_makes_banked_region_delete_immediate() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.execute_command_line("set noghostcut".to_string());
+    editor.execute_command_line("set noghostcut");
     editor
         .active_document()
         .selection_set
@@ -336,9 +336,9 @@ fn set_ghostcut_can_be_re_enabled() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "abcdef");
-    editor.execute_command_line("set noghostcut".to_string());
-    editor.execute_command_line("set ghostcut".to_string());
-    assert!(editor.state.settings.ghost_cut);
+    editor.execute_command_line("set noghostcut");
+    editor.execute_command_line("set ghostcut");
+    assert!(editor.state.settings.editing.ghost_cut);
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,

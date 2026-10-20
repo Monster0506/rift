@@ -14,7 +14,7 @@ pub struct MockTerminal {
 }
 
 impl MockTerminal {
-    fn new(rows: u16, cols: u16) -> Self {
+    const fn new(rows: u16, cols: u16) -> Self {
         Self { rows, cols }
     }
 }
@@ -86,21 +86,20 @@ fn render_loop(c: &mut Criterion) {
         // Fill with some realistic code-like content
         for i in 0..10_000 {
             buf.insert_str(&format!(
-                "fn function_{}() {{ println!(\"Hello World {}\"); }}\n",
-                i, i
+                "fn function_{i}() {{ println!(\"Hello World {i}\"); }}\n"
             ))
             .unwrap();
         }
 
         let state = State::new();
-        let rows = 40;
-        let cols = 120;
+        let rows: u16 = 40;
+        let cols: u16 = 120;
 
-        let mut render_system = RenderSystem::new(rows, cols);
+        let mut render_system = RenderSystem::new(rows.into(), cols.into());
         // Force full redraw setup
-        render_system.resize(rows, cols);
+        render_system.resize(rows.into(), cols.into());
 
-        let mock_term = MockTerminal::new(rows as u16, cols as u16);
+        let mock_term = MockTerminal::new(rows, cols);
 
         (render_system, buf, state, mock_term)
     };
@@ -143,10 +142,10 @@ fn render_loop(c: &mut Criterion) {
 
                 // Measure the full render pass
                 // Note: We access `rs` mutably, but `state` and `buf` are borrowed
-                black_box(rs.render(&mut term, render_state).unwrap());
+                black_box(rs.render(&mut term, &render_state).unwrap());
             },
             criterion::BatchSize::SmallInput,
-        )
+        );
     });
 
     group.finish();

@@ -216,6 +216,7 @@ fn test_execute_move_to_buffer_end() {
 
 #[test]
 fn test_execute_insert_ctrl_char() {
+    use crate::character::Character;
     let mut doc = create_doc();
     // Ctrl+A should insert \u{1}
     execute_command(
@@ -229,7 +230,6 @@ fn test_execute_insert_ctrl_char() {
     )
     .unwrap();
     // Verify using char_at because to_string() uses Display which renders ^A for control chars
-    use crate::character::Character;
     assert_eq!(doc.buffer.char_at(0), Some(Character::Control(1)));
 }
 
@@ -466,7 +466,7 @@ fn test_execute_delete_16_lines_down() {
 
     // Create 20 lines
     for i in 0..20 {
-        doc.buffer.insert_str(&format!("line {}\n", i)).unwrap();
+        doc.buffer.insert_str(&format!("line {i}\n")).unwrap();
     }
     doc.buffer.move_to_start();
 
@@ -495,8 +495,7 @@ fn test_execute_delete_16_lines_down() {
     assert_eq!(
         remaining_lines.len(),
         3,
-        "Expected 3 lines remaining, got: {:?}",
-        remaining_lines
+        "Expected 3 lines remaining, got: {remaining_lines:?}"
     );
     assert_eq!(remaining_lines[0], "line 17");
     assert_eq!(remaining_lines[1], "line 18");
@@ -515,7 +514,7 @@ fn test_execute_delete_5_lines_up() {
 
     // Create 10 lines
     for i in 0..10 {
-        doc.buffer.insert_str(&format!("line {}\n", i)).unwrap();
+        doc.buffer.insert_str(&format!("line {i}\n")).unwrap();
     }
 
     // Position cursor on line 7
@@ -545,12 +544,11 @@ fn test_execute_delete_5_lines_up() {
 
     // Should have lines 0, 1, 8, 9 remaining (4 lines)
     // Lines 2-7 should be deleted (6 lines)
-    eprintln!("Remaining lines: {:?}", remaining_lines);
+    eprintln!("Remaining lines: {remaining_lines:?}");
     assert_eq!(
         remaining_lines.len(),
         4,
-        "Expected 4 lines remaining, got: {:?}",
-        remaining_lines
+        "Expected 4 lines remaining, got: {remaining_lines:?}"
     );
     assert_eq!(remaining_lines[0], "line 0");
     assert_eq!(remaining_lines[1], "line 1");
@@ -565,7 +563,7 @@ fn test_execute_delete_5_lines_up_cursor_mid_line() {
     // Create 10 lines with longer content
     for i in 0..10 {
         doc.buffer
-            .insert_str(&format!("line {} with some extra text\n", i))
+            .insert_str(&format!("line {i} with some extra text\n"))
             .unwrap();
     }
 
@@ -582,7 +580,7 @@ fn test_execute_delete_5_lines_up_cursor_mid_line() {
     let current_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
     let line_start = doc.buffer.line_index.get_start(current_line).unwrap_or(0);
     let col = doc.buffer.cursor() - line_start;
-    eprintln!("Starting at line {}, column {}", current_line, col);
+    eprintln!("Starting at line {current_line}, column {col}");
     assert_eq!(current_line, 7, "Should be on line 7");
     assert_eq!(col, 10, "Should be at column 10");
 
@@ -601,13 +599,12 @@ fn test_execute_delete_5_lines_up_cursor_mid_line() {
     let after_delete = doc.buffer.to_string();
     let remaining_lines: Vec<&str> = after_delete.lines().collect();
 
-    eprintln!("Remaining lines: {:?}", remaining_lines);
+    eprintln!("Remaining lines: {remaining_lines:?}");
     // Should have lines 0, 1, 8, 9 remaining (4 lines)
     assert_eq!(
         remaining_lines.len(),
         4,
-        "Expected 4 lines remaining, got: {:?}",
-        remaining_lines
+        "Expected 4 lines remaining, got: {remaining_lines:?}"
     );
     assert_eq!(remaining_lines[0], "line 0 with some extra text");
     assert_eq!(remaining_lines[1], "line 1 with some extra text");

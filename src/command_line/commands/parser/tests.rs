@@ -6,6 +6,7 @@ use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 use crate::state::UserSettings;
 
 impl CommandParser {
+    #[must_use]
     pub fn get_option_registry(&self) -> CommandRegistry {
         self.settings_registry.build_option_registry()
     }
@@ -72,8 +73,7 @@ fn parse_set(
 
     // Handle "no" prefix
     let option_lower = option_str.to_lowercase();
-    if option_lower.starts_with("no") && option_lower.len() > 2 {
-        let option_without_no = &option_lower[2..];
+    if let Some(option_without_no) = option_lower.strip_prefix("no").filter(|r| !r.is_empty()) {
         match option_registry.match_command(option_without_no) {
             MatchResult::Exact(name) | MatchResult::Prefix(name) => {
                 return ParsedCommand::Set {
@@ -87,9 +87,7 @@ fn parse_set(
     }
 
     // Handle assignment
-    if let Some(pos) = option_str.find('=') {
-        let opt = &option_str[..pos];
-        let val = &option_str[pos + 1..];
+    if let Some((opt, val)) = option_str.split_once('=') {
         return ParsedCommand::Set {
             option: opt.to_string(),
             value: Some(val.to_string()),
@@ -393,7 +391,7 @@ fn test_parse_explicit_alias_overrides_ambiguity() {
     // This confirms it matched "buffer" and not "bnext" or Ambiguous
     match result {
         ParsedCommand::Unknown { name, .. } => assert_eq!(name, "buffer"),
-        _ => panic!("Expected Unknown command 'buffer', got {:?}", result),
+        _ => panic!("Expected Unknown command 'buffer', got {result:?}"),
     }
 }
 
@@ -636,6 +634,7 @@ fn test_parse_split_aliases() {
 
 #[test]
 fn test_parse_split_unknown_subcommand_errors() {
+    use crate::command_line::commands::SplitSubcommand;
     let parser = create_real_parser();
 
     // Unknown ':' prefixed subcommand produces Unknown
@@ -646,7 +645,6 @@ fn test_parse_split_unknown_subcommand_errors() {
     assert!(matches!(result, ParsedCommand::Unknown { .. }));
 
     // Non-':' prefixed unknown token is treated as a file path
-    use crate::command_line::commands::SplitSubcommand;
     let result = parser.parse(":split somefile.txt");
     assert_eq!(
         result,

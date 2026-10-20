@@ -34,7 +34,7 @@ pub struct TextBuffer {
 
 impl Clone for TextBuffer {
     fn clone(&self) -> Self {
-        TextBuffer {
+        Self {
             line_index: self.line_index.clone(),
             cursor: self.cursor,
             desired_col: self.desired_col,
@@ -47,8 +47,10 @@ impl Clone for TextBuffer {
 }
 
 impl TextBuffer {
+    /// # Errors
+    /// Never returns `Err`.
     pub fn new(_initial_capacity: usize) -> Result<Self, RiftError> {
-        Ok(TextBuffer {
+        Ok(Self {
             line_index: LineIndex::new(),
             cursor: 0,
             desired_col: None,
@@ -70,17 +72,19 @@ impl TextBuffer {
     }
 
     #[must_use]
-    pub fn cursor(&self) -> usize {
+    pub const fn cursor(&self) -> usize {
         self.cursor
     }
 
+    /// # Errors
+    /// Returns `Err` if `pos` is past the end of the buffer.
     pub fn set_cursor(&mut self, pos: usize) -> Result<(), RiftError> {
         let len = self.len();
         if pos > len {
             return Err(RiftError::new(
                 crate::error::ErrorType::Internal,
                 crate::constants::error_types::INVALID_CURSOR,
-                format!("Cursor position {} out of bounds (len: {})", pos, len),
+                format!("Cursor position {pos} out of bounds (len: {len})"),
             ));
         }
 
@@ -112,7 +116,7 @@ impl TextBuffer {
         self.col_on_line(self.get_line())
     }
 
-    pub fn desired_col(&self) -> Option<usize> {
+    pub const fn desired_col(&self) -> Option<usize> {
         self.desired_col
     }
 
@@ -120,7 +124,7 @@ impl TextBuffer {
         *self.desired_col.get_or_insert(col)
     }
 
-    pub fn clear_desired_col(&mut self) {
+    pub const fn clear_desired_col(&mut self) {
         self.desired_col = None;
     }
 
@@ -135,7 +139,7 @@ impl TextBuffer {
         line_start + clamped
     }
 
-    pub fn move_left(&mut self) -> bool {
+    pub const fn move_left(&mut self) -> bool {
         self.desired_col = None;
         if self.cursor > 0 {
             self.cursor -= 1;
@@ -156,20 +160,28 @@ impl TextBuffer {
         }
     }
 
+    /// # Errors
+    /// Never returns `Err`.
     pub fn insert(&mut self, byte: u8) -> Result<(), RiftError> {
         let ch = Character::from(byte);
         self.insert_chars(&[ch])
     }
 
+    /// # Errors
+    /// Never returns `Err`.
     pub fn insert_char(&mut self, ch: char) -> Result<(), RiftError> {
         let character = Character::from(ch);
         self.insert_chars(&[character])
     }
 
+    /// # Errors
+    /// Never returns `Err`.
     pub fn insert_character(&mut self, ch: Character) -> Result<(), RiftError> {
         self.insert_chars(&[ch])
     }
 
+    /// # Errors
+    /// Never returns `Err`.
     pub fn insert_bytes(&mut self, bytes: &[u8]) -> Result<(), RiftError> {
         let mut chars = Vec::with_capacity(bytes.len());
         let mut remaining = bytes;
@@ -183,6 +195,7 @@ impl TextBuffer {
                 }
                 Err(e) => {
                     let valid_up_to = e.valid_up_to();
+                    // SAFETY: `valid_up_to` is the length of the prefix `from_utf8` validated.
                     let valid = unsafe { std::str::from_utf8_unchecked(&remaining[..valid_up_to]) };
                     for c in valid.chars() {
                         chars.push(Character::from(c));
@@ -198,18 +211,24 @@ impl TextBuffer {
         self.insert_chars(&chars)
     }
 
+    /// # Errors
+    /// Never returns `Err`.
     pub fn insert_str(&mut self, s: &str) -> Result<(), RiftError> {
         let chars: Vec<Character> = s.chars().map(Character::from).collect();
         self.insert_chars(&chars)
     }
 
+    /// # Errors
+    /// Never returns `Err`.
     pub fn insert_chars(&mut self, chars: &[Character]) -> Result<(), RiftError> {
-        let _ins_bytes: usize = chars.iter().map(|c| c.len_utf8()).sum();
         crate::perf_span!(
             "buffer_mutate",
             crate::perf::PerfFields {
                 tag: Some("insert"),
-                bytes: Some(_ins_bytes as u32),
+                bytes: Some(
+                    u32::try_from(chars.iter().map(Character::len_utf8).sum::<usize>())
+                        .unwrap_or(u32::MAX),
+                ),
                 ..Default::default()
             }
         );
@@ -230,13 +249,14 @@ impl TextBuffer {
         if end > self.len() {
             return false;
         }
-        let byte_pos = self.char_to_byte(start);
-        let _del_bytes = self.char_to_byte(end) - byte_pos;
         crate::perf_span!(
             "buffer_mutate",
             crate::perf::PerfFields {
                 tag: Some("delete"),
-                bytes: Some(_del_bytes as u32),
+                bytes: Some(
+                    u32::try_from(self.char_to_byte(end) - self.char_to_byte(start))
+                        .unwrap_or(u32::MAX),
+                ),
                 ..Default::default()
             }
         );
@@ -258,14 +278,17 @@ impl TextBuffer {
         if end > self.len() {
             return false;
         }
-        let byte_pos = self.char_to_byte(start);
-        let _del_bytes = self.char_to_byte(end) - byte_pos;
-        let _ins_bytes: usize = chars.iter().map(|c| c.len_utf8()).sum();
         crate::perf_span!(
             "buffer_mutate",
             crate::perf::PerfFields {
                 tag: Some("replace"),
-                bytes: Some((_del_bytes + _ins_bytes) as u32),
+                bytes: Some(
+                    u32::try_from(
+                        self.char_to_byte(end) - self.char_to_byte(start)
+                            + chars.iter().map(Character::len_utf8).sum::<usize>(),
+                    )
+                    .unwrap_or(u32::MAX),
+                ),
                 ..Default::default()
             }
         );
@@ -317,13 +340,11 @@ impl TextBuffer {
 
     #[must_use]
     pub fn get_line_bytes(&self, line_idx: usize) -> Vec<u8> {
-        let start = match self.line_index.get_start(line_idx) {
-            Some(s) => s,
-            None => return Vec::new(),
+        let Some(start) = self.line_index.get_start(line_idx) else {
+            return Vec::new();
         };
-        let end = match self.line_index.get_end(line_idx, self.len()) {
-            Some(e) => e,
-            None => return Vec::new(),
+        let Some(end) = self.line_index.get_end(line_idx, self.len()) else {
+            return Vec::new();
         };
 
         if end <= start {
@@ -333,7 +354,7 @@ impl TextBuffer {
         self.line_index.bytes_range(start..end)
     }
 
-    pub fn get_chunk_at_byte(&self, _pos: usize) -> &[u8] {
+    pub const fn get_chunk_at_byte(&self, _pos: usize) -> &[u8] {
         &[]
     }
 
@@ -462,7 +483,7 @@ impl TextBuffer {
         true
     }
 
-    pub fn move_to_start(&mut self) {
+    pub const fn move_to_start(&mut self) {
         self.desired_col = None;
         self.cursor = 0;
     }
@@ -531,6 +552,15 @@ impl TextBuffer {
     pub fn move_sentence_backward(&mut self) -> bool {
         self.desired_col = None;
         crate::movement::buffer::move_sentence_backward(self)
+    }
+}
+
+impl<'a> IntoIterator for &'a TextBuffer {
+    type Item = Character;
+    type IntoIter = crate::buffer::rope::PieceTableIterator<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
 

@@ -12,7 +12,7 @@ pub struct UndoTreeRenderResult {
     pub ut_doc_id: DocumentId,
     /// Rendered text content
     pub text: String,
-    /// Per-line sequence mapping (u64::MAX = connector line)
+    /// Per-line sequence mapping (`u64::MAX` = connector line)
     pub sequences: Vec<EditSeq>,
     /// Per-byte-range foreground colour highlights
     pub highlights: Vec<(Range<usize>, Color)>,
@@ -37,7 +37,8 @@ impl std::fmt::Debug for UndoTreeRenderJob {
 }
 
 impl UndoTreeRenderJob {
-    pub fn new(ut_doc_id: DocumentId, tree: UndoTree) -> Self {
+    #[must_use]
+    pub const fn new(ut_doc_id: DocumentId, tree: UndoTree) -> Self {
         Self {
             ut_doc_id,
             tree,
@@ -45,7 +46,8 @@ impl UndoTreeRenderJob {
         }
     }
 
-    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+    #[must_use]
+    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
         self.token = Some(token);
         self
     }

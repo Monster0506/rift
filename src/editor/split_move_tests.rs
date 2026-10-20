@@ -18,7 +18,7 @@ fn process_jobs(editor: &mut Editor<MockTerminal>) {
             .receiver()
             .recv_timeout(Duration::from_millis(50))
         {
-            editor.handle_job_message(msg).unwrap();
+            editor.handle_job_message(msg);
         }
         if !editor.job_manager.any_job_thread_alive() || Instant::now() >= deadline {
             break;
@@ -96,8 +96,7 @@ fn setup(
     crate::split::window::WindowId,
 ) {
     let term = MockTerminal::new(50, 80);
-    let mut editor =
-        Editor::with_file(term, Some(path_a.to_str().unwrap().to_string())).expect("editor init");
+    let mut editor = Editor::with_file(term, Some(path_a.to_str().unwrap())).expect("editor init");
     process_jobs(&mut editor);
 
     let win_a = editor.split_tree.focused_window_id();
@@ -234,7 +233,7 @@ fn demo5_wl_on_b_escapes_right() {
     assert!(col_b > col_a, "B should be to the right of A\n{after}");
     assert!(col_b > col_c, "B should be to the right of C\n{after}");
     assert!(
-        (col_a as isize - col_c as isize).abs() < 5,
+        col_a.abs_diff(col_c) < 5,
         "A and C should be in roughly the same column (col_a={col_a}, col_c={col_c})\n{after}"
     );
 }
@@ -334,8 +333,7 @@ fn four_pane_move_a_down() {
     std::fs::write(&pd, "WINDOW_D\n").unwrap();
 
     let term = MockTerminal::new(50, 80);
-    let mut editor =
-        Editor::with_file(term, Some(pa.to_str().unwrap().to_string())).expect("editor init");
+    let mut editor = Editor::with_file(term, Some(pa.to_str().unwrap())).expect("editor init");
     process_jobs(&mut editor);
     let win_a = editor.split_tree.focused_window_id();
 
@@ -402,8 +400,7 @@ fn three_horizontal_wl_on_a_swaps_with_b() {
     std::fs::write(&pc, "WINDOW_C\n").unwrap();
 
     let term = MockTerminal::new(50, 80);
-    let mut editor =
-        Editor::with_file(term, Some(pa.to_str().unwrap().to_string())).expect("editor init");
+    let mut editor = Editor::with_file(term, Some(pa.to_str().unwrap())).expect("editor init");
     process_jobs(&mut editor);
     let win_a = editor.split_tree.focused_window_id();
 
@@ -423,31 +420,25 @@ fn three_horizontal_wl_on_a_swaps_with_b() {
     let baseline = render_ascii(&mut editor);
     print_screen("three-horiz baseline | A | B | C |", &baseline);
 
-    let row_a_before = rows_containing(&baseline, "WINDOW_A");
-    let row_b_before = rows_containing(&baseline, "WINDOW_B");
-    let row_c_before = rows_containing(&baseline, "WINDOW_C");
-    assert!(!row_a_before.is_empty(), "WINDOW_A missing from baseline");
-    assert!(!row_b_before.is_empty(), "WINDOW_B missing from baseline");
-    assert!(!row_c_before.is_empty(), "WINDOW_C missing from baseline");
+    let left_rows = rows_containing(&baseline, "WINDOW_A");
+    let middle_rows = rows_containing(&baseline, "WINDOW_B");
+    let right_rows = rows_containing(&baseline, "WINDOW_C");
+    assert!(!left_rows.is_empty(), "WINDOW_A missing from baseline");
+    assert!(!middle_rows.is_empty(), "WINDOW_B missing from baseline");
+    assert!(!right_rows.is_empty(), "WINDOW_C missing from baseline");
     assert_eq!(
-        row_a_before[0], row_b_before[0],
+        left_rows[0], middle_rows[0],
         "A and B should be on same row in baseline"
     );
     assert_eq!(
-        row_b_before[0], row_c_before[0],
+        middle_rows[0], right_rows[0],
         "B and C should be on same row in baseline"
     );
-    let col_a_before = col_of(&baseline, "WINDOW_A").unwrap();
-    let col_b_before = col_of(&baseline, "WINDOW_B").unwrap();
-    let col_c_before = col_of(&baseline, "WINDOW_C").unwrap();
-    assert!(
-        col_a_before < col_b_before,
-        "A should be left of B in baseline"
-    );
-    assert!(
-        col_b_before < col_c_before,
-        "B should be left of C in baseline"
-    );
+    let left_col = col_of(&baseline, "WINDOW_A").unwrap();
+    let middle_col = col_of(&baseline, "WINDOW_B").unwrap();
+    let right_col = col_of(&baseline, "WINDOW_C").unwrap();
+    assert!(left_col < middle_col, "A should be left of B in baseline");
+    assert!(middle_col < right_col, "B should be left of C in baseline");
 
     editor.split_tree.set_focus(win_a);
     move_window(&mut editor, Direction::Right);
@@ -489,19 +480,19 @@ fn active_window_border_is_highlighted() {
 
     let highlight = editor.state.settings.editor_fg.or(Some(Color::White));
     let vert_fg = compositor_cell_fg(&mut editor, 5, 40);
-    let horiz_b_fg = compositor_cell_fg(&mut editor, 24, 60);
-    let horiz_a_fg = compositor_cell_fg(&mut editor, 24, 10);
+    let right_divider_fg = compositor_cell_fg(&mut editor, 24, 60);
+    let left_divider_fg = compositor_cell_fg(&mut editor, 24, 10);
 
     assert_eq!(
         vert_fg, highlight,
         "vertical divider (B's left border) should be highlighted"
     );
     assert_eq!(
-        horiz_b_fg, highlight,
+        right_divider_fg, highlight,
         "horizontal divider under B should be highlighted"
     );
     assert_ne!(
-        horiz_b_fg, horiz_a_fg,
+        right_divider_fg, left_divider_fg,
         "B-side and A-side of divider should have different colors"
     );
 }
@@ -547,23 +538,19 @@ fn single_window_no_border_highlight() {
     std::fs::write(&pa, "WINDOW_A\n").unwrap();
 
     let term = MockTerminal::new(50, 80);
-    let mut editor =
-        Editor::with_file(term, Some(pa.to_str().unwrap().to_string())).expect("editor init");
+    let mut editor = Editor::with_file(term, Some(pa.to_str().unwrap())).expect("editor init");
     process_jobs(&mut editor);
 
     editor.update_and_render().unwrap();
 
     let _cols = editor.render_system.compositor.cols();
     let cells = editor.render_system.compositor.get_composited_slice();
-    let divider_chars: Vec<_> = cells
-        .iter()
-        .filter(|c| {
-            let ch = c.content.to_char_lossy();
-            ch == '│' || ch == '─'
-        })
-        .collect();
+    let has_divider = cells.iter().any(|c| {
+        let ch = c.content.to_char_lossy();
+        ch == '│' || ch == '─'
+    });
     assert!(
-        divider_chars.is_empty(),
+        !has_divider,
         "single window should have no divider characters"
     );
 }

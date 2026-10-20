@@ -19,17 +19,19 @@ pub struct CommandParser {
 
 impl CommandParser {
     /// Create a new command parser
+    #[must_use]
     pub fn new(settings_registry: SettingsRegistry<UserSettings>) -> Self {
         Self::with_commands(settings_registry, COMMANDS)
     }
 
     /// Create a new command parser with custom commands (for testing)
+    #[must_use]
     pub fn with_commands(
         settings_registry: SettingsRegistry<UserSettings>,
         commands: &'static [CommandDescriptor],
     ) -> Self {
         let registry = Self::build_registry(commands);
-        CommandParser {
+        Self {
             registry,
             settings_registry,
             commands,
@@ -45,13 +47,13 @@ impl CommandParser {
         registry
     }
 
-    /// Helper to convert a descriptor to a CommandDef
+    /// Helper to convert a descriptor to a `CommandDef`
     fn build_command_def(desc: &CommandDescriptor) -> CommandDef {
         let mut def = CommandDef::new(desc.name)
             .with_aliases(
                 desc.aliases
                     .iter()
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect::<Vec<_>>(),
             )
             .with_description(desc.description);
@@ -63,6 +65,7 @@ impl CommandParser {
     }
 
     /// Parse a command string
+    #[must_use]
     pub fn parse(&self, input: &str) -> ParsedCommand {
         let input = input.trim();
 
@@ -97,17 +100,20 @@ impl CommandParser {
             let (name, part_bangs) = Self::strip_bangs(part);
 
             // Subcommand tokens may be prefixed with ':'
-            let name = if !command_chain.is_empty() {
-                name.strip_prefix(':').unwrap_or(name)
-            } else {
+            let name = if command_chain.is_empty() {
                 name
+            } else {
+                name.strip_prefix(':').unwrap_or(name)
             };
 
             if name.is_empty() {
                 if command_chain.is_empty() {
                     return ParsedCommand::Unknown {
                         name: part.to_string(),
-                        args: parts[i + 1..].iter().map(|s| s.to_string()).collect(),
+                        args: parts[i + 1..]
+                            .iter()
+                            .map(std::string::ToString::to_string)
+                            .collect(),
                     };
                 }
                 break;
@@ -139,7 +145,10 @@ impl CommandParser {
                     if command_chain.is_empty() {
                         return ParsedCommand::Unknown {
                             name: part.to_string(),
-                            args: parts[i + 1..].iter().map(|s| s.to_string()).collect(),
+                            args: parts[i + 1..]
+                                .iter()
+                                .map(std::string::ToString::to_string)
+                                .collect(),
                         };
                     }
                     // If we have matched something previously, this token is the start of arguments.
@@ -151,7 +160,10 @@ impl CommandParser {
         if command_chain.is_empty() {
             return ParsedCommand::Unknown {
                 name: parts[0].to_string(),
-                args: parts[1..].iter().map(|s| s.to_string()).collect(),
+                args: parts[1..]
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect(),
             };
         }
 
@@ -197,7 +209,7 @@ impl CommandParser {
     }
 
     /// Helper to strip trailing '!' from a command name
-    /// Returns (name_without_bangs, bang_count)
+    /// Returns (`name_without_bangs`, `bang_count`)
     fn strip_bangs(input: &str) -> (&str, usize) {
         let trimmed = input.trim_end_matches('!');
         let bangs = input.len() - trimmed.len();

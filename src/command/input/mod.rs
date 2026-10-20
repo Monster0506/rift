@@ -56,6 +56,7 @@ pub enum InputIntent {
 }
 
 /// Resolve a key into an input intent
+#[must_use]
 pub fn resolve_input(key: Key) -> Option<InputIntent> {
     let ctrl = key.mods.contains(Mods::CTRL);
     let move_by = |direction, plain, ctrl_unit| {

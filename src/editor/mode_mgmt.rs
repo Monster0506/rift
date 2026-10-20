@@ -2,12 +2,13 @@ use super::resolve_display_map;
 use super::Editor;
 use crate::command::Command;
 use crate::executor::execute_command;
+use crate::message::CommandLineMessage;
 use crate::mode::Mode;
 use crate::search::SearchDirection;
 use crate::term::TerminalBackend;
 
 /// True for commands that switch into Insert or Replace mode.
-fn enters_edit_mode(command: &Command) -> bool {
+const fn enters_edit_mode(command: &Command) -> bool {
     matches!(
         command,
         Command::EnterInsertMode
@@ -23,10 +24,19 @@ fn enters_edit_mode(command: &Command) -> bool {
 }
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn handle_mode_management(&mut self, command: crate::command::Command) {
-        if enters_edit_mode(&command) && self.active_doc_is(|d| d.is_read_only()) {
+        if enters_edit_mode(&command)
+            && self.active_doc_is(super::super::document::Document::is_read_only)
+        {
             self.reject_read_only_edit();
             return;
         }
+        self.handle_mode_switch(command);
+        self.handle_change_command(command);
+        self.handle_search_completion(command);
+        self.handle_command_line_edit(command);
+    }
+
+    fn handle_mode_switch(&mut self, command: Command) {
         match command {
             Command::EnterInsertMode => {
                 // Start transaction for grouping insert mode edits
@@ -87,6 +97,28 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 self.set_mode(Mode::Insert);
             }
+            Command::EnterReplaceMode => {
+                let doc = self.document_manager.active_document_mut().unwrap();
+                doc.begin_transaction("Replace");
+                self.set_mode(Mode::Replace);
+            }
+            Command::EnterCommandMode => {
+                self.state.completion_session = None;
+                self.state.clear_command_line();
+                self.state.command_history.reset_navigation();
+                self.set_mode(Mode::Command);
+            }
+            Command::EnterSearchMode => {
+                self.state.clear_command_line();
+                self.state.search_history.reset_navigation();
+                self.set_mode(Mode::Search);
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_change_command(&mut self, command: Command) {
+        match command {
             Command::Change(_, _) | Command::ChangeLine(_) => {
                 let (expand_tabs, tab_width) = {
                     let doc = self.document_manager.active_document().unwrap();
@@ -95,11 +127,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let viewport_height = self.render_system.viewport.visible_rows();
                 let mut display_map = {
                     let doc = self.document_manager.active_document().unwrap();
-                    let gutter_width = if self.state.settings.show_line_numbers {
-                        self.state.gutter_width
-                    } else {
-                        0
-                    };
+                    let gutter_width = self.state.gutter_cols(doc.options.show_line_numbers);
                     let content_width = self
                         .split_tree
                         .focused_window()
@@ -129,25 +157,19 @@ impl<T: TerminalBackend> Editor<T> {
                 );
                 self.set_mode(Mode::Insert);
             }
-            Command::EnterReplaceMode => {
-                let doc = self.document_manager.active_document_mut().unwrap();
-                doc.begin_transaction("Replace");
-                self.set_mode(Mode::Replace);
-            }
-            Command::EnterCommandMode => {
-                self.state.completion_session = None;
-                self.state.clear_command_line();
-                self.state.command_history.reset_navigation();
-                self.set_mode(Mode::Command);
-            }
-            Command::EnterSearchMode => {
-                self.state.clear_command_line();
-                self.state.search_history.reset_navigation();
-                self.set_mode(Mode::Search);
-            }
+            _ => {}
+        }
+    }
+
+    fn handle_search_completion(&mut self, command: Command) {
+        match command {
             Command::ExecuteSearch => {
                 let query = self.state.command_line.clone();
-                if !query.is_empty() {
+                if query.is_empty() {
+                    self.state.search_history.reset_navigation();
+                    self.state.clear_command_line();
+                    self.set_mode(Mode::Normal);
+                } else {
                     // Add to search history before executing
                     self.state.search_history.add(query.clone());
                     self.state.last_search_query = Some(query.clone());
@@ -156,31 +178,27 @@ impl<T: TerminalBackend> Editor<T> {
                         self.state.clear_command_line();
                         self.set_mode(Mode::Normal);
                     }
-                } else {
-                    self.state.search_history.reset_navigation();
-                    self.state.clear_command_line();
-                    self.set_mode(Mode::Normal);
                 }
             }
 
             Command::TabComplete => {
                 if let Some(session) = &mut self.state.completion_session {
-                    if !session.dropdown_open {
+                    if session.dropdown_open {
+                        session.select_next();
+                    } else {
                         session.dropdown_open = true;
                         session.selected = Some(0);
-                    } else {
-                        session.select_next();
                     }
-                    let picked = session.selected_text().map(|s| s.to_string());
+                    let picked = session
+                        .selected_text()
+                        .map(std::string::ToString::to_string);
                     let ts = session.token_start;
                     if let Some(text) = picked {
                         self.apply_completion_text(&text, ts);
                     }
                 } else {
                     let input = self.state.command_line.clone();
-                    use crate::message::CommandLineMessage;
-                    let _ = self
-                        .handle_command_line_message(CommandLineMessage::RequestCompletion(input));
+                    self.handle_command_line_message(CommandLineMessage::RequestCompletion(input));
                 }
             }
 
@@ -190,23 +208,25 @@ impl<T: TerminalBackend> Editor<T> {
                         session.dropdown_open = true;
                     }
                     session.select_prev();
-                    let picked = session.selected_text().map(|s| s.to_string());
+                    let picked = session
+                        .selected_text()
+                        .map(std::string::ToString::to_string);
                     let ts = session.token_start;
                     if let Some(text) = picked {
                         self.apply_completion_text(&text, ts);
                     }
                 } else {
                     let input = self.state.command_line.clone();
-                    use crate::message::CommandLineMessage;
-                    let _ = self
-                        .handle_command_line_message(CommandLineMessage::RequestCompletion(input));
+                    self.handle_command_line_message(CommandLineMessage::RequestCompletion(input));
                 }
             }
 
             Command::ExecuteCommandLine => {
                 if let Some(session) = &self.state.completion_session {
                     if session.dropdown_open && session.selected.is_some() {
-                        let text = session.selected_text().map(|s| s.to_string());
+                        let text = session
+                            .selected_text()
+                            .map(std::string::ToString::to_string);
                         let ts = session.token_start;
                         if let Some(text) = text {
                             self.apply_completion_text(&text, ts);
@@ -218,11 +238,13 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.completion_session = None;
                 let command_line = self.state.command_line.clone();
                 self.state.command_history.add(command_line.clone());
-                self.execute_command_line(command_line);
+                self.execute_command_line(&command_line);
             }
             _ => {}
         }
+    }
 
+    fn handle_command_line_edit(&mut self, command: Command) {
         // Handle command line editing (mutations happen here)
         match command {
             Command::AppendToCommandLine(ch) => {
@@ -230,15 +252,12 @@ impl<T: TerminalBackend> Editor<T> {
                     .state
                     .completion_session
                     .as_ref()
-                    .map(|s| s.dropdown_open)
-                    .unwrap_or(false);
+                    .is_some_and(|s| s.dropdown_open);
                 self.state.completion_session = None;
                 self.state.append_to_command_line(ch);
                 if was_open {
                     let input = self.state.command_line.clone();
-                    use crate::message::CommandLineMessage;
-                    let _ = self
-                        .handle_command_line_message(CommandLineMessage::RequestCompletion(input));
+                    self.handle_command_line_message(CommandLineMessage::RequestCompletion(input));
                 }
             }
             Command::DeleteFromCommandLine => {
@@ -246,15 +265,12 @@ impl<T: TerminalBackend> Editor<T> {
                     .state
                     .completion_session
                     .as_ref()
-                    .map(|s| s.dropdown_open)
-                    .unwrap_or(false);
+                    .is_some_and(|s| s.dropdown_open);
                 self.state.completion_session = None;
                 self.state.remove_from_command_line();
                 if was_open {
                     let input = self.state.command_line.clone();
-                    use crate::message::CommandLineMessage;
-                    let _ = self
-                        .handle_command_line_message(CommandLineMessage::RequestCompletion(input));
+                    self.handle_command_line_message(CommandLineMessage::RequestCompletion(input));
                 }
             }
             Command::Move(crate::action::Motion::Left, _)
@@ -310,7 +326,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
     /// The editor's current mode.
-    pub fn mode(&self) -> Mode {
+    pub const fn mode(&self) -> Mode {
         self.current_mode
     }
 
@@ -350,13 +366,6 @@ impl<T: TerminalBackend> Editor<T> {
         if mode != Mode::OperatorPending {
             self.pending_operator = None;
             self.pending_operator_count = 0;
-        }
-
-        match mode {
-            Mode::Command => {}
-            Mode::Search => {}
-            Mode::Rename => {}
-            _ => {}
         }
     }
 }

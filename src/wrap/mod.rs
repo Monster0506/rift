@@ -33,20 +33,33 @@ pub struct DisplayMap {
 /// `extend_to_row`/`extend_to_char` call does before rechecking its target.
 const EXTEND_BATCH_LINES: usize = 256;
 
-/// Wrap chunked chars into visual rows, logging each line's first row index
-/// (a trailing newline logs one extra); emit_final_row closes the buffer tail.
-#[allow(clippy::too_many_arguments)]
-fn wrap_chars<'a>(
-    chunks: impl Iterator<Item = &'a [Character]>,
+/// Parameters for one `wrap_chars` pass, grouped to keep its signature small.
+#[derive(Clone, Copy)]
+struct WrapSpec<'a> {
     first_line: usize,
     start_char: usize,
     wrap_width: usize,
     tab_width: usize,
     emit_final_row: bool,
-    eol_rows: &[usize],
+    eol_rows: &'a [usize],
+}
+
+/// Wrap chunked chars into visual rows, logging each line's first row index
+/// (a trailing newline logs one extra); `emit_final_row` closes the buffer tail.
+fn wrap_chars<'a>(
+    chunks: impl Iterator<Item = &'a [Character]>,
+    spec: WrapSpec<'_>,
     rows: &mut Vec<VisualRowInfo>,
     line_first_rows: &mut Vec<usize>,
 ) {
+    let WrapSpec {
+        first_line,
+        start_char,
+        wrap_width,
+        tab_width,
+        emit_final_row,
+        eol_rows,
+    } = spec;
     let wants_eol_row = |line: usize| eol_rows.binary_search(&line).is_ok();
     let mut line_idx = first_line;
     let mut visual_col: usize = 0;
@@ -65,12 +78,14 @@ fn wrap_chars<'a>(
             if ch == Character::Newline {
                 close_line(
                     rows,
-                    line_idx,
-                    seg_char_start,
-                    char_pos,
-                    seg_col_start,
-                    visual_col,
-                    is_first,
+                    Segment {
+                        logical_line: line_idx,
+                        char_start: seg_char_start,
+                        char_pos,
+                        col_start: seg_col_start,
+                        visual_col,
+                        is_first,
+                    },
                     wants_eol_row(line_idx).then_some(wrap_width),
                 );
                 line_idx += 1;
@@ -104,33 +119,24 @@ fn wrap_chars<'a>(
             };
 
             if visual_col > seg_col_start && visual_col + w > seg_col_start + wrap_width {
-                if last_word_start_char > seg_char_start {
-                    rows.push(VisualRowInfo {
-                        logical_line: line_idx,
-                        char_start: seg_char_start,
-                        char_end: last_word_start_char,
-                        segment_col_start: seg_col_start,
-                        segment_col_end: last_word_start_col,
-                        is_first,
-                    });
-                    is_first = false;
-                    seg_col_start = last_word_start_col;
-                    seg_char_start = last_word_start_char;
+                let (break_char, break_col) = if last_word_start_char > seg_char_start {
+                    (last_word_start_char, last_word_start_col)
                 } else {
-                    rows.push(VisualRowInfo {
-                        logical_line: line_idx,
-                        char_start: seg_char_start,
-                        char_end: char_pos,
-                        segment_col_start: seg_col_start,
-                        segment_col_end: visual_col,
-                        is_first,
-                    });
-                    is_first = false;
-                    seg_col_start = visual_col;
-                    seg_char_start = char_pos;
-                    last_word_start_char = char_pos;
-                    last_word_start_col = visual_col;
-                }
+                    (char_pos, visual_col)
+                };
+                rows.push(VisualRowInfo {
+                    logical_line: line_idx,
+                    char_start: seg_char_start,
+                    char_end: break_char,
+                    segment_col_start: seg_col_start,
+                    segment_col_end: break_col,
+                    is_first,
+                });
+                is_first = false;
+                seg_col_start = break_col;
+                seg_char_start = break_char;
+                last_word_start_char = break_char;
+                last_word_start_col = break_col;
             }
 
             visual_col += w;
@@ -141,30 +147,41 @@ fn wrap_chars<'a>(
     if emit_final_row {
         close_line(
             rows,
-            line_idx,
-            seg_char_start,
-            char_pos,
-            seg_col_start,
-            visual_col,
-            is_first,
+            Segment {
+                logical_line: line_idx,
+                char_start: seg_char_start,
+                char_pos,
+                col_start: seg_col_start,
+                visual_col,
+                is_first,
+            },
             wants_eol_row(line_idx).then_some(wrap_width),
         );
     }
 }
 
-/// Emit the rows ending a logical line. With `eol_row_width` set and the
-/// segment exactly that wide, the line end gets an extra row of its own.
-#[allow(clippy::too_many_arguments)]
-fn close_line(
-    rows: &mut Vec<VisualRowInfo>,
+/// Position of the segment being closed; grouped to keep `close_line` small.
+#[derive(Clone, Copy)]
+struct Segment {
     logical_line: usize,
-    seg_char_start: usize,
+    char_start: usize,
     char_pos: usize,
-    seg_col_start: usize,
+    col_start: usize,
     visual_col: usize,
     is_first: bool,
-    eol_row_width: Option<usize>,
-) {
+}
+
+/// Emit the rows ending a logical line. With `eol_row_width` set and the
+/// segment exactly that wide, the line end gets an extra row of its own.
+fn close_line(rows: &mut Vec<VisualRowInfo>, seg: Segment, eol_row_width: Option<usize>) {
+    let Segment {
+        logical_line,
+        char_start: seg_char_start,
+        char_pos,
+        col_start: seg_col_start,
+        visual_col,
+        is_first,
+    } = seg;
     let full = eol_row_width
         .is_some_and(|w| visual_col > seg_col_start && visual_col - seg_col_start >= w);
     if full {
@@ -204,7 +221,7 @@ impl DisplayMap {
         crate::perf_span!(
             "wrap_build",
             crate::perf::PerfFields {
-                lines: Some(total_lines as u32),
+                lines: Some(u32::try_from(total_lines).unwrap_or(u32::MAX)),
                 ..Default::default()
             }
         );
@@ -213,17 +230,19 @@ impl DisplayMap {
 
         wrap_chars(
             buf.line_index.table.iter_chunks_at(0),
-            0,
-            0,
-            wrap_width,
-            tab_width,
-            true,
-            &eol_rows,
+            WrapSpec {
+                first_line: 0,
+                start_char: 0,
+                wrap_width,
+                tab_width,
+                emit_final_row: true,
+                eol_rows: &eol_rows,
+            },
             &mut rows,
             &mut line_first_visual,
         );
 
-        DisplayMap {
+        Self {
             rows,
             line_first_visual,
             wrap_width,
@@ -235,8 +254,9 @@ impl DisplayMap {
 
     /// An empty map that covers nothing yet. Callers extend it on demand via
     /// `extend_to_row`/`extend_to_char` before reading past what's built.
-    pub fn empty(wrap_width: usize, tab_width: usize) -> Self {
-        DisplayMap {
+    #[must_use]
+    pub const fn empty(wrap_width: usize, tab_width: usize) -> Self {
+        Self {
             rows: Vec::new(),
             line_first_visual: Vec::new(),
             wrap_width,
@@ -247,6 +267,7 @@ impl DisplayMap {
     }
 
     /// Set the EOL-row lines on a map that has not wrapped anything yet.
+    #[must_use]
     pub fn with_eol_rows(mut self, eol_rows: Vec<usize>) -> Self {
         debug_assert!(self.rows.is_empty(), "eol rows must be set before wrapping");
         self.eol_rows = eol_rows;
@@ -254,12 +275,14 @@ impl DisplayMap {
     }
 
     /// Lines that get an EOL row when their text exactly fills the wrap width.
+    #[must_use]
     pub fn eol_rows(&self) -> &[usize] {
         &self.eol_rows
     }
 
     /// Whether the map has been extended through the end of the document.
-    pub fn is_complete(&self) -> bool {
+    #[must_use]
+    pub const fn is_complete(&self) -> bool {
         self.complete
     }
 
@@ -346,12 +369,14 @@ impl DisplayMap {
                 });
         wrap_chars(
             region_chunks,
-            start_line,
-            start_char,
-            self.wrap_width,
-            self.tab_width,
-            is_tail,
-            &self.eol_rows,
+            WrapSpec {
+                first_line: start_line,
+                start_char,
+                wrap_width: self.wrap_width,
+                tab_width: self.tab_width,
+                emit_final_row: is_tail,
+                eol_rows: &self.eol_rows,
+            },
             &mut self.rows,
             &mut self.line_first_visual,
         );
@@ -388,6 +413,7 @@ impl DisplayMap {
 
     /// Whether covering `char_offset` plus `extend_margin_rows` rows needs
     /// wrapping work - lets a shared `Arc<DisplayMap>` skip `Arc::make_mut`.
+    #[must_use]
     pub fn needs_extension(&self, char_offset: usize, extend_margin_rows: usize) -> bool {
         if self.complete {
             return false;
@@ -422,12 +448,12 @@ impl DisplayMap {
         // same index in the old and new buffer.
         let first_line = buf.line_index.get_line_at(pos);
         let new_last = buf.line_index.get_line_at(pos + ins);
-        let lines_delta = new_lines as isize - old_lines as isize;
-        let old_last = new_last as isize - lines_delta;
-        if old_last < first_line as isize || old_last >= old_lines as isize {
+        let lines_delta = new_lines.cast_signed() - old_lines.cast_signed();
+        let old_last = new_last.cast_signed() - lines_delta;
+        if old_last < first_line.cast_signed() || old_last >= old_lines.cast_signed() {
             return false;
         }
-        let old_last = old_last as usize;
+        let old_last = old_last.cast_unsigned();
 
         // Outside the region every old EOL-row line must survive (shifted);
         // a changed set there means rows we would keep were built wrong.
@@ -435,7 +461,7 @@ impl DisplayMap {
             if l < first_line {
                 Some(l)
             } else if l > old_last {
-                Some((l as isize + lines_delta) as usize)
+                Some((l.cast_signed() + lines_delta).cast_unsigned())
             } else {
                 None
             }
@@ -482,12 +508,14 @@ impl DisplayMap {
                 });
         wrap_chars(
             region_chunks,
-            first_line,
-            start_char,
-            self.wrap_width,
-            self.tab_width,
-            region_is_tail,
-            &self.eol_rows,
+            WrapSpec {
+                first_line,
+                start_char,
+                wrap_width: self.wrap_width,
+                tab_width: self.tab_width,
+                emit_final_row: region_is_tail,
+                eol_rows: &self.eol_rows,
+            },
             &mut new_rows,
             &mut new_line_rows,
         );
@@ -496,18 +524,18 @@ impl DisplayMap {
             new_line_rows.pop();
         }
 
-        let row_delta = new_rows.len() as isize - (row_end - row_start) as isize;
-        let char_delta = ins as isize - del as isize;
+        let row_delta = new_rows.len().cast_signed() - (row_end - row_start).cast_signed();
+        let char_delta = ins.cast_signed() - del.cast_signed();
 
         for r in &mut self.rows[row_end..] {
-            r.char_start = (r.char_start as isize + char_delta) as usize;
-            r.char_end = (r.char_end as isize + char_delta) as usize;
-            r.logical_line = (r.logical_line as isize + lines_delta) as usize;
+            r.char_start = (r.char_start.cast_signed() + char_delta).cast_unsigned();
+            r.char_end = (r.char_end.cast_signed() + char_delta).cast_unsigned();
+            r.logical_line = (r.logical_line.cast_signed() + lines_delta).cast_unsigned();
         }
         self.rows.splice(row_start..row_end, new_rows);
 
         for lf in &mut self.line_first_visual[old_last + 1..] {
-            *lf = (*lf as isize + row_delta) as usize;
+            *lf = (lf.cast_signed() + row_delta).cast_unsigned();
         }
         self.line_first_visual.splice(
             first_line..=old_last,
@@ -518,14 +546,17 @@ impl DisplayMap {
 
     /// Rows built so far. Equals the true document total once `is_complete()`;
     /// callers that need the true total unconditionally call `extend_to_end` first.
-    pub fn total_visual_rows(&self) -> usize {
+    #[must_use]
+    pub const fn total_visual_rows(&self) -> usize {
         self.rows.len()
     }
 
+    #[must_use]
     pub fn get_visual_row(&self, visual_row: usize) -> Option<&VisualRowInfo> {
         self.rows.get(visual_row)
     }
 
+    #[must_use]
     pub fn logical_to_first_visual(&self, logical_line: usize) -> usize {
         self.line_first_visual
             .get(logical_line)
@@ -533,6 +564,7 @@ impl DisplayMap {
             .unwrap_or(0)
     }
 
+    #[must_use]
     pub fn logical_to_last_visual(&self, logical_line: usize) -> usize {
         if logical_line + 1 < self.line_first_visual.len() {
             self.line_first_visual[logical_line + 1].saturating_sub(1)
@@ -541,6 +573,7 @@ impl DisplayMap {
         }
     }
 
+    #[must_use]
     pub fn char_to_visual_row(&self, char_offset: usize) -> usize {
         let idx = self.rows.partition_point(|r| r.char_start <= char_offset);
         if idx == 0 {
@@ -591,10 +624,8 @@ impl DisplayMap {
     pub fn visual_down(&self, char_offset: usize, buf: &TextBuffer) -> usize {
         let cur_row = self.char_to_visual_row(char_offset);
         let cur_col = self.char_to_visual_col(char_offset, buf);
-        match self.row_below(cur_row) {
-            Some(row) => self.find_char_at_col(row, cur_col, buf),
-            None => char_offset,
-        }
+        self.row_below(cur_row)
+            .map_or(char_offset, |row| self.find_char_at_col(row, cur_col, buf))
     }
 
     /// Like `visual_down` but uses `target_col` instead of the cursor's current column.
@@ -606,19 +637,16 @@ impl DisplayMap {
         buf: &TextBuffer,
     ) -> usize {
         let cur_row = self.char_to_visual_row(char_offset);
-        match self.row_below(cur_row) {
-            Some(row) => self.find_char_at_col(row, target_col, buf),
-            None => char_offset,
-        }
+        self.row_below(cur_row).map_or(char_offset, |row| {
+            self.find_char_at_col(row, target_col, buf)
+        })
     }
 
     pub fn visual_up(&self, char_offset: usize, buf: &TextBuffer) -> usize {
         let cur_row = self.char_to_visual_row(char_offset);
         let cur_col = self.char_to_visual_col(char_offset, buf);
-        match self.row_above(cur_row) {
-            Some(row) => self.find_char_at_col(row, cur_col, buf),
-            None => char_offset,
-        }
+        self.row_above(cur_row)
+            .map_or(char_offset, |row| self.find_char_at_col(row, cur_col, buf))
     }
 
     /// Like `visual_up` but uses `target_col` instead of the cursor's current column.
@@ -630,10 +658,9 @@ impl DisplayMap {
         buf: &TextBuffer,
     ) -> usize {
         let cur_row = self.char_to_visual_row(char_offset);
-        match self.row_above(cur_row) {
-            Some(row) => self.find_char_at_col(row, target_col, buf),
-            None => char_offset,
-        }
+        self.row_above(cur_row).map_or(char_offset, |row| {
+            self.find_char_at_col(row, target_col, buf)
+        })
     }
 
     fn find_char_at_col(&self, visual_row: usize, target_col: usize, buf: &TextBuffer) -> usize {
@@ -719,6 +746,7 @@ impl DisplayMap {
 }
 
 #[inline]
+#[must_use]
 pub fn char_visual_width(ch: Character, abs_col: usize, tab_width: usize) -> usize {
     ch.render_width(abs_col, tab_width)
 }
@@ -750,12 +778,13 @@ pub struct MotionRange {
     pub anchor: usize,
     pub new_cursor: usize,
     pub kind: RangeKind,
-    /// When true, the endpoint (new_cursor for forward, anchor for backward) is included.
+    /// When true, the endpoint (`new_cursor` for forward, anchor for backward) is included.
     pub inclusive: bool,
 }
 
 impl MotionRange {
-    pub fn charwise(anchor: usize, new_cursor: usize) -> Self {
+    #[must_use]
+    pub const fn charwise(anchor: usize, new_cursor: usize) -> Self {
         Self {
             anchor,
             new_cursor,
@@ -763,7 +792,8 @@ impl MotionRange {
             inclusive: false,
         }
     }
-    pub fn charwise_inclusive(anchor: usize, new_cursor: usize) -> Self {
+    #[must_use]
+    pub const fn charwise_inclusive(anchor: usize, new_cursor: usize) -> Self {
         Self {
             anchor,
             new_cursor,
@@ -771,7 +801,8 @@ impl MotionRange {
             inclusive: true,
         }
     }
-    pub fn linewise(anchor: usize, new_cursor: usize) -> Self {
+    #[must_use]
+    pub const fn linewise(anchor: usize, new_cursor: usize) -> Self {
         Self {
             anchor,
             new_cursor,

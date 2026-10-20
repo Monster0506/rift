@@ -32,10 +32,12 @@ impl BufferKindId {
 
     pub const FIRST_RUNTIME_ID: u32 = 65;
 
+    #[must_use]
     pub const fn new(id: NonZeroU32) -> Self {
         Self(id)
     }
 
+    #[must_use]
     pub const fn from_u32(raw: u32) -> Option<Self> {
         match NonZeroU32::new(raw) {
             Some(nz) => Some(Self(nz)),
@@ -43,14 +45,17 @@ impl BufferKindId {
         }
     }
 
+    #[must_use]
     pub const fn get(self) -> u32 {
         self.0.get()
     }
 
+    #[must_use]
     pub const fn non_zero(self) -> NonZeroU32 {
         self.0
     }
 
+    #[must_use]
     pub const fn is_builtin(self) -> bool {
         self.get() <= Self::RESERVED_BUILTIN_END
     }
@@ -69,14 +74,17 @@ pub struct DocumentHandle {
 }
 
 impl DocumentHandle {
+    #[must_use]
     pub const fn new(doc_id: DocumentId, instance: u64) -> Self {
         Self { doc_id, instance }
     }
 
+    #[must_use]
     pub const fn doc_id(self) -> DocumentId {
         self.doc_id
     }
 
+    #[must_use]
     pub const fn instance(self) -> u64 {
         self.instance
     }
@@ -164,6 +172,7 @@ pub struct BufferPolicies {
 }
 
 impl BufferPolicies {
+    #[must_use]
     pub const fn file_default() -> Self {
         Self {
             read_only: ReadOnlyPolicy::DocumentOverride,
@@ -178,6 +187,7 @@ impl BufferPolicies {
         }
     }
 
+    #[must_use]
     pub const fn read_only_panel() -> Self {
         Self {
             read_only: ReadOnlyPolicy::FixedReadOnly,
@@ -192,6 +202,7 @@ impl BufferPolicies {
         }
     }
 
+    #[must_use]
     pub const fn read_only_list() -> Self {
         Self {
             navigation: NavigationPolicy::Text,
@@ -199,6 +210,7 @@ impl BufferPolicies {
         }
     }
 
+    #[must_use]
     pub const fn writable_scratch_text() -> Self {
         Self {
             read_only: ReadOnlyPolicy::FixedWritable,
@@ -230,14 +242,17 @@ pub enum DescriptorOwner {
 }
 
 impl DescriptorOwner {
+    #[must_use]
     pub const fn is_builtin(&self) -> bool {
         matches!(self, Self::BuiltIn)
     }
 
+    #[must_use]
     pub const fn is_plugin(&self) -> bool {
         matches!(self, Self::Plugin { .. })
     }
 
+    #[must_use]
     pub const fn plugin_parts(&self) -> Option<(NonZeroU32, NonZeroU32)> {
         match *self {
             Self::BuiltIn => None,
@@ -248,6 +263,7 @@ impl DescriptorOwner {
         }
     }
 
+    #[must_use]
     pub const fn plugin(plugin_id: NonZeroU32, generation: NonZeroU32) -> Self {
         Self::Plugin {
             plugin_id,
@@ -296,10 +312,10 @@ pub enum CloseHandler {
     Lua,
 }
 
-fn noop_close(_handle: DocumentHandle) {}
-fn builtin_action(_handle: DocumentHandle) {}
+const fn noop_close(_handle: DocumentHandle) {}
+const fn builtin_action(_handle: DocumentHandle) {}
 
-fn builtin_save(_handle: DocumentHandle) -> SaveResult {
+const fn builtin_save(_handle: DocumentHandle) -> SaveResult {
     SaveResult::Rejected
 }
 
@@ -317,7 +333,7 @@ pub enum ReloadDispatch {
     Unsupported,
 }
 
-fn builtin_reload(_handle: DocumentHandle) -> ReloadOutcome {
+const fn builtin_reload(_handle: DocumentHandle) -> ReloadOutcome {
     ReloadOutcome::Unsupported
 }
 
@@ -335,6 +351,7 @@ pub enum DisplayNameStrategy {
 }
 
 impl DisplayNameStrategy {
+    #[must_use]
     pub fn resolve<'a>(
         &'a self,
         kind_name: &'a str,
@@ -343,17 +360,10 @@ impl DisplayNameStrategy {
     ) -> Cow<'a, str> {
         match self {
             Self::KindName => Cow::Borrowed(kind_name),
-            Self::FileName => match file_path {
-                Some(p) => match p.file_name() {
-                    Some(name) => name.to_string_lossy(),
-                    None => Cow::Borrowed("[No Name]"),
-                },
-                None => Cow::Borrowed("[No Name]"),
-            },
-            Self::Terminal => match terminal_name {
-                Some(name) => Cow::Borrowed(name),
-                None => Cow::Borrowed("terminal"),
-            },
+            Self::FileName => file_path
+                .and_then(Path::file_name)
+                .map_or(Cow::Borrowed("[No Name]"), |name| name.to_string_lossy()),
+            Self::Terminal => terminal_name.map_or(Cow::Borrowed("terminal"), Cow::Borrowed),
             Self::Label(label) => Cow::Borrowed(label.as_ref()),
             Self::Custom(f) => f(file_path, terminal_name),
         }
@@ -367,6 +377,7 @@ pub struct StateKeyId {
 }
 
 impl StateKeyId {
+    #[must_use]
     pub const fn of<T: 'static>(name: &'static str) -> Self {
         Self {
             type_id: std::any::TypeId::of::<T>(),
@@ -374,6 +385,7 @@ impl StateKeyId {
         }
     }
 
+    #[must_use]
     pub const fn name(&self) -> &'static str {
         self.name
     }
@@ -414,6 +426,7 @@ impl<T: 'static> std::hash::Hash for StateKey<T> {
 }
 
 impl<T: 'static> StateKey<T> {
+    #[must_use]
     pub const fn new(name: &'static str) -> Self {
         Self {
             id: StateKeyId::of::<T>(name),
@@ -421,10 +434,12 @@ impl<T: 'static> StateKey<T> {
         }
     }
 
+    #[must_use]
     pub const fn id(&self) -> StateKeyId {
         self.id
     }
 
+    #[must_use]
     pub const fn name(&self) -> &'static str {
         self.id.name()
     }
@@ -583,18 +598,25 @@ impl StateSlot {
         }
     }
 
+    #[must_use]
     pub fn empty() -> Self {
         Self::new(EMPTY_STATE_KEY, ())
     }
 
-    pub fn key_id(&self) -> StateKeyId {
+    #[must_use]
+    pub const fn key_id(&self) -> StateKeyId {
         self.key_id
     }
 
+    #[must_use]
     pub fn matches<T: 'static>(&self, key: StateKey<T>) -> bool {
         self.key_id == key.id()
     }
 
+    /// # Panics
+    ///
+    /// Panics if `key` does not match this slot's key or the stored state is not `T`.
+    #[must_use]
     pub fn get<T: 'static>(&self, key: StateKey<T>) -> &T {
         assert_eq!(
             self.key_id,
@@ -608,6 +630,9 @@ impl StateSlot {
             .expect("StateSlot internal invariant failed: downcast failed despite key match")
     }
 
+    /// # Panics
+    ///
+    /// Panics if `key` does not match this slot's key or the stored state is not `T`.
     pub fn get_mut<T: 'static>(&mut self, key: StateKey<T>) -> &mut T {
         assert_eq!(
             self.key_id,
@@ -621,25 +646,20 @@ impl StateSlot {
             .expect("StateSlot internal invariant failed: downcast failed despite key match")
     }
 
+    /// Returns the stored state if `key` matches and the stored type is `T`.
+    #[must_use]
     pub fn try_get<T: 'static>(&self, key: StateKey<T>) -> Option<&T> {
         if self.key_id == key.id() {
-            Some(
-                self.state.downcast_ref::<T>().expect(
-                    "StateSlot internal invariant failed: downcast failed despite key match",
-                ),
-            )
+            self.state.downcast_ref::<T>()
         } else {
             None
         }
     }
 
+    /// Mutable counterpart of [`Self::try_get`].
     pub fn try_get_mut<T: 'static>(&mut self, key: StateKey<T>) -> Option<&mut T> {
         if self.key_id == key.id() {
-            Some(
-                self.state.downcast_mut::<T>().expect(
-                    "StateSlot internal invariant failed: downcast failed despite key match",
-                ),
-            )
+            self.state.downcast_mut::<T>()
         } else {
             None
         }
@@ -663,42 +683,52 @@ pub struct KindDescriptor {
 }
 
 impl KindDescriptor {
-    pub fn id(&self) -> BufferKindId {
+    #[must_use]
+    pub const fn id(&self) -> BufferKindId {
         self.id
     }
 
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    pub fn policies(&self) -> &BufferPolicies {
+    #[must_use]
+    pub const fn policies(&self) -> &BufferPolicies {
         &self.policies
     }
 
-    pub fn state_key(&self) -> StateKeyId {
+    #[must_use]
+    pub const fn state_key(&self) -> StateKeyId {
         self.state_key
     }
 
-    pub fn owner(&self) -> DescriptorOwner {
+    #[must_use]
+    pub const fn owner(&self) -> DescriptorOwner {
         self.owner
     }
 
-    pub fn is_tombstone(&self) -> bool {
+    #[must_use]
+    pub const fn is_tombstone(&self) -> bool {
         self.tombstone.is_some()
     }
 
-    pub fn is_builtin(&self) -> bool {
+    #[must_use]
+    pub const fn is_builtin(&self) -> bool {
         self.owner.is_builtin()
     }
 
-    pub fn is_plugin(&self) -> bool {
+    #[must_use]
+    pub const fn is_plugin(&self) -> bool {
         self.owner.is_plugin()
     }
 
+    #[must_use]
     pub fn help_lines(&self) -> Option<&[String]> {
         self.help_lines.as_deref()
     }
 
+    #[must_use]
     pub fn to_tombstone(&self, reason: String) -> Self {
         let mut policies = self.policies;
         policies.read_only = ReadOnlyPolicy::FixedReadOnly;
@@ -723,6 +753,7 @@ impl KindDescriptor {
         }
     }
 
+    #[must_use]
     pub fn resolve_display_name<'a>(
         &'a self,
         file_path: Option<&'a Path>,
@@ -766,6 +797,7 @@ pub struct BufferKindRegistry {
 }
 
 impl BufferKindRegistry {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             names: HashMap::new(),
@@ -775,6 +807,11 @@ impl BufferKindRegistry {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if built-in registration fails; the built-in set is fixed, so this
+    /// does not happen in practice.
+    #[must_use]
     pub fn with_builtins() -> Self {
         let mut reg = Self::new();
         reg.register_builtins()
@@ -782,6 +819,10 @@ impl BufferKindRegistry {
         reg
     }
 
+    /// # Errors
+    ///
+    /// Returns `NotBuiltinId` for a non-builtin id, `AlreadyRegistered` if the id is
+    /// taken, or `DuplicateName` if the name is taken.
     pub fn register_builtin(
         &mut self,
         descriptor: KindDescriptor,
@@ -804,6 +845,11 @@ impl BufferKindRegistry {
         Ok(arc)
     }
 
+    /// # Errors
+    ///
+    /// Returns `DuplicateName` if the name is taken, `IdExhausted` if the runtime id
+    /// counter overflows, `ZeroId` if the allocated id is zero, or `InvalidId` if the
+    /// builder returns a descriptor with a different id.
     pub fn register_runtime(
         &mut self,
         name: &str,
@@ -832,14 +878,17 @@ impl BufferKindRegistry {
         Ok(arc)
     }
 
+    #[must_use]
     pub fn get_by_id(&self, id: BufferKindId) -> Option<Arc<KindDescriptor>> {
         self.descriptors.get(&id).cloned()
     }
 
+    #[must_use]
     pub fn get_by_name(&self, name: &str) -> Option<Arc<KindDescriptor>> {
         self.names.get(name).and_then(|id| self.get_by_id(*id))
     }
 
+    #[must_use]
     pub fn id_by_name(&self, name: &str) -> Option<BufferKindId> {
         self.names.get(name).copied()
     }
@@ -868,6 +917,7 @@ impl BufferKindRegistry {
         }
     }
 
+    #[must_use]
     pub fn open_count(&self, id: BufferKindId) -> usize {
         self.open_counts.get(&id).copied().unwrap_or(0)
     }
@@ -899,7 +949,7 @@ impl BufferKindRegistry {
         &mut self,
         plugin_id: NonZeroU32,
         generation: NonZeroU32,
-        reason: String,
+        reason: &str,
     ) -> Vec<BufferKindId> {
         let target_owner = DescriptorOwner::Plugin {
             plugin_id,
@@ -914,13 +964,25 @@ impl BufferKindRegistry {
             .collect();
 
         for &id in &ids_to_retire {
-            self.tombstone_descriptor(id, reason.clone());
+            self.tombstone_descriptor(id, reason.to_string());
         }
 
         ids_to_retire
     }
 
+    /// # Errors
+    ///
+    /// Returns the first registration error from the built-in groups; the built-in set
+    /// is fixed, so this does not occur in practice.
     pub fn register_builtins(&mut self) -> Result<(), RegistryError> {
+        self.register_core_builtins()?;
+        self.register_view_builtins()?;
+        self.register_git_status_builtins()?;
+        self.register_git_history_builtins()?;
+        self.register_panel_builtins()
+    }
+
+    fn register_core_builtins(&mut self) -> Result<(), RegistryError> {
         self.register_builtin(KindDescriptor {
             id: BufferKindId::FILE,
             name: "file".into(),
@@ -1013,7 +1075,10 @@ impl BufferKindRegistry {
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
+        Ok(())
+    }
 
+    fn register_view_builtins(&mut self) -> Result<(), RegistryError> {
         self.register_builtin(KindDescriptor {
             id: BufferKindId::CLIPBOARD,
             name: "clipboard".into(),
@@ -1096,10 +1161,13 @@ impl BufferKindRegistry {
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
+        Ok(())
+    }
 
+    fn register_git_status_builtins(&mut self) -> Result<(), RegistryError> {
         let status_help: Vec<String> = vec![
             "Git Status".into(),
-            "".into(),
+            String::new(),
             "g?      help".into(),
             "s       stage".into(),
             "u       unstage".into(),
@@ -1144,10 +1212,13 @@ impl BufferKindRegistry {
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
+        Ok(())
+    }
 
+    fn register_git_history_builtins(&mut self) -> Result<(), RegistryError> {
         let blame_help: Vec<String> = vec![
             "Git Blame".into(),
-            "".into(),
+            String::new(),
             "g?      help".into(),
             "<CR>    blame parent".into(),
             "<BS>    blame next revision".into(),
@@ -1170,7 +1241,7 @@ impl BufferKindRegistry {
 
         let log_help: Vec<String> = vec![
             "Git Log".into(),
-            "".into(),
+            String::new(),
             "g?      help".into(),
             "<CR> =  toggle show".into(),
             "r       rebase from here".into(),
@@ -1193,7 +1264,7 @@ impl BufferKindRegistry {
 
         let rebase_help: Vec<String> = vec![
             "Git Rebase Todo".into(),
-            "".into(),
+            String::new(),
             "g?      help".into(),
             "K J     move commit up/down".into(),
             "p       pick".into(),
@@ -1223,7 +1294,10 @@ impl BufferKindRegistry {
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
+        Ok(())
+    }
 
+    fn register_panel_builtins(&mut self) -> Result<(), RegistryError> {
         self.register_builtin(KindDescriptor {
             id: BufferKindId::BUFFER_LIST,
             name: "buffer_list".into(),
@@ -1241,7 +1315,7 @@ impl BufferKindRegistry {
 
         let undo_file_view_help: Vec<String> = vec![
             "Persisted Undo File".into(),
-            "".into(),
+            String::new(),
             "Read-only view of a `.undo` file's history.".into(),
         ];
         self.register_builtin(KindDescriptor {
@@ -1272,6 +1346,9 @@ impl Default for BufferKindRegistry {
 static BUILTIN_REGISTRY: LazyLock<BufferKindRegistry> =
     LazyLock::new(BufferKindRegistry::with_builtins);
 
+/// # Panics
+///
+/// Panics if `id` is not registered in the built-in registry.
 pub fn builtin_descriptor(id: BufferKindId) -> Arc<KindDescriptor> {
     BUILTIN_REGISTRY
         .get_by_id(id)

@@ -8,7 +8,8 @@ pub struct ByteLineMap {
 }
 
 impl ByteLineMap {
-    pub fn new(line_starts: Vec<usize>, line_char_starts: Vec<usize>, revision: u64) -> Self {
+    #[must_use]
+    pub const fn new(line_starts: Vec<usize>, line_char_starts: Vec<usize>, revision: u64) -> Self {
         Self {
             line_starts,
             line_char_starts,

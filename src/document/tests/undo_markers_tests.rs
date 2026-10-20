@@ -114,7 +114,7 @@ fn test_undo_redo_restores_annotation_marker_positions() {
     ));
     let span = |doc: &Document| match doc.annotations.get(id).unwrap().anchor {
         Anchor::Range(s, e) => (s.offset, e.offset),
-        other => panic!("expected range, got {:?}", other),
+        other => panic!("expected range, got {other:?}"),
     };
 
     doc.buffer.set_cursor(0).ok();
@@ -151,7 +151,7 @@ fn test_goto_seq_restores_correctly_via_checkpoint_snapshot() {
     assert_eq!(doc.buffer.to_string(), "hello world");
     let span = match doc.annotations.iter().next().unwrap().anchor {
         Anchor::Range(s, e) => (s.offset, e.offset),
-        other => panic!("expected range, got {:?}", other),
+        other => panic!("expected range, got {other:?}"),
     };
     assert_eq!(span, (6, 11));
 }
@@ -170,7 +170,7 @@ fn test_goto_seq_keeps_annotation_stacks_in_sync() {
     ));
     let span = |doc: &Document| match doc.annotations.get(id).unwrap().anchor {
         Anchor::Range(s, e) => (s.offset, e.offset),
-        other => panic!("expected range, got {:?}", other),
+        other => panic!("expected range, got {other:?}"),
     };
 
     doc.buffer.set_cursor(0).ok();
@@ -343,7 +343,7 @@ fn test_range_anchor_markers_track_edits() {
             assert_eq!(s.offset, 8);
             assert_eq!(e.offset, 13);
         }
-        other => panic!("expected range, got {:?}", other),
+        other => panic!("expected range, got {other:?}"),
     }
 
     doc.buffer.set_cursor(10).ok();
@@ -353,7 +353,7 @@ fn test_range_anchor_markers_track_edits() {
             assert_eq!(s.offset, 8);
             assert_eq!(e.offset, 14);
         }
-        other => panic!("expected range, got {:?}", other),
+        other => panic!("expected range, got {other:?}"),
     }
 }
 

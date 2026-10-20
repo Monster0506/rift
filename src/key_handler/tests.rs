@@ -96,22 +96,22 @@ fn test_process_command_mode_regular_key() {
 #[test]
 fn test_process_resize_event() {
     // Resize event should return Resize action regardless of mode
-    let action = KeyHandler::process_event(InputEvent::Resize(80, 24), Mode::Normal);
+    let action = KeyHandler::process_event(&InputEvent::Resize(80, 24), Mode::Normal);
     assert_eq!(action, KeyAction::Resize(80, 24));
 
-    let action = KeyHandler::process_event(InputEvent::Resize(100, 30), Mode::Insert);
+    let action = KeyHandler::process_event(&InputEvent::Resize(100, 30), Mode::Insert);
     assert_eq!(action, KeyAction::Resize(100, 30));
 
-    let action = KeyHandler::process_event(InputEvent::Resize(120, 40), Mode::Command);
+    let action = KeyHandler::process_event(&InputEvent::Resize(120, 40), Mode::Command);
     assert_eq!(action, KeyAction::Resize(120, 40));
 }
 
 #[test]
 fn test_process_event_routes_keys_by_mode() {
-    let action = KeyHandler::process_event(InputEvent::Key(Key::ESC), Mode::Insert);
+    let action = KeyHandler::process_event(&InputEvent::Key(Key::ESC), Mode::Insert);
     assert_eq!(action, KeyAction::ExitInsertMode);
 
-    let action = KeyHandler::process_event(InputEvent::Paste("x".into()), Mode::Insert);
+    let action = KeyHandler::process_event(&InputEvent::Paste("x".into()), Mode::Insert);
     assert_eq!(action, KeyAction::Continue);
 }
 

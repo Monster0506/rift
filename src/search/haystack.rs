@@ -108,12 +108,12 @@ impl<'a, B: BufferView + ?Sized> BufferHaystackContext<'a, B> {
     }
 }
 
-impl<'a, B: BufferView + ?Sized> Clone for BufferHaystack<'a, B> {
+impl<B: BufferView + ?Sized> Clone for BufferHaystack<'_, B> {
     fn clone(&self) -> Self {
         *self
     }
 }
-impl<'a, B: BufferView + ?Sized> Copy for BufferHaystack<'a, B> {}
+impl<B: BufferView + ?Sized> Copy for BufferHaystack<'_, B> {}
 
 pub struct BufferHaystack<'a, B: BufferView + ?Sized> {
     buffer: &'a B,
@@ -121,11 +121,10 @@ pub struct BufferHaystack<'a, B: BufferView + ?Sized> {
     line_char_starts: &'a [usize],
 }
 
-impl<'a, B: BufferView + ?Sized> BufferHaystack<'a, B> {
+impl<B: BufferView + ?Sized> BufferHaystack<'_, B> {
     pub fn byte_offset_to_char_abs(&self, byte_pos: usize) -> usize {
-        let (line_idx, offset_in_line) = match self.find_line_for_byte(byte_pos) {
-            Some(v) => v,
-            None => return self.buffer.len(),
+        let Some((line_idx, offset_in_line)) = self.find_line_for_byte(byte_pos) else {
+            return self.buffer.len();
         };
 
         let line_start_char = self.buffer.line_start(line_idx);
@@ -179,7 +178,7 @@ pub struct BufferCursor<I: Iterator<Item = Character> + Clone> {
 }
 
 impl<I: Iterator<Item = Character> + Clone> BufferCursor<I> {
-    fn new(iter: I) -> Self {
+    const fn new(iter: I) -> Self {
         Self { iter, peeked: None }
     }
 }
@@ -356,7 +355,7 @@ impl<'a, B: BufferView + ?Sized> Haystack for BufferHaystack<'a, B> {
                                 return Some(offset_from_line_start + current_byte + idx);
                             }
                         }
-                        Character::Byte(b) => {
+                        Character::Byte(b) | Character::Control(b) => {
                             if b == byte {
                                 let offset_from_line_start = self.line_byte_starts[line_idx];
                                 return Some(offset_from_line_start + current_byte);
@@ -378,12 +377,6 @@ impl<'a, B: BufferView + ?Sized> Haystack for BufferHaystack<'a, B> {
                             offset_in_line = 0;
                             moved_to_next_line = true;
                             break;
-                        }
-                        Character::Control(b) => {
-                            if b == byte {
-                                let offset_from_line_start = self.line_byte_starts[line_idx];
-                                return Some(offset_from_line_start + current_byte);
-                            }
                         }
                     }
                 }

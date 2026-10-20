@@ -1,5 +1,5 @@
 /// A capability declared by a language server plugin.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LspCapability {
     GotoDefinition,
     References,
@@ -11,6 +11,7 @@ pub enum LspCapability {
 }
 
 impl LspCapability {
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "definition" => Some(Self::GotoDefinition),
@@ -44,12 +45,14 @@ pub struct LspServerConfig {
 }
 
 impl LspServerConfig {
-    pub fn has_capability(&self, cap: &LspCapability) -> bool {
-        self.capabilities.is_empty() || self.capabilities.contains(cap)
+    #[must_use]
+    pub fn has_capability(&self, cap: LspCapability) -> bool {
+        self.capabilities.is_empty() || self.capabilities.contains(&cap)
     }
 }
 
 /// Derive the LSP languageId from a filetype/language name.
+#[must_use]
 pub fn language_id(lang: &str) -> &'static str {
     match lang {
         "rust" => "rust",

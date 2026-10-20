@@ -30,7 +30,7 @@ pub struct CommandDescriptor {
     pub aliases: &'static [&'static str],
     pub description: &'static str,
     pub factory: Option<CommandFactory>,
-    pub subcommands: &'static [CommandDescriptor],
+    pub subcommands: &'static [Self],
     pub completion: CompletionHint,
     /// Prefix required before subcommand tokens (e.g. ":" for `:split :left`)
     pub subcommand_prefix: &'static str,
@@ -38,7 +38,7 @@ pub struct CommandDescriptor {
 
 // Factory functions
 
-fn parse_quit(
+const fn parse_quit(
     _registry: &SettingsRegistry<UserSettings>,
     _args: &[&str],
     bangs: usize,
@@ -106,10 +106,10 @@ fn parse_notify(
     bangs: usize,
 ) -> ParsedCommand {
     if args.len() == 1 && (args[0] == "clear" || args[0] == "clear!") {
-        let extra_bangs = if args[0].ends_with('!') { 1 } else { 0 };
+        let extra_bangs = usize::from(args[0].ends_with('!'));
         return ParsedCommand::Notify {
             kind: "clear".to_string(),
-            message: "".to_string(),
+            message: String::new(),
             bangs: bangs + extra_bangs,
         };
     }
@@ -158,7 +158,7 @@ fn parse_reload(
     ParsedCommand::Reload { bangs }
 }
 
-fn parse_bnext(
+const fn parse_bnext(
     _registry: &SettingsRegistry<UserSettings>,
     _args: &[&str],
     bangs: usize,
@@ -166,7 +166,7 @@ fn parse_bnext(
     ParsedCommand::BufferNext { bangs }
 }
 
-fn parse_bprev(
+const fn parse_bprev(
     _registry: &SettingsRegistry<UserSettings>,
     _args: &[&str],
     bangs: usize,
@@ -174,7 +174,7 @@ fn parse_bprev(
     ParsedCommand::BufferPrevious { bangs }
 }
 
-fn parse_blist(
+const fn parse_blist(
     _registry: &SettingsRegistry<UserSettings>,
     _args: &[&str],
     _bangs: usize,
@@ -187,16 +187,16 @@ fn parse_buffer_root(
     args: &[&str],
     bangs: usize,
 ) -> ParsedCommand {
-    match args.first() {
-        None => ParsedCommand::OpenBufferList { bangs },
-        Some(arg) => match arg.parse::<usize>() {
-            Ok(index) if index > 0 => ParsedCommand::BufferGoto { index, bangs },
-            _ => ParsedCommand::Unknown {
-                name: format!("buffer {arg}"),
-                args: vec![],
-            },
-        },
-    }
+    args.first()
+        .map_or(ParsedCommand::OpenBufferList { bangs }, |arg| {
+            match arg.parse::<usize>() {
+                Ok(index) if index > 0 => ParsedCommand::BufferGoto { index, bangs },
+                _ => ParsedCommand::Unknown {
+                    name: format!("buffer {arg}"),
+                    args: vec![],
+                },
+            }
+        })
 }
 
 fn parse_bdelete(
@@ -204,9 +204,9 @@ fn parse_bdelete(
     args: &[&str],
     bangs: usize,
 ) -> ParsedCommand {
-    match args.first() {
-        None => ParsedCommand::BufferDelete { index: None, bangs },
-        Some(arg) => match arg.parse::<usize>() {
+    args.first().map_or(
+        ParsedCommand::BufferDelete { index: None, bangs },
+        |arg| match arg.parse::<usize>() {
             Ok(index) if index > 0 => ParsedCommand::BufferDelete {
                 index: Some(index),
                 bangs,
@@ -216,10 +216,10 @@ fn parse_bdelete(
                 args: vec![],
             },
         },
-    }
+    )
 }
 
-fn parse_nohighlight(
+const fn parse_nohighlight(
     _registry: &SettingsRegistry<UserSettings>,
     _args: &[&str],
     bangs: usize,
@@ -273,7 +273,7 @@ fn parse_redo(
     }
 }
 
-fn parse_checkpoint(
+const fn parse_checkpoint(
     _registry: &SettingsRegistry<UserSettings>,
     _args: &[&str],
     bangs: usize,
@@ -338,11 +338,12 @@ fn parse_substitute_impl(
     }
 
     // 4. Parse flags
-    let mut flags_str = String::new();
-    if found_sep {
+    let flags_str: String = if found_sep {
         // Rest determines flags
-        flags_str = chars.collect();
-    }
+        chars.collect()
+    } else {
+        String::new()
+    };
 
     // 5. Separate flags
     let mut subst_flags = String::new();
@@ -388,6 +389,27 @@ fn parse_substitute_range(
     parse_substitute_impl(registry, args, bangs, Some("%".to_string()))
 }
 
+const fn set_command(
+    local: bool,
+    option: String,
+    value: Option<String>,
+    bangs: usize,
+) -> ParsedCommand {
+    if local {
+        ParsedCommand::SetLocal {
+            option,
+            value,
+            bangs,
+        }
+    } else {
+        ParsedCommand::Set {
+            option,
+            value,
+            bangs,
+        }
+    }
+}
+
 // Set command logic
 fn parse_set_impl(
     registry: &SettingsRegistry<UserSettings>,
@@ -407,23 +429,13 @@ fn parse_set_impl(
 
     // Check for "no" prefix (boolean off) - case insensitive
     let option_lower = option_str.to_lowercase();
-    if option_lower.starts_with("no") && option_lower.len() > 2 {
-        let option_without_no = &option_lower[2..];
+    if let Some(option_without_no) = option_lower
+        .strip_prefix("no")
+        .filter(|rest| !rest.is_empty())
+    {
         match option_registry.match_command(option_without_no) {
             MatchResult::Exact(name) | MatchResult::Prefix(name) => {
-                return if local {
-                    ParsedCommand::SetLocal {
-                        option: name,
-                        value: Some("false".to_string()),
-                        bangs,
-                    }
-                } else {
-                    ParsedCommand::Set {
-                        option: name,
-                        value: Some("false".to_string()),
-                        bangs,
-                    }
-                };
+                return set_command(local, name, Some("false".to_string()), bangs);
             }
             MatchResult::Ambiguous { prefix, matches } => {
                 return ParsedCommand::Ambiguous {
@@ -438,25 +450,12 @@ fn parse_set_impl(
     }
 
     // Check for assignment syntax: option=value
-    if let Some(equals_pos) = option_str.find('=') {
-        let option_part = &option_str[..equals_pos];
-        let value = option_str[equals_pos + 1..].to_string();
+    if let Some((option_part, value)) = option_str.split_once('=') {
+        let value = value.to_string();
 
         match option_registry.match_command(option_part) {
             MatchResult::Exact(name) | MatchResult::Prefix(name) => {
-                return if local {
-                    ParsedCommand::SetLocal {
-                        option: name,
-                        value: Some(value),
-                        bangs,
-                    }
-                } else {
-                    ParsedCommand::Set {
-                        option: name,
-                        value: Some(value),
-                        bangs,
-                    }
-                };
+                return set_command(local, name, Some(value), bangs);
             }
             MatchResult::Ambiguous { prefix, matches } => {
                 return ParsedCommand::Ambiguous {
@@ -465,19 +464,7 @@ fn parse_set_impl(
                 };
             }
             MatchResult::Unknown(_) => {
-                return if local {
-                    ParsedCommand::SetLocal {
-                        option: option_part.to_string(),
-                        value: Some(value),
-                        bangs,
-                    }
-                } else {
-                    ParsedCommand::Set {
-                        option: option_part.to_string(),
-                        value: Some(value),
-                        bangs,
-                    }
-                };
+                return set_command(local, option_part.to_string(), Some(value), bangs);
             }
         }
     }
@@ -488,40 +475,13 @@ fn parse_set_impl(
 
         match option_registry.match_command(option_str) {
             MatchResult::Exact(name) | MatchResult::Prefix(name) => {
-                return if local {
-                    ParsedCommand::SetLocal {
-                        option: name,
-                        value: Some(value),
-                        bangs,
-                    }
-                } else {
-                    ParsedCommand::Set {
-                        option: name,
-                        value: Some(value),
-                        bangs,
-                    }
-                };
+                return set_command(local, name, Some(value), bangs);
             }
             MatchResult::Ambiguous { prefix, matches } => {
-                return ParsedCommand::Ambiguous {
-                    prefix: prefix.clone(),
-                    matches,
-                };
+                return ParsedCommand::Ambiguous { prefix, matches };
             }
             MatchResult::Unknown(_) => {
-                return if local {
-                    ParsedCommand::SetLocal {
-                        option: option_str.to_string(),
-                        value: Some(value),
-                        bangs,
-                    }
-                } else {
-                    ParsedCommand::Set {
-                        option: option_str.to_string(),
-                        value: Some(value),
-                        bangs,
-                    }
-                };
+                return set_command(local, option_str.to_string(), Some(value), bangs);
             }
         }
     }
@@ -529,39 +489,15 @@ fn parse_set_impl(
     // Boolean on (no value specified)
     match option_registry.match_command(option_str) {
         MatchResult::Exact(name) | MatchResult::Prefix(name) => {
-            if local {
-                ParsedCommand::SetLocal {
-                    option: name,
-                    value: Some("true".to_string()),
-                    bangs,
-                }
-            } else {
-                ParsedCommand::Set {
-                    option: name,
-                    value: Some("true".to_string()),
-                    bangs,
-                }
-            }
+            set_command(local, name, Some("true".to_string()), bangs)
         }
-        MatchResult::Ambiguous { prefix, matches } => ParsedCommand::Ambiguous {
-            prefix: prefix.clone(),
-            matches,
-        },
-        MatchResult::Unknown(_) => {
-            if local {
-                ParsedCommand::SetLocal {
-                    option: option_str.to_string(),
-                    value: Some("true".to_string()),
-                    bangs,
-                }
-            } else {
-                ParsedCommand::Set {
-                    option: option_str.to_string(),
-                    value: Some("true".to_string()),
-                    bangs,
-                }
-            }
-        }
+        MatchResult::Ambiguous { prefix, matches } => ParsedCommand::Ambiguous { prefix, matches },
+        MatchResult::Unknown(_) => set_command(
+            local,
+            option_str.to_string(),
+            Some("true".to_string()),
+            bangs,
+        ),
     }
 }
 
@@ -586,15 +522,15 @@ fn parse_file(
     args: &[&str],
     bangs: usize,
 ) -> ParsedCommand {
-    let path = if !args.is_empty() {
-        Some(args[0].to_string())
-    } else {
+    let path = if args.is_empty() {
         None
+    } else {
+        Some(args[0].to_string())
     };
     ParsedCommand::File { path, bangs }
 }
 
-fn parse_undotree(
+const fn parse_undotree(
     _registry: &SettingsRegistry<UserSettings>,
     _args: &[&str],
     bangs: usize,
@@ -607,11 +543,11 @@ fn parse_messages(
     args: &[&str],
     bangs: usize,
 ) -> ParsedCommand {
-    let show_all = args.first().map(|a| *a == "all").unwrap_or(false);
+    let show_all = args.first().is_some_and(|a| *a == "all");
     ParsedCommand::Messages { show_all, bangs }
 }
 
-fn parse_clipboard(
+const fn parse_clipboard(
     _registry: &SettingsRegistry<UserSettings>,
     _args: &[&str],
     bangs: usize,
@@ -624,10 +560,10 @@ fn parse_terminal(
     args: &[&str],
     bangs: usize,
 ) -> ParsedCommand {
-    let cmd = if !args.is_empty() {
-        Some(args.join(" "))
-    } else {
+    let cmd = if args.is_empty() {
         None
+    } else {
+        Some(args.join(" "))
     };
     ParsedCommand::Terminal { cmd, bangs }
 }
@@ -685,30 +621,42 @@ fn parse_vsplit(
     ParsedCommand::VSplit { subcommand, bangs }
 }
 
-fn split_cmd(sub: SplitSubcommand, bangs: usize) -> ParsedCommand {
+const fn split_cmd(sub: SplitSubcommand, bangs: usize) -> ParsedCommand {
     ParsedCommand::Split {
         subcommand: sub,
         bangs,
     }
 }
 
-fn vsplit_cmd(sub: SplitSubcommand, bangs: usize) -> ParsedCommand {
+const fn vsplit_cmd(sub: SplitSubcommand, bangs: usize) -> ParsedCommand {
     ParsedCommand::VSplit {
         subcommand: sub,
         bangs,
     }
 }
 
-fn parse_split_left(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+const fn parse_split_left(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     split_cmd(SplitSubcommand::Navigate(Direction::Left), b)
 }
-fn parse_split_right(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+const fn parse_split_right(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     split_cmd(SplitSubcommand::Navigate(Direction::Right), b)
 }
-fn parse_split_up(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+const fn parse_split_up(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
     split_cmd(SplitSubcommand::Navigate(Direction::Up), b)
 }
-fn parse_split_down(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+const fn parse_split_down(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     split_cmd(SplitSubcommand::Navigate(Direction::Down), b)
 }
 fn parse_split_resize(
@@ -722,16 +670,32 @@ fn parse_split_resize(
     )
 }
 
-fn parse_vsplit_left(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+const fn parse_vsplit_left(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     vsplit_cmd(SplitSubcommand::Navigate(Direction::Left), b)
 }
-fn parse_vsplit_right(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+const fn parse_vsplit_right(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     vsplit_cmd(SplitSubcommand::Navigate(Direction::Right), b)
 }
-fn parse_vsplit_up(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+const fn parse_vsplit_up(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     vsplit_cmd(SplitSubcommand::Navigate(Direction::Up), b)
 }
-fn parse_vsplit_down(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+const fn parse_vsplit_down(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     vsplit_cmd(SplitSubcommand::Navigate(Direction::Down), b)
 }
 fn parse_vsplit_resize(
@@ -745,72 +709,96 @@ fn parse_vsplit_resize(
     )
 }
 
-fn parse_split_move_left(
+const fn parse_split_move_left(
     _: &SettingsRegistry<UserSettings>,
     _: &[&str],
     b: usize,
 ) -> ParsedCommand {
     split_cmd(SplitSubcommand::Move(Direction::Left), b)
 }
-fn parse_split_move_right(
+const fn parse_split_move_right(
     _: &SettingsRegistry<UserSettings>,
     _: &[&str],
     b: usize,
 ) -> ParsedCommand {
     split_cmd(SplitSubcommand::Move(Direction::Right), b)
 }
-fn parse_split_move_up(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+const fn parse_split_move_up(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     split_cmd(SplitSubcommand::Move(Direction::Up), b)
 }
-fn parse_split_move_down(
+const fn parse_split_move_down(
     _: &SettingsRegistry<UserSettings>,
     _: &[&str],
     b: usize,
 ) -> ParsedCommand {
     split_cmd(SplitSubcommand::Move(Direction::Down), b)
 }
-fn parse_split_exchange(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+const fn parse_split_exchange(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     split_cmd(SplitSubcommand::Exchange, b)
 }
-fn parse_split_prev(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+const fn parse_split_prev(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     split_cmd(SplitSubcommand::PreviousWindow, b)
 }
-fn parse_split_equalize(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+const fn parse_split_equalize(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     split_cmd(SplitSubcommand::Equalize, b)
 }
 
-fn parse_vsplit_move_left(
+const fn parse_vsplit_move_left(
     _: &SettingsRegistry<UserSettings>,
     _: &[&str],
     b: usize,
 ) -> ParsedCommand {
     vsplit_cmd(SplitSubcommand::Move(Direction::Left), b)
 }
-fn parse_vsplit_move_right(
+const fn parse_vsplit_move_right(
     _: &SettingsRegistry<UserSettings>,
     _: &[&str],
     b: usize,
 ) -> ParsedCommand {
     vsplit_cmd(SplitSubcommand::Move(Direction::Right), b)
 }
-fn parse_vsplit_move_up(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+const fn parse_vsplit_move_up(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     vsplit_cmd(SplitSubcommand::Move(Direction::Up), b)
 }
-fn parse_vsplit_move_down(
+const fn parse_vsplit_move_down(
     _: &SettingsRegistry<UserSettings>,
     _: &[&str],
     b: usize,
 ) -> ParsedCommand {
     vsplit_cmd(SplitSubcommand::Move(Direction::Down), b)
 }
-fn parse_vsplit_exchange(
+const fn parse_vsplit_exchange(
     _: &SettingsRegistry<UserSettings>,
     _: &[&str],
     b: usize,
 ) -> ParsedCommand {
     vsplit_cmd(SplitSubcommand::Exchange, b)
 }
-fn parse_vsplit_prev(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+const fn parse_vsplit_prev(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     vsplit_cmd(SplitSubcommand::PreviousWindow, b)
 }
 
@@ -1087,7 +1075,7 @@ const BUFFER_SUBS: &[CommandDescriptor] = &[
 
 fn parse_lsp_sub(subcmd: &str, extra: &[&str]) -> ParsedCommand {
     let mut args = vec![subcmd.to_string()];
-    args.extend(extra.iter().map(|s| s.to_string()));
+    args.extend(extra.iter().map(std::string::ToString::to_string));
     ParsedCommand::Unknown {
         name: "lsp".to_string(),
         args,

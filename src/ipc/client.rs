@@ -16,7 +16,7 @@ struct AttachConfig {
     skip_liveness: bool,
 }
 
-fn attach<T: TerminalBackend>(config: AttachConfig, mut terminal: T) -> anyhow::Result<()> {
+fn attach<T: TerminalBackend>(config: &AttachConfig, mut terminal: T) -> anyhow::Result<()> {
     let info = crate::ipc::session::read(&config.session_file)?;
 
     if !config.skip_liveness && !crate::ipc::session::is_alive(info.pid) {
@@ -75,16 +75,19 @@ fn attach<T: TerminalBackend>(config: AttachConfig, mut terminal: T) -> anyhow::
     result
 }
 
-/// SSH to [user@]host, find or start a daemon, then attach via a port-forwarding tunnel.
+/// SSH to `[user@]host`, find or start a daemon, then attach via a port-forwarding tunnel.
+///
+/// # Errors
+/// Returns `Err` if the SSH connection, daemon startup, or tunnel setup fails.
 pub fn connect_remote<T: TerminalBackend>(
     target: &str,
-    file: Option<String>,
+    file: Option<&str>,
     terminal: T,
 ) -> anyhow::Result<()> {
-    let start_part = match &file {
-        Some(f) => format!("rift --daemon --detach {}", shell_escape(f)),
-        None => "rift --daemon --detach".to_string(),
-    };
+    let start_part = file.map_or_else(
+        || "rift --daemon --detach".to_string(),
+        |f| format!("rift --daemon --detach {}", shell_escape(f)),
+    );
     let discover_cmd = format!(
         "bash -lc 'if rift --list-sessions 2>/dev/null; then exit 0; fi; \
          {}; \
@@ -132,7 +135,7 @@ pub fn connect_remote<T: TerminalBackend>(
         session_file: tmp.clone(),
         skip_liveness: true,
     };
-    let result = attach(cfg, terminal);
+    let result = attach(&cfg, terminal);
     ssh.kill().ok();
     let _ = std::fs::remove_file(&tmp);
 

@@ -1,4 +1,4 @@
-//! Tests for the screen_buffer module
+//! Tests for the `screen_buffer` module
 
 use super::*;
 use crate::character::Character;
@@ -96,10 +96,10 @@ fn get_batched_changes_reuses_pooled_cell_buffers_without_stale_content() {
     buffer.set_cell(0, 0, Cell::from_char('a'));
     buffer.set_cell(0, 1, Cell::from_char('b'));
     buffer.set_cell(0, 2, Cell::from_char('c'));
-    let (mut batches, _) = buffer.get_batched_changes();
+    let (batches, _) = buffer.get_batched_changes();
     assert_eq!(batches.len(), 1);
     assert_eq!(batches[0].cells.len(), 3);
-    for mut batch in batches.drain(..) {
+    for mut batch in batches {
         batch.cells.clear();
         buffer.cell_batch_pool.push(batch.cells);
     }
@@ -356,7 +356,7 @@ fn test_frame_stats_zero_cells() {
         changed_cells: 0,
         full_redraw: false,
     };
-    assert_eq!(stats.change_percentage(), 0.0);
+    assert!(stats.change_percentage().abs() < f64::EPSILON);
 }
 
 #[test]
@@ -402,7 +402,7 @@ fn test_double_buffer_dirty_rect_expansion() {
 
     let contents: Vec<char> = batches
         .iter()
-        .flat_map(|b| b.cells.iter().map(|c| c.to_char()))
+        .flat_map(|b| b.cells.iter().map(Cell::to_char))
         .collect();
     assert!(contents.contains(&'A'));
     assert!(contents.contains(&'Z'));

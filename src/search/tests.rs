@@ -17,7 +17,7 @@ impl MockBuffer {
         let mut line_starts = Vec::new();
         let mut offset = 0;
 
-        for line in lines.iter() {
+        for line in lines {
             line_starts.push(offset);
             for c in line.chars() {
                 chars.push(Character::from(c));
@@ -327,7 +327,7 @@ fn test_large_file_search_performance_with_cache() {
         let mut line_starts = vec![0];
         let mut line_char_starts = vec![0];
 
-        for c in buffer.iter() {
+        for c in buffer {
             current_byte_offset += c.len_utf8();
             current_char_offset += 1;
             if c == crate::character::Character::Newline {
@@ -347,15 +347,13 @@ fn test_large_file_search_performance_with_cache() {
     let start = std::time::Instant::now();
     let result = doc.perform_search("nonexistent_string_12345", SearchDirection::Forward, false);
     let duration = start.elapsed();
-    eprintln!("[perf] warm-cache literal search took {:?}", duration);
+    eprintln!("[perf] warm-cache literal search took {duration:?}");
 
     let max_duration = if cfg!(debug_assertions) { 250 } else { 15 };
 
     assert!(
         duration.as_millis() < max_duration,
-        "Search took too long: {:?} (expected <{}ms with cache)",
-        duration,
-        max_duration
+        "Search took too long: {duration:?} (expected <{max_duration}ms with cache)"
     );
     assert!(result.unwrap().0.is_none());
 }
@@ -405,9 +403,9 @@ fn test_complex_query_search_within_time_budget() {
                 );
                 handle.join().unwrap();
             }
-            Err(_) => panic!(
+            Err(err) => panic!(
                 "{label} ({query}) did not finish within {budget:?} \
-                 (catastrophic backtracking / O(N^2) regression?)"
+                 (catastrophic backtracking / O(N^2) regression?): {err:?}"
             ),
         }
     }
@@ -480,8 +478,8 @@ fn test_smartcase_uppercase_no_hang_find_next() {
                 "Uppercase 'A' should not match lowercase 'a' with smartcase"
             );
         }
-        Err(_) => {
-            panic!("HANG DETECTED: find_next with smartcase uppercase query hung for >2s");
+        Err(err) => {
+            panic!("HANG DETECTED: find_next with smartcase uppercase query hung for >2s: {err:?}");
         }
     }
 
@@ -509,8 +507,8 @@ fn test_smartcase_uppercase_no_hang_find_all() {
                 "Uppercase 'A' should not match lowercase 'a' with smartcase"
             );
         }
-        Err(_) => {
-            panic!("HANG DETECTED: find_all with smartcase uppercase query hung for >2s");
+        Err(err) => {
+            panic!("HANG DETECTED: find_all with smartcase uppercase query hung for >2s: {err:?}");
         }
     }
 
@@ -541,8 +539,8 @@ fn test_smartcase_uppercase_no_hang_with_document() {
                 "Uppercase 'A' should not match lowercase 'a' with smartcase"
             );
         }
-        Err(_) => {
-            panic!("HANG DETECTED: Document.perform_search with smartcase uppercase query hung for >2s");
+        Err(err) => {
+            panic!("HANG DETECTED: Document.perform_search with smartcase uppercase query hung for >2s: {err:?}");
         }
     }
 
@@ -573,8 +571,8 @@ fn test_smartcase_coding_no_hang_with_document() {
                 "'Coding' should not match lowercase content with smartcase"
             );
         }
-        Err(_) => {
-            panic!("HANG DETECTED: Document.perform_search for 'Coding' hung for >2s");
+        Err(err) => {
+            panic!("HANG DETECTED: Document.perform_search for 'Coding' hung for >2s: {err:?}");
         }
     }
 
@@ -597,11 +595,11 @@ fn test_smartcase_various_letters_no_hang() {
 
     for (lines, query) in test_cases {
         let query_owned = query.to_string();
-        let lines_owned: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
+        let lines_owned: Vec<String> = lines.iter().map(ToString::to_string).collect();
         let (tx, rx) = mpsc::channel();
 
         let handle = std::thread::spawn(move || {
-            let line_refs: Vec<&str> = lines_owned.iter().map(|s| s.as_str()).collect();
+            let line_refs: Vec<&str> = lines_owned.iter().map(String::as_str).collect();
             let buffer = MockBuffer::new(&line_refs);
             let result = find_next(&buffer, 0, &query_owned, SearchDirection::Forward);
             tx.send(result).unwrap();
@@ -611,15 +609,12 @@ fn test_smartcase_various_letters_no_hang() {
             Ok(result) => {
                 assert!(
                     result.is_ok(),
-                    "Search for '{}' in {:?} should not error",
-                    query,
-                    lines
+                    "Search for '{query}' in {lines:?} should not error"
                 );
             }
-            Err(_) => {
+            Err(err) => {
                 panic!(
-                    "HANG DETECTED: find_next for query '{}' in buffer {:?} hung for >2s",
-                    query, lines
+                    "HANG DETECTED: find_next for query '{query}' in buffer {lines:?} hung for >2s: {err:?}"
                 );
             }
         }

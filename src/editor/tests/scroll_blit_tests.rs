@@ -4,10 +4,11 @@ use crate::test_utils::MockTerminal;
 
 #[test]
 fn dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
+    use std::fmt::Write as _;
     let paragraph = "The quick brown fox jumps over the lazy dog again and again near the riverbank while the sun sets slowly behind the distant hills. ";
     let mut text = String::new();
     for i in 0..80 {
-        text.push_str(&format!("line {i}: {paragraph}\n"));
+        let _ = writeln!(text, "line {i}: {paragraph}");
     }
 
     let steps: &[&str] = &[
@@ -80,7 +81,7 @@ fn content_cell_grid(editor: &mut Editor<MockTerminal>) -> Vec<Vec<crate::layer:
                 .map(|c| {
                     layer
                         .get_cell(r, c)
-                        .cloned()
+                        .copied()
                         .unwrap_or_else(crate::layer::Cell::empty)
                 })
                 .collect()
@@ -165,13 +166,13 @@ fn non_wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
         load_text(&mut editor, &text);
 
         let loader = editor.language_loader.clone();
-        let loaded = loader.load_language("rust").expect("rust grammar");
+        let grammar = loader.load_language("rust").expect("rust grammar");
         let highlights = loader
             .load_query("rust", "highlights")
             .ok()
-            .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
+            .and_then(|src| tree_sitter::Query::new(&grammar.language, &src).ok())
             .map(Arc::new);
-        let syntax = build_syntax(loaded, highlights, loader.clone()).expect("build_syntax");
+        let syntax = build_syntax(grammar, highlights, &loader).expect("build_syntax");
         editor.active_document().set_syntax(syntax);
         editor.do_incremental_syntax_parse();
         drain_jobs_until_idle(&mut editor);
@@ -227,11 +228,27 @@ fn non_wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
 }
 
 #[cfg(feature = "treesitter")]
-#[test]
-fn wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_on_densely_highlighted_document() {
+fn load_rust_syntax_and_parse(editor: &mut Editor<MockTerminal>) {
     use crate::syntax::build_syntax;
     use std::sync::Arc;
 
+    let loader = editor.language_loader.clone();
+    let grammar = loader.load_language("rust").expect("rust grammar");
+    let highlights = loader
+        .load_query("rust", "highlights")
+        .ok()
+        .and_then(|src| tree_sitter::Query::new(&grammar.language, &src).ok())
+        .map(Arc::new);
+    let syntax = build_syntax(grammar, highlights, &loader).expect("build_syntax");
+    editor.active_document().set_syntax(syntax);
+    editor.do_incremental_syntax_parse();
+    drain_jobs_until_idle(editor);
+    ensure_syntax_parsed(editor);
+}
+
+#[cfg(feature = "treesitter")]
+#[test]
+fn wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_on_densely_highlighted_document() {
     let mut lines: Vec<String> = vec![
         "use std::collections::HashMap;".to_string(),
         String::new(),
@@ -282,18 +299,7 @@ fn wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_on_densely_highlighted
         let mut editor = create_editor_sized(20, 80);
         load_text(&mut editor, &text);
 
-        let loader = editor.language_loader.clone();
-        let loaded = loader.load_language("rust").expect("rust grammar");
-        let highlights = loader
-            .load_query("rust", "highlights")
-            .ok()
-            .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
-            .map(Arc::new);
-        let syntax = build_syntax(loaded, highlights, loader.clone()).expect("build_syntax");
-        editor.active_document().set_syntax(syntax);
-        editor.do_incremental_syntax_parse();
-        drain_jobs_until_idle(&mut editor);
-        ensure_syntax_parsed(&mut editor);
+        load_rust_syntax_and_parse(&mut editor);
 
         for step in &steps[..n] {
             feed_keys(&mut editor, step);
@@ -332,10 +338,11 @@ fn wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_on_densely_highlighted
             skipped_after - skipped_before,
         );
         let total = painted + skipped;
+        let to_f64 = |n: u64| f64::from(u32::try_from(n).unwrap_or(u32::MAX));
         eprintln!(
             "wrap densely-highlighted row-skip rate: painted={painted} skipped={skipped} \
              total={total} rate={:.1}%",
-            100.0 * skipped as f64 / total.max(1) as f64
+            100.0 * to_f64(skipped) / to_f64(total.max(1))
         );
         assert!(
             skipped > 0,
@@ -357,18 +364,18 @@ fn scroll_blit_repaints_when_annotations_or_theme_change_mid_scroll() {
     use crate::syntax::build_syntax;
     use std::sync::Arc;
 
+    enum Step {
+        Keys(&'static str),
+        StyleValue5,
+        SwapTheme,
+    }
+
     let mut lines: Vec<String> = Vec::new();
     for i in 0..60 {
         lines.push(format!("    value_{i}: {i},"));
     }
     let text = lines.join("\n") + "\n";
     let style_anchor = text.find("value_5:").expect("marker line present");
-
-    enum Step {
-        Keys(&'static str),
-        StyleValue5,
-        SwapTheme,
-    }
 
     let steps: &[Step] = &[
         Step::Keys("jjjjjjjjjj"),
@@ -407,13 +414,13 @@ fn scroll_blit_repaints_when_annotations_or_theme_change_mid_scroll() {
         load_text(&mut editor, &text);
 
         let loader = editor.language_loader.clone();
-        let loaded = loader.load_language("rust").expect("rust grammar");
+        let grammar = loader.load_language("rust").expect("rust grammar");
         let highlights = loader
             .load_query("rust", "highlights")
             .ok()
-            .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
+            .and_then(|src| tree_sitter::Query::new(&grammar.language, &src).ok())
             .map(Arc::new);
-        let syntax = build_syntax(loaded, highlights, loader.clone()).expect("build_syntax");
+        let syntax = build_syntax(grammar, highlights, &loader).expect("build_syntax");
         editor.active_document().set_syntax(syntax);
         editor.do_incremental_syntax_parse();
         drain_jobs_until_idle(&mut editor);

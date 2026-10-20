@@ -11,7 +11,7 @@ pub enum PathFilter {
     DirectoriesOnly,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompletionContext {
     CommandName,
     Subcommand {
@@ -48,13 +48,15 @@ pub struct CompletionResult {
 }
 
 impl CompletionResult {
-    pub fn empty() -> Self {
+    #[must_use]
+    pub const fn empty() -> Self {
         Self {
             common_prefix: String::new(),
             candidates: Vec::new(),
         }
     }
 
+    #[must_use]
     pub fn from_candidates(mut candidates: Vec<CompletionCandidate>) -> Self {
         candidates.sort_by(|a, b| {
             a.is_directory
@@ -76,6 +78,46 @@ pub struct ParsedContext {
     pub context: CompletionContext,
     pub prefix: String,
     pub token_start: usize,
+}
+
+fn subcommand_context(
+    desc: &CommandDescriptor,
+    current_token: &str,
+    token_start: usize,
+) -> Option<ParsedContext> {
+    let pfx = desc.subcommand_prefix;
+    if pfx.is_empty() {
+        return Some(ParsedContext {
+            context: CompletionContext::Subcommand {
+                parent: desc.name.to_string(),
+                subcommand_prefix: String::new(),
+            },
+            prefix: current_token.to_string(),
+            token_start,
+        });
+    }
+    let stripped = current_token.strip_prefix(pfx)?;
+    Some(ParsedContext {
+        context: CompletionContext::Subcommand {
+            parent: desc.name.to_string(),
+            subcommand_prefix: pfx.to_string(),
+        },
+        prefix: stripped.to_string(),
+        token_start,
+    })
+}
+
+fn file_context(path_prefix: &str, token_start: usize, filter: PathFilter) -> ParsedContext {
+    let (dir, prefix) = split_path_prefix(path_prefix);
+    ParsedContext {
+        context: CompletionContext::FilePath {
+            dir,
+            prefix,
+            filter,
+        },
+        prefix: String::new(),
+        token_start,
+    }
 }
 
 pub fn parse_context(
@@ -118,75 +160,31 @@ pub fn parse_context(
             };
 
             let cmd_stripped = cmd.strip_prefix(':').unwrap_or(cmd);
-            let desc = match resolve_command_descriptor(cmd_stripped) {
-                Some(d) => d,
-                None => {
-                    return ParsedContext {
-                        context: CompletionContext::None,
-                        prefix: String::new(),
-                        token_start,
-                    }
-                }
+            let Some(desc) = resolve_command_descriptor(cmd_stripped) else {
+                return ParsedContext {
+                    context: CompletionContext::None,
+                    prefix: String::new(),
+                    token_start,
+                };
             };
 
             if !desc.subcommands.is_empty() {
-                let pfx = desc.subcommand_prefix;
-                if pfx.is_empty() {
-                    return ParsedContext {
-                        context: CompletionContext::Subcommand {
-                            parent: desc.name.to_string(),
-                            subcommand_prefix: String::new(),
-                        },
-                        prefix: current_token,
-                        token_start,
-                    };
-                }
-                if let Some(stripped) = current_token.strip_prefix(pfx) {
-                    return ParsedContext {
-                        context: CompletionContext::Subcommand {
-                            parent: desc.name.to_string(),
-                            subcommand_prefix: pfx.to_string(),
-                        },
-                        prefix: stripped.to_string(),
-                        token_start,
-                    };
+                if let Some(ctx) = subcommand_context(desc, &current_token, token_start) {
+                    return ctx;
                 }
             }
 
+            let file_prefix = if has_trailing_space {
+                ""
+            } else {
+                current_token.as_str()
+            };
             match desc.completion {
                 CompletionHint::FilePath => {
-                    let path_prefix = if has_trailing_space {
-                        String::new()
-                    } else {
-                        current_token
-                    };
-                    let (dir, prefix) = split_path_prefix(&path_prefix);
-                    ParsedContext {
-                        context: CompletionContext::FilePath {
-                            dir,
-                            prefix,
-                            filter: PathFilter::Both,
-                        },
-                        prefix: String::new(),
-                        token_start,
-                    }
+                    file_context(file_prefix, token_start, PathFilter::Both)
                 }
                 CompletionHint::Directory => {
-                    let path_prefix = if has_trailing_space {
-                        String::new()
-                    } else {
-                        current_token
-                    };
-                    let (dir, prefix) = split_path_prefix(&path_prefix);
-                    ParsedContext {
-                        context: CompletionContext::FilePath {
-                            dir,
-                            prefix,
-                            filter: PathFilter::DirectoriesOnly,
-                        },
-                        prefix: String::new(),
-                        token_start,
-                    }
+                    file_context(file_prefix, token_start, PathFilter::DirectoriesOnly)
                 }
                 CompletionHint::Setting => {
                     if has_trailing_space && !rest.is_empty() {
@@ -292,31 +290,32 @@ fn complete_from_descriptors(descriptors: &[CommandDescriptor], prefix: &str) ->
     CompletionResult::from_candidates(candidates)
 }
 
+#[must_use]
 pub fn complete_command_name(prefix: &str) -> CompletionResult {
     complete_from_descriptors(COMMANDS, prefix)
 }
 
+#[must_use]
 pub fn complete_subcommand(parent: &str, prefix: &str) -> CompletionResult {
     let parent_lower = parent.to_lowercase();
     let parent_cmd = COMMANDS
         .iter()
         .find(|c| c.name.to_lowercase() == parent_lower);
-    match parent_cmd {
-        Some(cmd) => complete_from_descriptors(cmd.subcommands, prefix),
-        None => CompletionResult::empty(),
-    }
+    parent_cmd.map_or_else(CompletionResult::empty, |cmd| {
+        complete_from_descriptors(cmd.subcommands, prefix)
+    })
 }
 
+#[must_use]
 pub fn complete_setting_name<T: 'static>(
     prefix: &str,
     settings_registry: &SettingsRegistry<T>,
 ) -> CompletionResult {
     let prefix_lower = prefix.to_lowercase();
-    let no_inner = if prefix_lower.starts_with("no") && prefix_lower.len() > 2 {
-        Some(prefix_lower[2..].to_string())
-    } else {
-        None
-    };
+    let no_inner = prefix_lower
+        .strip_prefix("no")
+        .filter(|rest| !rest.is_empty())
+        .map(str::to_string);
 
     let mut candidates: Vec<CompletionCandidate> = Vec::new();
 
@@ -366,6 +365,7 @@ pub fn complete_setting_name<T: 'static>(
     CompletionResult::from_candidates(candidates)
 }
 
+#[must_use]
 pub fn complete_setting_value<T: 'static>(
     name: &str,
     settings_registry: &SettingsRegistry<T>,
@@ -375,9 +375,8 @@ pub fn complete_setting_value<T: 'static>(
         .descriptors()
         .iter()
         .find(|d| d.name == name);
-    let desc = match desc {
-        Some(d) => d,
-        None => return CompletionResult::empty(),
+    let Some(desc) = desc else {
+        return CompletionResult::empty();
     };
 
     let candidates: Vec<CompletionCandidate> = match &desc.ty {
@@ -456,6 +455,7 @@ pub enum CompletionAction {
     },
 }
 
+#[must_use]
 pub fn resolve_completion(
     result: CompletionResult,
     payload_input: &str,
@@ -496,6 +496,7 @@ pub fn resolve_completion(
     }
 }
 
+#[must_use]
 pub fn split_path_prefix(prefix: &str) -> (String, String) {
     if prefix.ends_with('/') || prefix.ends_with('\\') {
         let dir = prefix.trim_end_matches(['/', '\\']);
@@ -520,6 +521,7 @@ pub fn split_path_prefix(prefix: &str) -> (String, String) {
     }
 }
 
+#[must_use]
 pub fn longest_common_prefix_of(strs: &[&str]) -> String {
     if strs.is_empty() {
         return String::new();
@@ -527,14 +529,15 @@ pub fn longest_common_prefix_of(strs: &[&str]) -> String {
     let first = strs[0];
     let mut len = first.len();
     for s in &strs[1..] {
-        len = first
+        let common: usize = first
             .chars()
             .zip(s.chars())
             .take_while(|(a, b)| a == b)
-            .count()
-            .min(len);
+            .map(|(a, _)| a.len_utf8())
+            .sum();
+        len = len.min(common);
     }
-    first[..len].to_string()
+    first.get(..len).unwrap_or_default().to_string()
 }
 
 fn resolve_command_descriptor(token: &str) -> Option<&'static CommandDescriptor> {

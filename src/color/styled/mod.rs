@@ -15,14 +15,14 @@ pub struct StyledChar {
 impl StyledChar {
     /// Create a new styled character
     #[must_use]
-    pub fn new(ch: u8, style: ColorStyle) -> Self {
-        StyledChar { ch, style }
+    pub const fn new(ch: u8, style: ColorStyle) -> Self {
+        Self { ch, style }
     }
 
     /// Create with default (no color) style
     #[must_use]
-    pub fn plain(ch: u8) -> Self {
-        StyledChar {
+    pub const fn plain(ch: u8) -> Self {
+        Self {
             ch,
             style: ColorStyle::new(),
         }
@@ -43,19 +43,19 @@ pub struct ColorSpan {
 impl ColorSpan {
     /// Create a new color span
     #[must_use]
-    pub fn new(start: usize, end: usize, style: ColorStyle) -> Self {
-        ColorSpan { start, end, style }
+    pub const fn new(start: usize, end: usize, style: ColorStyle) -> Self {
+        Self { start, end, style }
     }
 
     /// Check if span is empty (start >= end)
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.start >= self.end
     }
 
     /// Get the length of the span
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.end.saturating_sub(self.start)
     }
 }
@@ -79,35 +79,34 @@ pub enum StyledLine {
 impl StyledLine {
     /// Create a plain unstyled line
     #[must_use]
-    pub fn plain(text: Vec<u8>) -> Self {
-        StyledLine::Plain(text)
+    pub const fn plain(text: Vec<u8>) -> Self {
+        Self::Plain(text)
     }
 
     /// Create a line with per-character coloring
     #[must_use]
-    pub fn per_char(chars: Vec<StyledChar>) -> Self {
-        StyledLine::PerChar(chars)
+    pub const fn per_char(chars: Vec<StyledChar>) -> Self {
+        Self::PerChar(chars)
     }
 
     /// Create a line with per-span coloring
     #[must_use]
-    pub fn per_span(text: Vec<u8>, spans: Vec<ColorSpan>) -> Self {
-        StyledLine::PerSpan { text, spans }
+    pub const fn per_span(text: Vec<u8>, spans: Vec<ColorSpan>) -> Self {
+        Self::PerSpan { text, spans }
     }
 
     /// Get the length of the line
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         match self {
-            StyledLine::Plain(text) => text.len(),
-            StyledLine::PerChar(chars) => chars.len(),
-            StyledLine::PerSpan { text, .. } => text.len(),
+            Self::Plain(text) | Self::PerSpan { text, .. } => text.len(),
+            Self::PerChar(chars) => chars.len(),
         }
     }
 
     /// Check if line is empty
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
@@ -115,9 +114,8 @@ impl StyledLine {
     #[must_use]
     pub fn as_bytes(&self) -> Vec<u8> {
         match self {
-            StyledLine::Plain(text) => text.clone(),
-            StyledLine::PerChar(chars) => chars.iter().map(|sc| sc.ch).collect(),
-            StyledLine::PerSpan { text, .. } => text.clone(),
+            Self::Plain(text) | Self::PerSpan { text, .. } => text.clone(),
+            Self::PerChar(chars) => chars.iter().map(|sc| sc.ch).collect(),
         }
     }
 
@@ -126,9 +124,9 @@ impl StyledLine {
     #[must_use]
     pub fn to_per_char(&self) -> Vec<StyledChar> {
         match self {
-            StyledLine::Plain(text) => text.iter().map(|&ch| StyledChar::plain(ch)).collect(),
-            StyledLine::PerChar(chars) => chars.clone(),
-            StyledLine::PerSpan { text, spans } => {
+            Self::Plain(text) => text.iter().map(|&ch| StyledChar::plain(ch)).collect(),
+            Self::PerChar(chars) => chars.clone(),
+            Self::PerSpan { text, spans } => {
                 let mut result = Vec::with_capacity(text.len());
                 let mut span_idx = 0;
 
@@ -159,9 +157,9 @@ impl StyledLine {
     #[must_use]
     pub fn get_style_at(&self, column: usize) -> ColorStyle {
         match self {
-            StyledLine::Plain(_) => ColorStyle::new(),
-            StyledLine::PerChar(chars) => chars.get(column).map(|sc| sc.style).unwrap_or_default(),
-            StyledLine::PerSpan { spans, .. } => {
+            Self::Plain(_) => ColorStyle::new(),
+            Self::PerChar(chars) => chars.get(column).map(|sc| sc.style).unwrap_or_default(),
+            Self::PerSpan { spans, .. } => {
                 // Find span containing this column
                 for span in spans {
                     if span.start <= column && column < span.end {

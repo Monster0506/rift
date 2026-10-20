@@ -114,9 +114,10 @@ fn test_explorer_preview_dir_entries_sorted_dirs_first() {
             if !entry.is_dir {
                 saw_file = true;
             }
-            if saw_file && entry.is_dir {
-                panic!("directory found after file - sorting is wrong");
-            }
+            assert!(
+                !(saw_file && entry.is_dir),
+                "directory found after file - sorting is wrong"
+            );
         }
     }
 }
@@ -205,7 +206,7 @@ fn test_explorer_preview_recognizes_a_persisted_undo_file() {
 
     let job = Box::new(ExplorerPreviewJob::new(
         crate::document::DocumentId::new(1),
-        undo_file_path.clone(),
+        undo_file_path,
         false,
     ));
     let (tx_chan, rx) = mpsc::channel();

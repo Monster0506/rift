@@ -9,7 +9,7 @@ impl<T: TerminalBackend> Editor<T> {
             && self
                 .document_manager
                 .active_document()
-                .is_some_and(|d| d.is_read_only())
+                .is_some_and(super::super::document::Document::is_read_only)
         {
             return false;
         }
@@ -27,22 +27,7 @@ impl<T: TerminalBackend> Editor<T> {
         {
             let viewport_height = self.render_system.viewport.visible_rows();
 
-            let (doc_id, content_width, cursor) = {
-                let doc = self.document_manager.active_document().unwrap();
-                let gutter_width = if self.state.settings.show_line_numbers {
-                    self.state.gutter_width
-                } else {
-                    0
-                };
-                let content_width = self
-                    .split_tree
-                    .focused_window()
-                    .viewport
-                    .visible_cols()
-                    .saturating_sub(gutter_width)
-                    .max(1);
-                (doc.id, content_width, doc.buffer.cursor())
-            };
+            let (doc_id, content_width, cursor) = self.command_content_geometry();
 
             let mut display_map =
                 self.resolve_display_map_cached(doc_id, content_width, cursor, viewport_height);
@@ -90,52 +75,77 @@ impl<T: TerminalBackend> Editor<T> {
             }
 
             if is_mutating {
-                self.do_incremental_syntax_parse();
-
-                let cursor_after = self
-                    .document_manager
-                    .active_document()
-                    .map(|d| d.buffer.cursor())
-                    .unwrap_or(0);
-                let _ = self.resolve_display_map_cached(
-                    doc_id,
-                    content_width,
-                    cursor_after,
-                    viewport_height,
-                );
+                self.reparse_after_mutation(doc_id, content_width, viewport_height);
             }
 
-            let plugin_events = self.document_manager.active_document().map(|doc| {
-                let buf = doc.id;
-                let cursor_event = cursor_before.and_then(|(prev_buf, prev_cursor)| {
-                    let new_cursor = doc.buffer.cursor();
-                    if prev_buf != buf || prev_cursor != new_cursor {
-                        let row = doc.buffer.line_index.get_line_at(new_cursor);
-                        let col =
-                            new_cursor.saturating_sub(doc.buffer.line_index.get_line_start(row));
-                        Some((buf, row, col))
-                    } else {
-                        None
-                    }
-                });
-                (buf, is_mutating, cursor_event)
-            });
-
-            if let Some((buf, mutating, cursor_event)) = plugin_events {
-                if mutating {
-                    self.pending_text_changed = Some(buf);
-                    #[cfg(feature = "lsp")]
-                    self.lsp_notify_change(buf);
-                }
-
-                if let Some(event) = cursor_event {
-                    self.pending_cursor_moved = Some(event);
-                }
-            }
+            self.dispatch_buffer_events(command, cursor_before);
 
             return true;
         }
         false
+    }
+
+    fn command_content_geometry(&self) -> (crate::document::DocumentId, usize, usize) {
+        let doc = self.document_manager.active_document().unwrap();
+        let gutter_width = self.state.gutter_cols(doc.options.show_line_numbers);
+        let content_width = self
+            .split_tree
+            .focused_window()
+            .viewport
+            .visible_cols()
+            .saturating_sub(gutter_width)
+            .max(1);
+        (doc.id, content_width, doc.buffer.cursor())
+    }
+
+    fn reparse_after_mutation(
+        &mut self,
+        doc_id: crate::document::DocumentId,
+        content_width: usize,
+        viewport_height: usize,
+    ) {
+        self.do_incremental_syntax_parse();
+
+        let cursor_after = self
+            .document_manager
+            .active_document()
+            .map_or(0, |d| d.buffer.cursor());
+        let _ =
+            self.resolve_display_map_cached(doc_id, content_width, cursor_after, viewport_height);
+    }
+
+    fn dispatch_buffer_events(
+        &mut self,
+        command: crate::command::Command,
+        cursor_before: Option<(crate::document::DocumentId, usize)>,
+    ) {
+        let is_mutating = command.is_mutating();
+        let plugin_events = self.document_manager.active_document().map(|doc| {
+            let buf = doc.id;
+            let cursor_event = cursor_before.and_then(|(prev_buf, prev_cursor)| {
+                let new_cursor = doc.buffer.cursor();
+                if prev_buf != buf || prev_cursor != new_cursor {
+                    let row = doc.buffer.line_index.get_line_at(new_cursor);
+                    let col = new_cursor.saturating_sub(doc.buffer.line_index.get_line_start(row));
+                    Some((buf, row, col))
+                } else {
+                    None
+                }
+            });
+            (buf, is_mutating, cursor_event)
+        });
+
+        if let Some((buf, mutating, cursor_event)) = plugin_events {
+            if mutating {
+                self.pending_text_changed = Some(buf);
+                #[cfg(feature = "lsp")]
+                self.lsp_notify_change(buf);
+            }
+
+            if let Some(event) = cursor_event {
+                self.pending_cursor_moved = Some(event);
+            }
+        }
     }
 
     pub(super) fn flush_pending_text_changed(&mut self) {

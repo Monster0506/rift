@@ -8,6 +8,9 @@ pub const MAX_FRAME_LEN: usize = 256 * 1024 * 1024;
 
 /// Serialize `msg` as JSON and return it as one `Content-Length: N\r\n\r\n<body>`
 /// buffer, ready to hand to a writer (or a channel to one on another thread).
+///
+/// # Errors
+/// Returns `InvalidData` if `msg` cannot be serialized to JSON.
 pub fn frame_message<T: Serialize>(msg: &T) -> std::io::Result<Vec<u8>> {
     let body = serde_json::to_vec(msg)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
@@ -19,6 +22,9 @@ pub fn frame_message<T: Serialize>(msg: &T) -> std::io::Result<Vec<u8>> {
 }
 
 /// Serialize `msg` as JSON, write `Content-Length: N\r\n\r\n` then the body, then flush.
+///
+/// # Errors
+/// Returns an error if `msg` cannot be serialized or the write or flush fails.
 pub fn write_framed<W: Write, T: Serialize>(writer: &mut W, msg: &T) -> std::io::Result<()> {
     let framed = frame_message(msg)?;
     writer.write_all(&framed)?;
@@ -26,7 +32,10 @@ pub fn write_framed<W: Write, T: Serialize>(writer: &mut W, msg: &T) -> std::io:
 }
 
 /// Read headers until a blank line, parse `Content-Length`, read exactly N bytes.
-/// Returns `InvalidData` if no `Content-Length` header is found.
+///
+/// # Errors
+/// Returns `InvalidData` if no `Content-Length` header is found or it exceeds
+/// `MAX_FRAME_LEN`; otherwise propagates read errors, including `UnexpectedEof`.
 pub fn read_framed<R: BufRead>(reader: &mut R) -> std::io::Result<Vec<u8>> {
     let mut content_length: Option<usize> = None;
     loop {

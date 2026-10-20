@@ -42,7 +42,8 @@ impl Default for DotRepeat {
 }
 
 impl DotRepeat {
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self {
             register: None,
             recording: None,
@@ -51,12 +52,13 @@ impl DotRepeat {
     }
 
     /// Whether we are currently replaying a dot-repeat sequence.
-    pub fn is_replaying(&self) -> bool {
+    #[must_use]
+    pub const fn is_replaying(&self) -> bool {
         self.replaying
     }
 
     /// Read the current register (for replay execution in the Editor).
-    pub(crate) fn register(&self) -> Option<&DotRegister> {
+    pub(crate) const fn register(&self) -> Option<&DotRegister> {
         self.register.as_ref()
     }
 
@@ -104,7 +106,7 @@ impl DotRepeat {
     }
 
     /// Toggle the replaying flag.
-    pub fn set_replaying(&mut self, replaying: bool) {
+    pub const fn set_replaying(&mut self, replaying: bool) {
         self.replaying = replaying;
     }
 }

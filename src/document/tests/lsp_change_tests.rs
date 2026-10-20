@@ -3,10 +3,10 @@ use super::*;
 #[cfg(feature = "lsp")]
 #[test]
 fn test_lsp_char_offset_handles_astral_and_non_ascii() {
+    use crate::lsp::protocol::PositionEncoding;
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let _ = doc.insert_str("a🦀é-end");
 
-    use crate::lsp::protocol::PositionEncoding;
     let enc = PositionEncoding::Utf16;
     assert_eq!(doc.lsp_char_offset_in_line(0, 0, enc), 0);
     assert_eq!(
@@ -264,7 +264,7 @@ fn test_undo_redo_keep_current_lsp_diagnostics() {
                         .unwrap()
                         .to_string(),
                 ),
-                other => panic!("expected line anchor, got {:?}", other),
+                other => panic!("expected line anchor, got {other:?}"),
             })
             .collect()
     };

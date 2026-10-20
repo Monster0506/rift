@@ -72,18 +72,30 @@ pub trait BufferView {
 /// offsets; operations do not increment revision until the transaction commits.
 pub trait TransactionBuilder {
     /// Set cursor to `pos` (code-point offset).
+    ///
+    /// # Errors
+    /// Returns `Err` if `pos` is past the end of the buffer.
     fn set_cursor(&mut self, pos: usize) -> Result<(), RiftError>;
 
     /// Current cursor position (code-point offset).
     fn cursor(&self) -> usize;
 
     /// Insert UTF-8 string at cursor.
+    ///
+    /// # Errors
+    /// Returns `Err` if the text cannot be inserted at the cursor.
     fn insert_str(&mut self, s: &str) -> Result<(), RiftError>;
 
     /// Delete `count` code-points before cursor (backspace).
+    ///
+    /// # Errors
+    /// Returns `Err` if the deletion cannot be applied at the cursor.
     fn delete_backward(&mut self, count: usize) -> Result<(), RiftError>;
 
     /// Delete `count` code-points at cursor (forward delete).
+    ///
+    /// # Errors
+    /// Returns `Err` if the deletion cannot be applied at the cursor.
     fn delete_forward(&mut self, count: usize) -> Result<(), RiftError>;
 
     /// Move cursor left by `chars` code-points. Returns `true` if moved.
@@ -106,6 +118,9 @@ pub trait BufferMut {
 
     /// Set cursor to `pos` (code-point offset).
     /// Does not increment revision (navigation is not an edit).
+    ///
+    /// # Errors
+    /// Returns `Err` if `pos` is past the end of the buffer.
     fn set_cursor(&mut self, pos: usize) -> Result<(), RiftError>;
 
     /// Current cursor position (code-point offset).
@@ -113,14 +128,23 @@ pub trait BufferMut {
 
     /// Insert UTF-8 string at cursor. Does not move cursor.
     /// Increments revision by 1.
+    ///
+    /// # Errors
+    /// Returns `Err` if the text cannot be inserted at the cursor.
     fn insert_str(&mut self, s: &str) -> Result<(), RiftError>;
 
     /// Delete `count` code-points before cursor (backspace).
     /// Increments revision by 1.
+    ///
+    /// # Errors
+    /// Returns `Err` if the deletion cannot be applied at the cursor.
     fn delete_backward(&mut self, count: usize) -> Result<(), RiftError>;
 
     /// Delete `count` code-points at cursor (forward delete).
     /// Increments revision by 1.
+    ///
+    /// # Errors
+    /// Returns `Err` if the deletion cannot be applied at the cursor.
     fn delete_forward(&mut self, count: usize) -> Result<(), RiftError>;
 
     /// Move cursor left by `chars` code-points. Returns `true` if moved.
@@ -141,6 +165,9 @@ pub trait BufferMut {
 
     /// Execute a batch of operations atomically as a single revision increment,
     /// or rolls back with revision unchanged if the closure returns `Err`.
+    ///
+    /// # Errors
+    /// Returns the error from `f`; the buffer is rolled back.
     fn transaction<F>(&mut self, f: F) -> Result<(), RiftError>
     where
         F: FnOnce(&mut dyn TransactionBuilder) -> Result<(), RiftError>;

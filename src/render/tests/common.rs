@@ -26,14 +26,11 @@ pub(super) fn strip_ansi(s: &str) -> String {
                 while i < bytes.len() && !(0x40..=0x7E).contains(&bytes[i]) {
                     i += 1;
                 }
-                i += 1;
-            } else {
-                i += 1;
             }
         } else {
             out.push(bytes[i] as char);
-            i += 1;
         }
+        i += 1;
     }
     out
 }
@@ -44,7 +41,7 @@ pub(super) fn create_default_statusdrawstate() -> StatusDrawState {
         pending_key: None,
         pending_count: 0,
         last_keypress: None,
-        file_name: "".to_string(),
+        file_name: String::new(),
         is_dirty: false,
         cols: 80,
         editor_bg: None,
@@ -52,10 +49,7 @@ pub(super) fn create_default_statusdrawstate() -> StatusDrawState {
         debug_mode: false,
         total_lines: 0,
         search_query: None,
-        reverse_video: false,
-        show_status_line: true,
-        show_filename: true,
-        show_dirty_indicator: true,
+        status_line: crate::state::StatusLineSettings::default(),
         search_match_index: None,
         search_total_matches: 0,
         cursor: CursorInfo { row: 0, col: 0 },
@@ -73,7 +67,7 @@ pub(super) fn render_row_with_adornments(
     adornments: &[crate::render::LineAdornment<'_>],
     left_col: usize,
 ) -> String {
-    let mut term = MockTerminal::new(5, cols as u16);
+    let mut term = MockTerminal::new(5, u16::try_from(cols).unwrap_or(u16::MAX));
     let mut buf = TextBuffer::new(64).unwrap();
     buf.insert_str(text).unwrap();
     let mut state = State::new();
@@ -83,7 +77,7 @@ pub(super) fn render_row_with_adornments(
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,

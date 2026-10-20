@@ -5,16 +5,18 @@ use crate::viewport::Viewport;
 pub struct WindowId(u64);
 
 impl WindowId {
+    #[must_use]
     pub const fn new(id: u64) -> Self {
-        WindowId(id)
+        Self(id)
     }
 
+    #[must_use]
     pub const fn get(self) -> u64 {
         self.0
     }
 
-    pub(crate) fn next(self) -> Self {
-        WindowId(self.0 + 1)
+    pub(crate) const fn next(self) -> Self {
+        Self(self.0 + 1)
     }
 }
 
@@ -32,8 +34,9 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn new(id: WindowId, document_id: DocumentId, rows: usize, cols: usize) -> Self {
-        Window {
+    #[must_use]
+    pub const fn new(id: WindowId, document_id: DocumentId, rows: usize, cols: usize) -> Self {
+        Self {
             id,
             document_id,
             viewport: Viewport::new(rows, cols),

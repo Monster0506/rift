@@ -30,7 +30,8 @@ pub struct FileSaveJob {
 }
 
 impl FileSaveJob {
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         document_id: DocumentId,
         piece_table: PieceTable,
         path: PathBuf,
@@ -47,7 +48,8 @@ impl FileSaveJob {
         }
     }
 
-    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+    #[must_use]
+    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
         self.token = Some(token);
         self
     }
@@ -123,7 +125,10 @@ impl Job for FileSaveJob {
 
         match do_write() {
             Ok(()) => {
-                if !signal.is_cancelled() {
+                if signal.is_cancelled() {
+                    let _ = fs::remove_file(&temp_path);
+                    let _ = sender.send(JobMessage::Cancelled(id));
+                } else {
                     let result = FileSaveResult {
                         document_id: self.document_id,
                         saved_seq: self.saved_seq,
@@ -142,9 +147,6 @@ impl Job for FileSaveJob {
                     } else {
                         crate::job_manager::send_job_result(&sender, id, Box::new(result));
                     }
-                } else {
-                    let _ = fs::remove_file(&temp_path);
-                    let _ = sender.send(JobMessage::Cancelled(id));
                 }
             }
             Err(e) => {
@@ -180,7 +182,8 @@ pub struct FileLoadJob {
 }
 
 impl FileLoadJob {
-    pub fn new(document_id: DocumentId, path: PathBuf) -> Self {
+    #[must_use]
+    pub const fn new(document_id: DocumentId, path: PathBuf) -> Self {
         Self {
             document_id,
             path,
@@ -189,7 +192,8 @@ impl FileLoadJob {
         }
     }
 
-    pub fn new_reload(document_id: DocumentId, path: PathBuf) -> Self {
+    #[must_use]
+    pub const fn new_reload(document_id: DocumentId, path: PathBuf) -> Self {
         Self {
             document_id,
             path,
@@ -198,7 +202,8 @@ impl FileLoadJob {
         }
     }
 
-    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+    #[must_use]
+    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
         self.token = Some(token);
         self
     }
@@ -250,19 +255,17 @@ impl Job for FileLoadJob {
 
         match do_load() {
             Ok(result) => {
-                if !signal.is_cancelled() {
-                    if let Some(token) = self.token {
-                        crate::job_manager::send_job_result_with_token(
-                            &sender,
-                            id,
-                            token,
-                            Box::new(result),
-                        );
-                    } else {
-                        crate::job_manager::send_job_result(&sender, id, Box::new(result));
-                    }
-                } else {
+                if signal.is_cancelled() {
                     let _ = sender.send(JobMessage::Cancelled(id));
+                } else if let Some(token) = self.token {
+                    crate::job_manager::send_job_result_with_token(
+                        &sender,
+                        id,
+                        token,
+                        Box::new(result),
+                    );
+                } else {
+                    crate::job_manager::send_job_result(&sender, id, Box::new(result));
                 }
             }
             Err(e) => {

@@ -101,120 +101,33 @@ fn test_execute_set_min_width_alias() {
 #[test]
 fn test_execute_set_number_boolean_variants() {
     let mut state = State::new();
-
-    // Test "on"
-    let command = ParsedCommand::Set {
-        option: "number".to_string(),
-        value: Some("on".to_string()),
-        bangs: 0,
-    };
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Redraw);
-    assert!(state.settings.show_line_numbers);
-
-    // Test "off"
-    let command = ParsedCommand::Set {
-        option: "number".to_string(),
-        value: Some("off".to_string()),
-        bangs: 0,
-    };
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Redraw);
-    assert!(!state.settings.show_line_numbers);
-
-    // Test "yes"
-    let command = ParsedCommand::Set {
-        option: "number".to_string(),
-        value: Some("yes".to_string()),
-        bangs: 0,
-    };
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Redraw);
-    assert!(state.settings.show_line_numbers);
-
-    // Test "no"
-    let command = ParsedCommand::Set {
-        option: "number".to_string(),
-        value: Some("no".to_string()),
-        bangs: 0,
-    };
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Redraw);
-    assert!(!state.settings.show_line_numbers);
-
-    // Test "1"
-    let command = ParsedCommand::Set {
-        option: "number".to_string(),
-        value: Some("1".to_string()),
-        bangs: 0,
-    };
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Redraw);
-    assert!(state.settings.show_line_numbers);
-
-    // Test "0"
-    let command = ParsedCommand::Set {
-        option: "number".to_string(),
-        value: Some("0".to_string()),
-        bangs: 0,
-    };
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Redraw);
-    assert!(!state.settings.show_line_numbers);
+    let cases = [
+        ("on", true),
+        ("off", false),
+        ("yes", true),
+        ("no", false),
+        ("1", true),
+        ("0", false),
+    ];
+    for (value, expected) in cases {
+        let command = ParsedCommand::Set {
+            option: "number".to_string(),
+            value: Some(value.to_string()),
+            bangs: 0,
+        };
+        let settings_registry = create_settings_registry();
+        let document_settings_registry = create_document_settings_registry();
+        let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
+        let result = CommandExecutor::execute(
+            command,
+            &mut state,
+            &mut document,
+            &settings_registry,
+            &document_settings_registry,
+        );
+        assert_eq!(result, ExecutionResult::Redraw);
+        assert_eq!(state.settings.show_line_numbers, expected);
+    }
 }
 
 #[test]
@@ -489,10 +402,7 @@ fn test_execute_unknown_command() {
             assert_eq!(name, "nonexistent");
             assert_eq!(args, vec!["arg1".to_string()]);
         }
-        _ => panic!(
-            "Expected PluginCommand for unknown command, got {:?}",
-            result
-        ),
+        _ => panic!("Expected PluginCommand for unknown command, got {result:?}"),
     }
 }
 
@@ -688,7 +598,7 @@ fn test_execute_set_number_empty_string() {
 
     let command = ParsedCommand::Set {
         option: "number".to_string(),
-        value: Some("".to_string()),
+        value: Some(String::new()),
         bangs: 0,
     };
 
@@ -964,7 +874,7 @@ fn test_substitute_current_line() {
     let command = ParsedCommand::Substitute {
         pattern: "foo".to_string(),
         replacement: "baz".to_string(),
-        flags: "".to_string(),
+        flags: String::new(),
         range: None,
         bangs: 0,
     };
@@ -1053,7 +963,7 @@ fn test_substitute_case_insensitive() {
     let command = ParsedCommand::Substitute {
         pattern: "foo".to_string(),
         replacement: "baz".to_string(),
-        flags: "".to_string(), // subst flags
+        flags: String::new(), // subst flags
         range: None,
         bangs: 0,
     };
@@ -1081,7 +991,7 @@ fn test_substitute_no_match() {
     let command = ParsedCommand::Substitute {
         pattern: "nothere".to_string(),
         replacement: "baz".to_string(),
-        flags: "".to_string(),
+        flags: String::new(),
         range: None,
         bangs: 0,
     };
@@ -1117,7 +1027,7 @@ fn test_substitute_parsing_requires_space() {
         ParsedCommand::Unknown { name, .. } => {
             assert_eq!(name, "s/foo/bar");
         }
-        _ => panic!("Expected Unknown command, got {:?}", command),
+        _ => panic!("Expected Unknown command, got {command:?}"),
     }
 }
 
@@ -1145,7 +1055,7 @@ fn test_substitute_parsing_with_space() {
             assert_eq!(range, None);
             assert_eq!(bangs, 0);
         }
-        _ => panic!("Expected Substitute command, got {:?}", command),
+        _ => panic!("Expected Substitute command, got {command:?}"),
     }
 }
 
@@ -1158,12 +1068,12 @@ fn test_g_is_an_alias_for_the_git_command() {
 
     match command_parser.parse("G log") {
         ParsedCommand::Git { args, .. } => assert_eq!(args, "log"),
-        other => panic!("Expected Git command via the G alias, got {:?}", other),
+        other => panic!("Expected Git command via the G alias, got {other:?}"),
     }
 
     match command_parser.parse("G") {
         ParsedCommand::Git { args, .. } => assert_eq!(args, ""),
-        other => panic!("Expected bare Git command via the G alias, got {:?}", other),
+        other => panic!("Expected bare Git command via the G alias, got {other:?}"),
     }
 }
 
@@ -1190,7 +1100,7 @@ fn test_substitute_parsing_weird_behavior_percent() {
             assert_eq!(range, None);
             assert_eq!(bangs, 0);
         }
-        _ => panic!("Expected Substitute command, got {:?}", command),
+        _ => panic!("Expected Substitute command, got {command:?}"),
     }
 }
 
@@ -1345,8 +1255,7 @@ fn test_execute_undotree() {
     assert_eq!(
         result,
         ExecutionResult::OpenUndoTree,
-        "Expected OpenUndoTree result for UndoTree, got {:?}",
-        result
+        "Expected OpenUndoTree result for UndoTree, got {result:?}"
     );
 }
 
@@ -1455,8 +1364,7 @@ fn test_execute_file() {
 
     assert!(
         matches!(result, ExecutionResult::OpenDirectory { .. }),
-        "Expected OpenDirectory result for :file, got {:?}",
-        result
+        "Expected OpenDirectory result for :file, got {result:?}"
     );
 }
 

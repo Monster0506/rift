@@ -17,7 +17,7 @@ fn test_command_history_add_and_len() {
 #[test]
 fn test_command_history_skip_empty() {
     let mut history = command::CommandHistory::new(10);
-    history.add("".to_string());
+    history.add(String::new());
     assert!(history.is_empty());
 }
 
@@ -43,7 +43,7 @@ fn test_command_history_max_size() {
 
     assert_eq!(history.len(), 3);
     // "a" should be removed
-    history.start_navigation("".to_string());
+    history.start_navigation(String::new());
     assert_eq!(history.prev_match(), Some("d"));
     assert_eq!(history.prev_match(), Some("c"));
     assert_eq!(history.prev_match(), Some("b"));
@@ -58,7 +58,7 @@ fn test_command_history_basic_navigation() {
     history.add("third".to_string());
 
     // Navigate with empty prefix (matches all)
-    history.start_navigation("".to_string());
+    history.start_navigation(String::new());
 
     assert_eq!(history.prev_match(), Some("third"));
     assert_eq!(history.prev_match(), Some("second"));
@@ -105,7 +105,7 @@ fn test_command_history_reset_navigation() {
     history.add("cmd1".to_string());
     history.add("cmd2".to_string());
 
-    history.start_navigation("".to_string());
+    history.start_navigation(String::new());
     history.prev_match();
 
     history.reset_navigation();
@@ -120,13 +120,13 @@ fn test_command_history_add_resets_navigation() {
     let mut history = command::CommandHistory::new(10);
     history.add("cmd1".to_string());
 
-    history.start_navigation("".to_string());
+    history.start_navigation(String::new());
     history.prev_match();
 
     history.add("cmd2".to_string());
 
     // Navigation should be reset
-    history.start_navigation("".to_string());
+    history.start_navigation(String::new());
     assert_eq!(history.prev_match(), Some("cmd2"));
 }
 
@@ -277,14 +277,14 @@ fn test_transaction_inverse() {
     // First inverse should be for "b" (last op)
     match &inverse[0] {
         EditOperation::Delete { deleted_text, .. } => {
-            assert_eq!(deleted_text, &vec![Character::from('b')])
+            assert_eq!(deleted_text, &vec![Character::from('b')]);
         }
         _ => panic!("Expected Delete"),
     }
     // Second inverse should be for "a" (first op)
     match &inverse[1] {
         EditOperation::Delete { deleted_text, .. } => {
-            assert_eq!(deleted_text, &vec![Character::from('a')])
+            assert_eq!(deleted_text, &vec![Character::from('a')]);
         }
         _ => panic!("Expected Delete"),
     }
@@ -414,10 +414,10 @@ fn test_undo_tree_branching() {
 fn test_undo_tree_clear() {
     let mut tree = UndoTree::new();
 
-    for i in 0..5 {
-        let mut tx = EditTransaction::new(format!("Edit {}", i));
+    for i in 0_i32..5 {
+        let mut tx = EditTransaction::new(format!("Edit {i}"));
         tx.record(EditOperation::Insert {
-            position: Position::new(0, i as u32),
+            position: Position::new(0, i.cast_unsigned()),
             text: i.to_string().chars().map(Character::from).collect(),
             len: 1,
         });
@@ -452,11 +452,11 @@ fn test_undo_tree_multiple_undo_redo_cycles() {
     let mut tree = UndoTree::new();
 
     // Push 5 edits
-    for i in 0..5 {
-        let mut tx = EditTransaction::new(format!("Edit {}", i));
+    for i in 0_i32..5 {
+        let mut tx = EditTransaction::new(format!("Edit {i}"));
         tx.record(EditOperation::Insert {
-            position: Position::new(0, i as u32),
-            text: format!("{}", i).chars().map(Character::from).collect(),
+            position: Position::new(0, i.cast_unsigned()),
+            text: format!("{i}").chars().map(Character::from).collect(),
             len: 1,
         });
         tree.push(tx, None);
@@ -578,10 +578,10 @@ fn test_undo_tree_deep_branching() {
             tree.push(tx, None);
         }
 
-        let mut tx = EditTransaction::new(format!("Branch {}", i));
+        let mut tx = EditTransaction::new(format!("Branch {i}"));
         tx.record(EditOperation::Insert {
             position: Position::new(0, 4),
-            text: format!("{}", i).chars().map(Character::from).collect(),
+            text: format!("{i}").chars().map(Character::from).collect(),
             len: 1,
         });
         tree.push(tx, None);
@@ -596,10 +596,10 @@ fn test_undo_tree_transaction_with_multiple_ops() {
     let mut tree = UndoTree::new();
 
     let mut tx = EditTransaction::new("Multi-op");
-    for i in 0..10 {
+    for i in 0_i32..10 {
         tx.record(EditOperation::Insert {
-            position: Position::new(0, i as u32),
-            text: format!("{}", i).chars().map(Character::from).collect(),
+            position: Position::new(0, i.cast_unsigned()),
+            text: format!("{i}").chars().map(Character::from).collect(),
             len: 1,
         });
     }
@@ -707,11 +707,11 @@ fn test_goto_seq_backward() {
     let mut tree = UndoTree::new();
 
     // Push 3 edits
-    for i in 0..3 {
-        let mut tx = EditTransaction::new(format!("Edit {}", i));
+    for i in 0_i32..3 {
+        let mut tx = EditTransaction::new(format!("Edit {i}"));
         tx.record(EditOperation::Insert {
-            position: Position::new(0, i as u32),
-            text: format!("{}", i).chars().map(Character::from).collect(),
+            position: Position::new(0, i.cast_unsigned()),
+            text: format!("{i}").chars().map(Character::from).collect(),
             len: 1,
         });
         tree.push(tx, None);
@@ -731,11 +731,11 @@ fn test_goto_seq_forward() {
     let mut tree = UndoTree::new();
 
     // Push 3 edits
-    for i in 0..3 {
-        let mut tx = EditTransaction::new(format!("Edit {}", i));
+    for i in 0_i32..3 {
+        let mut tx = EditTransaction::new(format!("Edit {i}"));
         tx.record(EditOperation::Insert {
-            position: Position::new(0, i as u32),
-            text: format!("{}", i).chars().map(Character::from).collect(),
+            position: Position::new(0, i.cast_unsigned()),
+            text: format!("{i}").chars().map(Character::from).collect(),
             len: 1,
         });
         tree.push(tx, None);
@@ -759,11 +759,11 @@ fn test_goto_seq_to_root() {
     let mut tree = UndoTree::new();
 
     // Push 3 edits
-    for i in 0..3 {
-        let mut tx = EditTransaction::new(format!("Edit {}", i));
+    for i in 0_i32..3 {
+        let mut tx = EditTransaction::new(format!("Edit {i}"));
         tx.record(EditOperation::Insert {
-            position: Position::new(0, i as u32),
-            text: format!("{}", i).chars().map(Character::from).collect(),
+            position: Position::new(0, i.cast_unsigned()),
+            text: format!("{i}").chars().map(Character::from).collect(),
             len: 1,
         });
         tree.push(tx, None);

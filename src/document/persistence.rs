@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 
 impl Document {
     /// Save document to its current path
+    ///
+    /// # Errors
+    /// Returns an error if the document has no file path or the write fails.
     pub fn save(&mut self) -> Result<(), RiftError> {
         let path = self.file_path.as_ref().ok_or_else(|| {
             RiftError::new(
@@ -22,6 +25,9 @@ impl Document {
     }
 
     /// Save document to a new path
+    ///
+    /// # Errors
+    /// Returns an error if the file cannot be written.
     pub fn save_as(&mut self, path: impl AsRef<Path>) -> Result<(), RiftError> {
         let path = path.as_ref();
         crate::perf_span!("document_save", crate::perf::PerfFields::default());
@@ -32,6 +38,9 @@ impl Document {
     }
 
     /// Reload document from disk
+    ///
+    /// # Errors
+    /// Returns an error if the document has no file path or the file cannot be loaded.
     pub fn reload_from_disk(&mut self) -> Result<(), RiftError> {
         let path = self.file_path.clone().ok_or_else(|| {
             RiftError::new(
@@ -46,7 +55,7 @@ impl Document {
 
     /// Check if document has unsaved changes
     #[must_use]
-    pub fn is_dirty(&self) -> bool {
+    pub const fn is_dirty(&self) -> bool {
         !self.history.is_at_saved()
     }
 
@@ -58,7 +67,7 @@ impl Document {
 
     /// Check if document has an associated file path
     #[must_use]
-    pub fn has_path(&self) -> bool {
+    pub const fn has_path(&self) -> bool {
         self.file_path.is_some()
     }
 
@@ -81,14 +90,12 @@ impl Document {
         if let Some(path) = self.directory_path() {
             return path
                 .file_name()
-                .map(|name| name.to_string_lossy())
-                .unwrap_or_else(|| path.to_string_lossy());
+                .map_or_else(|| path.to_string_lossy(), |name| name.to_string_lossy());
         }
         if let Some(path) = self.git_blame_path() {
             let name = path
                 .file_name()
-                .map(|name| name.to_string_lossy())
-                .unwrap_or_else(|| path.to_string_lossy());
+                .map_or_else(|| path.to_string_lossy(), |name| name.to_string_lossy());
             return Cow::Owned(format!("[Git Blame] {name}"));
         }
 
@@ -109,17 +116,20 @@ impl Document {
     }
 
     /// Save view state before switching away from this document.
-    pub fn save_view_state(&mut self, top_line: usize, left_col: usize) {
+    pub const fn save_view_state(&mut self, top_line: usize, left_col: usize) {
         self.view_state.top_line = top_line;
         self.view_state.left_col = left_col;
     }
 
     /// Get the saved view state when switching back to this document.
-    pub fn get_view_state(&self) -> &super::ViewState {
+    pub const fn get_view_state(&self) -> &super::ViewState {
         &self.view_state
     }
 
     /// Apply content loaded from a background job.
+    ///
+    /// # Panics
+    /// Panics if the text buffer cannot be created.
     pub fn apply_loaded_content(
         &mut self,
         line_index: crate::buffer::line_index::LineIndex,
@@ -139,7 +149,7 @@ impl Document {
     }
 
     /// Mark the document as saved at a specific edit sequence
-    pub fn mark_as_saved(&mut self, saved_seq: crate::history::EditSeq) {
+    pub const fn mark_as_saved(&mut self, saved_seq: crate::history::EditSeq) {
         self.history.mark_saved_at(saved_seq);
     }
 

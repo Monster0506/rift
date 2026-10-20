@@ -5,6 +5,8 @@ use crate::character::Character;
 use crate::color::Color;
 use crate::error::RiftError;
 use crate::layer::{Cell, Rect};
+use crate::num::usize_to_f64;
+use std::fmt::Write as _;
 
 /// A single text attribute toggled by a `StyleOp::SetAttr`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +29,7 @@ pub enum StyleOp {
     ResetAttrs,
 }
 
-fn cell_visual_width(cell: &Cell) -> usize {
+const fn cell_visual_width(cell: &Cell) -> usize {
     match &cell.content {
         Character::Control(_) => 2,
         Character::Byte(_) => 4,
@@ -48,13 +50,23 @@ pub struct FrameStats {
 
 impl FrameStats {
     /// Calculate the percentage of cells that changed
-    pub fn change_percentage(&self) -> f32 {
+    #[must_use]
+    pub fn change_percentage(&self) -> f64 {
         if self.total_cells == 0 {
             0.0
         } else {
-            (self.changed_cells as f32 / self.total_cells as f32) * 100.0
+            (usize_to_f64(self.changed_cells) / usize_to_f64(self.total_cells)) * 100.0
         }
     }
+}
+
+/// Terminal-side state carried across batches to skip redundant escape codes.
+#[derive(Default)]
+struct TermTrack {
+    fg: Option<Color>,
+    back: Option<Color>,
+    attrs: crate::layer::CellAttrs,
+    cursor: Option<(usize, usize)>,
 }
 
 /// A change to a single cell that needs to be rendered
@@ -81,7 +93,8 @@ pub struct CellBatch {
 
 impl CellBatch {
     /// Get the ending column (exclusive)
-    pub fn end_col(&self) -> usize {
+    #[must_use]
+    pub const fn end_col(&self) -> usize {
         self.start_col + self.cells.len()
     }
 }
@@ -113,6 +126,7 @@ pub struct DoubleBuffer {
 
 impl DoubleBuffer {
     /// Create a new double buffer with the given dimensions
+    #[must_use]
     pub fn new(rows: usize, cols: usize) -> Self {
         let size = rows * cols;
         let current = vec![Cell::empty(); size];
@@ -132,18 +146,20 @@ impl DoubleBuffer {
     }
 
     /// Get the number of rows
-    pub fn rows(&self) -> usize {
+    #[must_use]
+    pub const fn rows(&self) -> usize {
         self.rows
     }
 
     /// Get the number of columns
-    pub fn cols(&self) -> usize {
+    #[must_use]
+    pub const fn cols(&self) -> usize {
         self.cols
     }
 
     /// Helper to get index from row/col
     #[inline]
-    fn idx(&self, row: usize, col: usize) -> usize {
+    const fn idx(&self, row: usize, col: usize) -> usize {
         row * self.cols + col
     }
 
@@ -154,6 +170,7 @@ impl DoubleBuffer {
     }
 
     /// Get read-only access to the current buffer
+    #[must_use]
     pub fn current_slice(&self) -> &[Cell] {
         &self.current
     }
@@ -178,6 +195,7 @@ impl DoubleBuffer {
     }
 
     /// Get a cell from the current buffer
+    #[must_use]
     pub fn get_cell(&self, row: usize, col: usize) -> Option<&Cell> {
         if row < self.rows && col < self.cols {
             let idx = self.idx(row, col);
@@ -235,7 +253,7 @@ impl DoubleBuffer {
     }
 
     /// Force a full redraw on the next diff
-    pub fn invalidate(&mut self) {
+    pub const fn invalidate(&mut self) {
         self.force_full_redraw = true;
     }
 
@@ -272,11 +290,13 @@ impl DoubleBuffer {
     }
 
     /// Check if a full redraw is pending
-    pub fn needs_full_redraw(&self) -> bool {
+    #[must_use]
+    pub const fn needs_full_redraw(&self) -> bool {
         self.force_full_redraw
     }
 
     /// Check if a specific cell has changed
+    #[must_use]
     pub fn cell_changed(&self, row: usize, col: usize) -> bool {
         if self.force_full_redraw {
             return true;
@@ -314,6 +334,8 @@ impl DoubleBuffer {
 
     /// Get batched changes for efficient rendering
     /// Groups consecutive changed cells on the same row
+    /// # Panics
+    /// Panics if the frame buffers do not hold `rows * cols` cells.
     pub fn get_batched_changes(&mut self) -> (Vec<CellBatch>, FrameStats) {
         let mut batches = Vec::new();
         let mut stats = FrameStats {
@@ -405,6 +427,8 @@ impl DoubleBuffer {
 
     /// Scroll rows `top..=bottom` by `delta` (positive = content moved up) via
     /// the terminal's scroll region; false means fall back to the plain diff.
+    /// # Errors
+    /// Returns `Err` when writing the scroll sequence to the terminal fails.
     pub fn apply_scroll<T: crate::term::TerminalBackend>(
         &mut self,
         term: &mut T,
@@ -430,7 +454,7 @@ impl DoubleBuffer {
             (top + k, bottom)
         };
         let row_shifted = |r: usize| {
-            let s = (r as isize + delta) as usize;
+            let s = (r.cast_signed() + delta).cast_unsigned();
             self.current[r * self.cols..(r + 1) * self.cols]
                 == self.previous[s * self.cols..(s + 1) * self.cols]
         };
@@ -442,9 +466,9 @@ impl DoubleBuffer {
         // background, which must match the Cell::empty() model below.
         let mut esc = format!("\x1b[0m\x1b[{};{}r", top + 1, bottom + 1);
         if delta > 0 {
-            esc.push_str(&format!("\x1b[{}S", k));
+            let _ = write!(esc, "\x1b[{k}S");
         } else {
-            esc.push_str(&format!("\x1b[{}T", k));
+            let _ = write!(esc, "\x1b[{k}T");
         }
         esc.push_str("\x1b[r");
         term.write(esc.as_bytes())?;
@@ -474,15 +498,15 @@ impl DoubleBuffer {
 
         // Everything in the region is fair game for the diff scan.
         let region = Rect::new(top, 0, bottom, self.cols.saturating_sub(1));
-        self.frame_dirty_rect = Some(match self.frame_dirty_rect {
-            Some(existing) => existing.union(&region),
-            None => region,
-        });
+        self.frame_dirty_rect = Some(
+            self.frame_dirty_rect
+                .map_or(region, |existing| existing.union(&region)),
+        );
         Ok(true)
     }
 
     /// Swap buffers after rendering
-    /// Copies current to previous and clears force_full_redraw
+    /// Copies current to previous and clears `force_full_redraw`
     pub fn swap(&mut self) {
         self.previous.clone_from(&self.current);
         self.force_full_redraw = false;
@@ -490,6 +514,8 @@ impl DoubleBuffer {
     }
 
     /// Clear the current buffer (fill with empty cells)
+    /// # Errors
+    /// Always returns `Err`; callers must use `clear_cell` or `clear_content`.
     pub fn clear(&mut self) -> Result<(), RiftError> {
         Err("Use clear_cell or specialized method. clear() ambiguous on buffering strategy".into())
     }
@@ -508,6 +534,7 @@ impl DoubleBuffer {
     }
 
     /// Get frame statistics for the current diff
+    #[must_use]
     pub fn get_stats(&self) -> FrameStats {
         let mut stats = FrameStats {
             total_cells: self.rows * self.cols,
@@ -530,6 +557,8 @@ impl DoubleBuffer {
 
     /// Render the current buffer to the terminal using double buffering
     /// Only cells that changed since the last frame are rendered
+    /// # Errors
+    /// Returns `Err` when the terminal write, flush, or style encoding fails.
     pub fn render_to_terminal<T: crate::term::TerminalBackend>(
         &mut self,
         term: &mut T,
@@ -559,20 +588,14 @@ impl DoubleBuffer {
         term.hide_cursor()?;
 
         // Track current colors/attrs to minimize escape sequences
-        let mut current_fg: Option<Color> = None;
-        let mut current_bg: Option<Color> = None;
-        let mut current_attrs = crate::layer::CellAttrs::default();
-        let mut last_cursor_pos: Option<(usize, usize)> = None;
+        let mut track = TermTrack::default();
 
         let result = (|| -> Result<(), RiftError> {
             for mut batch in batches {
                 Self::flush_cell_batch(
                     term,
                     &batch,
-                    &mut current_fg,
-                    &mut current_bg,
-                    &mut current_attrs,
-                    &mut last_cursor_pos,
+                    &mut track,
                     &mut output,
                     &mut cmd_buf,
                     &mut ops,
@@ -590,7 +613,7 @@ impl DoubleBuffer {
 
         // Reset colors and attributes at end
         let mut reset_ops = vec![StyleOp::ResetColor];
-        if !current_attrs.is_empty() {
+        if !track.attrs.is_empty() {
             reset_ops.push(StyleOp::ResetAttrs);
         }
         let mut reset_buf = Vec::new();
@@ -607,18 +630,20 @@ impl DoubleBuffer {
 
     /// Flush a batch of consecutive changed cells to the terminal; `output`/
     /// `cmd_buf`/`ops` are caller-owned scratch space, cleared not reallocated.
-    #[allow(clippy::too_many_arguments)]
     fn flush_cell_batch<T: crate::term::TerminalBackend>(
         term: &mut T,
         batch: &CellBatch,
-        current_fg: &mut Option<Color>,
-        current_bg: &mut Option<Color>,
-        current_attrs: &mut crate::layer::CellAttrs,
-        last_cursor_pos: &mut Option<(usize, usize)>,
+        track: &mut TermTrack,
         output: &mut String,
         cmd_buf: &mut Vec<u8>,
         ops: &mut Vec<StyleOp>,
     ) -> Result<(), RiftError> {
+        let TermTrack {
+            fg: current_fg,
+            back: current_back,
+            attrs: current_attrs,
+            cursor: last_cursor_pos,
+        } = track;
         if batch.cells.is_empty() {
             return Ok(());
         }
@@ -632,16 +657,19 @@ impl DoubleBuffer {
         };
 
         if need_move {
-            term.move_cursor(batch.row as u16, batch.start_col as u16)?;
+            term.move_cursor(
+                u16::try_from(batch.row).unwrap_or(u16::MAX),
+                u16::try_from(batch.start_col).unwrap_or(u16::MAX),
+            )?;
         }
 
         output.clear();
         cmd_buf.clear();
         ops.clear();
 
-        for cell in batch.cells.iter() {
+        for cell in &batch.cells {
             // Check if we need to change colors or attributes
-            if cell.fg != *current_fg || cell.bg != *current_bg || cell.attrs != *current_attrs {
+            if cell.fg != *current_fg || cell.bg != *current_back || cell.attrs != *current_attrs {
                 // Flush current text output before the style change
                 if !output.is_empty() {
                     term.write(output.as_bytes())?;
@@ -651,12 +679,12 @@ impl DoubleBuffer {
                 ops.clear();
 
                 let need_reset = (cell.fg.is_none() && current_fg.is_some())
-                    || (cell.bg.is_none() && current_bg.is_some());
+                    || (cell.bg.is_none() && current_back.is_some());
 
                 if need_reset {
                     ops.push(StyleOp::ResetColor);
                     *current_fg = None;
-                    *current_bg = None;
+                    *current_back = None;
                 }
 
                 if cell.fg != *current_fg {
@@ -666,10 +694,10 @@ impl DoubleBuffer {
                     }
                 }
 
-                if cell.bg != *current_bg {
+                if cell.bg != *current_back {
                     if let Some(bg) = cell.bg {
                         ops.push(StyleOp::SetBackground(bg));
-                        *current_bg = Some(bg);
+                        *current_back = Some(bg);
                     }
                 }
 
@@ -683,11 +711,11 @@ impl DoubleBuffer {
                             ops.push(StyleOp::SetAttr(kind, on));
                         }
                     };
-                    set(ops, a.bold, c.bold, AttrKind::Bold);
-                    set(ops, a.italic, c.italic, AttrKind::Italic);
-                    set(ops, a.underline, c.underline, AttrKind::Underline);
-                    set(ops, a.strike, c.strike, AttrKind::Strike);
-                    set(ops, a.reverse, c.reverse, AttrKind::Reverse);
+                    set(ops, a.is_bold(), c.is_bold(), AttrKind::Bold);
+                    set(ops, a.is_italic(), c.is_italic(), AttrKind::Italic);
+                    set(ops, a.is_underline(), c.is_underline(), AttrKind::Underline);
+                    set(ops, a.is_strike(), c.is_strike(), AttrKind::Strike);
+                    set(ops, a.is_reverse(), c.is_reverse(), AttrKind::Reverse);
                     *current_attrs = cell.attrs;
                 }
 

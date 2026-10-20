@@ -114,7 +114,7 @@ impl FileSystem for NativeFileSystem {
         }
         fs::rename(old, new).or_else(|_| {
             // Cross-device fallback: copy then delete.
-            crate::job_manager::jobs::fs::FsCopyJob::copy_recursive_pub(old, new).and_then(|_| {
+            crate::job_manager::jobs::fs::FsCopyJob::copy_recursive_pub(old, new).and_then(|()| {
                 if old.is_dir() {
                     fs::remove_dir_all(old)
                 } else {

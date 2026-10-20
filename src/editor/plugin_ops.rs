@@ -1,10 +1,24 @@
 use super::Editor;
+use crate::color::Color;
+use crate::plugin::{PluginGeneration, PluginMutation};
 use crate::term::TerminalBackend;
+
+struct LuaBufState {
+    buf_id: usize,
+    buf_kind: String,
+    source: crate::plugin::lua_host::BufSourceUpdate,
+    cursor: (usize, usize),
+    filetype: Option<String>,
+    file_path: Option<String>,
+    can_undo: bool,
+    can_redo: bool,
+    is_dirty: bool,
+    line_ending: &'static str,
+    doc_options: crate::document::definitions::DocumentOptions,
+}
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn update_lua_state(&self) {
-        use crate::plugin::lua_host::BufEntry;
-
         if !self.plugin_host.lua_state_wanted() {
             return;
         }
@@ -12,8 +26,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let user_settings = self.state.settings.clone();
         let mode = self.current_mode.as_str();
-
-        let (
+        let LuaBufState {
             buf_id,
             buf_kind,
             source,
@@ -25,117 +38,148 @@ impl<T: TerminalBackend> Editor<T> {
             is_dirty,
             line_ending,
             doc_options,
-        ) = if let Some(doc) = self.document_manager.active_document() {
-            let buf_id = doc.id.get() as usize;
-            let buf_kind = doc.kind.kind_str().to_string();
-            let source = if self
-                .plugin_host
-                .synced_buf_matches(doc.id.get(), doc.buffer.revision)
-            {
-                crate::plugin::lua_host::BufSourceUpdate::Unchanged
-            } else {
-                self.plugin_host
-                    .set_synced_buf(doc.id.get(), doc.buffer.revision);
-                crate::plugin::lua_host::BufSourceUpdate::Set(Box::new(
-                    crate::plugin::lua_host::BufLinesSource {
-                        revision: doc.buffer.revision,
-                        line_count: doc.buffer.get_total_lines(),
-                        buffer: doc.buffer.clone(),
-                    },
-                ))
-            };
-            let (row, col) = {
-                let cursor = doc.buffer.cursor();
-                let row = doc.buffer.line_index.get_line_at(cursor);
-                let col = cursor.saturating_sub(doc.buffer.line_index.get_line_start(row));
-                (row, col)
-            };
-            let filetype = doc.syntax.as_ref().map(|s| s.language_name.clone());
-            let file_path = doc.path().map(|p| p.to_string_lossy().into_owned());
-            let can_undo = doc.history.can_undo();
-            let can_redo = doc.history.can_redo();
-            let is_dirty = doc.is_dirty();
-            let line_ending = match doc.options.line_ending {
-                crate::document::LineEnding::LF => "lf",
-                crate::document::LineEnding::CRLF => "crlf",
-            };
-            let doc_options = doc.options.clone();
-            (
+        } = self.lua_buf_state();
+        let tab_width = doc_options.tab_width;
+        let expand_tabs = doc_options.expand_tabs;
+        let buf_list = self.lua_buf_list();
+
+        let window_size = (
+            u16::try_from(self.render_system.compositor.rows()).unwrap_or(u16::MAX),
+            u16::try_from(self.render_system.compositor.cols()).unwrap_or(u16::MAX),
+        );
+        let scroll = self.render_system.viewport.get_scroll();
+        let commands = self.lua_commands();
+        let win_list = self.lua_win_list();
+        let focused_win_id = self.split_tree.focused_window_id().get();
+        let previous_win_id = self
+            .split_tree
+            .previous_window
+            .map(super::super::split::window::WindowId::get);
+        #[cfg(feature = "lsp")]
+        let lsp_diagnostics = self.lua_lsp_diagnostics();
+        #[cfg(not(feature = "lsp"))]
+        let lsp_diagnostics = std::collections::HashMap::new();
+        let buffer_vars = self.lua_buffer_vars();
+
+        self.plugin_host
+            .lua_update_state(crate::plugin::lua_host::StateUpdate {
                 buf_id,
                 buf_kind,
                 source,
-                (row, col),
+                cursor,
+                tab_width,
+                expand_tabs,
+                mode,
                 filetype,
                 file_path,
-                can_undo,
-                can_redo,
+                buf_list,
+                window_size,
+                history: crate::plugin::lua_host::HistoryAvailability { can_undo, can_redo },
                 is_dirty,
+                scroll,
                 line_ending,
+                commands,
+                win_list,
+                focused_win_id,
+                previous_win_id,
+                lsp_diagnostics,
+                buffer_vars,
                 doc_options,
-            )
-        } else {
-            self.plugin_host.clear_synced_buf();
-            (
-                0,
-                "file".to_string(),
-                crate::plugin::lua_host::BufSourceUpdate::Cleared,
-                (0, 0),
-                None,
-                None,
-                false,
-                false,
-                false,
-                "lf",
-                crate::document::definitions::DocumentOptions::default(),
-            )
-        };
-        let tab_width = doc_options.tab_width;
-        let expand_tabs = doc_options.expand_tabs;
+                user_settings,
+            });
+        self.sync_lua_annotations();
+    }
 
-        let buf_list: Vec<BufEntry> = self
-            .document_manager
+    fn lua_buf_state(&self) -> LuaBufState {
+        let Some(doc) = self.document_manager.active_document() else {
+            self.plugin_host.clear_synced_buf();
+            return LuaBufState {
+                buf_id: 0,
+                buf_kind: "file".to_string(),
+                source: crate::plugin::lua_host::BufSourceUpdate::Cleared,
+                cursor: (0, 0),
+                filetype: None,
+                file_path: None,
+                can_undo: false,
+                can_redo: false,
+                is_dirty: false,
+                line_ending: "lf",
+                doc_options: crate::document::definitions::DocumentOptions::default(),
+            };
+        };
+        let buf_id = usize::try_from(doc.id.get()).unwrap_or(usize::MAX);
+        let buf_kind = doc.kind.kind_str().to_string();
+        let source = if self
+            .plugin_host
+            .synced_buf_matches(doc.id.get(), doc.buffer.revision)
+        {
+            crate::plugin::lua_host::BufSourceUpdate::Unchanged
+        } else {
+            self.plugin_host
+                .set_synced_buf(doc.id.get(), doc.buffer.revision);
+            crate::plugin::lua_host::BufSourceUpdate::Set(Box::new(
+                crate::plugin::lua_host::BufLinesSource {
+                    revision: doc.buffer.revision,
+                    line_count: doc.buffer.get_total_lines(),
+                    buffer: doc.buffer.clone(),
+                },
+            ))
+        };
+        let (row, col) = {
+            let cursor = doc.buffer.cursor();
+            let row = doc.buffer.line_index.get_line_at(cursor);
+            let col = cursor.saturating_sub(doc.buffer.line_index.get_line_start(row));
+            (row, col)
+        };
+        let line_ending = match doc.options.line_ending {
+            crate::document::LineEnding::LF => "lf",
+            crate::document::LineEnding::CRLF => "crlf",
+        };
+        LuaBufState {
+            buf_id,
+            buf_kind,
+            source,
+            cursor: (row, col),
+            filetype: doc.syntax.as_ref().map(|s| s.language_name.clone()),
+            file_path: doc.path().map(|p| p.to_string_lossy().into_owned()),
+            can_undo: doc.history.can_undo(),
+            can_redo: doc.history.can_redo(),
+            is_dirty: doc.is_dirty(),
+            line_ending,
+            doc_options: doc.options.clone(),
+        }
+    }
+
+    fn lua_buf_list(&self) -> Vec<crate::plugin::lua_host::BufEntry> {
+        self.document_manager
             .get_buffer_list()
             .into_iter()
             .filter_map(|b| {
                 let doc = self.document_manager.get_document(b.id)?;
-                Some(BufEntry {
-                    id: b.id.get() as usize,
+                Some(crate::plugin::lua_host::BufEntry {
+                    id: usize::try_from(b.id.get()).unwrap_or(usize::MAX),
                     name: b.name,
-                    is_dirty: b.is_dirty,
+                    is_dirty: b.status.is_dirty,
                     is_current: b.is_current,
                     kind: doc.kind.kind_str().to_string(),
                     path: doc.path().map(|p| p.to_string_lossy().into_owned()),
                     line_count: doc.buffer.get_total_lines(),
-                    is_read_only: b.is_read_only,
+                    is_read_only: b.status.is_read_only,
                 })
             })
-            .collect();
+            .collect()
+    }
 
-        let window_size = (
-            self.render_system.compositor.rows() as u16,
-            self.render_system.compositor.cols() as u16,
-        );
-
-        let scroll = self.render_system.viewport.get_scroll();
-
-        let commands: Vec<(String, String)> = self
-            .plugin_host
-            .command_list()
-            .into_iter()
-            .map(|(name, desc, _)| (name, desc))
-            .collect();
-
+    fn lua_win_list(&self) -> Vec<crate::plugin::lua_host::WinEntry> {
         let total_rows = self.render_system.compositor.rows();
         let total_cols = self.render_system.compositor.cols();
         let win_layouts = self.split_tree.compute_layout(total_rows, total_cols);
-        let win_list: Vec<crate::plugin::lua_host::WinEntry> = win_layouts
+        win_layouts
             .iter()
             .map(|l| {
-                let buf = self
-                    .split_tree
-                    .get_window(l.window_id)
-                    .map(|w| w.document_id.get() as usize)
-                    .unwrap_or(0);
+                let buf = self.split_tree.get_window(l.window_id).map_or(0, |w| {
+                    usize::try_from(w.document_id.get()).unwrap_or(usize::MAX)
+                });
                 crate::plugin::lua_host::WinEntry {
                     id: l.window_id.get(),
                     buf,
@@ -145,16 +189,22 @@ impl<T: TerminalBackend> Editor<T> {
                     cols: l.cols,
                 }
             })
-            .collect();
-        let focused_win_id = self.split_tree.focused_window_id().get();
-        let previous_win_id = self.split_tree.previous_window.map(|w| w.get());
+            .collect()
+    }
 
-        #[cfg(feature = "lsp")]
-        let lsp_diagnostics: std::collections::HashMap<
-            String,
-            Vec<(u32, u32, u32, String)>,
-        > = self
-            .lsp_diagnostics
+    fn lua_commands(&self) -> Vec<(String, String)> {
+        self.plugin_host
+            .command_list()
+            .into_iter()
+            .map(|(name, desc, _)| (name, desc))
+            .collect()
+    }
+
+    #[cfg(feature = "lsp")]
+    fn lua_lsp_diagnostics(
+        &self,
+    ) -> std::collections::HashMap<String, Vec<(u32, u32, u32, String)>> {
+        self.lsp_diagnostics
             .iter()
             .map(|(uri, diags)| {
                 let doc = crate::lsp::protocol::uri_to_path(uri)
@@ -165,60 +215,33 @@ impl<T: TerminalBackend> Editor<T> {
                     .iter()
                     .map(|d| {
                         let line = d.range.start.line;
-                        let col = match doc {
-                            Some(doc) => doc.lsp_char_offset_in_line(
+                        let col = doc.map_or(d.range.start.character, |doc| {
+                            u32::try_from(doc.lsp_char_offset_in_line(
                                 line as usize,
                                 d.range.start.character,
                                 encoding,
-                            ) as u32,
-                            None => d.range.start.character,
-                        };
+                            ))
+                            .unwrap_or(u32::MAX)
+                        });
                         (line, col, d.severity.unwrap_or(1), d.message.clone())
                     })
                     .collect();
                 (uri.clone(), entries)
             })
-            .collect();
-        #[cfg(not(feature = "lsp"))]
-        let lsp_diagnostics: std::collections::HashMap<
-            String,
-            Vec<(u32, u32, u32, String)>,
-        > = std::collections::HashMap::new();
-        let buffer_vars: std::collections::HashMap<
-            u64,
-            std::collections::HashMap<String, crate::annotations::Value>,
-        > = self
-            .document_manager
+            .collect()
+    }
+
+    fn lua_buffer_vars(
+        &self,
+    ) -> std::collections::HashMap<u64, std::collections::HashMap<String, crate::annotations::Value>>
+    {
+        self.document_manager
             .documents_iter()
             .map(|doc| (doc.id.get(), doc.vars.clone()))
-            .collect();
+            .collect()
+    }
 
-        self.plugin_host.lua_update_state(
-            buf_id,
-            buf_kind,
-            source,
-            cursor,
-            tab_width,
-            expand_tabs,
-            mode,
-            filetype,
-            file_path,
-            buf_list,
-            window_size,
-            can_undo,
-            can_redo,
-            is_dirty,
-            scroll,
-            line_ending,
-            commands,
-            win_list,
-            focused_win_id,
-            previous_win_id,
-            lsp_diagnostics,
-            buffer_vars,
-            doc_options,
-            user_settings,
-        );
+    fn sync_lua_annotations(&self) {
         use crate::annotations::Anchor;
         use crate::plugin::lua_host::AnnotationView;
         if let Some(doc) = self.document_manager.active_document() {
@@ -262,37 +285,6 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn apply_plugin_mutations(&mut self) {
-        use crate::color::Color;
-        use crate::plugin::PluginMutation;
-
-        fn plugin_color(s: &str) -> Color {
-            match s.to_lowercase().as_str() {
-                "red" => Color::Red,
-                "darkred" => Color::DarkRed,
-                "green" => Color::Green,
-                "darkgreen" => Color::DarkGreen,
-                "blue" => Color::Blue,
-                "darkblue" => Color::DarkBlue,
-                "yellow" => Color::Yellow,
-                "darkyellow" => Color::DarkYellow,
-                "cyan" => Color::Cyan,
-                "darkcyan" => Color::DarkCyan,
-                "magenta" => Color::Magenta,
-                "darkmagenta" => Color::DarkMagenta,
-                "white" => Color::White,
-                "black" => Color::Black,
-                "grey" | "gray" => Color::Grey,
-                "darkgrey" | "darkgray" => Color::DarkGrey,
-                s if s.starts_with('#') && s.len() == 7 => {
-                    let r = u8::from_str_radix(&s[1..3], 16).unwrap_or(255);
-                    let g = u8::from_str_radix(&s[3..5], 16).unwrap_or(255);
-                    let b = u8::from_str_radix(&s[5..7], 16).unwrap_or(255);
-                    Color::Rgb { r, g, b }
-                }
-                _ => Color::Yellow,
-            }
-        }
-
         let envelopes: Vec<crate::plugin::PluginMutationEnvelope> =
             self.plugin_host.drain_mutation_envelopes().collect();
 
@@ -303,742 +295,996 @@ impl<T: TerminalBackend> Editor<T> {
                     continue;
                 }
             }
-            let mutation = envelope.mutation;
-            match mutation {
-                PluginMutation::Notify { message, level } => {
-                    self.state.notify(level, message);
-                }
-                PluginMutation::AddAnnotation {
-                    id,
-                    kind,
-                    anchor,
-                    payload,
-                    presentation,
-                    actions,
-                    visible,
-                    stickiness,
-                    owner,
-                } => {
-                    use crate::annotations::{
-                        Action, Anchor, Annotation, AnnotationOwner, Kind, Stickiness,
-                    };
-                    use crate::plugin::AnnotationAnchorSpec;
-                    let anchor = match anchor {
-                        AnnotationAnchorSpec::Line(l) => Anchor::Line(l),
-                        AnnotationAnchorSpec::Point(p) => Anchor::point(p),
-                        AnnotationAnchorSpec::Range(s, e) => Anchor::range(s, e),
-                    };
-                    let owner = match owner.as_deref() {
-                        Some("system") => AnnotationOwner::System,
-                        Some("lsp") => AnnotationOwner::Lsp,
-                        Some("user") => AnnotationOwner::User,
-                        _ => AnnotationOwner::Plugin(String::new()),
-                    };
-                    let mut ann = Annotation::new(Kind::new(kind), anchor, owner)
-                        .with_payload(payload)
-                        .with_visible(visible)
-                        .with_actions(
-                            actions
-                                .into_iter()
-                                .map(|(verb, default)| {
-                                    let a = Action::new(verb);
-                                    if default {
-                                        a.as_default()
-                                    } else {
-                                        a
-                                    }
-                                })
-                                .collect(),
-                        );
-                    if matches!(stickiness.as_deref(), Some("persist")) {
-                        ann = ann.with_stickiness(Stickiness::Persist);
-                    }
-                    if let Some(pres) = presentation {
-                        ann = ann.with_presentation(pres);
-                    }
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        doc.annotations
-                            .add_with_id(crate::annotations::AnnotationId::new(id), ann);
-                    }
-                }
-                PluginMutation::UpdateAnnotation {
-                    id,
-                    payload,
-                    visible,
-                    presentation,
-                } => {
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        doc.annotations
-                            .update(crate::annotations::AnnotationId::new(id), |a| {
-                                if let Some(p) = payload {
-                                    a.payload = p;
-                                }
-                                if let Some(v) = visible {
-                                    a.visible = v;
-                                }
-                                if let Some(pres) = presentation {
-                                    a.presentation = Some(pres);
-                                }
-                            });
-                    }
-                }
-                PluginMutation::RemoveAnnotation(id) => {
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        doc.annotations
-                            .remove(crate::annotations::AnnotationId::new(id));
-                    }
-                }
-                PluginMutation::ClearAnnotations { kind_prefix } => {
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        doc.annotations.clear_by_kind_prefix(&kind_prefix);
-                    }
-                }
-                PluginMutation::RegisterAnnotationAction {
-                    kind,
-                    verb,
-                    command,
-                } => {
-                    use crate::annotations::registry::Handler;
-                    let handler = match command {
-                        Some(cmd) => Handler::Command(cmd),
-                        None => Handler::Lua,
-                    };
-                    self.dispatch_registry.register(kind, verb, handler);
-                }
-                PluginMutation::RegisterKindDefaults {
-                    kind,
-                    presentation,
-                    description,
-                } => {
-                    if let Some(pres) = presentation {
-                        self.kind_registry.set_presentation(kind.clone(), pres);
-                    }
-                    if let Some(desc) = description {
-                        self.kind_registry.set_description(kind, desc);
-                    }
-                }
-                PluginMutation::AppendLines(ref lines) => {
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        let end = doc.buffer.len();
-                        let _ = doc.buffer.set_cursor(end);
-                        let text = lines.join("\n");
-                        let _ = doc.insert_str(&text);
-                    }
-                    self.do_incremental_syntax_parse();
-                }
-                PluginMutation::InsertAtCursor(text) => {
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        let _ = doc.insert_str(&text);
-                    }
-                    self.do_incremental_syntax_parse();
-                }
-                PluginMutation::DeleteBefore(n) => {
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        for _ in 0..n {
-                            doc.delete_backward();
-                        }
-                    }
-                    self.do_incremental_syntax_parse();
-                }
-                PluginMutation::DeleteForward(n) => {
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        for _ in 0..n {
-                            doc.delete_forward();
-                        }
-                    }
-                    self.do_incremental_syntax_parse();
-                }
-                PluginMutation::SetCursor { row, col } => {
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        let row0 = row.saturating_sub(1);
-                        let line_count = doc.buffer.line_index.line_count();
-                        let row0 = row0.min(line_count.saturating_sub(1));
-                        let line_start = doc.buffer.line_index.get_line_start(row0);
-                        let total = doc.buffer.len();
-                        let pos = (line_start + col).min(total.saturating_sub(1));
-                        let _ = doc.buffer.set_cursor(pos);
-                    }
-                }
-                PluginMutation::ReplaceLines { start, end, lines } => {
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        let start0 = start.saturating_sub(1);
-                        let end0 = end.saturating_sub(1);
-                        let line_count = doc.buffer.line_index.line_count();
-                        if start0 < line_count {
-                            let range_start = doc.buffer.line_index.get_line_start(start0);
-                            let range_end = if end0 + 1 < line_count {
-                                doc.buffer.line_index.get_line_start(end0 + 1)
-                            } else {
-                                doc.buffer.len()
-                            };
-                            let _ = doc.delete_range(range_start, range_end);
-                            let _ = doc.buffer.set_cursor(range_start);
-                            if !lines.is_empty() {
-                                let _ = doc.insert_str(&lines.join("\n"));
-                            }
-                        }
-                    }
-                    self.do_incremental_syntax_parse();
-                }
-                PluginMutation::AddHighlight {
-                    slot,
-                    start_line,
-                    start_col,
-                    end_line,
-                    end_col,
-                    color,
-                } => {
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        let parsed_color = plugin_color(&color);
-                        let sl = start_line.saturating_sub(1);
-                        let el = end_line.saturating_sub(1);
-                        let line_count = doc.buffer.line_index.line_count();
-                        if sl < line_count {
-                            let el = el.min(line_count.saturating_sub(1));
-                            let start_char = doc.buffer.line_index.get_line_start(sl) + start_col;
-                            let end_char = (doc.buffer.line_index.get_line_start(el) + end_col)
-                                .min(doc.buffer.len());
-                            let start = doc.buffer.char_to_byte(start_char);
-                            let end = doc.buffer.char_to_byte(end_char);
-                            if start < end {
-                                doc.annotations.add_plugin_highlight(
-                                    slot,
-                                    start,
-                                    end,
-                                    parsed_color,
-                                );
-                            }
-                        }
-                    }
-                }
-                PluginMutation::ClearHighlights { slot } => {
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        let slot = (slot != 0).then_some(slot);
-                        doc.annotations.clear_plugin_highlights(slot);
-                    }
-                }
-                PluginMutation::SetOption { name, value } => {
-                    let mut errors = Vec::new();
-                    let mut error_handler = |e: crate::error::RiftError| errors.push(e);
-                    match self.document_manager.active_document_mut() {
-                        Some(doc) => {
-                            let resolver = crate::command_line::settings::SettingsResolver::new(
-                                self.document_settings_registry,
-                                self.settings_registry,
-                            );
-                            resolver.set(
-                                &name,
-                                Some(value),
-                                &mut doc.options,
-                                &mut self.state.settings,
-                                &mut error_handler,
-                            );
-                        }
-                        None => {
-                            self.settings_registry.execute_setting(
-                                &name,
-                                Some(value),
-                                &mut self.state.settings,
-                                &mut error_handler,
-                            );
-                        }
-                    }
-                    for err in errors {
-                        self.state.handle_error(err);
-                    }
-                }
-                PluginMutation::SaveBuffer => {
-                    self.do_save();
-                }
-                PluginMutation::OpenFloat(_) | PluginMutation::CloseFloat => {
-                    self.plugin_host.apply_mutation(mutation);
-                }
-                PluginMutation::SetScroll(top, left) => {
-                    self.render_system.viewport.set_scroll(top, left);
-                }
-                PluginMutation::SetLineEnding(ending) => {
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        doc.options.line_ending = match ending.to_lowercase().as_str() {
-                            "crlf" => crate::document::LineEnding::CRLF,
-                            _ => crate::document::LineEnding::LF,
-                        };
-                    }
-                }
-                PluginMutation::ExecAction(action_str) => {
-                    if let Ok(action) = action_str.parse::<crate::action::Action>() {
-                        self.handle_action(&action);
-                    }
-                }
-                PluginMutation::MapKey { mode, keys, action } => {
-                    use crate::keymap::KeyContext;
-                    let ctx = match mode.as_str() {
-                        "n" | "normal" => KeyContext::Normal,
-                        "i" | "insert" => KeyContext::Insert,
-                        "c" | "command" => KeyContext::Command,
-                        "s" | "search" => KeyContext::Search,
-                        "g" | "global" => KeyContext::Global,
-                        "t" | "terminal" => KeyContext::Terminal,
-                        "tn" | "terminal_normal" => KeyContext::TerminalNormal,
-                        _ => continue,
-                    };
-                    if let (Some(key_seq), Ok(act)) = (
-                        crate::key::parse_key_sequence(&keys),
-                        action.parse::<crate::action::Action>(),
-                    ) {
-                        if let Some(gen) = origin {
-                            self.keymap.register_with_owner(
-                                ctx,
-                                key_seq,
-                                act,
-                                gen.keymap_owner_token(),
-                            );
-                        } else {
-                            self.keymap.register_sequence(ctx, key_seq, act);
-                        }
-                    }
-                }
-                PluginMutation::RegisterBufferKind {
-                    name,
-                    read_only,
-                    close,
-                    key_fallback,
-                    display_name,
-                    help_lines,
-                    has_on_close,
-                    has_on_action,
-                    has_on_save,
-                } => {
-                    if !has_on_close {
-                        self.state.notify(
-                            crate::notification::NotificationType::Error,
-                            format!("buffer kind '{name}' requires on_close"),
-                        );
-                        continue;
-                    }
-                    let owner = match origin {
-                        Some(gen) if self.plugin_host.is_generation_active(gen) => {
-                            crate::document::DescriptorOwner::plugin(
-                                gen.plugin_id().as_nonzero(),
-                                gen.generation(),
-                            )
-                        }
-                        _ => {
-                            self.state.notify(
-                                crate::notification::NotificationType::Error,
-                                format!("cannot register buffer kind '{name}': no active plugin generation"),
-                            );
-                            continue;
-                        }
-                    };
-                    let read_only_policy = match read_only.as_deref() {
-                        Some("readonly" | "read_only" | "fixed" | "fixed_readonly") => {
-                            crate::document::ReadOnlyPolicy::FixedReadOnly
-                        }
-                        Some("writable" | "fixed_writable") => {
-                            crate::document::ReadOnlyPolicy::FixedWritable
-                        }
-                        Some("override" | "document_override") | None => {
-                            crate::document::ReadOnlyPolicy::DocumentOverride
-                        }
-                        Some(invalid) => {
-                            self.state.notify(
-                                crate::notification::NotificationType::Error,
-                                format!("buffer kind '{name}' has invalid read_only policy: '{invalid}'"),
-                            );
-                            continue;
-                        }
-                    };
-                    let close_policy = match close.as_deref() {
-                        Some("discard" | "discard_dirty") => {
-                            crate::document::ClosePolicy::DiscardDirty
-                        }
-                        Some("confirm" | "confirm_dirty") | None => {
-                            crate::document::ClosePolicy::ConfirmDirty
-                        }
-                        Some(invalid) => {
-                            self.state.notify(
-                                crate::notification::NotificationType::Error,
-                                format!(
-                                    "buffer kind '{name}' has invalid close policy: '{invalid}'"
-                                ),
-                            );
-                            continue;
-                        }
-                    };
-                    let key_fallback_policy = match key_fallback.as_deref() {
-                        Some("global") => crate::document::KeyFallback::Global,
-                        Some("none") => crate::document::KeyFallback::None,
-                        Some("normal") | None => crate::document::KeyFallback::Normal,
-                        Some(invalid) => {
-                            self.state.notify(
-                                crate::notification::NotificationType::Error,
-                                format!("buffer kind '{name}' has invalid key_fallback policy: '{invalid}'"),
-                            );
-                            continue;
-                        }
-                    };
-                    let result = self.buffer_kinds.register_runtime(&name, |id| {
-                        let mut policies = crate::document::BufferPolicies::file_default();
-                        policies.read_only = read_only_policy;
-                        policies.close = close_policy;
-                        policies.language_services =
-                            crate::document::LanguageServicesPolicy::Virtual;
-                        policies.key_fallback = key_fallback_policy;
-                        crate::document::KindDescriptor {
-                            id,
-                            name: name.clone().into_boxed_str(),
-                            policies,
-                            action_dispatch: if has_on_action {
-                                crate::document::ActionDispatch::Lua
-                            } else {
-                                crate::document::ActionDispatch::Disabled
-                            },
-                            save_dispatch: if has_on_save {
-                                crate::document::SaveDispatch::Lua
-                            } else {
-                                crate::document::SaveDispatch::Disabled
-                            },
-                            reload_dispatch: crate::document::ReloadDispatch::Unsupported,
-                            display_name: display_name
-                                .clone()
-                                .map(|label| {
-                                    crate::document::DisplayNameStrategy::Label(
-                                        label.into_boxed_str(),
-                                    )
-                                })
-                                .unwrap_or(crate::document::DisplayNameStrategy::KindName),
-                            help_lines: help_lines.clone().map(Into::into),
-                            on_close: crate::document::CloseHandler::Lua,
-                            state_key: crate::document::PLUGIN_BUFFER_STATE_KEY.id(),
-                            owner,
-                            tombstone: None,
-                        }
-                    });
-                    if let Err(error) = result {
-                        self.state.notify(
-                            crate::notification::NotificationType::Error,
-                            error.to_string(),
-                        );
-                    }
-                }
-                PluginMutation::CreateBuffer {
-                    kind,
-                    title,
-                    lines,
-                    vars,
-                } => {
-                    let Some(descriptor) = self.buffer_kinds.get_by_name(&kind) else {
-                        self.state.notify(
-                            crate::notification::NotificationType::Error,
-                            format!("unknown buffer kind '{kind}'"),
-                        );
-                        continue;
-                    };
-                    let reservation = self.document_manager.reserve_creation();
-                    let mut document = match crate::document::Document::new(reservation.id()) {
-                        Ok(document) => document,
-                        Err(error) => {
-                            self.state.handle_error(error);
-                            continue;
-                        }
-                    };
-                    document.set_handle(reservation.handle());
-                    document.kind = crate::document::BufferKind::new(descriptor.clone());
-                    document.vars = vars.into_iter().collect();
-                    if let Some(ref title_str) = title {
-                        document.vars.insert(
-                            "title".to_string(),
-                            crate::annotations::Value::Str(title_str.clone()),
-                        );
-                    }
-                    document.state = crate::document::StateSlot::new(
-                        crate::document::PLUGIN_BUFFER_STATE_KEY,
-                        crate::document::PluginBufferState,
-                    );
-                    let text = lines.join("\n");
-                    if !text.is_empty() {
-                        let _ = document.buffer.insert_str(&text);
-                    }
-                    let draft = match crate::document::DocumentDraft::new(reservation, document) {
-                        Ok(draft) => draft,
-                        Err(error) => {
-                            self.state.handle_error(error);
-                            continue;
-                        }
-                    };
-                    let handle = self.document_manager.commit_draft_active(draft);
-                    self.buffer_kinds.increment_open_count(descriptor.id());
-                    self.split_tree.set_focused_document(handle.doc_id());
-                    self.sync_state_with_active_document();
-                    let _ = self.force_full_redraw();
-                    self.plugin_host
-                        .dispatch(&crate::plugin::EditorEvent::BufOpen {
-                            buf: handle.doc_id(),
-                            path: None,
-                            filetype: None,
-                        });
-                    self.plugin_host
-                        .dispatch(&crate::plugin::EditorEvent::BufEnter {
-                            buf: handle.doc_id(),
-                        });
-                }
-                PluginMutation::MapKeyKind {
-                    kind,
-                    mode: _,
-                    keys,
-                    action,
-                } => {
-                    let Some(kind_id) = self.buffer_kinds.id_by_name(&kind) else {
-                        continue;
-                    };
-                    if let (Some(key_seq), Ok(action)) = (
-                        crate::key::parse_key_sequence(&keys),
-                        action.parse::<crate::action::Action>(),
-                    ) {
-                        let ctx = crate::keymap::KeyContext::Buffer(kind_id);
-                        if let Some(gen) = origin {
-                            self.keymap.register_with_owner(
-                                ctx,
-                                key_seq,
-                                action,
-                                gen.keymap_owner_token(),
-                            );
-                        } else {
-                            self.keymap.register_sequence(ctx, key_seq, action);
-                        }
-                    }
-                }
-                PluginMutation::UnmapKeyKind {
-                    kind,
-                    mode: _,
-                    keys,
-                } => {
-                    let Some(kind_id) = self.buffer_kinds.id_by_name(&kind) else {
-                        continue;
-                    };
-                    if let Some(key_seq) = crate::key::parse_key_sequence(&keys) {
-                        self.keymap.unregister_sequence(
-                            crate::keymap::KeyContext::Buffer(kind_id),
-                            &key_seq,
-                        );
-                    }
-                }
-                PluginMutation::SetBufferVar { buf_id, key, value } => {
-                    let doc_id = buf_id.or_else(|| self.document_manager.active_document_id());
-                    if let Some(document) =
-                        doc_id.and_then(|id| self.document_manager.get_document_mut(id))
-                    {
-                        document.vars.insert(key, value);
-                    }
-                }
-                PluginMutation::CenterOnLine(row) => {
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        let row0 = row.saturating_sub(1);
-                        let total = doc.buffer.get_total_lines();
-                        let row0 = row0.min(total.saturating_sub(1));
-                        let line_start = doc.buffer.line_index.get_line_start(row0);
-                        let _ = doc.buffer.set_cursor(line_start);
-                        self.render_system.viewport.center_on(row0, total);
-                    }
-                }
-                PluginMutation::UnmapKey { mode, keys } => {
-                    use crate::keymap::KeyContext;
-                    let ctx = match mode.as_str() {
-                        "n" | "normal" => KeyContext::Normal,
-                        "i" | "insert" => KeyContext::Insert,
-                        "c" | "command" => KeyContext::Command,
-                        "s" | "search" => KeyContext::Search,
-                        "g" | "global" => KeyContext::Global,
-                        "t" | "terminal" => KeyContext::Terminal,
-                        "tn" | "terminal_normal" => KeyContext::TerminalNormal,
-                        _ => continue,
-                    };
-                    if let Some(key_seq) = crate::key::parse_key_sequence(&keys) {
-                        self.keymap.unregister_sequence(ctx, &key_seq);
-                    }
-                }
-                PluginMutation::SetCursorHoldDelay(ms) => {
-                    let poll_ms = self.state.settings.poll_timeout_ms as u32;
-                    self.plugin_host.set_cursor_hold_delay_ms(ms, poll_ms);
-                }
-                PluginMutation::SwitchToBuffer(id) => {
-                    if self.document_manager.switch_to_document(id).is_ok() {
-                        self.sync_state_with_active_document();
-                    }
-                }
-                PluginMutation::OpenFile { path, force } => {
-                    if !force {
-                        if let Some(doc) = self.document_manager.active_document() {
-                            if doc.is_dirty() {
-                                self.state.notify(
-                                    crate::notification::NotificationType::Warning,
-                                    "unsaved changes — use force=true to discard",
-                                );
-                                continue;
-                            }
-                        }
-                    }
-                    let _ = self.open_file(Some(path), force);
-                }
-                PluginMutation::CloseBuffer { force } => {
-                    self.do_quit(force);
-                }
-                PluginMutation::CreateScratchBuf { name, lines } => {
-                    if let Err(e) = self.create_scratch_buffer(name, &lines) {
-                        self.state.notify(
-                            crate::notification::NotificationType::Error,
-                            format!("create_scratch_buf failed: {}", e.message),
-                        );
-                    }
-                }
-                PluginMutation::ReloadBuffer { force } => {
-                    let _ = self.open_file(None, force);
-                }
-                PluginMutation::MoveWindow { direction } => {
-                    let size = self
-                        .term
-                        .get_size()
-                        .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
-                    let layouts = self
-                        .split_tree
-                        .compute_layout(size.rows as usize, size.cols as usize);
-                    let moved_id = self.split_tree.focused_window_id();
-                    if self.split_tree.move_window(direction, &layouts) {
-                        self.render_system.viewport.mark_needs_full_redraw();
-                        self.plugin_host
-                            .dispatch(&crate::plugin::EditorEvent::WinMoved {
-                                win: moved_id.get(),
-                            });
-                    }
-                }
-                PluginMutation::SwapWindows => {
-                    let focused_id = self.split_tree.focused_window_id();
-                    if let Some(prev_id) = self.split_tree.previous_window {
-                        if self.split_tree.exchange_windows(focused_id, prev_id) {
-                            let new_doc = self.split_tree.focused_window().document_id;
-                            let new_cursor = self.split_tree.focused_window().cursor_position;
-                            let _ = self.document_manager.switch_to_document(new_doc);
-                            if let Some(doc) = self.document_manager.get_document_mut(new_doc) {
-                                let _ = doc.buffer.set_cursor(new_cursor);
-                            }
-                            self.sync_state_with_active_document();
-                            self.render_system.viewport.mark_needs_full_redraw();
-                            self.plugin_host
-                                .dispatch(&crate::plugin::EditorEvent::WinSwapped {
-                                    win1: focused_id.get(),
-                                    win2: prev_id.get(),
-                                });
-                        }
-                    }
-                }
-                PluginMutation::FocusPreviousWindow => {
-                    if let Some(target_id) = self.split_tree.previous_window {
-                        self.switch_focus(target_id);
-                    }
-                }
-                PluginMutation::RegisterFiletype { ext, lang_name } => {
-                    self.language_loader.register_filetype(&ext, &lang_name);
-                }
-                PluginMutation::RegisterLanguageQuery {
-                    lang_name,
-                    query_src,
-                } => {
-                    self.language_loader
-                        .register_language_query(&lang_name, &query_src);
-                }
-                PluginMutation::RegisterInjectionsQuery {
-                    lang_name,
-                    query_src,
-                } => {
-                    self.language_loader
-                        .register_injections_query(&lang_name, &query_src);
-                }
-                PluginMutation::RegisterGrammar {
-                    lang_name,
-                    so_path,
-                    fn_name,
-                } => {
-                    if let Err(e) = self
-                        .language_loader
-                        .register_grammar(&lang_name, &so_path, &fn_name)
-                    {
-                        self.state.notify(
-                            crate::notification::NotificationType::Error,
-                            format!("register_grammar '{}': {}", lang_name, e),
-                        );
-                    }
-                }
-                #[cfg(feature = "lsp")]
-                PluginMutation::LspRegisterServer { language, config } => {
-                    self.lsp_manager.register_server(language, config);
-                    self.lsp_notify_open_all();
-                }
-                PluginMutation::LspGotoDefinition => {
-                    self.handle_action(&crate::action::Action::Editor(
-                        crate::action::EditorAction::LspGotoDefinition,
-                    ));
-                }
-                PluginMutation::LspReferences => {
-                    self.handle_action(&crate::action::Action::Editor(
-                        crate::action::EditorAction::LspReferences,
-                    ));
-                }
-                PluginMutation::LspHover => {
-                    self.handle_action(&crate::action::Action::Editor(
-                        crate::action::EditorAction::LspHover,
-                    ));
-                }
-                PluginMutation::LspRename { new_name } => {
-                    #[cfg(feature = "lsp")]
-                    match self.cursor_lsp_position() {
-                        Some((path, line, col)) => {
-                            if self
-                                .lsp_manager
-                                .rename(&path, line, col, new_name)
-                                .is_none()
-                            {
-                                self.notify_no_lsp_server();
-                            }
-                        }
-                        None => self.state.notify(
-                            crate::notification::NotificationType::Warning,
-                            "LSP rename: no file open".to_string(),
-                        ),
-                    }
-                    #[cfg(not(feature = "lsp"))]
-                    let _ = new_name;
-                }
-                PluginMutation::LspRenameDialog => {
-                    self.handle_action(&crate::action::Action::Editor(
-                        crate::action::EditorAction::LspRename,
-                    ));
-                }
-                PluginMutation::LspDiagnosticsPanel => {
-                    self.handle_action(&crate::action::Action::Editor(
-                        crate::action::EditorAction::LspDiagnosticsPanel,
-                    ));
-                }
-                PluginMutation::LspFormat => {
-                    self.handle_action(&crate::action::Action::Editor(
-                        crate::action::EditorAction::LspFormat,
-                    ));
-                }
-                PluginMutation::LspCodeAction => {
-                    self.handle_action(&crate::action::Action::Editor(
-                        crate::action::EditorAction::LspCodeAction,
-                    ));
-                }
-                PluginMutation::LspDiagnosticNext => {
-                    self.handle_action(&crate::action::Action::Editor(
-                        crate::action::EditorAction::LspDiagnosticNext,
-                    ));
-                }
-                PluginMutation::LspDiagnosticPrev => {
-                    self.handle_action(&crate::action::Action::Editor(
-                        crate::action::EditorAction::LspDiagnosticPrev,
-                    ));
-                }
+            self.apply_plugin_mutation(envelope.mutation, origin);
+        }
+    }
+
+    // Exhaustive on purpose: a new PluginMutation variant must be routed here.
+    fn apply_plugin_mutation(
+        &mut self,
+        mutation: PluginMutation,
+        origin: Option<PluginGeneration>,
+    ) {
+        match mutation {
+            PluginMutation::Notify { .. }
+            | PluginMutation::OpenFloat(_)
+            | PluginMutation::CloseFloat
+            | PluginMutation::SetCursorHoldDelay(_)
+            | PluginMutation::ExecAction(_)
+            | PluginMutation::SetOption { .. } => self.apply_ui_mutation(mutation),
+            PluginMutation::AppendLines(_)
+            | PluginMutation::InsertAtCursor(_)
+            | PluginMutation::DeleteBefore(_)
+            | PluginMutation::DeleteForward(_)
+            | PluginMutation::ReplaceLines { .. } => self.apply_text_mutation(mutation),
+            PluginMutation::SetCursor { .. }
+            | PluginMutation::CenterOnLine(_)
+            | PluginMutation::SetScroll(..)
+            | PluginMutation::SetLineEnding(_)
+            | PluginMutation::SetBufferVar { .. } => self.apply_cursor_mutation(mutation),
+            PluginMutation::MoveWindow { .. }
+            | PluginMutation::SwapWindows
+            | PluginMutation::FocusPreviousWindow => self.apply_window_mutation(&mutation),
+            PluginMutation::SaveBuffer
+            | PluginMutation::SwitchToBuffer(_)
+            | PluginMutation::OpenFile { .. }
+            | PluginMutation::CloseBuffer { .. }
+            | PluginMutation::ReloadBuffer { .. }
+            | PluginMutation::CreateScratchBuf { .. }
+            | PluginMutation::CreateBuffer { .. }
+            | PluginMutation::RegisterBufferKind { .. } => {
+                self.apply_buffer_mutation(mutation, origin);
+            }
+            PluginMutation::MapKey { .. }
+            | PluginMutation::UnmapKey { .. }
+            | PluginMutation::MapKeyKind { .. }
+            | PluginMutation::UnmapKeyKind { .. } => {
+                self.apply_keymap_mutation(mutation, origin);
+            }
+            PluginMutation::RegisterFiletype { .. }
+            | PluginMutation::RegisterLanguageQuery { .. }
+            | PluginMutation::RegisterInjectionsQuery { .. }
+            | PluginMutation::RegisterGrammar { .. } => self.apply_language_mutation(mutation),
+            PluginMutation::LspGotoDefinition
+            | PluginMutation::LspReferences
+            | PluginMutation::LspHover
+            | PluginMutation::LspRename { .. }
+            | PluginMutation::LspRenameDialog
+            | PluginMutation::LspFormat
+            | PluginMutation::LspCodeAction
+            | PluginMutation::LspDiagnosticNext
+            | PluginMutation::LspDiagnosticPrev
+            | PluginMutation::LspDiagnosticsPanel => self.apply_lsp_mutation(mutation),
+            #[cfg(feature = "lsp")]
+            PluginMutation::LspRegisterServer { .. } => self.apply_lsp_mutation(mutation),
+            PluginMutation::AddAnnotation { .. }
+            | PluginMutation::UpdateAnnotation { .. }
+            | PluginMutation::RemoveAnnotation(_)
+            | PluginMutation::ClearAnnotations { .. }
+            | PluginMutation::RegisterAnnotationAction { .. }
+            | PluginMutation::RegisterKindDefaults { .. } => {
+                self.apply_annotation_mutation(mutation);
+            }
+            PluginMutation::AddHighlight { .. } | PluginMutation::ClearHighlights { .. } => {
+                self.apply_highlight_mutation(mutation);
             }
         }
     }
+
+    // Reached only if apply_plugin_mutation routes a variant to the wrong group.
+    fn report_misrouted(&mut self) {
+        self.state.notify(
+            crate::notification::NotificationType::Error,
+            "internal error: plugin mutation misrouted".to_string(),
+        );
+    }
+
+    fn apply_ui_mutation(&mut self, mutation: PluginMutation) {
+        match mutation {
+            PluginMutation::Notify { message, level } => {
+                self.state.notify(level, message);
+            }
+            PluginMutation::OpenFloat(_) | PluginMutation::CloseFloat => {
+                self.plugin_host.apply_mutation(mutation);
+            }
+            PluginMutation::SetCursorHoldDelay(ms) => {
+                let poll_ms =
+                    u32::try_from(self.state.settings.poll_timeout_ms).unwrap_or(u32::MAX);
+                self.plugin_host.set_cursor_hold_delay_ms(ms, poll_ms);
+            }
+            PluginMutation::ExecAction(action_str) => {
+                if let Ok(action) = action_str.parse::<crate::action::Action>() {
+                    self.handle_action(&action);
+                }
+            }
+            PluginMutation::SetOption { name, value } => {
+                let mut errors = Vec::new();
+                let mut error_handler = |e: crate::error::RiftError| errors.push(e);
+                match self.document_manager.active_document_mut() {
+                    Some(doc) => {
+                        let resolver = crate::command_line::settings::SettingsResolver::new(
+                            self.document_settings_registry,
+                            self.settings_registry,
+                        );
+                        resolver.set(
+                            &name,
+                            Some(value.as_str()),
+                            &mut doc.options,
+                            &mut self.state.settings,
+                            &mut error_handler,
+                        );
+                    }
+                    None => {
+                        self.settings_registry.execute_setting(
+                            &name,
+                            Some(value.as_str()),
+                            &mut self.state.settings,
+                            &mut error_handler,
+                        );
+                    }
+                }
+                for err in errors {
+                    self.state.handle_error(err);
+                }
+            }
+            _ => self.report_misrouted(),
+        }
+    }
+
+    fn apply_text_mutation(&mut self, mutation: PluginMutation) {
+        match mutation {
+            PluginMutation::AppendLines(lines) => {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    let end = doc.buffer.len();
+                    let _ = doc.buffer.set_cursor(end);
+                    let text = lines.join("\n");
+                    let _ = doc.insert_str(&text);
+                }
+                self.do_incremental_syntax_parse();
+            }
+            PluginMutation::InsertAtCursor(text) => {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    let _ = doc.insert_str(&text);
+                }
+                self.do_incremental_syntax_parse();
+            }
+            PluginMutation::DeleteBefore(n) => {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    for _ in 0..n {
+                        doc.delete_backward();
+                    }
+                }
+                self.do_incremental_syntax_parse();
+            }
+            PluginMutation::DeleteForward(n) => {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    for _ in 0..n {
+                        doc.delete_forward();
+                    }
+                }
+                self.do_incremental_syntax_parse();
+            }
+            PluginMutation::ReplaceLines { start, end, lines } => {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    let start0 = start.saturating_sub(1);
+                    let end0 = end.saturating_sub(1);
+                    let line_count = doc.buffer.line_index.line_count();
+                    if start0 < line_count {
+                        let range_start = doc.buffer.line_index.get_line_start(start0);
+                        let range_end = if end0 + 1 < line_count {
+                            doc.buffer.line_index.get_line_start(end0 + 1)
+                        } else {
+                            doc.buffer.len()
+                        };
+                        let _ = doc.delete_range(range_start, range_end);
+                        let _ = doc.buffer.set_cursor(range_start);
+                        if !lines.is_empty() {
+                            let _ = doc.insert_str(&lines.join("\n"));
+                        }
+                    }
+                }
+                self.do_incremental_syntax_parse();
+            }
+            _ => self.report_misrouted(),
+        }
+    }
+
+    fn apply_cursor_mutation(&mut self, mutation: PluginMutation) {
+        match mutation {
+            PluginMutation::SetCursor { row, col } => {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    let row0 = row.saturating_sub(1);
+                    let line_count = doc.buffer.line_index.line_count();
+                    let row0 = row0.min(line_count.saturating_sub(1));
+                    let line_start = doc.buffer.line_index.get_line_start(row0);
+                    let total = doc.buffer.len();
+                    let pos = (line_start + col).min(total.saturating_sub(1));
+                    let _ = doc.buffer.set_cursor(pos);
+                }
+            }
+            PluginMutation::CenterOnLine(row) => {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    let row0 = row.saturating_sub(1);
+                    let total = doc.buffer.get_total_lines();
+                    let row0 = row0.min(total.saturating_sub(1));
+                    let line_start = doc.buffer.line_index.get_line_start(row0);
+                    let _ = doc.buffer.set_cursor(line_start);
+                    self.render_system.viewport.center_on(row0, total);
+                }
+            }
+            PluginMutation::SetScroll(top, left) => {
+                self.render_system.viewport.set_scroll(top, left);
+            }
+            PluginMutation::SetLineEnding(ending) => {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    doc.options.line_ending = match ending.to_lowercase().as_str() {
+                        "crlf" => crate::document::LineEnding::CRLF,
+                        _ => crate::document::LineEnding::LF,
+                    };
+                }
+            }
+            PluginMutation::SetBufferVar { buf_id, key, value } => {
+                let doc_id = buf_id.or_else(|| self.document_manager.active_document_id());
+                if let Some(document) =
+                    doc_id.and_then(|id| self.document_manager.get_document_mut(id))
+                {
+                    document.vars.insert(key, value);
+                }
+            }
+            _ => self.report_misrouted(),
+        }
+    }
+
+    fn apply_window_mutation(&mut self, mutation: &PluginMutation) {
+        match *mutation {
+            PluginMutation::MoveWindow { direction } => {
+                let size = self
+                    .term
+                    .get_size()
+                    .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
+                let layouts = self
+                    .split_tree
+                    .compute_layout(size.rows as usize, size.cols as usize);
+                let moved_id = self.split_tree.focused_window_id();
+                if self.split_tree.move_window(direction, &layouts) {
+                    self.render_system.viewport.mark_needs_full_redraw();
+                    self.plugin_host
+                        .dispatch(&crate::plugin::EditorEvent::WinMoved {
+                            win: moved_id.get(),
+                        });
+                }
+            }
+            PluginMutation::SwapWindows => {
+                let focused_id = self.split_tree.focused_window_id();
+                if let Some(prev_id) = self.split_tree.previous_window {
+                    if self.split_tree.exchange_windows(focused_id, prev_id) {
+                        let new_doc = self.split_tree.focused_window().document_id;
+                        let new_cursor = self.split_tree.focused_window().cursor_position;
+                        let _ = self.document_manager.switch_to_document(new_doc);
+                        if let Some(doc) = self.document_manager.get_document_mut(new_doc) {
+                            let _ = doc.buffer.set_cursor(new_cursor);
+                        }
+                        self.sync_state_with_active_document();
+                        self.render_system.viewport.mark_needs_full_redraw();
+                        self.plugin_host
+                            .dispatch(&crate::plugin::EditorEvent::WinSwapped {
+                                win1: focused_id.get(),
+                                win2: prev_id.get(),
+                            });
+                    }
+                }
+            }
+            PluginMutation::FocusPreviousWindow => {
+                if let Some(target_id) = self.split_tree.previous_window {
+                    self.switch_focus(target_id);
+                }
+            }
+            _ => self.report_misrouted(),
+        }
+    }
+
+    fn apply_buffer_mutation(
+        &mut self,
+        mutation: PluginMutation,
+        origin: Option<PluginGeneration>,
+    ) {
+        match mutation {
+            PluginMutation::SaveBuffer => {
+                self.do_save();
+            }
+            PluginMutation::SwitchToBuffer(id) => {
+                if self.document_manager.switch_to_document(id).is_ok() {
+                    self.sync_state_with_active_document();
+                }
+            }
+            PluginMutation::OpenFile { path, force } => {
+                if !force {
+                    if let Some(doc) = self.document_manager.active_document() {
+                        if doc.is_dirty() {
+                            self.state.notify(
+                                crate::notification::NotificationType::Warning,
+                                "unsaved changes — use force=true to discard",
+                            );
+                            return;
+                        }
+                    }
+                }
+                let _ = self.open_file(Some(path), force);
+            }
+            PluginMutation::CloseBuffer { force } => {
+                self.do_quit(force);
+            }
+            PluginMutation::CreateScratchBuf { name, lines } => {
+                if let Err(e) = self.create_scratch_buffer(name, &lines) {
+                    self.state.notify(
+                        crate::notification::NotificationType::Error,
+                        format!("create_scratch_buf failed: {}", e.message),
+                    );
+                }
+            }
+            PluginMutation::ReloadBuffer { force } => {
+                let _ = self.open_file(None, force);
+            }
+            PluginMutation::CreateBuffer {
+                kind,
+                title,
+                lines,
+                vars,
+            } => {
+                self.create_buffer(&kind, title.as_deref(), &lines, vars);
+            }
+            PluginMutation::RegisterBufferKind {
+                name,
+                read_only,
+                close,
+                key_fallback,
+                display_name,
+                help_lines,
+                has_on_close,
+                has_on_action,
+                has_on_save,
+            } => {
+                self.register_buffer_kind(
+                    BufferKindSpec {
+                        name,
+                        read_only,
+                        close,
+                        key_fallback,
+                        display_name,
+                        help_lines,
+                        has_on_close,
+                        has_on_action,
+                        has_on_save,
+                    },
+                    origin,
+                );
+            }
+            _ => self.report_misrouted(),
+        }
+    }
+
+    fn create_buffer(
+        &mut self,
+        kind: &str,
+        title: Option<&str>,
+        lines: &[String],
+        vars: Vec<(String, crate::annotations::Value)>,
+    ) {
+        let Some(descriptor) = self.buffer_kinds.get_by_name(kind) else {
+            self.state.notify(
+                crate::notification::NotificationType::Error,
+                format!("unknown buffer kind '{kind}'"),
+            );
+            return;
+        };
+        let reservation = self.document_manager.reserve_creation();
+        let mut document = match crate::document::Document::new(reservation.id()) {
+            Ok(document) => document,
+            Err(error) => {
+                self.state.handle_error(error);
+                return;
+            }
+        };
+        document.set_handle(reservation.handle());
+        document.kind = crate::document::BufferKind::new(descriptor.clone());
+        document.vars = vars.into_iter().collect();
+        if let Some(title_str) = title {
+            document.vars.insert(
+                "title".to_string(),
+                crate::annotations::Value::Str(title_str.to_string()),
+            );
+        }
+        document.state = crate::document::StateSlot::new(
+            crate::document::PLUGIN_BUFFER_STATE_KEY,
+            crate::document::PluginBufferState,
+        );
+        let text = lines.join("\n");
+        if !text.is_empty() {
+            let _ = document.buffer.insert_str(&text);
+        }
+        let draft = match crate::document::DocumentDraft::new(reservation, document) {
+            Ok(draft) => draft,
+            Err(error) => {
+                self.state.handle_error(error);
+                return;
+            }
+        };
+        let handle = self.document_manager.commit_draft_active(draft);
+        self.buffer_kinds.increment_open_count(descriptor.id());
+        self.split_tree.set_focused_document(handle.doc_id());
+        self.sync_state_with_active_document();
+        let _ = self.force_full_redraw();
+        self.plugin_host
+            .dispatch(&crate::plugin::EditorEvent::BufOpen {
+                buf: handle.doc_id(),
+                path: None,
+                filetype: None,
+            });
+        self.plugin_host
+            .dispatch(&crate::plugin::EditorEvent::BufEnter {
+                buf: handle.doc_id(),
+            });
+    }
+
+    fn register_buffer_kind(&mut self, spec: BufferKindSpec, origin: Option<PluginGeneration>) {
+        let BufferKindSpec {
+            name,
+            read_only,
+            close,
+            key_fallback,
+            display_name,
+            help_lines,
+            has_on_close,
+            has_on_action,
+            has_on_save,
+        } = spec;
+        if !has_on_close {
+            self.state.notify(
+                crate::notification::NotificationType::Error,
+                format!("buffer kind '{name}' requires on_close"),
+            );
+            return;
+        }
+        let Some(owner) = self.buffer_kind_owner(&name, origin) else {
+            return;
+        };
+        let read_only_policy = match parse_read_only_policy(read_only.as_deref()) {
+            Ok(policy) => policy,
+            Err(invalid) => {
+                self.state.notify(
+                    crate::notification::NotificationType::Error,
+                    format!("buffer kind '{name}' has invalid read_only policy: '{invalid}'"),
+                );
+                return;
+            }
+        };
+        let close_policy = match parse_close_policy(close.as_deref()) {
+            Ok(policy) => policy,
+            Err(invalid) => {
+                self.state.notify(
+                    crate::notification::NotificationType::Error,
+                    format!("buffer kind '{name}' has invalid close policy: '{invalid}'"),
+                );
+                return;
+            }
+        };
+        let key_fallback_policy = match parse_key_fallback_policy(key_fallback.as_deref()) {
+            Ok(policy) => policy,
+            Err(invalid) => {
+                self.state.notify(
+                    crate::notification::NotificationType::Error,
+                    format!("buffer kind '{name}' has invalid key_fallback policy: '{invalid}'"),
+                );
+                return;
+            }
+        };
+        let result = self.buffer_kinds.register_runtime(&name, |id| {
+            let mut policies = crate::document::BufferPolicies::file_default();
+            policies.read_only = read_only_policy;
+            policies.close = close_policy;
+            policies.language_services = crate::document::LanguageServicesPolicy::Virtual;
+            policies.key_fallback = key_fallback_policy;
+            crate::document::KindDescriptor {
+                id,
+                name: name.clone().into_boxed_str(),
+                policies,
+                action_dispatch: if has_on_action {
+                    crate::document::ActionDispatch::Lua
+                } else {
+                    crate::document::ActionDispatch::Disabled
+                },
+                save_dispatch: if has_on_save {
+                    crate::document::SaveDispatch::Lua
+                } else {
+                    crate::document::SaveDispatch::Disabled
+                },
+                reload_dispatch: crate::document::ReloadDispatch::Unsupported,
+                display_name: display_name
+                    .clone()
+                    .map_or(crate::document::DisplayNameStrategy::KindName, |label| {
+                        crate::document::DisplayNameStrategy::Label(label.into_boxed_str())
+                    }),
+                help_lines: help_lines.clone().map(Into::into),
+                on_close: crate::document::CloseHandler::Lua,
+                state_key: crate::document::PLUGIN_BUFFER_STATE_KEY.id(),
+                owner,
+                tombstone: None,
+            }
+        });
+        if let Err(error) = result {
+            self.state.notify(
+                crate::notification::NotificationType::Error,
+                error.to_string(),
+            );
+        }
+    }
+
+    fn buffer_kind_owner(
+        &mut self,
+        name: &str,
+        origin: Option<PluginGeneration>,
+    ) -> Option<crate::document::DescriptorOwner> {
+        match origin {
+            Some(gen) if self.plugin_host.is_generation_active(gen) => {
+                Some(crate::document::DescriptorOwner::plugin(
+                    gen.plugin_id().as_nonzero(),
+                    gen.generation(),
+                ))
+            }
+            _ => {
+                self.state.notify(
+                    crate::notification::NotificationType::Error,
+                    format!("cannot register buffer kind '{name}': no active plugin generation"),
+                );
+                None
+            }
+        }
+    }
+
+    fn apply_keymap_mutation(
+        &mut self,
+        mutation: PluginMutation,
+        origin: Option<PluginGeneration>,
+    ) {
+        match mutation {
+            PluginMutation::MapKey { mode, keys, action } => {
+                use crate::keymap::KeyContext;
+                let ctx = match mode.as_str() {
+                    "n" | "normal" => KeyContext::Normal,
+                    "i" | "insert" => KeyContext::Insert,
+                    "c" | "command" => KeyContext::Command,
+                    "s" | "search" => KeyContext::Search,
+                    "g" | "global" => KeyContext::Global,
+                    "t" | "terminal" => KeyContext::Terminal,
+                    "tn" | "terminal_normal" => KeyContext::TerminalNormal,
+                    _ => return,
+                };
+                if let (Some(key_seq), Ok(act)) = (
+                    crate::key::parse_key_sequence(&keys),
+                    action.parse::<crate::action::Action>(),
+                ) {
+                    if let Some(gen) = origin {
+                        self.keymap.register_with_owner(
+                            ctx,
+                            key_seq,
+                            act,
+                            gen.keymap_owner_token(),
+                        );
+                    } else {
+                        self.keymap.register_sequence(ctx, key_seq, act);
+                    }
+                }
+            }
+            PluginMutation::UnmapKey { mode, keys } => {
+                use crate::keymap::KeyContext;
+                let ctx = match mode.as_str() {
+                    "n" | "normal" => KeyContext::Normal,
+                    "i" | "insert" => KeyContext::Insert,
+                    "c" | "command" => KeyContext::Command,
+                    "s" | "search" => KeyContext::Search,
+                    "g" | "global" => KeyContext::Global,
+                    "t" | "terminal" => KeyContext::Terminal,
+                    "tn" | "terminal_normal" => KeyContext::TerminalNormal,
+                    _ => return,
+                };
+                if let Some(key_seq) = crate::key::parse_key_sequence(&keys) {
+                    self.keymap.unregister_sequence(ctx, &key_seq);
+                }
+            }
+            PluginMutation::MapKeyKind {
+                kind,
+                mode: _,
+                keys,
+                action,
+            } => {
+                let Some(kind_id) = self.buffer_kinds.id_by_name(&kind) else {
+                    return;
+                };
+                if let (Some(key_seq), Ok(action)) = (
+                    crate::key::parse_key_sequence(&keys),
+                    action.parse::<crate::action::Action>(),
+                ) {
+                    let ctx = crate::keymap::KeyContext::Buffer(kind_id);
+                    if let Some(gen) = origin {
+                        self.keymap.register_with_owner(
+                            ctx,
+                            key_seq,
+                            action,
+                            gen.keymap_owner_token(),
+                        );
+                    } else {
+                        self.keymap.register_sequence(ctx, key_seq, action);
+                    }
+                }
+            }
+            PluginMutation::UnmapKeyKind {
+                kind,
+                mode: _,
+                keys,
+            } => {
+                let Some(kind_id) = self.buffer_kinds.id_by_name(&kind) else {
+                    return;
+                };
+                if let Some(key_seq) = crate::key::parse_key_sequence(&keys) {
+                    self.keymap
+                        .unregister_sequence(crate::keymap::KeyContext::Buffer(kind_id), &key_seq);
+                }
+            }
+            _ => self.report_misrouted(),
+        }
+    }
+
+    fn apply_language_mutation(&mut self, mutation: PluginMutation) {
+        match mutation {
+            PluginMutation::RegisterFiletype { ext, lang_name } => {
+                self.language_loader.register_filetype(&ext, &lang_name);
+            }
+            PluginMutation::RegisterLanguageQuery {
+                lang_name,
+                query_src,
+            } => {
+                self.language_loader
+                    .register_language_query(&lang_name, &query_src);
+            }
+            PluginMutation::RegisterInjectionsQuery {
+                lang_name,
+                query_src,
+            } => {
+                self.language_loader
+                    .register_injections_query(&lang_name, &query_src);
+            }
+            PluginMutation::RegisterGrammar {
+                lang_name,
+                so_path,
+                fn_name,
+            } => {
+                if let Err(e) = self
+                    .language_loader
+                    .register_grammar(&lang_name, &so_path, &fn_name)
+                {
+                    self.state.notify(
+                        crate::notification::NotificationType::Error,
+                        format!("register_grammar '{lang_name}': {e}"),
+                    );
+                }
+            }
+            _ => self.report_misrouted(),
+        }
+    }
+
+    fn apply_lsp_mutation(&mut self, mutation: PluginMutation) {
+        match mutation {
+            #[cfg(feature = "lsp")]
+            PluginMutation::LspRegisterServer { language, config } => {
+                self.lsp_manager.register_server(language, config);
+                self.lsp_notify_open_all();
+            }
+            PluginMutation::LspGotoDefinition => {
+                self.handle_action(&crate::action::Action::Editor(
+                    crate::action::EditorAction::LspGotoDefinition,
+                ));
+            }
+            PluginMutation::LspReferences => {
+                self.handle_action(&crate::action::Action::Editor(
+                    crate::action::EditorAction::LspReferences,
+                ));
+            }
+            PluginMutation::LspHover => {
+                self.handle_action(&crate::action::Action::Editor(
+                    crate::action::EditorAction::LspHover,
+                ));
+            }
+            PluginMutation::LspRename { new_name } => {
+                #[cfg(feature = "lsp")]
+                match self.cursor_lsp_position() {
+                    Some((path, line, col)) => {
+                        if self
+                            .lsp_manager
+                            .rename(&path, line, col, new_name)
+                            .is_none()
+                        {
+                            self.notify_no_lsp_server();
+                        }
+                    }
+                    None => self.state.notify(
+                        crate::notification::NotificationType::Warning,
+                        "LSP rename: no file open".to_string(),
+                    ),
+                }
+                #[cfg(not(feature = "lsp"))]
+                let _ = new_name;
+            }
+            PluginMutation::LspRenameDialog => {
+                self.handle_action(&crate::action::Action::Editor(
+                    crate::action::EditorAction::LspRename,
+                ));
+            }
+            PluginMutation::LspDiagnosticsPanel => {
+                self.handle_action(&crate::action::Action::Editor(
+                    crate::action::EditorAction::LspDiagnosticsPanel,
+                ));
+            }
+            PluginMutation::LspFormat => {
+                self.handle_action(&crate::action::Action::Editor(
+                    crate::action::EditorAction::LspFormat,
+                ));
+            }
+            PluginMutation::LspCodeAction => {
+                self.handle_action(&crate::action::Action::Editor(
+                    crate::action::EditorAction::LspCodeAction,
+                ));
+            }
+            PluginMutation::LspDiagnosticNext => {
+                self.handle_action(&crate::action::Action::Editor(
+                    crate::action::EditorAction::LspDiagnosticNext,
+                ));
+            }
+            PluginMutation::LspDiagnosticPrev => {
+                self.handle_action(&crate::action::Action::Editor(
+                    crate::action::EditorAction::LspDiagnosticPrev,
+                ));
+            }
+            _ => self.report_misrouted(),
+        }
+    }
+
+    fn apply_annotation_mutation(&mut self, mutation: PluginMutation) {
+        match mutation {
+            PluginMutation::AddAnnotation {
+                id,
+                kind,
+                anchor,
+                payload,
+                presentation,
+                actions,
+                visible,
+                stickiness,
+                owner,
+            } => {
+                use crate::annotations::{Action, Annotation, Kind, Stickiness};
+                let mut ann = Annotation::new(
+                    Kind::new(kind),
+                    annotation_anchor(&anchor),
+                    annotation_owner(owner.as_deref()),
+                )
+                .with_payload(payload)
+                .with_visible(visible)
+                .with_actions(
+                    actions
+                        .into_iter()
+                        .map(|(verb, default)| {
+                            let a = Action::new(verb);
+                            if default {
+                                a.as_default()
+                            } else {
+                                a
+                            }
+                        })
+                        .collect(),
+                );
+                if matches!(stickiness.as_deref(), Some("persist")) {
+                    ann = ann.with_stickiness(Stickiness::Persist);
+                }
+                if let Some(pres) = presentation {
+                    ann = ann.with_presentation(pres);
+                }
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    doc.annotations
+                        .add_with_id(crate::annotations::AnnotationId::new(id), ann);
+                }
+            }
+            PluginMutation::UpdateAnnotation {
+                id,
+                payload,
+                visible,
+                presentation,
+            } => {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    doc.annotations
+                        .update(crate::annotations::AnnotationId::new(id), |a| {
+                            if let Some(p) = payload {
+                                a.payload = p;
+                            }
+                            if let Some(v) = visible {
+                                a.visible = v;
+                            }
+                            if let Some(pres) = presentation {
+                                a.presentation = Some(pres);
+                            }
+                        });
+                }
+            }
+            PluginMutation::RemoveAnnotation(id) => {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    doc.annotations
+                        .remove(crate::annotations::AnnotationId::new(id));
+                }
+            }
+            PluginMutation::ClearAnnotations { kind_prefix } => {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    doc.annotations.clear_by_kind_prefix(&kind_prefix);
+                }
+            }
+            PluginMutation::RegisterAnnotationAction {
+                kind,
+                verb,
+                command,
+            } => {
+                use crate::annotations::registry::Handler;
+                let handler = command.map_or(Handler::Lua, Handler::Command);
+                self.dispatch_registry.register(kind, verb, handler);
+            }
+            PluginMutation::RegisterKindDefaults {
+                kind,
+                presentation,
+                description,
+            } => {
+                if let Some(pres) = presentation {
+                    self.kind_registry.set_presentation(kind.clone(), pres);
+                }
+                if let Some(desc) = description {
+                    self.kind_registry.set_description(kind, desc);
+                }
+            }
+            _ => self.report_misrouted(),
+        }
+    }
+
+    fn apply_highlight_mutation(&mut self, mutation: PluginMutation) {
+        match mutation {
+            PluginMutation::AddHighlight {
+                slot,
+                start_line,
+                start_col,
+                end_line,
+                end_col,
+                color,
+            } => {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    let parsed_color = plugin_color(&color);
+                    let sl = start_line.saturating_sub(1);
+                    let el = end_line.saturating_sub(1);
+                    let line_count = doc.buffer.line_index.line_count();
+                    if sl < line_count {
+                        let el = el.min(line_count.saturating_sub(1));
+                        let start_char = doc.buffer.line_index.get_line_start(sl) + start_col;
+                        let end_char = (doc.buffer.line_index.get_line_start(el) + end_col)
+                            .min(doc.buffer.len());
+                        let start = doc.buffer.char_to_byte(start_char);
+                        let end = doc.buffer.char_to_byte(end_char);
+                        if start < end {
+                            doc.annotations
+                                .add_plugin_highlight(slot, start, end, parsed_color);
+                        }
+                    }
+                }
+            }
+            PluginMutation::ClearHighlights { slot } => {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    let slot = (slot != 0).then_some(slot);
+                    doc.annotations.clear_plugin_highlights(slot);
+                }
+            }
+            _ => self.report_misrouted(),
+        }
+    }
+}
+
+fn plugin_color(s: &str) -> Color {
+    match s.to_lowercase().as_str() {
+        "red" => Color::Red,
+        "darkred" => Color::DarkRed,
+        "green" => Color::Green,
+        "darkgreen" => Color::DarkGreen,
+        "blue" => Color::Blue,
+        "darkblue" => Color::DarkBlue,
+        "yellow" => Color::Yellow,
+        "darkyellow" => Color::DarkYellow,
+        "cyan" => Color::Cyan,
+        "darkcyan" => Color::DarkCyan,
+        "magenta" => Color::Magenta,
+        "darkmagenta" => Color::DarkMagenta,
+        "white" => Color::White,
+        "black" => Color::Black,
+        "grey" | "gray" => Color::Grey,
+        "darkgrey" | "darkgray" => Color::DarkGrey,
+        s if s.starts_with('#') && s.len() == 7 => {
+            let channel = |range: std::ops::Range<usize>| {
+                s.get(range)
+                    .and_then(|hex| u8::from_str_radix(hex, 16).ok())
+                    .unwrap_or(255)
+            };
+            Color::Rgb {
+                r: channel(1..3),
+                g: channel(3..5),
+                b: channel(5..7),
+            }
+        }
+        _ => Color::Yellow,
+    }
+}
+
+const fn annotation_anchor(
+    anchor: &crate::plugin::AnnotationAnchorSpec,
+) -> crate::annotations::Anchor {
+    use crate::annotations::Anchor;
+    use crate::plugin::AnnotationAnchorSpec;
+    match *anchor {
+        AnnotationAnchorSpec::Line(l) => Anchor::Line(l),
+        AnnotationAnchorSpec::Point(p) => Anchor::point(p),
+        AnnotationAnchorSpec::Range(s, e) => Anchor::range(s, e),
+    }
+}
+
+fn annotation_owner(owner: Option<&str>) -> crate::annotations::AnnotationOwner {
+    use crate::annotations::AnnotationOwner;
+    match owner {
+        Some("system") => AnnotationOwner::System,
+        Some("lsp") => AnnotationOwner::Lsp,
+        Some("user") => AnnotationOwner::User,
+        _ => AnnotationOwner::Plugin(String::new()),
+    }
+}
+
+fn parse_read_only_policy(value: Option<&str>) -> Result<crate::document::ReadOnlyPolicy, &str> {
+    match value {
+        Some("readonly" | "read_only" | "fixed" | "fixed_readonly") => {
+            Ok(crate::document::ReadOnlyPolicy::FixedReadOnly)
+        }
+        Some("writable" | "fixed_writable") => Ok(crate::document::ReadOnlyPolicy::FixedWritable),
+        Some("override" | "document_override") | None => {
+            Ok(crate::document::ReadOnlyPolicy::DocumentOverride)
+        }
+        Some(invalid) => Err(invalid),
+    }
+}
+
+fn parse_close_policy(value: Option<&str>) -> Result<crate::document::ClosePolicy, &str> {
+    match value {
+        Some("discard" | "discard_dirty") => Ok(crate::document::ClosePolicy::DiscardDirty),
+        Some("confirm" | "confirm_dirty") | None => Ok(crate::document::ClosePolicy::ConfirmDirty),
+        Some(invalid) => Err(invalid),
+    }
+}
+
+fn parse_key_fallback_policy(value: Option<&str>) -> Result<crate::document::KeyFallback, &str> {
+    match value {
+        Some("global") => Ok(crate::document::KeyFallback::Global),
+        Some("none") => Ok(crate::document::KeyFallback::None),
+        Some("normal") | None => Ok(crate::document::KeyFallback::Normal),
+        Some(invalid) => Err(invalid),
+    }
+}
+
+// Grouped so register_buffer_kind stays under the argument-count lint.
+struct BufferKindSpec {
+    name: String,
+    read_only: Option<String>,
+    close: Option<String>,
+    key_fallback: Option<String>,
+    display_name: Option<String>,
+    help_lines: Option<Vec<String>>,
+    has_on_close: bool,
+    has_on_action: bool,
+    has_on_save: bool,
 }

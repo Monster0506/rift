@@ -18,7 +18,7 @@ fn drain_jobs(editor: &mut Editor<MockTerminal>) {
             .recv_timeout(Duration::from_millis(50))
         {
             Ok(msg) => {
-                let _ = editor.handle_job_message(msg);
+                editor.handle_job_message(msg);
             }
             Err(_) => {
                 if !editor.job_manager.any_job_thread_alive() {
@@ -62,6 +62,7 @@ fn tick_until(
 
 #[test]
 fn edit_then_debounce_produces_gutter_signs_for_changed_lines() {
+    use crate::git::diff::GutterSignKind;
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
 
@@ -102,7 +103,6 @@ fn edit_then_debounce_produces_gutter_signs_for_changed_lines() {
         "expected gutter signs after edit + debounce"
     );
 
-    use crate::git::diff::GutterSignKind;
     assert!(
         signs
             .iter()
@@ -117,6 +117,7 @@ fn edit_then_debounce_produces_gutter_signs_for_changed_lines() {
 
 #[test]
 fn opening_an_already_dirty_file_produces_gutter_signs_without_any_in_editor_edit() {
+    use crate::git::diff::GutterSignKind;
     // Regression: a freshly-opened file's buffer starts at revision 0 (the bulk `from_bytes` loader skips `insert_str`), the same default a brand-new debounce tracker entry reports as "last seen"; so the very first poll saw revision 0 == 0 and never armed. A file that already differs from the git index on disk.
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
@@ -152,7 +153,6 @@ fn opening_an_already_dirty_file_produces_gutter_signs_without_any_in_editor_edi
         .unwrap()
         .annotations
         .git_gutter_signs();
-    use crate::git::diff::GutterSignKind;
     assert!(
         signs
             .iter()
@@ -163,6 +163,7 @@ fn opening_an_already_dirty_file_produces_gutter_signs_without_any_in_editor_edi
 
 #[test]
 fn a_file_in_a_subdirectory_still_gets_gutter_signs() {
+    use crate::git::diff::GutterSignKind;
     // Regression: the diff job read `PathBuf::to_string_lossy()` directly into git's `:<path>` index-blob syntax. On Windows that yields a backslash path ("src\\tracked.txt"), but the index always stores forward slashes; the lookup silently missed, producing an empty baseline and thus zero signs for any file not.
     let dir = tempfile::tempdir().unwrap();
     crate::git::run_checked(dir.path(), &["init", "--quiet"]).unwrap();
@@ -208,7 +209,6 @@ fn a_file_in_a_subdirectory_still_gets_gutter_signs() {
         .unwrap()
         .annotations
         .git_gutter_signs();
-    use crate::git::diff::GutterSignKind;
     assert!(
         signs
             .iter()
@@ -219,6 +219,7 @@ fn a_file_in_a_subdirectory_still_gets_gutter_signs() {
 
 #[test]
 fn edit_then_debounce_produces_delete_sign_for_removed_lines() {
+    use crate::git::diff::GutterSignKind;
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
 
@@ -254,7 +255,6 @@ fn edit_then_debounce_produces_delete_sign_for_removed_lines() {
         .unwrap()
         .annotations
         .git_gutter_signs();
-    use crate::git::diff::GutterSignKind;
     assert!(
         signs
             .iter()

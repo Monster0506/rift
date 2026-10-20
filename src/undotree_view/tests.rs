@@ -38,12 +38,12 @@ fn test_git_graph_render() {
 
     println!("Rendered Tree:");
     for line in &lines {
-        let line_str: String = line.iter().map(|c| c.to_char()).collect();
-        println!("{}", line_str);
+        let line_str: String = line.iter().map(crate::layer::Cell::to_char).collect();
+        println!("{line_str}");
     }
 
-    let l0: String = lines[0].iter().map(|c| c.to_char()).collect();
-    assert!(l0.contains("@"));
+    let l0: String = lines[0].iter().map(crate::layer::Cell::to_char).collect();
+    assert!(l0.contains('@'));
     assert!(l0.contains("Msg5"));
 }
 
@@ -73,18 +73,21 @@ fn test_cursor_position_on_merge() {
     // If there is a connector line, Node 1 will be on a later line.
     // The cursor should point to Node 1's line (containing "@"), NOT the connector line.
 
-    let cursor_line_str: String = lines[cursor_row].iter().map(|c| c.to_char()).collect();
+    let cursor_line_str: String = lines[cursor_row]
+        .iter()
+        .map(crate::layer::Cell::to_char)
+        .collect();
 
     // Debug print
-    println!("Cursor Row: {}", cursor_row);
-    println!("Cursor Line Content: '{}'", cursor_line_str);
+    println!("Cursor Row: {cursor_row}");
+    println!("Cursor Line Content: '{cursor_line_str}'");
     for (i, line) in lines.iter().enumerate() {
-        let s: String = line.iter().map(|c| c.to_char()).collect();
-        println!("{}: {}", i, s);
+        let s: String = line.iter().map(crate::layer::Cell::to_char).collect();
+        println!("{i}: {s}");
     }
 
     assert!(
-        cursor_line_str.contains("@"),
+        cursor_line_str.contains('@'),
         "Cursor row should contain current node marker '@'"
     );
     assert!(
@@ -112,7 +115,10 @@ fn test_saved_node_marker() {
 
     // Find the line for seq=1 (the saved node)
     let saved_row = seqs.iter().position(|&s| s == 1).unwrap();
-    let saved_line: String = lines[saved_row].iter().map(|c| c.to_char()).collect();
+    let saved_line: String = lines[saved_row]
+        .iter()
+        .map(crate::layer::Cell::to_char)
+        .collect();
     assert!(
         saved_line.contains('S'),
         "Saved node should show 'S' marker"
@@ -120,7 +126,10 @@ fn test_saved_node_marker() {
 
     // Current node should still show '@'
     let current_row = seqs.iter().position(|&s| s == 2).unwrap();
-    let current_line: String = lines[current_row].iter().map(|c| c.to_char()).collect();
+    let current_line: String = lines[current_row]
+        .iter()
+        .map(crate::layer::Cell::to_char)
+        .collect();
     assert!(
         current_line.contains('@'),
         "Current node should show '@' marker"
@@ -143,7 +152,7 @@ fn test_saved_current_node_shows_current_marker() {
     let (lines, seqs, _cursor) = render_tree(&tree);
 
     let row = seqs.iter().position(|&s| s == 1).unwrap();
-    let line: String = lines[row].iter().map(|c| c.to_char()).collect();
+    let line: String = lines[row].iter().map(crate::layer::Cell::to_char).collect();
     assert!(line.contains('@'), "Current+saved node should show '@'");
     assert!(
         !line.contains('S'),
@@ -167,7 +176,10 @@ fn test_root_saved_no_marker() {
     let (lines, seqs, _cursor) = render_tree(&tree);
 
     let root_row = seqs.iter().position(|&s| s == 0).unwrap();
-    let root_line: String = lines[root_row].iter().map(|c| c.to_char()).collect();
+    let root_line: String = lines[root_row]
+        .iter()
+        .map(crate::layer::Cell::to_char)
+        .collect();
     assert!(
         !root_line.contains('S'),
         "Root node should not show saved marker"
@@ -304,12 +316,12 @@ fn test_render_tree_to_text_contiguous_same_color_merged() {
     for i in 0..highlights.len().saturating_sub(1) {
         let (r1, c1) = &highlights[i];
         let (r2, c2) = &highlights[i + 1];
-        if c1 == c2 && r1.end == r2.start {
-            panic!(
-                "adjacent highlights with same color {:?} should have been merged: {:?} and {:?} in text {:?}",
-                c1, r1, r2, text
-            );
-        }
+        let same_color = c1 == c2;
+        let contiguous = r1.end == r2.start;
+        assert!(
+            !(same_color && contiguous),
+            "adjacent highlights with same color {c1:?} should have been merged: {r1:?} and {r2:?} in text {text:?}"
+        );
     }
 }
 
@@ -324,10 +336,11 @@ fn test_render_tree_to_text_current_node_color() {
         .take(current_line_idx)
         .map(|l| l.len() + 1)
         .sum();
-    let at_offset = text[line_start..]
-        .find('@')
+    let at_offset = text
+        .get(line_start..)
+        .and_then(|rest| rest.find('@'))
         .map(|o| line_start + o)
-        .unwrap();
+        .expect("'@' marker in text");
 
     // The '@' character should be colored (Magenta for current node)
     let colored = highlights
@@ -335,8 +348,7 @@ fn test_render_tree_to_text_current_node_color() {
         .any(|(r, _c)| r.start <= at_offset && r.end > at_offset);
     assert!(
         colored,
-        "'@' marker at offset {} should be colored",
-        at_offset
+        "'@' marker at offset {at_offset} should be colored"
     );
 }
 

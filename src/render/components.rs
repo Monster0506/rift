@@ -14,7 +14,8 @@ pub struct Rect {
 }
 
 impl Rect {
-    pub fn new(row: usize, col: usize, height: usize, width: usize) -> Self {
+    #[must_use]
+    pub const fn new(row: usize, col: usize, height: usize, width: usize) -> Self {
         Self {
             row,
             col,

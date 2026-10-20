@@ -2,8 +2,18 @@
 
 use crate::annotations::Value;
 
+/// Lua integers are `i64`; out-of-range values saturate instead of wrapping.
+pub fn lua_int<T: TryInto<i64>>(value: T) -> i64 {
+    value.try_into().unwrap_or(i64::MAX)
+}
+
+/// Clamps a Lua integer to `0..=usize::MAX` for use as an index or count.
+pub fn lua_index(value: i64) -> usize {
+    usize::try_from(value.max(0)).unwrap_or(usize::MAX)
+}
+
 /// Convert an arbitrary Lua value into a `Value`; `nil` becomes `Null`.
-pub(crate) fn value_from_lua(value: &mlua::Value) -> mlua::Result<Value> {
+pub fn value_from_lua(value: &mlua::Value) -> mlua::Result<Value> {
     Ok(match value {
         mlua::Value::Nil => Value::Null,
         mlua::Value::Boolean(b) => Value::Bool(*b),
@@ -23,7 +33,7 @@ pub(crate) fn value_from_lua(value: &mlua::Value) -> mlua::Result<Value> {
 
 /// Tables keyed exactly `1..=n` become a `List`; otherwise a `Map` with
 /// stringified keys sorted for deterministic ordering.
-pub(crate) fn value_from_lua_table(table: &mlua::Table) -> mlua::Result<Value> {
+pub fn value_from_lua_table(table: &mlua::Table) -> mlua::Result<Value> {
     let len = table.raw_len();
     let mut is_array = len > 0;
     if is_array {
@@ -32,7 +42,11 @@ pub(crate) fn value_from_lua_table(table: &mlua::Table) -> mlua::Result<Value> {
         for pair in table.clone().pairs::<mlua::Value, mlua::Value>() {
             let (k, _) = pair?;
             match k {
-                mlua::Value::Integer(i) if i >= 1 && (i as usize) <= len => count += 1,
+                mlua::Value::Integer(i)
+                    if usize::try_from(i).is_ok_and(|i| (1..=len).contains(&i)) =>
+                {
+                    count += 1;
+                }
                 _ => {
                     is_array = false;
                     break;
@@ -75,7 +89,7 @@ pub(crate) fn value_from_lua_table(table: &mlua::Table) -> mlua::Result<Value> {
 }
 
 /// Convert a `Value` into a Lua value (the inverse of [`value_from_lua`]).
-pub(crate) fn value_into_lua(value: Value, lua: &mlua::Lua) -> mlua::Result<mlua::Value> {
+pub fn value_into_lua(value: Value, lua: &mlua::Lua) -> mlua::Result<mlua::Value> {
     Ok(match value {
         Value::Null => mlua::Value::Nil,
         Value::Bool(b) => mlua::Value::Boolean(b),

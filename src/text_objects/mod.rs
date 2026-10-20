@@ -99,7 +99,8 @@ pub const OBJECT_KEY_TABLE: &[(char, ObjectKind)] = &[
 ];
 
 /// True for objects that require a tree-sitter parse tree to resolve.
-pub fn requires_treesitter(kind: ObjectKind) -> bool {
+#[must_use]
+pub const fn requires_treesitter(kind: ObjectKind) -> bool {
     matches!(
         kind,
         ObjectKind::FunctionCall
@@ -112,6 +113,7 @@ pub fn requires_treesitter(kind: ObjectKind) -> bool {
     )
 }
 
+#[must_use]
 pub fn object_kind_for_key(ch: char) -> Option<ObjectKind> {
     OBJECT_KEY_TABLE
         .iter()
@@ -119,7 +121,8 @@ pub fn object_kind_for_key(ch: char) -> Option<ObjectKind> {
         .map(|&(_, kind)| kind)
 }
 
-pub fn modifier_for_key(ch: char) -> Option<Modifier> {
+#[must_use]
+pub const fn modifier_for_key(ch: char) -> Option<Modifier> {
     match ch {
         'i' => Some(Modifier::Inner),
         'a' => Some(Modifier::Around),
@@ -132,17 +135,18 @@ pub fn modifier_for_key(ch: char) -> Option<Modifier> {
 /// Composes a leading operator count with an in-grammar nest-count
 /// (e.g. `2di2(` => nesting 4), matching vim's general count rule.
 fn compose_nesting(spec_nesting: u8, count: usize) -> u8 {
-    let n = spec_nesting.max(1) as u32;
-    let c = (count.max(1) as u32).min(u8::MAX as u32);
-    (n * c).min(u8::MAX as u32) as u8
+    let n = u32::from(spec_nesting.max(1));
+    let c = u32::try_from(count.max(1))
+        .unwrap_or(u32::MAX)
+        .min(u32::from(u8::MAX));
+    u8::try_from((n * c).min(u32::from(u8::MAX))).unwrap_or(u8::MAX)
 }
 
-#[cfg_attr(not(feature = "treesitter"), allow(unused_variables))]
 pub fn resolve(
     spec: TextObjectSpec,
     buf: &TextBuffer,
     count: usize,
-    syntax: Option<SyntaxContext>,
+    syntax: Option<&SyntaxContext>,
 ) -> Option<MotionRange> {
     let cursor = buf.cursor();
     let nesting = compose_nesting(spec.nesting, count);
@@ -216,11 +220,12 @@ pub fn resolve(
         | ObjectKind::Number => {
             #[cfg(feature = "treesitter")]
             {
-                let ctx = syntax.as_ref()?;
+                let ctx = syntax?;
                 treesitter::resolve(spec.kind, base_modifier, nesting, cursor, buf, ctx)
             }
             #[cfg(not(feature = "treesitter"))]
             {
+                let _ = syntax;
                 None
             }
         }
@@ -237,7 +242,7 @@ enum BaseModifier {
     Around,
 }
 
-fn base_modifier(modifier: Modifier) -> BaseModifier {
+const fn base_modifier(modifier: Modifier) -> BaseModifier {
     match modifier {
         Modifier::Inner | Modifier::InnerStrict => BaseModifier::Inner,
         Modifier::Around | Modifier::AroundLoose => BaseModifier::Around,
@@ -252,7 +257,7 @@ fn apply_modifier_post(modifier: Modifier, range: MotionRange, buf: &TextBuffer)
     }
 }
 
-fn is_space_or_tab(ch: Character) -> bool {
+const fn is_space_or_tab(ch: Character) -> bool {
     matches!(ch, Character::Tab)
         || matches!(ch, Character::Unicode(c) if c.is_whitespace() && c != '\n')
 }
@@ -312,7 +317,7 @@ fn eat_trailing_whitespace(range: MotionRange, buf: &TextBuffer) -> MotionRange 
     }
 }
 
-fn charwise_inclusive(start: usize, end: usize) -> MotionRange {
+const fn charwise_inclusive(start: usize, end: usize) -> MotionRange {
     MotionRange {
         anchor: start,
         new_cursor: end,
@@ -332,7 +337,7 @@ fn char_class_small(ch: Character) -> u8 {
 }
 
 // Returns 0 = non-whitespace, 1 = whitespace
-fn char_class_big(ch: Character) -> u8 {
+const fn char_class_big(ch: Character) -> u8 {
     match ch {
         Character::Newline | Character::Tab => 1,
         Character::Unicode(c) if c.is_whitespace() => 1,
@@ -405,7 +410,7 @@ fn resolve_word(
             let mut aend = end;
             while aend + 1 < len {
                 match buf.char_at(aend + 1) {
-                    Some(Character::Tab) | Some(Character::Unicode(' ')) => aend += 1,
+                    Some(Character::Tab | Character::Unicode(' ')) => aend += 1,
                     _ => break,
                 }
             }
@@ -415,7 +420,7 @@ fn resolve_word(
                 let mut astart = start;
                 while astart > 0 {
                     match buf.char_at(astart - 1) {
-                        Some(Character::Tab) | Some(Character::Unicode(' ')) => astart -= 1,
+                        Some(Character::Tab | Character::Unicode(' ')) => astart -= 1,
                         _ => break,
                     }
                 }
@@ -633,7 +638,11 @@ fn bracket_pair_with_nesting(
     expand_bracket_nesting(open_pos, close_pos, nesting, buf, open_ch, close_ch)
 }
 
-fn bracket_range(modifier: BaseModifier, open_pos: usize, close_pos: usize) -> Option<MotionRange> {
+const fn bracket_range(
+    modifier: BaseModifier,
+    open_pos: usize,
+    close_pos: usize,
+) -> Option<MotionRange> {
     match modifier {
         BaseModifier::Inner => {
             if open_pos + 1 >= close_pos {
@@ -661,7 +670,7 @@ fn resolve_bracket_nested(
 
 /// True if `(open, close)` is a "nearer" match than `(best_open, best_close)`:
 /// enclosing pairs win over forward-found, tightest enclosure wins among those.
-fn is_closer_pair(
+const fn is_closer_pair(
     cursor: usize,
     open: usize,
     close: usize,
@@ -687,7 +696,7 @@ fn resolve_any_bracket(
     buf: &TextBuffer,
 ) -> Option<MotionRange> {
     let mut best: Option<(usize, usize)> = None;
-    for &(open, close) in BRACKET_PAIRS.iter() {
+    for &(open, close) in &BRACKET_PAIRS {
         let Some((open_pos, close_pos)) =
             bracket_pair_with_nesting(cursor, direction, nesting, buf, open, close)
         else {
@@ -879,7 +888,7 @@ fn resolve_any_quote(
     buf: &TextBuffer,
 ) -> Option<MotionRange> {
     let mut best: Option<(usize, usize)> = None;
-    for &q in QUOTE_CHARS.iter() {
+    for &q in &QUOTE_CHARS {
         let Some((open_pos, close_pos)) =
             quote_pair_with_nesting(cursor, direction, nesting, buf, q)
         else {
@@ -967,7 +976,25 @@ fn resolve_paragraph(
             inclusive: true,
         }),
         BaseModifier::Around => {
-            if !group_is_blank {
+            if group_is_blank {
+                let mut around_start_line = start_line;
+                if start_line > 0 {
+                    let prev = start_line - 1;
+                    if !is_blank_line(prev, buf) {
+                        around_start_line = prev;
+                        while around_start_line > 0 && !is_blank_line(around_start_line - 1, buf) {
+                            around_start_line -= 1;
+                        }
+                    }
+                }
+                let astart = buf.line_index.get_start(around_start_line).unwrap_or(0);
+                Some(MotionRange {
+                    anchor: astart,
+                    new_cursor: end,
+                    kind: RangeKind::Linewise,
+                    inclusive: true,
+                })
+            } else {
                 let mut around_end_line = end_line;
                 while around_end_line + 1 < total_lines && is_blank_line(around_end_line + 1, buf) {
                     around_end_line += 1;
@@ -983,24 +1010,6 @@ fn resolve_paragraph(
                 Some(MotionRange {
                     anchor: start,
                     new_cursor: aend,
-                    kind: RangeKind::Linewise,
-                    inclusive: true,
-                })
-            } else {
-                let mut around_start_line = start_line;
-                if start_line > 0 {
-                    let prev = start_line - 1;
-                    if !is_blank_line(prev, buf) {
-                        around_start_line = prev;
-                        while around_start_line > 0 && !is_blank_line(around_start_line - 1, buf) {
-                            around_start_line -= 1;
-                        }
-                    }
-                }
-                let astart = buf.line_index.get_start(around_start_line).unwrap_or(0);
-                Some(MotionRange {
-                    anchor: astart,
-                    new_cursor: end,
                     kind: RangeKind::Linewise,
                     inclusive: true,
                 })
@@ -1195,7 +1204,7 @@ fn any_bracket_insert_pair(
     buf: &TextBuffer,
 ) -> Option<(usize, usize)> {
     let mut best: Option<(usize, usize)> = None;
-    for &(open, close) in BRACKET_PAIRS.iter() {
+    for &(open, close) in &BRACKET_PAIRS {
         let Some(pair) = bracket_pair_with_nesting(cursor, direction, nesting, buf, open, close)
         else {
             continue;
@@ -1218,7 +1227,7 @@ fn any_quote_insert_pair(
     buf: &TextBuffer,
 ) -> Option<(usize, usize)> {
     let mut best: Option<(usize, usize)> = None;
-    for &q in QUOTE_CHARS.iter() {
+    for &q in &QUOTE_CHARS {
         let Some(pair) = quote_pair_with_nesting(cursor, direction, nesting, buf, q) else {
             continue;
         };
@@ -1235,7 +1244,9 @@ fn any_quote_insert_pair(
 
 /// Maps a surround key to its `(open, close)` delimiter strings, each repeated
 /// `count` times. Opening bracket chars get an inner space pad; others don't.
+#[must_use]
 pub fn surround_strings(ch: char, count: usize) -> Option<(String, String)> {
+    const MAX_DELIM_REPEAT: usize = 10_000;
     let (open, close) = match ch {
         '(' | ')' | 'b' => ('(', ')'),
         '{' | '}' | 'B' => ('{', '}'),
@@ -1244,7 +1255,6 @@ pub fn surround_strings(ch: char, count: usize) -> Option<(String, String)> {
         '"' | '\'' | '`' => (ch, ch),
         _ => return None,
     };
-    const MAX_DELIM_REPEAT: usize = 10_000;
     let count = count.clamp(1, MAX_DELIM_REPEAT);
     if matches!(ch, '(' | '{' | '[' | '<') {
         Some((

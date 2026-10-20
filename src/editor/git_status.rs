@@ -1,7 +1,6 @@
 //! Git status buffer and commit workflow.
 
 use super::Editor;
-#[allow(unused_imports)]
 use crate::buffer::api::BufferView;
 use crate::document::{GitCommitTarget, GitStatusAction};
 use crate::error::{ErrorType, RiftError};
@@ -82,6 +81,35 @@ fn execute_git_status_actions(repo_root: &Path, actions: &[GitStatusAction]) -> 
     errors
 }
 
+// Partial discard of an untracked file has no index baseline to restore from.
+fn hunk_verb_action(
+    verb: &str,
+    path: PathBuf,
+    hunk: crate::git::diff::Hunk,
+    staged_side: bool,
+    is_new_file: bool,
+    discard_blocked: &mut bool,
+) -> Option<GitStatusAction> {
+    match verb {
+        "stage" | "toggle" if !staged_side => Some(GitStatusAction::StageHunk {
+            path,
+            hunk,
+            is_new_file,
+        }),
+        "unstage" | "toggle" if staged_side => Some(GitStatusAction::UnstageHunk { path, hunk }),
+        "discard" if !is_new_file => Some(GitStatusAction::DiscardHunk {
+            path,
+            hunk,
+            staged_side,
+        }),
+        "discard" => {
+            *discard_blocked = true;
+            None
+        }
+        _ => None,
+    }
+}
+
 impl<T: TerminalBackend> Editor<T> {
     /// Resolve the git repository root to operate on: the active buffer's own repo root if it's already a git buffer, else discovered from the active file's directory (falling back to cwd), mirroring `OpenExplorer`'s target-path resolution.
     pub(super) fn resolve_git_repo_root(&mut self) -> Result<PathBuf, RiftError> {
@@ -90,24 +118,23 @@ impl<T: TerminalBackend> Editor<T> {
         }
         let base_dir = {
             let doc = self.active_document();
-            if let Some(path) = doc.directory_path() {
-                path.clone()
-            } else {
-                doc.path()
-                    .map(|p| {
+            doc.directory_path().cloned().unwrap_or_else(|| {
+                doc.path().map_or_else(
+                    || std::env::current_dir().unwrap_or_default(),
+                    |p| {
                         if p.is_dir() {
                             p.to_path_buf()
                         } else {
                             p.parent().unwrap_or(p).to_path_buf()
                         }
-                    })
-                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
-            }
+                    },
+                )
+            })
         };
         crate::git::discover_repo(&base_dir).map(|p| p.root)
     }
 
-    /// `<Space>gs` opens a GitStatus buffer in the active window. Open a split first to create another instance.
+    /// `<Space>gs` opens a `GitStatus` buffer in the active window. Open a split first to create another instance.
     pub fn open_git_status(&mut self) {
         self.open_git_status_inner();
     }
@@ -231,26 +258,14 @@ impl<T: TerminalBackend> Editor<T> {
                 let is_new_file = doc.is_git_status_entry_untracked(&path);
                 let selected = crate::git::diff::diff_line_change_block(&hunk, line_index);
                 let hunk = crate::git::diff::filter_hunk_to_lines(&hunk, &selected);
-                match verb {
-                    "stage" | "toggle" if !staged_side => Some(GitStatusAction::StageHunk {
-                        path,
-                        hunk,
-                        is_new_file,
-                    }),
-                    "unstage" | "toggle" if staged_side => {
-                        Some(GitStatusAction::UnstageHunk { path, hunk })
-                    }
-                    "discard" if !is_new_file => Some(GitStatusAction::DiscardHunk {
-                        path,
-                        hunk,
-                        staged_side,
-                    }),
-                    "discard" => {
-                        discard_untracked_hunk_blocked = true;
-                        None
-                    }
-                    _ => None,
-                }
+                hunk_verb_action(
+                    verb,
+                    path,
+                    hunk,
+                    staged_side,
+                    is_new_file,
+                    &mut discard_untracked_hunk_blocked,
+                )
             } else if let Some((path, staged_side, hunk_index)) =
                 doc.annotations.git_hunk_at_line(line)
             {
@@ -259,26 +274,14 @@ impl<T: TerminalBackend> Editor<T> {
                     return;
                 };
                 let is_new_file = doc.is_git_status_entry_untracked(&path);
-                match verb {
-                    "stage" | "toggle" if !staged_side => Some(GitStatusAction::StageHunk {
-                        path,
-                        hunk,
-                        is_new_file,
-                    }),
-                    "unstage" | "toggle" if staged_side => {
-                        Some(GitStatusAction::UnstageHunk { path, hunk })
-                    }
-                    "discard" if !is_new_file => Some(GitStatusAction::DiscardHunk {
-                        path,
-                        hunk,
-                        staged_side,
-                    }),
-                    "discard" => {
-                        discard_untracked_hunk_blocked = true;
-                        None
-                    }
-                    _ => None,
-                }
+                hunk_verb_action(
+                    verb,
+                    path,
+                    hunk,
+                    staged_side,
+                    is_new_file,
+                    &mut discard_untracked_hunk_blocked,
+                )
             } else if let Some((path, section, orig_path)) =
                 doc.annotations.git_status_entry_at_line(line)
             {
@@ -289,10 +292,8 @@ impl<T: TerminalBackend> Editor<T> {
                     None
                 } else {
                     match verb {
-                        "stage" if !is_staged => Some(GitStatusAction::Stage(path)),
-                        "unstage" if is_staged => Some(GitStatusAction::Unstage(path)),
-                        "toggle" if is_staged => Some(GitStatusAction::Unstage(path)),
-                        "toggle" if !is_staged => Some(GitStatusAction::Stage(path)),
+                        "stage" | "toggle" if !is_staged => Some(GitStatusAction::Stage(path)),
+                        "unstage" | "toggle" if is_staged => Some(GitStatusAction::Unstage(path)),
                         "discard" => Some(GitStatusAction::Discard {
                             path,
                             orig_path: orig_path.map(PathBuf::from),
@@ -495,7 +496,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// `cc` in the status buffer: open an empty commit message buffer.
     pub fn open_git_commit_new(&mut self) {
-        self.open_git_commit_message(GitCommitTarget::New, String::new());
+        self.open_git_commit_message(GitCommitTarget::New, "");
     }
 
     /// `ca`/`cw` in the status buffer: open a commit message buffer prefilled
@@ -510,7 +511,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let message = crate::git::run_checked(&repo_root, &["log", "-1", "--format=%B", "HEAD"])
             .unwrap_or_default();
-        self.open_git_commit_message(GitCommitTarget::Amend, message);
+        self.open_git_commit_message(GitCommitTarget::Amend, &message);
     }
 
     /// `cf` in the status buffer: commit currently-staged changes as a fixup
@@ -538,7 +539,7 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn open_git_commit_message(
         &mut self,
         target: GitCommitTarget,
-        initial_message: String,
+        initial_message: &str,
     ) {
         let repo_root = match self.resolve_git_repo_root() {
             Ok(root) => root,
@@ -552,7 +553,7 @@ impl<T: TerminalBackend> Editor<T> {
             id,
             repo_root,
             target,
-            &initial_message,
+            initial_message,
         ) {
             Ok(d) => d,
             Err(e) => {
@@ -574,9 +575,8 @@ impl<T: TerminalBackend> Editor<T> {
     /// buffer's text, then close it.
     pub(super) fn apply_git_commit_message(&mut self) {
         let (repo_root, target, message, doc_id) = {
-            let doc = match self.document_manager.active_document() {
-                Some(d) => d,
-                None => return,
+            let Some(doc) = self.document_manager.active_document() else {
+                return;
             };
             if !doc.is_git_commit_message() {
                 return;
@@ -675,7 +675,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// `:Git <args>` escape hatch: run an arbitrary git subcommand and show its output. View-only; no `--no-ext-diff`, so a configured `diff.external` etc. is respected for anything that falls through. Fugitive convention: bare `:Git`/`:G` opens the status buffer, bare `:Git log` opens the log browser, bare `:Git.
+    /// `:Git <args>` escape hatch: run an arbitrary git subcommand and show its output. View-only; no `--no-ext-diff`, so a configured `diff.external` etc. is respected for anything that falls through. Fugitive convention: bare `:Git`/`:G` opens the status buffer, bare `:Git log` opens the log browser, bare `:Git`.
     pub fn run_git_command(&mut self, args: String) {
         let trimmed = args.trim();
         if trimmed.is_empty() {
@@ -702,10 +702,10 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
         // `blame <path>` opens the structured view. Flag arguments use the raw command output path.
-        if trimmed == "blame"
-            || (trimmed.starts_with("blame ") && !trimmed[6..].trim_start().starts_with('-'))
-        {
-            let path_arg = trimmed.strip_prefix("blame").unwrap().trim();
+        if let Some(rest) = trimmed.strip_prefix("blame").filter(|rest| {
+            rest.is_empty() || (rest.starts_with(' ') && !rest.trim_start().starts_with('-'))
+        }) {
+            let path_arg = rest.trim();
             let arg = if path_arg.is_empty() {
                 None
             } else {
@@ -759,8 +759,11 @@ impl<T: TerminalBackend> Editor<T> {
             let (path, ..) = doc.annotations.git_status_entry_at_line(line)?;
             return Some((repo_root.join(path), repo_root));
         }
-        if let Some(path) = doc.path().map(|p| p.to_path_buf()) {
-            let base_dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        if let Some(path) = doc.path().map(std::path::Path::to_path_buf) {
+            let base_dir = path
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .to_path_buf();
             return match crate::git::discover_repo(&base_dir) {
                 Ok(r) => Some((path, r.root)),
                 Err(e) => {
@@ -778,7 +781,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Show a `GitCommandJob`'s output: a scratch buffer for anything
     /// non-trivial, or just a notification for a short one-line result.
-    pub(super) fn show_git_command_result(&mut self, args: &str, output: String, success: bool) {
+    pub(super) fn show_git_command_result(&mut self, args: &str, output: &str, success: bool) {
         let trimmed = output.trim();
         if trimmed.lines().count() <= 1 && trimmed.len() <= 200 {
             let kind = if success {
@@ -798,7 +801,10 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let id = self.document_manager.next_id();
-        let lines: Vec<String> = output.lines().map(|l| l.to_string()).collect();
+        let lines: Vec<String> = output
+            .lines()
+            .map(std::string::ToString::to_string)
+            .collect();
         let doc = match crate::document::Document::new_scratch(id, format!("[Git: {args}]"), &lines)
         {
             Ok(mut d) => {

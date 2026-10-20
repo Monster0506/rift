@@ -1,10 +1,11 @@
 use super::tree::{SplitNode, SplitTree};
 use super::window::WindowId;
+use crate::num::f64_to_usize;
 
 pub const MIN_WINDOW_ROWS: usize = 3;
 pub const MIN_WINDOW_COLS: usize = 10;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowLayout {
     pub window_id: WindowId,
     pub row: usize,
@@ -14,6 +15,7 @@ pub struct WindowLayout {
 }
 
 impl SplitTree {
+    #[must_use]
     pub fn compute_layout(&self, total_rows: usize, total_cols: usize) -> Vec<WindowLayout> {
         let mut layouts = Vec::new();
         compute_node_layout(&self.root, 0, 0, total_rows, total_cols, &mut layouts);
@@ -45,11 +47,11 @@ fn compute_node_layout(
             first,
             second,
         } => {
-            use super::tree::SplitDirection;
+            use super::tree::{cells_to_f64, SplitDirection};
             match direction {
                 SplitDirection::Horizontal => {
                     let available = rows.saturating_sub(1);
-                    let first_rows = ((available as f64) * ratio).round() as usize;
+                    let first_rows = f64_to_usize((cells_to_f64(available) * ratio).round());
                     let first_rows = if available < 2 * MIN_WINDOW_ROWS {
                         available / 2
                     } else {
@@ -70,7 +72,7 @@ fn compute_node_layout(
                 }
                 SplitDirection::Vertical => {
                     let available = cols.saturating_sub(1);
-                    let first_cols = ((available as f64) * ratio).round() as usize;
+                    let first_cols = f64_to_usize((cells_to_f64(available) * ratio).round());
                     let first_cols = if available < 2 * MIN_WINDOW_COLS {
                         available / 2
                     } else {

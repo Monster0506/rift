@@ -8,7 +8,7 @@ pub struct Syntax {
 }
 
 impl Syntax {
-    pub fn notify_edit(
+    pub const fn notify_edit(
         &mut self,
         _start_byte: usize,
         _old_end_byte: usize,
@@ -19,41 +19,47 @@ impl Syntax {
     ) {
     }
 
-    pub fn invalidate_trees(&mut self) {}
+    pub const fn invalidate_trees(&mut self) {}
 
-    pub fn lib(&self) -> Option<Arc<super::loader::RawLib>> {
+    #[must_use]
+    pub const fn lib(&self) -> Option<Arc<super::loader::RawLib>> {
         None
     }
 
-    pub fn capture_names(&self) -> &[&str] {
+    #[must_use]
+    pub const fn capture_names(&self) -> &[&str] {
         &[]
     }
 
-    pub fn highlights(
+    #[must_use]
+    pub const fn highlights(
         &self,
         _range: Option<std::ops::Range<usize>>,
     ) -> Vec<(std::ops::Range<usize>, u32)> {
         Vec::new()
     }
 
-    pub fn injection_highlights_named(
+    #[must_use]
+    pub const fn injection_highlights_named(
         &self,
-        _range: Option<std::ops::Range<usize>>,
+        _range: Option<&std::ops::Range<usize>>,
     ) -> Vec<(std::ops::Range<usize>, String)> {
         Vec::new()
     }
 
     /// Always 0: this stub never parses, so highlights never change.
-    pub fn highlights_generation(&self) -> u64 {
+    #[must_use]
+    pub const fn highlights_generation(&self) -> u64 {
         0
     }
 
     /// Always 0: this stub never parses, so injections never change.
-    pub fn injection_generation(&self) -> u64 {
+    #[must_use]
+    pub const fn injection_generation(&self) -> u64 {
         0
     }
 
-    pub fn try_incremental_parse(
+    pub const fn try_incremental_parse(
         &mut self,
         _source: &[u8],
         _budget: std::time::Duration,

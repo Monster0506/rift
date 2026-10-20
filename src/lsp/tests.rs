@@ -20,8 +20,8 @@ fn path_to_uri_windows_style() {
     {
         let p = Path::new(r"C:\Users\user\project\main.rs");
         let uri = path_to_uri(p);
-        assert!(uri.starts_with("file:///"), "got: {}", uri);
-        assert!(uri.contains("main.rs"), "got: {}", uri);
+        assert!(uri.starts_with("file:///"), "got: {uri}");
+        assert!(uri.contains("main.rs"), "got: {uri}");
     }
 }
 
@@ -113,9 +113,9 @@ fn json_rpc_request_serialises_correctly() {
         params: Some(serde_json::json!({ "key": "value" })),
     };
     let s = serde_json::to_string(&req).unwrap();
-    assert!(s.contains("\"jsonrpc\":\"2.0\""), "got: {}", s);
-    assert!(s.contains("\"id\":42"), "got: {}", s);
-    assert!(s.contains("textDocument/hover"), "got: {}", s);
+    assert!(s.contains("\"jsonrpc\":\"2.0\""), "got: {s}");
+    assert!(s.contains("\"id\":42"), "got: {s}");
+    assert!(s.contains("textDocument/hover"), "got: {s}");
 }
 
 #[test]
@@ -127,7 +127,7 @@ fn json_rpc_request_omits_null_params() {
         params: None,
     };
     let s = serde_json::to_string(&req).unwrap();
-    assert!(!s.contains("params"), "should omit null params, got: {}", s);
+    assert!(!s.contains("params"), "should omit null params, got: {s}");
 }
 
 // -- LspDiagnostic deserialization --
@@ -220,8 +220,8 @@ fn hover_array_of_strings() {
         "contents": ["first part", "second part"]
     });
     let text = mod_fns::extract_hover_text_pub(&result).unwrap();
-    assert!(text.contains("first part"), "got: {}", text);
-    assert!(text.contains("second part"), "got: {}", text);
+    assert!(text.contains("first part"), "got: {text}");
+    assert!(text.contains("second part"), "got: {text}");
 }
 
 #[test]
@@ -696,7 +696,7 @@ fn route_definition_response_with_locations() {
             assert_eq!(locations.len(), 1);
             assert_eq!(locations[0].range.start.line, 5);
         }
-        other => panic!("unexpected: {:?}", other),
+        other => panic!("unexpected: {other:?}"),
     }
 }
 
@@ -708,7 +708,7 @@ fn route_definition_response_empty_array() {
         Some(LspMessage::GotoDefinitionResult { locations, .. }) => {
             assert!(locations.is_empty());
         }
-        other => panic!("unexpected: {:?}", other),
+        other => panic!("unexpected: {other:?}"),
     }
 }
 
@@ -730,7 +730,7 @@ fn route_definition_response_accepts_location_links() {
             assert_eq!(locations[0].range.start.line, 10);
             assert_eq!(locations[0].range.start.character, 7);
         }
-        other => panic!("unexpected: {:?}", other),
+        other => panic!("unexpected: {other:?}"),
     }
 }
 
@@ -751,17 +751,17 @@ fn route_notification_carries_diagnostics_version_and_show_message() {
     let params = serde_json::json!({
         "uri": "file:///main.rs", "version": 7, "diagnostics": []
     });
-    match mod_fns::route_notification_pub("textDocument/publishDiagnostics", params) {
+    match mod_fns::route_notification_pub("textDocument/publishDiagnostics", &params) {
         Some(LspMessage::Diagnostics { version, .. }) => assert_eq!(version, Some(7)),
-        other => panic!("unexpected: {:?}", other),
+        other => panic!("unexpected: {other:?}"),
     }
     let params = serde_json::json!({ "type": 2, "message": "careful" });
-    match mod_fns::route_notification_pub("window/showMessage", params) {
+    match mod_fns::route_notification_pub("window/showMessage", &params) {
         Some(LspMessage::ShowMessage { kind, message }) => {
             assert_eq!(kind, 2);
             assert_eq!(message, "careful");
         }
-        other => panic!("unexpected: {:?}", other),
+        other => panic!("unexpected: {other:?}"),
     }
 }
 
@@ -782,7 +782,7 @@ fn route_references_response() {
         Some(LspMessage::ReferencesResult { locations, .. }) => {
             assert_eq!(locations.len(), 2);
         }
-        other => panic!("unexpected: {:?}", other),
+        other => panic!("unexpected: {other:?}"),
     }
 }
 
@@ -794,7 +794,7 @@ fn route_hover_response_plain_string() {
         Some(LspMessage::HoverResult { contents, .. }) => {
             assert_eq!(contents, "i32");
         }
-        other => panic!("unexpected: {:?}", other),
+        other => panic!("unexpected: {other:?}"),
     }
 }
 
@@ -804,13 +804,9 @@ fn route_hover_response_null() {
         super::mod_fns::route_response_pub("textDocument/hover", None, serde_json::json!(null));
     match msg {
         Some(LspMessage::HoverResult { contents, .. }) => {
-            assert!(
-                contents.is_empty(),
-                "expected empty hover, got: {}",
-                contents
-            );
+            assert!(contents.is_empty(), "expected empty hover, got: {contents}");
         }
-        other => panic!("unexpected: {:?}", other),
+        other => panic!("unexpected: {other:?}"),
     }
 }
 
@@ -834,7 +830,7 @@ fn route_formatting_response() {
             assert_eq!(edits.len(), 1);
             assert_eq!(edits[0].new_text, "hello");
         }
-        other => panic!("unexpected: {:?}", other),
+        other => panic!("unexpected: {other:?}"),
     }
 }
 
@@ -847,7 +843,7 @@ fn route_formatting_response_no_uri_gives_empty() {
     let msg = super::mod_fns::route_response_pub("textDocument/formatting", None, json);
     match msg {
         Some(LspMessage::FormattingResult { uri, .. }) => assert!(uri.is_empty()),
-        other => panic!("unexpected: {:?}", other),
+        other => panic!("unexpected: {other:?}"),
     }
 }
 
@@ -864,7 +860,7 @@ fn route_code_action_response() {
             assert_eq!(actions[0]["title"], "Add missing import");
             assert_eq!(actions[1]["title"], "Fix all errors");
         }
-        other => panic!("unexpected: {:?}", other),
+        other => panic!("unexpected: {other:?}"),
     }
 }
 
@@ -883,7 +879,7 @@ fn route_notification_diagnostics() {
             }
         ]
     });
-    let msg = super::mod_fns::route_notification_pub("textDocument/publishDiagnostics", json);
+    let msg = super::mod_fns::route_notification_pub("textDocument/publishDiagnostics", &json);
     match msg {
         Some(LspMessage::Diagnostics {
             uri, diagnostics, ..
@@ -893,7 +889,7 @@ fn route_notification_diagnostics() {
             assert_eq!(diagnostics[0].message, "type mismatch");
             assert_eq!(diagnostics[0].severity, Some(1));
         }
-        other => panic!("unexpected: {:?}", other),
+        other => panic!("unexpected: {other:?}"),
     }
 }
 
@@ -903,18 +899,18 @@ fn route_notification_empty_diagnostics() {
         "uri": "file:///clean.rs",
         "diagnostics": []
     });
-    let msg = super::mod_fns::route_notification_pub("textDocument/publishDiagnostics", json);
+    let msg = super::mod_fns::route_notification_pub("textDocument/publishDiagnostics", &json);
     match msg {
         Some(LspMessage::Diagnostics { diagnostics, .. }) => {
             assert!(diagnostics.is_empty());
         }
-        other => panic!("unexpected: {:?}", other),
+        other => panic!("unexpected: {other:?}"),
     }
 }
 
 #[test]
 fn route_unknown_notification_returns_none() {
-    let msg = super::mod_fns::route_notification_pub("window/logMessage", serde_json::json!({}));
+    let msg = super::mod_fns::route_notification_pub("window/logMessage", &serde_json::json!({}));
     assert!(msg.is_none());
 }
 
@@ -950,8 +946,7 @@ fn hover_long_line_wraps_within_width() {
         use unicode_width::UnicodeWidthStr;
         assert!(
             UnicodeWidthStr::width(line.as_str()) <= 60,
-            "wrapped line exceeds width 60: {:?}",
-            line
+            "wrapped line exceeds width 60: {line:?}"
         );
     }
 }
@@ -962,9 +957,8 @@ fn hover_paragraph_breaks_preserved_after_wrap() {
     let content = "First paragraph.\n\nSecond paragraph.";
     let wrapped = crate::render::wrap_text(content, 80);
     assert!(
-        wrapped.iter().any(|l| l.is_empty()),
-        "paragraph break (blank line) should be preserved; got: {:?}",
-        wrapped
+        wrapped.iter().any(String::is_empty),
+        "paragraph break (blank line) should be preserved; got: {wrapped:?}"
     );
 }
 
@@ -981,5 +975,5 @@ fn hover_cjk_content_wraps_by_display_width() {
     // The word remains on its own line at width 3.
     let s = "你好 world";
     let wrapped = crate::render::wrap_text(s, 5);
-    assert_eq!(wrapped.len(), 2, "got: {:?}", wrapped);
+    assert_eq!(wrapped.len(), 2, "got: {wrapped:?}");
 }

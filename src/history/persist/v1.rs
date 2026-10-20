@@ -15,11 +15,11 @@ enum CharacterV1 {
 impl From<Character> for CharacterV1 {
     fn from(c: Character) -> Self {
         match c {
-            Character::Unicode(ch) => CharacterV1::Unicode(ch),
-            Character::Byte(b) => CharacterV1::Byte(b),
-            Character::Tab => CharacterV1::Tab,
-            Character::Newline => CharacterV1::Newline,
-            Character::Control(b) => CharacterV1::Control(b),
+            Character::Unicode(ch) => Self::Unicode(ch),
+            Character::Byte(b) => Self::Byte(b),
+            Character::Tab => Self::Tab,
+            Character::Newline => Self::Newline,
+            Character::Control(b) => Self::Control(b),
         }
     }
 }
@@ -27,11 +27,11 @@ impl From<Character> for CharacterV1 {
 impl From<CharacterV1> for Character {
     fn from(c: CharacterV1) -> Self {
         match c {
-            CharacterV1::Unicode(ch) => Character::Unicode(ch),
-            CharacterV1::Byte(b) => Character::Byte(b),
-            CharacterV1::Tab => Character::Tab,
-            CharacterV1::Newline => Character::Newline,
-            CharacterV1::Control(b) => Character::Control(b),
+            CharacterV1::Unicode(ch) => Self::Unicode(ch),
+            CharacterV1::Byte(b) => Self::Byte(b),
+            CharacterV1::Tab => Self::Tab,
+            CharacterV1::Newline => Self::Newline,
+            CharacterV1::Control(b) => Self::Control(b),
         }
     }
 }
@@ -62,9 +62,9 @@ impl From<Position> for PositionV1 {
 impl TryFrom<PositionV1> for Position {
     type Error = String;
     fn try_from(p: PositionV1) -> Result<Self, String> {
-        let line = u32::try_from(p.line).map_err(|_| "position line out of range".to_string())?;
-        let col = u32::try_from(p.col).map_err(|_| "position col out of range".to_string())?;
-        Ok(Position::new(line, col))
+        let line = u32::try_from(p.line).map_err(|e| format!("position line out of range: {e}"))?;
+        let col = u32::try_from(p.col).map_err(|e| format!("position col out of range: {e}"))?;
+        Ok(Self::new(line, col))
     }
 }
 
@@ -86,7 +86,7 @@ impl From<Range> for RangeV1 {
 impl TryFrom<RangeV1> for Range {
     type Error = String;
     fn try_from(r: RangeV1) -> Result<Self, String> {
-        Ok(Range::new(r.start.try_into()?, r.end.try_into()?))
+        Ok(Self::new(r.start.try_into()?, r.end.try_into()?))
     }
 }
 
@@ -120,7 +120,7 @@ impl From<&EditOperation> for OperationV1 {
                 position,
                 text,
                 len,
-            } => OperationV1::Insert {
+            } => Self::Insert {
                 position: (*position).into(),
                 text: chars_to_v1(text),
                 len: *len as u64,
@@ -128,7 +128,7 @@ impl From<&EditOperation> for OperationV1 {
             EditOperation::Delete {
                 range,
                 deleted_text,
-            } => OperationV1::Delete {
+            } => Self::Delete {
                 range: (*range).into(),
                 deleted_text: chars_to_v1(deleted_text),
             },
@@ -136,7 +136,7 @@ impl From<&EditOperation> for OperationV1 {
                 range,
                 old_text,
                 new_text,
-            } => OperationV1::Replace {
+            } => Self::Replace {
                 range: (*range).into(),
                 old_text: chars_to_v1(old_text),
                 new_text: chars_to_v1(new_text),
@@ -145,7 +145,7 @@ impl From<&EditOperation> for OperationV1 {
                 range,
                 old_content,
                 new_content,
-            } => OperationV1::BlockChange {
+            } => Self::BlockChange {
                 range: (*range).into(),
                 old_content: old_content.iter().map(|line| chars_to_v1(line)).collect(),
                 new_content: new_content.iter().map(|line| chars_to_v1(line)).collect(),
@@ -162,15 +162,15 @@ impl TryFrom<OperationV1> for EditOperation {
                 position,
                 text,
                 len,
-            } => EditOperation::Insert {
+            } => Self::Insert {
                 position: position.try_into()?,
                 text: chars_from_v1(text),
-                len: usize::try_from(len).map_err(|_| "insert len out of range".to_string())?,
+                len: usize::try_from(len).map_err(|e| format!("insert len out of range: {e}"))?,
             },
             OperationV1::Delete {
                 range,
                 deleted_text,
-            } => EditOperation::Delete {
+            } => Self::Delete {
                 range: range.try_into()?,
                 deleted_text: chars_from_v1(deleted_text),
             },
@@ -178,7 +178,7 @@ impl TryFrom<OperationV1> for EditOperation {
                 range,
                 old_text,
                 new_text,
-            } => EditOperation::Replace {
+            } => Self::Replace {
                 range: range.try_into()?,
                 old_text: chars_from_v1(old_text),
                 new_text: chars_from_v1(new_text),
@@ -187,7 +187,7 @@ impl TryFrom<OperationV1> for EditOperation {
                 range,
                 old_content,
                 new_content,
-            } => EditOperation::BlockChange {
+            } => Self::BlockChange {
                 range: range.try_into()?,
                 old_content: old_content.into_iter().map(chars_from_v1).collect(),
                 new_content: new_content.into_iter().map(chars_from_v1).collect(),
@@ -224,8 +224,8 @@ impl TryFrom<TransactionV1> for EditTransaction {
             .map(EditOperation::try_from)
             .collect::<Result<Vec<_>, _>>()?;
         let to_usize =
-            |c: u64| usize::try_from(c).map_err(|_| "cursor offset out of range".to_string());
-        Ok(EditTransaction {
+            |c: u64| usize::try_from(c).map_err(|e| format!("cursor offset out of range: {e}"));
+        Ok(Self {
             ops,
             description: tx.description,
             cursor_before: tx.cursor_before.map(to_usize).transpose()?,
@@ -291,7 +291,7 @@ pub(super) fn decode(payload: &[u8]) -> Result<Decoded, String> {
             let last_visited_child = n
                 .last_visited_child
                 .map(|c| {
-                    usize::try_from(c).map_err(|_| "last_visited_child out of range".to_string())
+                    usize::try_from(c).map_err(|e| format!("last_visited_child out of range: {e}"))
                 })
                 .transpose()?;
             Ok(DecodedNode {

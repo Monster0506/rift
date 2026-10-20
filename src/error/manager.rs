@@ -13,15 +13,17 @@ pub struct ErrorManager {
 impl ErrorManager {
     /// Create a new error manager
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             notifications: NotificationManager::new(),
         }
     }
 
     pub fn handle(&mut self, err: RiftError) {
-        let message = err.message.clone();
-        match err.severity {
+        let RiftError {
+            message, severity, ..
+        } = err;
+        match severity {
             crate::error::ErrorSeverity::Critical | crate::error::ErrorSeverity::Error => {
                 self.notifications.error(message);
             }
@@ -36,12 +38,12 @@ impl ErrorManager {
 
     /// Get a reference to the notification manager
     #[must_use]
-    pub fn notifications(&self) -> &NotificationManager {
+    pub const fn notifications(&self) -> &NotificationManager {
         &self.notifications
     }
 
     /// Get a mutable reference to the notification manager
-    pub fn notifications_mut(&mut self) -> &mut NotificationManager {
+    pub const fn notifications_mut(&mut self) -> &mut NotificationManager {
         &mut self.notifications
     }
 }

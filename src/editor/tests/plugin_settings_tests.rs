@@ -21,7 +21,7 @@ fn plugin_set_option_document_local_setting_updates_active_document() {
 fn plugin_set_option_global_setting_updates_user_settings() {
     let mut editor = create_editor();
     load_text(&mut editor, "hello\n");
-    assert!(editor.state.settings.ghost_cut);
+    assert!(editor.state.settings.editing.ghost_cut);
 
     editor
         .plugin_host
@@ -31,7 +31,7 @@ fn plugin_set_option_global_setting_updates_user_settings() {
         });
     editor.apply_plugin_mutations();
 
-    assert!(!editor.state.settings.ghost_cut);
+    assert!(!editor.state.settings.editing.ghost_cut);
 }
 
 #[test]
@@ -56,8 +56,8 @@ fn lua_get_tab_width_and_expand_tabs_reflect_document_local_overrides() {
     load_text(&mut editor, "hello\n");
     editor.plugin_host.mark_lua_used();
 
-    editor.execute_command_line("setlocal tabwidth 8".to_string());
-    editor.execute_command_line("setlocal expandtabs false".to_string());
+    editor.execute_command_line("setlocal tabwidth 8");
+    editor.execute_command_line("setlocal expandtabs false");
     editor.update_lua_state();
 
     let err = editor.plugin_host.lua_exec(

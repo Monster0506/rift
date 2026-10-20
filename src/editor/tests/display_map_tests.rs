@@ -463,6 +463,20 @@ fn test_cursor_moved_fires_once_per_render_with_latest_position() {
 }
 
 #[test]
+fn a_document_without_line_numbers_wraps_at_the_full_width() {
+    let mut editor = create_editor_sized(8, 20);
+    editor.state.settings.soft_wrap = true;
+    load_text(&mut editor, "abcdefghijklmnopqrst\nnext");
+    editor.active_document().options.show_line_numbers = false;
+
+    let screen = render_ascii(&mut editor);
+    let rows: Vec<&str> = screen.lines().collect();
+
+    assert_eq!(rows[0], "abcdefghijklmnopqrst");
+    assert_eq!(rows[1].trim_end(), "next");
+}
+
+#[test]
 fn exactly_full_wrapped_line_gets_an_eol_row_only_for_its_adornment() {
     let mut editor = create_editor_sized(8, 20);
     editor.state.settings.soft_wrap = true;
@@ -492,11 +506,11 @@ fn exactly_full_wrapped_line_gets_an_eol_row_only_for_its_adornment() {
     );
     assert_eq!(rows[2].trim_end(), "next");
 
-    editor.state.settings.lsp_virtual_text = false;
+    editor.state.settings.lsp.virtual_text = false;
     editor.force_full_redraw().unwrap();
     let screen = render_ascii(&mut editor);
     assert_eq!(screen.lines().nth(1).unwrap().trim_end(), "next");
-    editor.state.settings.lsp_virtual_text = true;
+    editor.state.settings.lsp.virtual_text = true;
     editor.force_full_redraw().unwrap();
     let screen = render_ascii(&mut editor);
     let rows: Vec<&str> = screen.lines().collect();

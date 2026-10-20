@@ -27,6 +27,7 @@ impl Default for ClipboardRing {
 }
 
 impl ClipboardRing {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             entries: VecDeque::with_capacity(DEFAULT_RING_CAPACITY),
@@ -48,7 +49,7 @@ impl ClipboardRing {
 
     /// Convenience for callers that only have a `String` (e.g. the system
     /// clipboard, which is plain text and has no byte-faithful representation).
-    pub fn push_str(&mut self, text: String) {
+    pub fn push_str(&mut self, text: &str) {
         self.push(text.chars().map(Character::from).collect());
     }
 
@@ -61,7 +62,8 @@ impl ClipboardRing {
         }
     }
 
-    pub fn capacity(&self) -> usize {
+    #[must_use]
+    pub const fn capacity(&self) -> usize {
         self.capacity
     }
 
@@ -69,18 +71,22 @@ impl ClipboardRing {
         self.entries.get(index).map(Vec::as_slice)
     }
 
+    #[must_use]
     pub fn most_recent(&self) -> Option<&[Character]> {
         self.get(0)
     }
 
-    pub fn entries(&self) -> &VecDeque<Vec<Character>> {
+    #[must_use]
+    pub const fn entries(&self) -> &VecDeque<Vec<Character>> {
         &self.entries
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -104,7 +110,7 @@ pub fn capture_text(buf: &TextBuffer, range: &MotionRange) -> Vec<Character> {
             (s, e)
         }
         RangeKind::Charwise | RangeKind::Blockwise => {
-            let end_offset = if range.inclusive { 1 } else { 0 };
+            let end_offset = usize::from(range.inclusive);
             (
                 range.anchor.min(range.new_cursor),
                 (range.anchor.max(range.new_cursor) + end_offset).min(buf.len()),
@@ -173,7 +179,7 @@ impl ClipboardWorker {
 }
 
 /// Read the system clipboard text without blocking the caller past
-/// [`CLIPBOARD_READ_TIMEOUT`], reusing a single shared connection.
+/// `CLIPBOARD_READ_TIMEOUT`, reusing a single shared connection.
 #[cfg(feature = "system_clipboard")]
 pub fn read_system_clipboard_text() -> Option<String> {
     use std::sync::OnceLock;
@@ -183,7 +189,8 @@ pub fn read_system_clipboard_text() -> Option<String> {
 
 /// Returns None when system clipboard support is disabled.
 #[cfg(not(feature = "system_clipboard"))]
-pub fn read_system_clipboard_text() -> Option<String> {
+#[must_use]
+pub const fn read_system_clipboard_text() -> Option<String> {
     None
 }
 
@@ -196,6 +203,7 @@ pub struct SystemClipboardCache {
 }
 
 impl SystemClipboardCache {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -212,11 +220,13 @@ impl SystemClipboardCache {
         self.last_refreshed = Some(crate::time::Instant::now());
     }
 
+    #[must_use]
     pub fn text(&self) -> Option<&str> {
         self.text.as_deref()
     }
 
-    pub fn read_count(&self) -> u32 {
+    #[must_use]
+    pub const fn read_count(&self) -> u32 {
         self.read_count
     }
 }
@@ -232,7 +242,7 @@ impl ClipboardTooltip {
         sys_clip: Option<&str>,
         layer: &mut Layer,
         editor_fg: Option<crate::color::Color>,
-        editor_bg: Option<crate::color::Color>,
+        editor_background: Option<crate::color::Color>,
     ) {
         if ring.is_empty() {
             return;
@@ -253,7 +263,7 @@ impl ClipboardTooltip {
                 if let Some(fg) = editor_fg {
                     style = style.with_fg(fg);
                 }
-                if let Some(bg) = editor_bg {
+                if let Some(bg) = editor_background {
                     style = style.with_bg(bg);
                 }
                 style
@@ -264,14 +274,20 @@ impl ClipboardTooltip {
         for (i, entry) in ring.entries().iter().enumerate() {
             let is_selected = i == selected;
             let text: String = entry.iter().map(Character::to_char_lossy).collect();
-            let row = render_entry(&text, content_width, is_selected, editor_fg, editor_bg);
+            let row = render_entry(
+                &text,
+                content_width,
+                is_selected,
+                editor_fg,
+                editor_background,
+            );
             content.push(row);
         }
 
         if let Some(clip_text) = sys_clip {
             // Separator line
             let sep = std::iter::repeat_n(
-                Cell::from_char('─').with_colors(editor_fg, editor_bg),
+                Cell::from_char('─').with_colors(editor_fg, editor_background),
                 content_width,
             )
             .collect::<Vec<_>>();
@@ -282,7 +298,7 @@ impl ClipboardTooltip {
                 "sys: {}",
                 clip_text.replace('\n', "\\n").replace('\t', "\\t")
             );
-            let row = render_entry(&label, content_width, false, editor_fg, editor_bg);
+            let row = render_entry(&label, content_width, false, editor_fg, editor_background);
             content.push(row);
         }
 
@@ -295,15 +311,15 @@ fn render_entry(
     max_width: usize,
     selected: bool,
     editor_fg: Option<crate::color::Color>,
-    editor_bg: Option<crate::color::Color>,
+    editor_background: Option<crate::color::Color>,
 ) -> Vec<Cell> {
     let display = truncate(text, max_width);
 
     // Selected entry: swap fg/bg for highlight. Normal: use theme colors.
     let (fg, bg) = if selected {
-        (editor_bg, editor_fg)
+        (editor_background, editor_fg)
     } else {
-        (editor_fg, editor_bg)
+        (editor_fg, editor_background)
     };
 
     let mut cells: Vec<Cell> = display
@@ -325,7 +341,7 @@ fn truncate(s: &str, max_width: usize) -> String {
         s
     } else {
         let truncated: String = s.chars().take(max_width.saturating_sub(1)).collect();
-        format!("{}…", truncated)
+        format!("{truncated}…")
     }
 }
 

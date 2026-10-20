@@ -24,17 +24,17 @@ pub enum Command {
     DeleteLine(usize),
     ChangeLine(usize),
     InsertChar(char),
-    /// Replace `count` chars at cursor with `ch` (r<ch> with optional count).
+    /// Replace `count` chars at cursor with `ch` (`r<ch>` with optional count).
     ReplaceChar(char, usize),
     /// Enter Replace mode (R: each char overwrites instead of inserting).
     EnterReplaceMode,
-    /// Delete an existing surround pair, keeping its contents (sd<ch>).
+    /// Delete an existing surround pair, keeping its contents (`sd<ch>`).
     /// The trailing count repeats the delimiter char on each side.
     DeleteSurround(char, usize),
-    /// Replace an existing surround pair's delimiters (sc<from><to>).
+    /// Replace an existing surround pair's delimiters (`sc<from><to>`).
     /// The trailing count repeats the delimiter char on each side.
     ChangeSurround(char, char, usize),
-    /// Wrap a motion/text-object range in delimiters (sg<motion><ch>).
+    /// Wrap a motion/text-object range in delimiters (`sg<motion><ch>`).
     /// The motion count resolves the range; the trailing count repeats the delimiter.
     AddSurround(Motion, usize, char, usize),
 
@@ -75,31 +75,31 @@ pub enum Command {
 impl Command {
     /// Check if command mutates the buffer content
     #[must_use]
-    pub fn is_mutating(&self) -> bool {
+    pub const fn is_mutating(&self) -> bool {
         matches!(
             self,
-            Command::DeleteForward
-                | Command::DeleteBackward
-                | Command::DeleteLine(_)
-                | Command::Delete(_, _)
-                | Command::Change(_, _)
-                | Command::ChangeLine(_)
-                | Command::OpenLineBelow
-                | Command::OpenLineAbove
-                | Command::InsertChar(_)
-                | Command::ReplaceChar(_, _)
-                | Command::DeleteSurround(_, _)
-                | Command::ChangeSurround(_, _, _)
-                | Command::AddSurround(_, _, _, _)
-                | Command::Undo
-                | Command::Redo
+            Self::DeleteForward
+                | Self::DeleteBackward
+                | Self::DeleteLine(_)
+                | Self::Delete(_, _)
+                | Self::Change(_, _)
+                | Self::ChangeLine(_)
+                | Self::OpenLineBelow
+                | Self::OpenLineAbove
+                | Self::InsertChar(_)
+                | Self::ReplaceChar(_, _)
+                | Self::DeleteSurround(_, _)
+                | Self::ChangeSurround(_, _, _)
+                | Self::AddSurround(_, _, _, _)
+                | Self::Undo
+                | Self::Redo
         )
     }
 
     /// Check if command should be recorded for dot-repeat
     #[must_use]
-    pub fn is_repeatable(&self) -> bool {
-        self.is_mutating() && !matches!(self, Command::Undo | Command::Redo)
+    pub const fn is_repeatable(&self) -> bool {
+        self.is_mutating() && !matches!(self, Self::Undo | Self::Redo)
     }
 }
 

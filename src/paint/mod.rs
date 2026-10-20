@@ -6,7 +6,7 @@ use crate::layer::{Cell, CellAttrs, Layer};
 
 /// A run of characters sharing one style, in visual order starting at `col`.
 /// Holds `Character`, not `String`, so raw non-UTF8 bytes survive losslessly.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextRun {
     pub col: usize,
     pub chars: Vec<Character>,
@@ -16,7 +16,7 @@ pub struct TextRun {
 }
 
 /// One visual row's worth of styled runs, in the order they were painted.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PaintRow {
     pub runs: Vec<TextRun>,
 }
@@ -63,6 +63,7 @@ impl PartialEq for PaintFrame {
 
 impl PaintFrame {
     /// Create an empty frame with the given number of rows.
+    #[must_use]
     pub fn new(rows: usize) -> Self {
         Self {
             rows: vec![PaintRow::default(); rows],

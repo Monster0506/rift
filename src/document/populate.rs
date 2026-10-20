@@ -6,11 +6,61 @@ use super::{
 use crate::buffer::TextBuffer;
 use crate::character::Character;
 use std::collections::HashSet;
+use std::fmt::Write as _;
 
 struct RebasePlanRender {
     text: String,
     highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
     head_lines: Vec<(usize, String)>,
+}
+
+enum CursorTarget {
+    HunkLine {
+        path: String,
+        staged_side: bool,
+        hunk_index: usize,
+        line_index: usize,
+    },
+    HunkHeader {
+        path: String,
+        staged_side: bool,
+        hunk_index: usize,
+    },
+    Entry {
+        path: String,
+    },
+}
+
+#[derive(Default)]
+struct GitStatusRender {
+    chars: Vec<Character>,
+    highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
+    byte_offset: usize,
+    line_idx: usize,
+    exact_restore_line: Option<usize>,
+    hunk_restore_line: Option<usize>,
+    entry_restore_line: Option<usize>,
+}
+
+impl GitStatusRender {
+    fn push_line(&mut self, text: &str) -> std::ops::Range<usize> {
+        let start = self.byte_offset;
+        for c in text.chars() {
+            self.chars.push(Character::from(c));
+            self.byte_offset += c.len_utf8();
+        }
+        let end = self.byte_offset;
+        self.chars.push(Character::Newline);
+        self.byte_offset += 1;
+        start..end
+    }
+}
+
+struct GitStatusView<'a> {
+    snapshot: &'a crate::git::status::StatusSnapshot,
+    expanded:
+        &'a std::collections::HashMap<(std::path::PathBuf, bool), Vec<crate::git::diff::Hunk>>,
+    cursor: Option<&'a CursorTarget>,
 }
 
 impl Document {
@@ -26,7 +76,10 @@ impl Document {
 
     pub(super) fn replace_buffer_content_chars(&mut self, chars: &[Character]) {
         let old_revision = self.buffer.revision;
-        let byte_len: usize = chars.iter().map(|c| c.len_utf8()).sum();
+        let byte_len: usize = chars
+            .iter()
+            .map(super::super::character::Character::len_utf8)
+            .sum();
         if let Ok(mut new_buffer) = TextBuffer::new(byte_len.max(64)) {
             let _ = new_buffer.insert_chars(chars);
             let _ = new_buffer.set_cursor(0);
@@ -62,7 +115,8 @@ impl Document {
         self.annotations.clear();
 
         for (i, entry) in entries.iter_mut().enumerate() {
-            entry.id = (i + 1) as u16;
+            let id = u16::try_from(i + 1).unwrap_or(u16::MAX);
+            entry.id = id;
             let name = entry
                 .path
                 .file_name()
@@ -70,7 +124,7 @@ impl Document {
                 .unwrap_or("");
 
             let (display, color) = if entry.is_dir {
-                (format!("{}/", name), Color::Blue)
+                (format!("{name}/"), Color::Blue)
             } else {
                 (name.to_string(), Color::White)
             };
@@ -179,7 +233,7 @@ impl Document {
 
     pub fn populate_undotree_buffer(
         &mut self,
-        text: String,
+        text: &str,
         sequences: Vec<crate::history::EditSeq>,
         highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
     ) {
@@ -188,17 +242,16 @@ impl Document {
         };
         state.sequences = sequences;
 
-        self.replace_buffer_content(&text);
+        self.replace_buffer_content(text);
         self.custom_highlights = highlights;
         self.history.mark_saved();
     }
 
     pub fn populate_undo_file_view(&mut self, parsed: &crate::history::persist::ParsedUndoFile) {
-        let hash_hex: String = parsed
-            .content_hash
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
+        let mut hash_hex = String::new();
+        for b in &parsed.content_hash {
+            let _ = write!(hash_hex, "{b:02x}");
+        }
         let header = format!(
             "Undo history for {}\nSHA-256 {}\n{} edit(s), currently at #{}\n\n",
             parsed.source_path.display(),
@@ -297,7 +350,7 @@ impl Document {
                     push_colored(&mut content, &mut highlights, &time_str, Color::Grey);
                     content.push(' ');
                     push_colored(&mut content, &mut highlights, kind_str, color);
-                    content.push_str(&format!(" #{job_id} "));
+                    let _ = write!(content, " #{job_id} ");
                     content.push_str(message);
                     content.push('\n');
                 }
@@ -367,18 +420,19 @@ impl Document {
         } else {
             for (i, info) in infos.iter().enumerate() {
                 let current = if info.is_current { "%" } else { " " };
-                let dirty = if info.is_dirty { "+" } else { " " };
-                let read_only = if info.is_read_only { "R" } else { " " };
-                let special = if info.is_special { "~" } else { " " };
+                let dirty = if info.status.is_dirty { "+" } else { " " };
+                let read_only = if info.status.is_read_only { "R" } else { " " };
+                let special = if info.status.is_special { "~" } else { " " };
                 let start = content.len();
-                content.push_str(&format!(
+                let _ = write!(
+                    content,
                     "[{}] {}: {current}{dirty}{read_only}{special}",
                     info.index + 1,
                     info.name,
-                ));
+                );
                 let color = if info.is_current {
                     Color::Cyan
-                } else if info.is_dirty {
+                } else if info.status.is_dirty {
                     Color::Yellow
                 } else {
                     Color::White
@@ -428,7 +482,7 @@ impl Document {
                 } else {
                     raw
                 };
-                content.push_str(&format!("{}: {}:{} \"{}\"\n", i + 1, row, col, preview));
+                let _ = writeln!(content, "{}: {}:{} \"{}\"", i + 1, row, col, preview);
             }
             if content.ends_with('\n') {
                 content.pop();
@@ -660,8 +714,6 @@ impl Document {
     }
 
     fn render_git_status(&mut self) {
-        use crate::color::Color;
-
         let Some(state) = self.state.try_get(GIT_STATUS_STATE_KEY) else {
             return;
         };
@@ -669,76 +721,89 @@ impl Document {
         let expanded_diffs = state.expanded_diffs.clone();
         let head_subject = state.head_subject.clone();
 
-        enum CursorTarget {
-            HunkLine {
-                path: String,
-                staged_side: bool,
-                hunk_index: usize,
-                line_index: usize,
-            },
-            HunkHeader {
-                path: String,
-                staged_side: bool,
-                hunk_index: usize,
-            },
-            Entry {
-                path: String,
-            },
-        }
-        let cursor_target = {
-            let cursor = self.buffer.cursor();
-            let line = self.buffer.line_index.get_line_at(cursor);
-            if let Some((path, staged_side, hunk_index, line_index)) =
-                self.annotations.git_hunk_line_at_line(line)
-            {
-                Some(CursorTarget::HunkLine {
-                    path,
-                    staged_side,
-                    hunk_index,
-                    line_index,
-                })
-            } else if let Some((path, staged_side, hunk_index)) =
-                self.annotations.git_hunk_at_line(line)
-            {
-                Some(CursorTarget::HunkHeader {
-                    path,
-                    staged_side,
-                    hunk_index,
-                })
-            } else {
-                self.annotations
-                    .git_status_entry_at_line(line)
-                    .map(|(path, ..)| CursorTarget::Entry { path })
-            }
-        };
-        let mut exact_restore_line: Option<usize> = None;
-        let mut hunk_restore_line: Option<usize> = None;
-        let mut entry_restore_line: Option<usize> = None;
-
-        let mut chars: Vec<Character> = Vec::new();
-        let mut highlights: Vec<(std::ops::Range<usize>, Color)> = Vec::new();
-        let mut byte_offset = 0usize;
-        let mut line_idx = 0usize;
-
+        let cursor_target = self.git_status_cursor_target();
         self.annotations.clear();
 
-        let branch_line = match &snapshot.branch.head {
-            Some(name) => format!("On branch {name}"),
-            None => match &snapshot.branch.oid {
-                Some(oid) => format!("HEAD detached at {}", &oid[..oid.len().min(12)]),
-                None => "On an unborn branch".to_string(),
-            },
+        let view = GitStatusView {
+            snapshot: &snapshot,
+            expanded: &expanded_diffs,
+            cursor: cursor_target.as_ref(),
         };
-        let range = git_status_push_line(&mut chars, &mut byte_offset, &branch_line);
-        highlights.push((range, Color::Cyan));
-        line_idx += 1;
+        let mut r = GitStatusRender::default();
+        self.push_git_status_header(&mut r, &snapshot, head_subject.as_deref());
+        self.push_git_status_sections(&mut r, &view);
 
-        if let (Some(oid), Some(subject)) = (&snapshot.branch.oid, &head_subject) {
-            let head_line = format!("HEAD  {} {subject}", &oid[..oid.len().min(8)]);
-            let range = git_status_push_line(&mut chars, &mut byte_offset, &head_line);
-            highlights.push((range, Color::Yellow));
-            self.annotations.create_git_status_head(line_idx);
-            line_idx += 1;
+        if r.chars.last() == Some(&Character::Newline) {
+            r.chars.pop();
+        }
+
+        self.replace_buffer_content_chars(&r.chars);
+        self.custom_highlights = r.highlights;
+        let restore_line = r
+            .exact_restore_line
+            .or(r.hunk_restore_line)
+            .or(r.entry_restore_line);
+        if let Some(line) = restore_line {
+            if let Some(offset) = self.buffer.line_index.get_start(line) {
+                let _ = self.buffer.set_cursor(offset);
+            }
+        }
+    }
+
+    fn git_status_cursor_target(&self) -> Option<CursorTarget> {
+        let cursor = self.buffer.cursor();
+        let line = self.buffer.line_index.get_line_at(cursor);
+        if let Some((path, staged_side, hunk_index, line_index)) =
+            self.annotations.git_hunk_line_at_line(line)
+        {
+            Some(CursorTarget::HunkLine {
+                path,
+                staged_side,
+                hunk_index,
+                line_index,
+            })
+        } else if let Some((path, staged_side, hunk_index)) =
+            self.annotations.git_hunk_at_line(line)
+        {
+            Some(CursorTarget::HunkHeader {
+                path,
+                staged_side,
+                hunk_index,
+            })
+        } else {
+            self.annotations
+                .git_status_entry_at_line(line)
+                .map(|(path, ..)| CursorTarget::Entry { path })
+        }
+    }
+
+    fn push_git_status_header(
+        &mut self,
+        r: &mut GitStatusRender,
+        snapshot: &crate::git::status::StatusSnapshot,
+        head_subject: Option<&str>,
+    ) {
+        use crate::color::Color;
+
+        let branch_line = snapshot.branch.head.as_ref().map_or_else(
+            || {
+                snapshot.branch.oid.as_ref().map_or_else(
+                    || "On an unborn branch".to_string(),
+                    |oid| format!("HEAD detached at {}", oid.get(..12).unwrap_or(oid.as_str())),
+                )
+            },
+            |name| format!("On branch {name}"),
+        );
+        let range = r.push_line(&branch_line);
+        r.highlights.push((range, Color::Cyan));
+        r.line_idx += 1;
+
+        if let (Some(oid), Some(subject)) = (&snapshot.branch.oid, head_subject) {
+            let head_line = format!("HEAD  {} {subject}", oid.get(..8).unwrap_or(oid.as_str()));
+            let range = r.push_line(&head_line);
+            r.highlights.push((range, Color::Yellow));
+            self.annotations.create_git_status_head(r.line_idx);
+            r.line_idx += 1;
         }
 
         if let Some(upstream) = &snapshot.branch.upstream {
@@ -759,12 +824,16 @@ impl Document {
                 None
             };
             if let Some(msg) = msg {
-                git_status_push_line(&mut chars, &mut byte_offset, &msg);
-                line_idx += 1;
+                r.push_line(&msg);
+                r.line_idx += 1;
             }
         }
-        git_status_push_line(&mut chars, &mut byte_offset, "");
-        line_idx += 1;
+        r.push_line("");
+        r.line_idx += 1;
+    }
+
+    fn push_git_status_sections(&mut self, r: &mut GitStatusRender, view: &GitStatusView<'_>) {
+        use crate::color::Color;
 
         let sections: [(&str, Color); 4] = [
             (git_status_sections::UNMERGED, Color::Magenta),
@@ -774,7 +843,8 @@ impl Document {
         ];
 
         for (section, color) in sections {
-            let entries: Vec<&crate::git::status::StatusEntry> = snapshot
+            let entries: Vec<&crate::git::status::StatusEntry> = view
+                .snapshot
                 .entries
                 .iter()
                 .filter(|e| git_status_entry_matches_section(e, section))
@@ -784,150 +854,164 @@ impl Document {
             }
 
             let header = git_status_sections::header_text(section, entries.len());
-            let range = git_status_push_line(&mut chars, &mut byte_offset, &header);
-            highlights.push((range, Color::DarkGrey));
-            line_idx += 1;
+            let range = r.push_line(&header);
+            r.highlights.push((range, Color::DarkGrey));
+            r.line_idx += 1;
 
             for entry in entries {
-                let path_str = entry.path.to_string_lossy().to_string();
-                let orig_str = entry
-                    .orig_path
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().to_string());
-                let display = match &orig_str {
-                    Some(orig) => format!("{orig} -> {path_str}"),
-                    None => path_str.clone(),
-                };
-                let code = git_status_entry_code(entry, section);
-                let line_text = if code.is_empty() {
-                    format!("  {display}")
-                } else {
-                    format!("  {code} {display}")
-                };
-                let range = git_status_push_line(&mut chars, &mut byte_offset, &line_text);
-                highlights.push((range, color));
-                let this_line = line_idx;
-                line_idx += 1;
-
-                self.annotations.create_git_status_entry(
-                    this_line,
-                    &path_str,
-                    section,
-                    orig_str.as_deref(),
-                );
-                let target_path = match &cursor_target {
-                    Some(CursorTarget::HunkLine { path, .. })
-                    | Some(CursorTarget::HunkHeader { path, .. })
-                    | Some(CursorTarget::Entry { path }) => Some(path.as_str()),
-                    None => None,
-                };
-                if target_path == Some(path_str.as_str()) {
-                    entry_restore_line = Some(this_line);
-                }
-
-                let staged_side = section == git_status_sections::STAGED;
-                if let Some(hunks) = expanded_diffs.get(&(entry.path.clone(), staged_side)) {
-                    for (hunk_index, hunk) in hunks.iter().enumerate() {
-                        let header_text = if hunk.header.is_empty() {
-                            format!(
-                                "      @@ -{},{} +{},{} @@",
-                                hunk.old_start, hunk.old_lines, hunk.new_start, hunk.new_lines
-                            )
-                        } else {
-                            format!(
-                                "      @@ -{},{} +{},{} @@ {}",
-                                hunk.old_start,
-                                hunk.old_lines,
-                                hunk.new_start,
-                                hunk.new_lines,
-                                hunk.header
-                            )
-                        };
-                        let range =
-                            git_status_push_line(&mut chars, &mut byte_offset, &header_text);
-                        highlights.push((range, Color::Cyan));
-                        let hunk_line_idx = line_idx;
-                        line_idx += 1;
-                        self.annotations.create_git_hunk(
-                            hunk_line_idx,
-                            &path_str,
-                            staged_side,
-                            hunk_index,
-                        );
-                        let same_hunk = matches!(
-                            &cursor_target,
-                            Some(CursorTarget::HunkLine { path, staged_side: s, hunk_index: hi, .. })
-                            | Some(CursorTarget::HunkHeader { path, staged_side: s, hunk_index: hi })
-                            if path == &path_str && *s == staged_side && *hi == hunk_index
-                        );
-                        if same_hunk {
-                            hunk_restore_line = Some(hunk_line_idx);
-                        }
-                        let is_exact_header_target = matches!(
-                            &cursor_target,
-                            Some(CursorTarget::HunkHeader { path, staged_side: s, hunk_index: hi })
-                            if path == &path_str && *s == staged_side && *hi == hunk_index
-                        );
-                        if is_exact_header_target {
-                            exact_restore_line = Some(hunk_line_idx);
-                        }
-
-                        for (dl_index, dl) in hunk.lines.iter().enumerate() {
-                            let (marker, color) = match dl.kind {
-                                crate::git::diff::DiffLineKind::Context => (' ', None),
-                                crate::git::diff::DiffLineKind::Addition => {
-                                    ('+', Some(Color::Green))
-                                }
-                                crate::git::diff::DiffLineKind::Deletion => ('-', Some(Color::Red)),
-                            };
-                            let text = format!("        {marker}{}", dl.content);
-                            let range = git_status_push_line(&mut chars, &mut byte_offset, &text);
-                            if let Some(color) = color {
-                                highlights.push((range, color));
-                            }
-                            if dl.kind != crate::git::diff::DiffLineKind::Context {
-                                self.annotations.create_git_hunk_line(
-                                    line_idx,
-                                    &path_str,
-                                    staged_side,
-                                    hunk_index,
-                                    dl_index,
-                                );
-                                let is_exact_line_target = matches!(
-                                    &cursor_target,
-                                    Some(CursorTarget::HunkLine { path, staged_side: s, hunk_index: hi, line_index })
-                                    if path == &path_str && *s == staged_side && *hi == hunk_index && *line_index == dl_index
-                                );
-                                if is_exact_line_target {
-                                    exact_restore_line = Some(line_idx);
-                                }
-                            }
-                            line_idx += 1;
-                        }
-                    }
-                }
+                self.push_git_status_entry(r, view, entry, section, color);
             }
-            git_status_push_line(&mut chars, &mut byte_offset, "");
-            line_idx += 1;
+
+            r.push_line("");
+            r.line_idx += 1;
+        }
+    }
+
+    fn push_git_status_entry(
+        &mut self,
+        r: &mut GitStatusRender,
+        view: &GitStatusView<'_>,
+        entry: &crate::git::status::StatusEntry,
+        section: &str,
+        color: crate::color::Color,
+    ) {
+        let path_str = entry.path.to_string_lossy().to_string();
+        let orig_str = entry
+            .orig_path
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string());
+        let display = orig_str
+            .as_ref()
+            .map_or_else(|| path_str.clone(), |orig| format!("{orig} -> {path_str}"));
+        let code = git_status_entry_code(entry, section);
+        let line_text = if code.is_empty() {
+            format!("  {display}")
+        } else {
+            format!("  {code} {display}")
+        };
+        let range = r.push_line(&line_text);
+        r.highlights.push((range, color));
+        let this_line = r.line_idx;
+        r.line_idx += 1;
+
+        self.annotations.create_git_status_entry(
+            this_line,
+            &path_str,
+            section,
+            orig_str.as_deref(),
+        );
+        let target_path = view.cursor.map(|c| match c {
+            CursorTarget::HunkLine { path, .. }
+            | CursorTarget::HunkHeader { path, .. }
+            | CursorTarget::Entry { path } => path.as_str(),
+        });
+        if target_path == Some(path_str.as_str()) {
+            r.entry_restore_line = Some(this_line);
         }
 
-        if chars.last() == Some(&Character::Newline) {
-            chars.pop();
-        }
-
-        self.replace_buffer_content_chars(&chars);
-        self.custom_highlights = highlights;
-        let restore_line = exact_restore_line
-            .or(hunk_restore_line)
-            .or(entry_restore_line);
-        if let Some(line) = restore_line {
-            if let Some(offset) = self.buffer.line_index.get_start(line) {
-                let _ = self.buffer.set_cursor(offset);
+        let staged_side = section == git_status_sections::STAGED;
+        if let Some(hunks) = view.expanded.get(&(entry.path.clone(), staged_side)) {
+            for (hunk_index, hunk) in hunks.iter().enumerate() {
+                self.push_git_status_hunk(r, view, &path_str, staged_side, hunk_index, hunk);
             }
         }
     }
 
-    fn git_rebase_verb_color(verb: crate::git::rebase::RebaseVerb) -> crate::color::Color {
+    fn push_git_status_hunk(
+        &mut self,
+        r: &mut GitStatusRender,
+        view: &GitStatusView<'_>,
+        path_str: &str,
+        staged_side: bool,
+        hunk_index: usize,
+        hunk: &crate::git::diff::Hunk,
+    ) {
+        use crate::color::Color;
+
+        let header_text = if hunk.header.is_empty() {
+            format!(
+                "      @@ -{},{} +{},{} @@",
+                hunk.old_start, hunk.old_lines, hunk.new_start, hunk.new_lines
+            )
+        } else {
+            format!(
+                "      @@ -{},{} +{},{} @@ {}",
+                hunk.old_start, hunk.old_lines, hunk.new_start, hunk.new_lines, hunk.header
+            )
+        };
+        let range = r.push_line(&header_text);
+        r.highlights.push((range, Color::Cyan));
+        let hunk_line_idx = r.line_idx;
+        r.line_idx += 1;
+        self.annotations
+            .create_git_hunk(hunk_line_idx, path_str, staged_side, hunk_index);
+
+        let same_hunk = matches!(
+            view.cursor,
+            Some(
+                CursorTarget::HunkLine { path, staged_side: s, hunk_index: hi, .. }
+                | CursorTarget::HunkHeader { path, staged_side: s, hunk_index: hi },
+            ) if path == path_str && *s == staged_side && *hi == hunk_index
+        );
+        if same_hunk {
+            r.hunk_restore_line = Some(hunk_line_idx);
+        }
+        let is_exact_header_target = matches!(
+            view.cursor,
+            Some(CursorTarget::HunkHeader { path, staged_side: s, hunk_index: hi })
+            if path == path_str && *s == staged_side && *hi == hunk_index
+        );
+        if is_exact_header_target {
+            r.exact_restore_line = Some(hunk_line_idx);
+        }
+
+        self.push_git_hunk_lines(r, view, path_str, staged_side, hunk_index, &hunk.lines);
+    }
+
+    fn push_git_hunk_lines(
+        &mut self,
+        r: &mut GitStatusRender,
+        view: &GitStatusView<'_>,
+        path_str: &str,
+        staged_side: bool,
+        hunk_index: usize,
+        lines: &[crate::git::diff::DiffLine],
+    ) {
+        use crate::color::Color;
+
+        for (dl_index, dl) in lines.iter().enumerate() {
+            let (marker, color) = match dl.kind {
+                crate::git::diff::DiffLineKind::Context => (' ', None),
+                crate::git::diff::DiffLineKind::Addition => ('+', Some(Color::Green)),
+                crate::git::diff::DiffLineKind::Deletion => ('-', Some(Color::Red)),
+            };
+            let text = format!("        {marker}{}", dl.content);
+            let range = r.push_line(&text);
+            if let Some(color) = color {
+                r.highlights.push((range, color));
+            }
+            if dl.kind != crate::git::diff::DiffLineKind::Context {
+                self.annotations.create_git_hunk_line(
+                    r.line_idx,
+                    path_str,
+                    staged_side,
+                    hunk_index,
+                    dl_index,
+                );
+                let is_exact_line_target = matches!(
+                    view.cursor,
+                    Some(CursorTarget::HunkLine { path, staged_side: s, hunk_index: hi, line_index })
+                    if path == path_str && *s == staged_side && *hi == hunk_index && *line_index == dl_index
+                );
+                if is_exact_line_target {
+                    r.exact_restore_line = Some(r.line_idx);
+                }
+            }
+            r.line_idx += 1;
+        }
+    }
+
+    const fn git_rebase_verb_color(verb: crate::git::rebase::RebaseVerb) -> crate::color::Color {
         use crate::color::Color;
         use crate::git::rebase::RebaseVerb;
         match verb {
@@ -969,11 +1053,10 @@ impl Document {
         }
 
         for step in steps {
-            let short_sha = &step.sha[..step.sha.len().min(8)];
-            let title = match message_overrides.get(&step.sha) {
-                Some(m) => m.lines().next().unwrap_or(""),
-                None => step.subject.as_str(),
-            };
+            let short_sha = step.sha.get(..8).unwrap_or(step.sha.as_str());
+            let title = message_overrides
+                .get(&step.sha)
+                .map_or(step.subject.as_str(), |m| m.lines().next().unwrap_or(""));
             let head_text = format!("{} {short_sha} {title}", step.verb.as_str());
             let range = push_line(&mut text, &head_text);
             highlights.push((range, Self::git_rebase_verb_color(step.verb)));
@@ -982,14 +1065,14 @@ impl Document {
             head_lines.push((this_line, step.sha.clone()));
 
             if expanded_bodies.contains(&step.sha) {
-                let body = match message_overrides.get(&step.sha) {
-                    Some(m) => {
+                let body = message_overrides.get(&step.sha).map_or_else(
+                    || original_bodies.get(&step.sha).cloned().unwrap_or_default(),
+                    |m| {
                         let mut lines = m.lines();
                         lines.next();
                         lines.collect::<Vec<_>>().join("\n")
-                    }
-                    None => original_bodies.get(&step.sha).cloned().unwrap_or_default(),
-                };
+                    },
+                );
                 let is_fold = matches!(
                     step.verb,
                     crate::git::rebase::RebaseVerb::Squash | crate::git::rebase::RebaseVerb::Fixup
@@ -1258,7 +1341,7 @@ impl Document {
         for (source_line, line) in lines.iter().enumerate() {
             annotation_lines.push(display_line);
             let sha = &line.commit.sha;
-            let short_sha = &sha[..sha.len().min(8)];
+            let short_sha = sha.get(..8).unwrap_or(sha.as_str());
             let date = crate::git::format_unix_datetime(line.commit.author_time);
             let author = truncate_display(&line.commit.author, 16);
             let sha_start = text.len();
@@ -1266,7 +1349,7 @@ impl Document {
             highlights.push((sha_start..text.len(), crate::color::Color::Cyan));
             text.push_str(" (");
             let author_start = text.len();
-            text.push_str(&format!("{author:<16}"));
+            let _ = write!(text, "{author:<16}");
             highlights.push((author_start..text.len(), crate::color::Color::Blue));
             text.push(' ');
             let date_start = text.len();
@@ -1376,21 +1459,18 @@ fn dir_entry_color(
         return Color::Blue;
     }
 
-    match annotation_entry_id {
-        None => Color::Green,
-        Some(eid) => {
-            let orig = id_to_orig.get(&eid).map(|s| s.as_str()).unwrap_or("");
-            if trimmed == orig {
-                if last_visible_char == '/' {
-                    Color::Blue
-                } else {
-                    Color::White
-                }
+    annotation_entry_id.map_or(Color::Green, |eid| {
+        let orig = id_to_orig.get(&eid).map_or("", |s| s.as_str());
+        if trimmed == orig {
+            if last_visible_char == '/' {
+                Color::Blue
             } else {
-                Color::Yellow
+                Color::White
             }
+        } else {
+            Color::Yellow
         }
-    }
+    })
 }
 
 mod git_status_sections {
@@ -1426,7 +1506,7 @@ fn git_status_entry_matches_section(
 fn git_status_entry_code(entry: &crate::git::status::StatusEntry, section: &str) -> String {
     use crate::git::status::FileState;
 
-    fn state_char(state: FileState) -> char {
+    const fn state_char(state: FileState) -> char {
         match state {
             FileState::Unmodified => '.',
             FileState::Modified => 'M',
@@ -1449,20 +1529,4 @@ fn git_status_entry_code(entry: &crate::git::status::StatusEntry, section: &str)
         s if s == git_status_sections::UNSTAGED => state_char(entry.worktree_state).to_string(),
         _ => String::new(),
     }
-}
-
-fn git_status_push_line(
-    chars: &mut Vec<Character>,
-    byte_offset: &mut usize,
-    text: &str,
-) -> std::ops::Range<usize> {
-    let start = *byte_offset;
-    for c in text.chars() {
-        chars.push(Character::from(c));
-        *byte_offset += c.len_utf8();
-    }
-    let end = *byte_offset;
-    chars.push(Character::Newline);
-    *byte_offset += 1;
-    start..end
 }

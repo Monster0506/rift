@@ -14,7 +14,7 @@ fn test_render_line_numbers_enabled() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,
@@ -80,7 +80,7 @@ fn test_render_line_numbers_disabled() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,
@@ -133,7 +133,7 @@ fn test_render_line_numbers_gutter_width() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,
@@ -204,7 +204,7 @@ fn test_render_cursor_position_with_line_numbers() {
     system
         .render(
             &mut term,
-            RenderState {
+            &RenderState {
                 syntax_generation: 0,
                 annotations_revision: 0,
                 kind_registry_generation: 0,

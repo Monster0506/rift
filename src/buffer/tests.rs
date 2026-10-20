@@ -116,8 +116,8 @@ fn patch_logical_bytes_rejects_non_char_boundary() {
 fn patch_logical_bytes_matches_full_rebuild_random() {
     fn next(seed: &mut u64, m: usize) -> usize {
         *seed = seed
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
         ((*seed >> 33) as usize) % m.max(1)
     }
 

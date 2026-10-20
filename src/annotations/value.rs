@@ -6,6 +6,8 @@ use serde::ser::{SerializeMap, SerializeSeq, Serializer};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::num::{i64_to_f64, u64_to_f64};
+
 /// A recursive, serializable value.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum Value {
@@ -15,29 +17,31 @@ pub enum Value {
     Int(i64),
     Float(f64),
     Str(String),
-    List(Vec<Value>),
+    List(Vec<Self>),
     /// Key-ordered map. Order is preserved through serialization for determinism.
-    Map(Vec<(String, Value)>),
+    Map(Vec<(String, Self)>),
 }
 
 impl Value {
     /// Build an empty `Map`.
-    pub fn map() -> Self {
-        Value::Map(Vec::new())
+    #[must_use]
+    pub const fn map() -> Self {
+        Self::Map(Vec::new())
     }
 
     /// Look up a key in a `Map`; `None` for non-maps or missing keys.
-    pub fn get(&self, key: &str) -> Option<&Value> {
+    #[must_use]
+    pub fn get(&self, key: &str) -> Option<&Self> {
         match self {
-            Value::Map(pairs) => pairs.iter().find(|(k, _)| k == key).map(|(_, v)| v),
+            Self::Map(pairs) => pairs.iter().find(|(k, _)| k == key).map(|(_, v)| v),
             _ => None,
         }
     }
 
     /// Insert or overwrite a key in a `Map` (no-op on non-maps). Insertion order
     /// is preserved; an existing key is updated in place.
-    pub fn set(&mut self, key: &str, value: Value) {
-        if let Value::Map(pairs) = self {
+    pub fn set(&mut self, key: &str, value: Self) {
+        if let Self::Map(pairs) = self {
             if let Some(slot) = pairs.iter_mut().find(|(k, _)| k == key) {
                 slot.1 = value;
             } else {
@@ -46,37 +50,43 @@ impl Value {
         }
     }
 
+    #[must_use]
     pub fn as_str(&self) -> Option<&str> {
         match self {
-            Value::Str(s) => Some(s),
+            Self::Str(s) => Some(s),
             _ => None,
         }
     }
 
-    pub fn as_bool(&self) -> Option<bool> {
+    #[must_use]
+    pub const fn as_bool(&self) -> Option<bool> {
         match self {
-            Value::Bool(b) => Some(*b),
+            Self::Bool(b) => Some(*b),
             _ => None,
         }
     }
 
-    pub fn as_int(&self) -> Option<i64> {
+    #[must_use]
+    pub const fn as_int(&self) -> Option<i64> {
         match self {
-            Value::Int(i) => Some(*i),
+            Self::Int(i) => Some(*i),
             _ => None,
         }
     }
 
+    #[must_use]
     pub fn as_float(&self) -> Option<f64> {
         match self {
-            Value::Float(f) => Some(*f),
-            Value::Int(i) => Some(*i as f64),
+            Self::Float(f) => Some(*f),
+            // Int-to-float is the intended numeric view; precision loss is accepted.
+            Self::Int(i) => Some(i64_to_f64(*i)),
             _ => None,
         }
     }
 
-    pub fn is_null(&self) -> bool {
-        matches!(self, Value::Null)
+    #[must_use]
+    pub const fn is_null(&self) -> bool {
+        matches!(self, Self::Null)
     }
 }
 
@@ -84,19 +94,19 @@ impl Value {
 impl Serialize for Value {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
-            Value::Null => serializer.serialize_unit(),
-            Value::Bool(b) => serializer.serialize_bool(*b),
-            Value::Int(i) => serializer.serialize_i64(*i),
-            Value::Float(f) => serializer.serialize_f64(*f),
-            Value::Str(s) => serializer.serialize_str(s),
-            Value::List(items) => {
+            Self::Null => serializer.serialize_unit(),
+            Self::Bool(b) => serializer.serialize_bool(*b),
+            Self::Int(i) => serializer.serialize_i64(*i),
+            Self::Float(f) => serializer.serialize_f64(*f),
+            Self::Str(s) => serializer.serialize_str(s),
+            Self::List(items) => {
                 let mut seq = serializer.serialize_seq(Some(items.len()))?;
                 for item in items {
                     seq.serialize_element(item)?;
                 }
                 seq.end()
             }
-            Value::Map(pairs) => {
+            Self::Map(pairs) => {
                 let mut map = serializer.serialize_map(Some(pairs.len()))?;
                 for (k, v) in pairs {
                     map.serialize_entry(k, v)?;
@@ -130,12 +140,9 @@ impl<'de> Deserialize<'de> for Value {
             fn visit_i64<E>(self, v: i64) -> Result<Value, E> {
                 Ok(Value::Int(v))
             }
+            // f64 is the intended float view of an out-of-range u64.
             fn visit_u64<E>(self, v: u64) -> Result<Value, E> {
-                if v <= i64::MAX as u64 {
-                    Ok(Value::Int(v as i64))
-                } else {
-                    Ok(Value::Float(v as f64))
-                }
+                Ok(i64::try_from(v).map_or_else(|_| Value::Float(u64_to_f64(v)), Value::Int))
             }
             fn visit_f64<E>(self, v: f64) -> Result<Value, E> {
                 Ok(Value::Float(v))

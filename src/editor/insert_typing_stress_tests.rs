@@ -5,6 +5,7 @@ use super::*;
 use crate::key::{InputEvent, Key};
 use crate::term::{Size, TerminalBackend};
 use std::collections::VecDeque;
+use std::fmt::Write as _;
 
 struct QueueTerminal {
     keys: VecDeque<Key>,
@@ -75,7 +76,7 @@ fn process_jobs(editor: &mut Editor<QueueTerminal>) {
             .receiver()
             .recv_timeout(Duration::from_millis(50))
         {
-            editor.handle_job_message(msg).unwrap();
+            editor.handle_job_message(msg);
         }
         if !editor.job_manager.any_job_thread_alive() || Instant::now() >= deadline {
             break;
@@ -96,9 +97,10 @@ fn realistic_file() -> (tempfile::TempDir, std::path::PathBuf) {
     let path = dir.path().join("big.txt");
     let mut content = String::new();
     for i in 0..10_000 {
-        content.push_str(&format!(
-            "fn function_{i}() {{ println!(\"Hello World {i}\"); }}\n"
-        ));
+        let _ = writeln!(
+            content,
+            "fn function_{i}() {{ println!(\"Hello World {i}\"); }}"
+        );
     }
     std::fs::write(&path, content).unwrap();
     (dir, path)
@@ -106,10 +108,10 @@ fn realistic_file() -> (tempfile::TempDir, std::path::PathBuf) {
 
 #[test]
 fn rapid_insert_mode_typing_keeps_up_on_a_large_file() {
+    const CHARS: usize = 5_000;
     let (_dir, path) = realistic_file();
     let term = QueueTerminal::new(50, 120);
-    let mut editor =
-        Editor::with_file(term, Some(path.to_str().unwrap().to_string())).expect("editor init");
+    let mut editor = Editor::with_file(term, Some(path.to_str().unwrap())).expect("editor init");
     process_jobs(&mut editor);
 
     let start_len = editor
@@ -122,7 +124,6 @@ fn rapid_insert_mode_typing_keeps_up_on_a_large_file() {
     // 'i' enters Insert mode; the rest is a burst of plain letters, exactly
     // how a real fast typist's keystrokes arrive through the terminal.
     editor.term.keys.push_back(Key::char('i'));
-    const CHARS: usize = 5_000;
     let alphabet = "abcdefghijklmnopqrstuvwxyz";
     for i in 0..CHARS {
         let ch = alphabet.as_bytes()[i % alphabet.len()] as char;
@@ -137,14 +138,15 @@ fn rapid_insert_mode_typing_keeps_up_on_a_large_file() {
     {
         let mut stats = crate::perf::span_stats();
         stats.sort_by(|a, b| {
-            (b.1.avg_ms * b.1.count as f64).total_cmp(&(a.1.avg_ms * a.1.count as f64))
+            (b.1.avg_ms * crate::num::u64_to_f64(b.1.count))
+                .total_cmp(&(a.1.avg_ms * crate::num::u64_to_f64(a.1.count)))
         });
         for (name, s) in stats {
             eprintln!(
                 "  {name}: count={} avg_ms={:.4} total_ms={:.1}",
                 s.count,
                 s.avg_ms,
-                s.avg_ms * s.count as f64
+                s.avg_ms * crate::num::u64_to_f64(s.count)
             );
         }
     }
@@ -165,6 +167,6 @@ fn rapid_insert_mode_typing_keeps_up_on_a_large_file() {
     eprintln!(
         "rapid_insert_mode_typing: {CHARS} chars typed into a 10k-line file in {elapsed:?} \
          ({:.0} chars/sec)",
-        CHARS as f64 / elapsed.as_secs_f64(),
+        crate::num::usize_to_f64(CHARS) / elapsed.as_secs_f64(),
     );
 }

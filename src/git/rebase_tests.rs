@@ -3,7 +3,7 @@ use super::*;
 fn commit(sha: &str, subject: &str) -> crate::git::log::CommitSummary {
     crate::git::log::CommitSummary {
         sha: sha.to_string(),
-        short_sha: sha[..sha.len().min(8)].to_string(),
+        short_sha: sha.get(..8).unwrap_or(sha).to_string(),
         author_name: "A".to_string(),
         author_email: "a@example.com".to_string(),
         author_time: 0,

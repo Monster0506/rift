@@ -4,7 +4,7 @@ use crate::test_utils::MockTerminal;
 fn process_jobs(editor: &mut Editor<MockTerminal>) {
     let mut processed = 0;
     while let Ok(msg) = editor.job_manager.receiver().try_recv() {
-        editor.handle_job_message(msg).unwrap();
+        editor.handle_job_message(msg);
         processed += 1;
         if processed > 100 {
             break;

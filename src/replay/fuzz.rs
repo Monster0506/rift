@@ -10,11 +10,11 @@ use crate::key::Key;
 struct Rng(u64);
 
 impl Rng {
-    fn new(seed: u64) -> Self {
+    const fn new(seed: u64) -> Self {
         Self(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1)
     }
 
-    fn next_u64(&mut self) -> u64 {
+    const fn next_u64(&mut self) -> u64 {
         let mut x = self.0;
         x ^= x << 13;
         x ^= x >> 7;
@@ -24,7 +24,8 @@ impl Rng {
     }
 
     fn below(&mut self, n: usize) -> usize {
-        (self.next_u64() % n as u64) as usize
+        let n = u64::try_from(n).unwrap_or(u64::MAX);
+        usize::try_from(self.next_u64() % n).unwrap_or(usize::MAX)
     }
 }
 
@@ -83,10 +84,20 @@ pub struct FuzzFailure {
     pub tick_error: Option<RiftError>,
 }
 
+/// Runs a random editing session described by `config`.
+///
+/// # Errors
+/// Returns the `FuzzFailure` for the first broken invariant. If the headless
+/// editor cannot be created, returns it at step 0 with `tick_error` set.
 pub fn run(config: &FuzzConfig) -> Result<usize, FuzzFailure> {
     let mut rng = Rng::new(config.seed);
     let backend = ReplayBackend::new(std::io::sink(), config.rows, config.cols);
-    let mut ed = Editor::with_file(backend, None).expect("fresh headless editor");
+    let mut ed = Editor::with_file(backend, None).map_err(|tick_error| FuzzFailure {
+        step: 0,
+        keys: Vec::new(),
+        violations: Vec::new(),
+        tick_error: Some(tick_error),
+    })?;
 
     let trace = std::env::var_os("RIFT_FUZZ_TRACE").is_some();
 
@@ -159,7 +170,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "manual probe; set RIFT_FUZZ_SEED and run with --ignored"]
     fn single_seed_fuzz_probe() {
         use std::panic::{self, AssertUnwindSafe};
 
@@ -206,7 +217,7 @@ mod tests {
             Err(payload) => {
                 let message = payload
                     .downcast_ref::<&str>()
-                    .map(|s| s.to_string())
+                    .map(ToString::to_string)
                     .or_else(|| payload.downcast_ref::<String>().cloned())
                     .unwrap_or_else(|| "<non-string panic payload>".to_string());
                 println!("RIFT_FUZZ_RESULT: CRASH seed={seed}: {message}");
@@ -226,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "long sweep; run manually with --ignored"]
     fn long_multi_seed_sweep_holds_its_invariants() {
         for seed in 0..20u64 {
             let config = FuzzConfig {

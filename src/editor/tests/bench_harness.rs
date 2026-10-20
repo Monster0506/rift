@@ -25,12 +25,58 @@ fn generate_huge_rust_source() -> String {
     src
 }
 
+#[cfg(feature = "treesitter")]
+fn add_harness_annotations(editor: &mut Editor<MockTerminal>) {
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
+
+    let doc = editor.active_document();
+    let len = doc.buffer.len();
+    let n = 10_000usize;
+    for k in 0..n {
+        let start = k * (len / n);
+        let ann = Annotation::new(
+            crate::annotations::Kind::new("diag.warning"),
+            Anchor::range(start, (start + 12).min(len)),
+            AnnotationOwner::Lsp,
+        )
+        .with_presentation(crate::annotations::Presentation::with_face(
+            crate::annotations::FaceRef::new("diag.warning"),
+        ));
+        doc.annotations.add(ann);
+    }
+}
+
+#[cfg(feature = "treesitter")]
+fn wait_for_syntax_tree(editor: &mut Editor<MockTerminal>) {
+    use std::time::{Duration, Instant};
+
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while editor
+        .active_document()
+        .syntax
+        .as_ref()
+        .and_then(|s| s.tree.as_ref())
+        .is_none()
+    {
+        if Instant::now() >= deadline {
+            eprintln!("WARNING: background parse never landed");
+            break;
+        }
+        if let Ok(msg) = editor
+            .job_manager
+            .receiver()
+            .recv_timeout(Duration::from_millis(20))
+        {
+            editor.handle_job_message(msg);
+        }
+    }
+}
+
 #[test]
 #[ignore = "manual timing harness"]
 #[cfg(feature = "treesitter")]
 fn ttfp_open_huge_treesitter_annotation_doc() {
-    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     let src = generate_huge_rust_source();
     let dir = tempfile::tempdir().unwrap();
@@ -49,31 +95,14 @@ fn ttfp_open_huge_treesitter_annotation_doc() {
     drop(empty);
 
     let t0 = Instant::now();
-    let mut editor = Editor::with_file(MockTerminal::new(50, 180), Some(path_str.clone())).unwrap();
+    let mut editor = Editor::with_file(MockTerminal::new(50, 180), Some(&path_str)).unwrap();
     let init = t0.elapsed();
     let ttfp = editor
         .startup_first_paint
-        .map(|t| t.duration_since(t0))
-        .unwrap_or(init);
+        .map_or(init, |t| t.duration_since(t0));
 
     let t = Instant::now();
-    {
-        let doc = editor.active_document();
-        let len = doc.buffer.len();
-        let n = 10_000usize;
-        for k in 0..n {
-            let start = k * (len / n);
-            let ann = Annotation::new(
-                crate::annotations::Kind::new("diag.warning"),
-                Anchor::range(start, (start + 12).min(len)),
-                AnnotationOwner::Lsp,
-            )
-            .with_presentation(crate::annotations::Presentation::with_face(
-                crate::annotations::FaceRef::new("diag.warning"),
-            ));
-            doc.annotations.add(ann);
-        }
-    }
+    add_harness_annotations(&mut editor);
     let annotate = t.elapsed();
 
     let t = Instant::now();
@@ -124,26 +153,7 @@ fn ttfp_open_huge_treesitter_annotation_doc() {
     let full_redraw = t.elapsed();
 
     let t = Instant::now();
-    let deadline = Instant::now() + Duration::from_secs(30);
-    while editor
-        .active_document()
-        .syntax
-        .as_ref()
-        .and_then(|s| s.tree.as_ref())
-        .is_none()
-    {
-        if Instant::now() >= deadline {
-            eprintln!("WARNING: background parse never landed");
-            break;
-        }
-        if let Ok(msg) = editor
-            .job_manager
-            .receiver()
-            .recv_timeout(Duration::from_millis(20))
-        {
-            editor.handle_job_message(msg).unwrap();
-        }
-    }
+    wait_for_syntax_tree(&mut editor);
     let parse_wait = t.elapsed();
     let t = Instant::now();
     editor.update_and_render().unwrap();
@@ -212,8 +222,8 @@ fn measure_scroll(
         }
     }
     times.sort();
-    bytes.sort();
-    let avg = times.iter().sum::<std::time::Duration>() / n as u32;
+    bytes.sort_unstable();
+    let avg = times.iter().sum::<std::time::Duration>() / u32::try_from(n).unwrap_or(u32::MAX);
     eprintln!(
         "{label:<16} avg={avg:>9.2?} p95={:>9.2?} max={:>9.2?} | bytes p95={} max={} | top_changes={top_changes} scrolls={scrolls} rides={rides}",
         times[n * 95 / 100],
@@ -227,7 +237,7 @@ fn measure_scroll(
 #[ignore = "manual timing harness"]
 #[cfg(feature = "treesitter")]
 fn scroll_latency_wrapped_markdown() {
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
@@ -251,32 +261,10 @@ fn scroll_latency_wrapped_markdown() {
         src.matches('\n').count()
     );
 
-    let mut editor = Editor::with_file(
-        MockTerminal::new(50, 180),
-        Some(path.to_string_lossy().into_owned()),
-    )
-    .unwrap();
+    let mut editor =
+        Editor::with_file(MockTerminal::new(50, 180), Some(&path.to_string_lossy())).unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(30);
-    while editor
-        .active_document()
-        .syntax
-        .as_ref()
-        .and_then(|s| s.tree.as_ref())
-        .is_none()
-    {
-        if Instant::now() >= deadline {
-            eprintln!("WARNING: background parse never landed");
-            break;
-        }
-        if let Ok(msg) = editor
-            .job_manager
-            .receiver()
-            .recv_timeout(Duration::from_millis(20))
-        {
-            editor.handle_job_message(msg).unwrap();
-        }
-    }
+    wait_for_syntax_tree(&mut editor);
     editor.update_and_render().unwrap();
 
     eprintln!("--- scroll latency (soft wrap on, one j per sample) ---");

@@ -2,6 +2,8 @@
 
 use crate::document::DocumentId;
 use crate::mode::Mode;
+#[cfg(feature = "plugins")]
+use crate::plugin::lua_value::lua_int;
 
 /// Every significant editor state change produces one of these.
 /// The plugin host dispatches them to registered handlers.
@@ -122,16 +124,19 @@ pub enum EditorEvent {
 
 impl EditorEvent {
     /// Build a Lua table representing this event's payload.
+    ///
+    /// # Errors
+    /// Returns an error if the table cannot be created or a field cannot be set.
     #[cfg(feature = "plugins")]
     pub fn to_lua_table(&self, lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
         let t = lua.create_table()?;
         match self {
-            EditorEvent::BufOpen {
+            Self::BufOpen {
                 buf,
                 path,
                 filetype,
             } => {
-                t.set("buf", buf.get() as i64)?;
+                t.set("buf", lua_int(buf.get()))?;
                 if let Some(p) = path {
                     t.set("path", p.to_string_lossy().as_ref())?;
                 }
@@ -139,126 +144,105 @@ impl EditorEvent {
                     t.set("filetype", ft.as_str())?;
                 }
             }
-            EditorEvent::BufClose { buf } => {
-                t.set("buf", buf.get() as i64)?;
+            Self::BufClose { buf }
+            | Self::BufEnter { buf }
+            | Self::BufLeave { buf }
+            | Self::BufReload { buf }
+            | Self::TextChangedCoarse { buf } => {
+                t.set("buf", lua_int(buf.get()))?;
             }
-            EditorEvent::BufEnter { buf } => {
-                t.set("buf", buf.get() as i64)?;
-            }
-            EditorEvent::BufLeave { buf } => {
-                t.set("buf", buf.get() as i64)?;
-            }
-            EditorEvent::BufSavePre { buf, path } => {
-                t.set("buf", buf.get() as i64)?;
+            Self::BufSavePre { buf, path } | Self::BufSavePost { buf, path } => {
+                t.set("buf", lua_int(buf.get()))?;
                 t.set("path", path.to_string_lossy().as_ref())?;
             }
-            EditorEvent::BufSavePost { buf, path } => {
-                t.set("buf", buf.get() as i64)?;
-                t.set("path", path.to_string_lossy().as_ref())?;
+            Self::CursorMoved { buf, row, col } => {
+                t.set("buf", lua_int(buf.get()))?;
+                t.set("row", lua_int(*row + 1))?; // 1-indexed for Lua
+                t.set("col", lua_int(*col))?;
             }
-            EditorEvent::BufReload { buf } => {
-                t.set("buf", buf.get() as i64)?;
+            Self::CursorHold { buf, row, col } => {
+                t.set("buf", lua_int(buf.get()))?;
+                t.set("row", lua_int(*row + 1))?;
+                t.set("col", lua_int(*col))?;
             }
-            EditorEvent::TextChangedCoarse { buf } => {
-                t.set("buf", buf.get() as i64)?;
+            Self::ModeChanged { from, to } => {
+                t.set("from", format!("{from:?}").to_lowercase())?;
+                t.set("to", format!("{to:?}").to_lowercase())?;
             }
-            EditorEvent::CursorMoved { buf, row, col } => {
-                t.set("buf", buf.get() as i64)?;
-                t.set("row", *row as i64 + 1)?; // 1-indexed for Lua
-                t.set("col", *col as i64)?;
+            Self::WindowResized { rows, cols } => {
+                t.set("rows", i64::from(*rows))?;
+                t.set("cols", i64::from(*cols))?;
             }
-            EditorEvent::CursorHold { buf, row, col } => {
-                t.set("buf", buf.get() as i64)?;
-                t.set("row", *row as i64 + 1)?;
-                t.set("col", *col as i64)?;
+            Self::LspServerConnected {
+                language,
+                server_name,
             }
-            EditorEvent::ModeChanged { from, to } => {
-                t.set("from", format!("{:?}", from).to_lowercase())?;
-                t.set("to", format!("{:?}", to).to_lowercase())?;
+            | Self::LspServerReady {
+                language,
+                server_name,
             }
-            EditorEvent::WindowResized { rows, cols } => {
-                t.set("rows", *rows as i64)?;
-                t.set("cols", *cols as i64)?;
-            }
-            EditorEvent::LspServerConnected {
+            | Self::LspProgress {
                 language,
                 server_name,
             } => {
                 t.set("language", language.as_str())?;
                 t.set("server_name", server_name.as_str())?;
             }
-            EditorEvent::LspServerReady {
-                language,
-                server_name,
-            } => {
-                t.set("language", language.as_str())?;
-                t.set("server_name", server_name.as_str())?;
-            }
-            EditorEvent::LspProgress {
-                language,
-                server_name,
-            } => {
-                t.set("language", language.as_str())?;
-                t.set("server_name", server_name.as_str())?;
-            }
-            EditorEvent::LspDiagnosticsChanged {
+            Self::LspDiagnosticsChanged {
                 uri,
                 error_count,
                 warning_count,
             } => {
                 t.set("uri", uri.as_str())?;
-                t.set("error_count", *error_count as i64)?;
-                t.set("warning_count", *warning_count as i64)?;
+                t.set("error_count", lua_int(*error_count))?;
+                t.set("warning_count", lua_int(*warning_count))?;
             }
-            EditorEvent::UserEvent { name } => {
+            Self::UserEvent { name } => {
                 t.set("name", name.as_str())?;
             }
-            EditorEvent::EditorStart | EditorEvent::EditorQuit => {}
-            EditorEvent::WinEnter { win, buf } => {
-                t.set("win", *win as i64)?;
-                t.set("buf", buf.get() as i64)?;
+            Self::EditorStart | Self::EditorQuit => {}
+            Self::WinEnter { win, buf } | Self::WinLeave { win, buf } => {
+                t.set("win", lua_int(*win))?;
+                t.set("buf", lua_int(buf.get()))?;
             }
-            EditorEvent::WinLeave { win, buf } => {
-                t.set("win", *win as i64)?;
-                t.set("buf", buf.get() as i64)?;
+            Self::WinMoved { win } => {
+                t.set("win", lua_int(*win))?;
             }
-            EditorEvent::WinMoved { win } => {
-                t.set("win", *win as i64)?;
-            }
-            EditorEvent::WinSwapped { win1, win2 } => {
-                t.set("win1", *win1 as i64)?;
-                t.set("win2", *win2 as i64)?;
+            Self::WinSwapped { win1, win2 } => {
+                t.set("win1", lua_int(*win1))?;
+                t.set("win2", lua_int(*win2))?;
             }
         }
         Ok(t)
     }
 
     /// Short name used for handler lookup tables.
-    pub fn name(&self) -> &'static str {
+    #[must_use]
+    pub const fn name(&self) -> &'static str {
         match self {
-            EditorEvent::BufOpen { .. } => "BufOpen",
-            EditorEvent::BufClose { .. } => "BufClose",
-            EditorEvent::BufEnter { .. } => "BufEnter",
-            EditorEvent::BufLeave { .. } => "BufLeave",
-            EditorEvent::BufSavePre { .. } => "BufSavePre",
-            EditorEvent::BufSavePost { .. } => "BufSavePost",
-            EditorEvent::BufReload { .. } => "BufReload",
-            EditorEvent::TextChangedCoarse { .. } => "TextChangedCoarse",
-            EditorEvent::CursorMoved { .. } => "CursorMoved",
-            EditorEvent::CursorHold { .. } => "CursorHold",
-            EditorEvent::ModeChanged { .. } => "ModeChanged",
-            EditorEvent::EditorStart => "EditorStart",
-            EditorEvent::EditorQuit => "EditorQuit",
-            EditorEvent::WindowResized { .. } => "WindowResized",
-            EditorEvent::UserEvent { .. } => "UserEvent",
-            EditorEvent::WinEnter { .. } => "WinEnter",
-            EditorEvent::WinLeave { .. } => "WinLeave",
-            EditorEvent::WinMoved { .. } => "WinMoved",
-            EditorEvent::WinSwapped { .. } => "WinSwapped",
-            EditorEvent::LspServerConnected { .. } => "LspServerConnected",
-            EditorEvent::LspServerReady { .. } => "LspServerReady",
-            EditorEvent::LspProgress { .. } => "LspProgress",
-            EditorEvent::LspDiagnosticsChanged { .. } => "LspDiagnosticsChanged",
+            Self::BufOpen { .. } => "BufOpen",
+            Self::BufClose { .. } => "BufClose",
+            Self::BufEnter { .. } => "BufEnter",
+            Self::BufLeave { .. } => "BufLeave",
+            Self::BufSavePre { .. } => "BufSavePre",
+            Self::BufSavePost { .. } => "BufSavePost",
+            Self::BufReload { .. } => "BufReload",
+            Self::TextChangedCoarse { .. } => "TextChangedCoarse",
+            Self::CursorMoved { .. } => "CursorMoved",
+            Self::CursorHold { .. } => "CursorHold",
+            Self::ModeChanged { .. } => "ModeChanged",
+            Self::EditorStart => "EditorStart",
+            Self::EditorQuit => "EditorQuit",
+            Self::WindowResized { .. } => "WindowResized",
+            Self::UserEvent { .. } => "UserEvent",
+            Self::WinEnter { .. } => "WinEnter",
+            Self::WinLeave { .. } => "WinLeave",
+            Self::WinMoved { .. } => "WinMoved",
+            Self::WinSwapped { .. } => "WinSwapped",
+            Self::LspServerConnected { .. } => "LspServerConnected",
+            Self::LspServerReady { .. } => "LspServerReady",
+            Self::LspProgress { .. } => "LspProgress",
+            Self::LspDiagnosticsChanged { .. } => "LspDiagnosticsChanged",
         }
     }
 }

@@ -17,7 +17,7 @@ fn drain_jobs(editor: &mut Editor<MockTerminal>) {
             .recv_timeout(Duration::from_millis(20))
         {
             Ok(msg) => {
-                let _ = editor.handle_job_message(msg);
+                editor.handle_job_message(msg);
             }
             Err(_) => {
                 if Instant::now() >= deadline {
@@ -259,7 +259,7 @@ fn reload_on_a_buffer_list_panel_refreshes_listing() {
         .open_file(Some("doc1.txt".to_string()), false)
         .unwrap();
 
-    editor.execute_command_line("buffer".to_string());
+    editor.execute_command_line("buffer");
     let layout = editor
         .panel_layout_of(crate::editor::PanelKind::BufferList)
         .unwrap();

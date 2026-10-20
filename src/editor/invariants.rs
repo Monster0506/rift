@@ -102,7 +102,12 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn check_windows(&self, out: &mut Vec<Violation>) {
-        for (id, window) in &self.split_tree.windows {
+        let mut ids: Vec<_> = self.split_tree.windows.keys().copied().collect();
+        ids.sort_unstable();
+        for id in ids {
+            let Some(window) = self.split_tree.windows.get(&id) else {
+                continue;
+            };
             let Some(doc) = self.document_manager.get_document(window.document_id) else {
                 continue;
             };

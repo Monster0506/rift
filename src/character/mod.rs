@@ -21,13 +21,16 @@ pub enum Character {
 
 impl Character {
     /// Render the character to a formatter/output
+    ///
+    /// # Errors
+    /// Returns an error if writing to `out` fails.
     pub fn render(&self, out: &mut impl fmt::Write) -> fmt::Result {
         match self {
-            Character::Unicode(c) => write!(out, "{}", c),
-            Character::Byte(b) => write!(out, "\\x{:02X}", b),
-            Character::Tab => write!(out, "\t"),
-            Character::Newline => writeln!(out),
-            Character::Control(b) => {
+            Self::Unicode(c) => write!(out, "{c}"),
+            Self::Byte(b) => write!(out, "\\x{b:02X}"),
+            Self::Tab => write!(out, "\t"),
+            Self::Newline => writeln!(out),
+            Self::Control(b) => {
                 if *b == b'\r' {
                     write!(out, "\\n")
                 } else {
@@ -38,55 +41,55 @@ impl Character {
     }
 
     /// Get the visual width of the character at a specific column
+    #[must_use]
     pub fn render_width(&self, col: usize, tab_width: usize) -> usize {
         match self {
-            Character::Unicode(c) => UnicodeWidthChar::width(*c).unwrap_or(0),
-            Character::Byte(_) => 4, // \xNN is 4 chars
-            Character::Tab => tab_width - (col % tab_width),
-            Character::Newline => 0,
-            Character::Control(_) => 2, // ^C is 2 chars
+            Self::Unicode(c) => UnicodeWidthChar::width(*c).unwrap_or(0),
+            Self::Byte(_) => 4, // \xNN is 4 chars
+            Self::Tab => tab_width - (col % tab_width),
+            Self::Newline => 0,
+            Self::Control(_) => 2, // ^C is 2 chars
         }
     }
 
     /// Get the logical width (unit of movement)
-    pub fn logical_width(&self) -> usize {
+    #[must_use]
+    pub const fn logical_width(&self) -> usize {
         1
     }
 
     /// Get the UTF-8 byte length for serialization
-    pub fn len_utf8(&self) -> usize {
+    #[must_use]
+    pub const fn len_utf8(&self) -> usize {
         match self {
-            Character::Unicode(c) => c.len_utf8(),
-            Character::Byte(_) => 1,
-            Character::Tab => 1,
-            Character::Newline => 1,
-            Character::Control(_) => 1,
+            Self::Unicode(c) => c.len_utf8(),
+            Self::Byte(_) | Self::Tab | Self::Newline | Self::Control(_) => 1,
         }
     }
 
     /// Encode the character as UTF-8 bytes into a buffer
     pub fn encode_utf8(&self, buf: &mut Vec<u8>) {
         match self {
-            Character::Unicode(c) => {
+            Self::Unicode(c) => {
                 let mut b = [0; 4];
                 let s = c.encode_utf8(&mut b);
                 buf.extend_from_slice(s.as_bytes());
             }
-            Character::Byte(b) => buf.push(*b),
-            Character::Tab => buf.push(b'\t'),
-            Character::Newline => buf.push(b'\n'),
-            Character::Control(b) => buf.push(*b),
+            Self::Byte(b) | Self::Control(b) => buf.push(*b),
+            Self::Tab => buf.push(b'\t'),
+            Self::Newline => buf.push(b'\n'),
         }
     }
 
     /// Convert to char if possible (best effort for display/search)
-    pub fn to_char_lossy(&self) -> char {
+    #[must_use]
+    pub const fn to_char_lossy(&self) -> char {
         match self {
-            Character::Unicode(c) => *c,
-            Character::Byte(_) => '\u{FFFD}',
-            Character::Tab => '\t',
-            Character::Newline => '\n',
-            Character::Control(b) => *b as char,
+            Self::Unicode(c) => *c,
+            Self::Byte(_) => '\u{FFFD}',
+            Self::Tab => '\t',
+            Self::Newline => '\n',
+            Self::Control(b) => *b as char,
         }
     }
 }
@@ -100,10 +103,10 @@ impl Display for Character {
 impl From<char> for Character {
     fn from(c: char) -> Self {
         match c {
-            '\t' => Character::Tab,
-            '\n' => Character::Newline,
-            c if c.is_control() => Character::Control(c as u8),
-            c => Character::Unicode(c),
+            '\t' => Self::Tab,
+            '\n' => Self::Newline,
+            c if c.is_control() => Self::Control(c as u8),
+            c => Self::Unicode(c),
         }
     }
 }
@@ -111,9 +114,9 @@ impl From<char> for Character {
 impl From<u8> for Character {
     fn from(b: u8) -> Self {
         if b.is_ascii() {
-            Character::from(b as char)
+            Self::from(b as char)
         } else {
-            Character::Byte(b)
+            Self::Byte(b)
         }
     }
 }
