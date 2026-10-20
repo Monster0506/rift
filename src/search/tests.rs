@@ -71,6 +71,17 @@ impl BufferView for MockBuffer {
     }
 }
 
+#[test]
+fn find_byte_c1_control() {
+    let buffer = MockBuffer::new(&["a\u{85}b"]);
+    let context = BufferHaystackContext::new(&buffer);
+    let haystack = context.make_haystack();
+
+    assert_eq!(haystack.find_byte(0xC2, 0), Some(1));
+    assert_eq!(haystack.find_byte(0x85, 0), Some(2));
+    assert_eq!(haystack.find_byte(b'b', 0), Some(3));
+}
+
 // --- Tests ---
 
 #[test]

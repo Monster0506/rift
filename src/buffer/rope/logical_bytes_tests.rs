@@ -38,3 +38,10 @@ fn test_to_logical_bytes_mixed() {
     assert_eq!(s, "^A");
     assert_ne!(bytes, s.as_bytes());
 }
+
+#[test]
+fn test_to_logical_bytes_c1_control() {
+    let pt = create_table("a\u{85}b\n");
+    assert_eq!(pt.to_logical_bytes(), "a\u{85}b\n".as_bytes());
+    assert_eq!(pt.byte_len(), 5);
+}

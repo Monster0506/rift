@@ -1,5 +1,5 @@
 use crate::buffer::api::BufferView;
-use crate::character::Character;
+use crate::character::{Character, C1_CONTROL_MIN};
 use monster_regex::{Haystack, HaystackCursor};
 
 /// Context that holds the necessary indices for the haystack.
@@ -347,9 +347,9 @@ impl<'a, B: BufferView + ?Sized> Haystack for BufferHaystack<'a, B> {
 
                 if current_byte >= offset_in_line {
                     match c {
-                        Character::Unicode(ch) => {
+                        Character::Unicode(_) | Character::Control(C1_CONTROL_MIN..=u8::MAX) => {
                             let mut buf = [0u8; 4];
-                            let s = ch.encode_utf8(&mut buf);
+                            let s = c.to_char_lossy().encode_utf8(&mut buf);
                             if let Some(idx) = s.as_bytes().iter().position(|&b| b == byte) {
                                 let offset_from_line_start = self.line_byte_starts[line_idx];
                                 return Some(offset_from_line_start + current_byte + idx);

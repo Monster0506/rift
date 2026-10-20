@@ -40,6 +40,17 @@ fn test_encode_utf8_special() {
 }
 
 #[test]
+fn c1_control_encodes_as_utf8() {
+    let c = Character::from('\u{85}');
+    assert_eq!(c, Character::Control(0x85));
+    assert_eq!(c.len_utf8(), 2);
+
+    let mut buf = Vec::new();
+    c.encode_utf8(&mut buf);
+    assert_eq!(buf, "\u{85}".as_bytes());
+}
+
+#[test]
 fn wide_char_render_width() {
     assert_eq!(Character::Unicode('中').render_width(0, 4), 2);
     assert_eq!(Character::Unicode('🦀').render_width(0, 4), 2);

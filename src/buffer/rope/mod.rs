@@ -1,7 +1,7 @@
 //! Piece table backed by a Rope (AVL tree) for O(log N) insertion, deletion,
 //! and line indexing, with immutable Original and append-only Add buffers.
 
-use crate::character::Character;
+use crate::character::{Character, C1_CONTROL_MIN};
 use std::cmp::max;
 use std::sync::Arc;
 
@@ -19,6 +19,7 @@ fn utf8_len(c: Character) -> u32 {
                 + u32::from(v >= UTF8_THREE_BYTE_MIN)
                 + u32::from(v >= UTF8_FOUR_BYTE_MIN)
         }
+        Character::Control(b) if b >= C1_CONTROL_MIN => 2,
         Character::Byte(_) | Character::Tab | Character::Newline | Character::Control(_) => 1,
     }
 }

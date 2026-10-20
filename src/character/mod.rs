@@ -1,6 +1,9 @@
 use std::fmt::{self, Display, Formatter};
 use unicode_width::UnicodeWidthChar;
 
+/// First C1 control code point; encodes as two UTF-8 bytes.
+pub const C1_CONTROL_MIN: u8 = 0x80;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Character {
     /// A Unicode scalar value
@@ -63,6 +66,7 @@ impl Character {
     pub const fn len_utf8(&self) -> usize {
         match self {
             Self::Unicode(c) => c.len_utf8(),
+            Self::Control(b) if *b >= C1_CONTROL_MIN => 2,
             Self::Byte(_) | Self::Tab | Self::Newline | Self::Control(_) => 1,
         }
     }
@@ -73,6 +77,11 @@ impl Character {
             Self::Unicode(c) => {
                 let mut b = [0; 4];
                 let s = c.encode_utf8(&mut b);
+                buf.extend_from_slice(s.as_bytes());
+            }
+            Self::Control(b) if *b >= C1_CONTROL_MIN => {
+                let mut utf8 = [0; 4];
+                let s = char::from(*b).encode_utf8(&mut utf8);
                 buf.extend_from_slice(s.as_bytes());
             }
             Self::Byte(b) | Self::Control(b) => buf.push(*b),
