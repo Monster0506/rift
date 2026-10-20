@@ -121,6 +121,26 @@ fn bracketed_paste_in_insert_mode_renders_the_full_text_without_a_second_render(
 }
 
 #[test]
+fn paste_normalizes_crlf_and_lone_cr_in_insert_mode() {
+    use crate::action::{Action, EditorAction};
+    let mut editor = create_editor();
+    editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
+
+    editor.handle_paste("a\r\nb\rc").unwrap();
+
+    assert_eq!(editor.active_document().buffer.to_string(), "a\nb\nc");
+}
+
+#[test]
+fn paste_normalizes_crlf_in_normal_mode() {
+    let mut editor = create_editor();
+
+    editor.handle_paste("a\r\nb").unwrap();
+
+    assert_eq!(editor.active_document().buffer.to_string(), "a\nb");
+}
+
+#[test]
 fn bracketed_paste_near_soft_wrap_boundary_renders_the_full_text() {
     use crate::action::{Action, EditorAction};
     let mut editor = create_editor_sized(24, 20);
