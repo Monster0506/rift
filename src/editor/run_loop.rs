@@ -186,6 +186,7 @@ impl<T: TerminalBackend> Editor<T> {
             || self.handle_terminal_insert_key(key_press)?
             || self.feed_pending_grammar(key_press)?
             || self.start_text_object_grammar(key_press)?
+            || self.feed_surround_line(key_press)?
             || self.accumulate_count_digit(key_press)?;
         if consumed {
             return Ok(true);
@@ -309,6 +310,27 @@ impl<T: TerminalBackend> Editor<T> {
         self.pending_grammar = Some(pending_grammar::PendingGrammar::TextObject(
             text_object_input::PendingTextObject::new(modifier),
         ));
+        self.update_state_and_render(
+            key_press,
+            crate::key_handler::KeyAction::Continue,
+            crate::command::Command::Noop,
+        )?;
+        Ok(true)
+    }
+
+    fn feed_surround_line(&mut self, key_press: Key) -> Result<bool, RiftError> {
+        let is_surround_add = matches!(
+            self.pending_operator,
+            Some(super::PendingOperator::SurroundAdd(_))
+        );
+        let is_second_g = self.current_mode == Mode::OperatorPending
+            && self.pending_keys.is_empty()
+            && key_press.is(Key::char('g'));
+        if !is_surround_add || !is_second_g {
+            return Ok(false);
+        }
+
+        self.handle_action(&Action::Editor(EditorAction::SurroundGiveLine));
         self.update_state_and_render(
             key_press,
             crate::key_handler::KeyAction::Continue,

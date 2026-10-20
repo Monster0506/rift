@@ -426,8 +426,7 @@ pub enum EditorAction {
     PrevInteractiveAnnotation,
     /// Begin surround grammar (sd/sc/sg) as a top-level Normal-mode leader.
     SurroundStart,
-    /// `g` pressed under `OperatorPending` while an `sg` add-surround is in
-    /// progress: `sgg<ch>` doubling shorthand for "surround the current line".
+    /// Second `g` of `sgg` while an `sg` add-surround is in progress
     SurroundGiveLine,
     /// `v`: enter/resume charwise Visual selection.
     EnterVisualChar,

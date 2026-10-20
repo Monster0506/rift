@@ -791,11 +791,6 @@ fn register_operator_defaults(keymap: &mut KeyMap) {
         Action::Editor(EditorAction::SurroundStart),
     );
     keymap.register(
-        KeyContext::OperatorPending,
-        Key::char('g'),
-        Action::Editor(EditorAction::SurroundGiveLine),
-    );
-    keymap.register(
         KeyContext::Normal,
         Key::char('v'),
         Action::Editor(EditorAction::EnterVisualChar),

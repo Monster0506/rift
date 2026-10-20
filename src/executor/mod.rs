@@ -69,7 +69,13 @@ pub fn compute_motion_range(
 
     let is_linewise = matches!(
         motion,
-        Motion::Up | Motion::Down | Motion::PageUp | Motion::PageDown | Motion::ToLine(_)
+        Motion::Up
+            | Motion::Down
+            | Motion::PageUp
+            | Motion::PageDown
+            | Motion::ToLine(_)
+            | Motion::StartOfFile
+            | Motion::EndOfFile
     );
     let is_inclusive = matches!(
         motion,

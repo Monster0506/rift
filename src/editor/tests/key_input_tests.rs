@@ -221,3 +221,56 @@ fn shift_arrow_moves_like_the_arrow() {
 
     assert_eq!(editor.active_document().buffer.cursor(), 1);
 }
+
+fn keys(seq: &str) -> Vec<Key> {
+    crate::key::parse_key_sequence(seq).unwrap()
+}
+
+#[test]
+fn dgg_deletes_to_start_of_file() {
+    let mut editor = editor_with_text("one\ntwo\nthree");
+
+    press(&mut editor, &keys("jdgg"));
+
+    assert_eq!(buffer_text(&mut editor), "three");
+    assert_eq!(editor.current_mode, Mode::Normal);
+}
+
+#[test]
+fn cgg_changes_to_start_of_file() {
+    let mut editor = editor_with_text("one\ntwo\nthree");
+
+    press(&mut editor, &keys("jcgg"));
+
+    assert_eq!(editor.current_mode, Mode::Insert);
+    assert!(buffer_text(&mut editor).ends_with("three"));
+    assert!(!buffer_text(&mut editor).contains("two"));
+}
+
+#[test]
+fn ygg_yanks_to_start_of_file() {
+    let mut editor = editor_with_text("one\ntwo\nthree");
+
+    press(&mut editor, &keys("jyggGp"));
+
+    assert_eq!(buffer_text(&mut editor), "one\ntwo\nthree\none\ntwo");
+    assert_eq!(editor.current_mode, Mode::Normal);
+}
+
+#[test]
+fn sgg_surrounds_current_line() {
+    let mut editor = editor_with_text("one\ntwo\nthree");
+
+    press(&mut editor, &keys("jsgg\""));
+
+    assert_eq!(buffer_text(&mut editor), "one\n\"two\"\nthree");
+}
+
+#[test]
+fn dg_waits_for_second_g() {
+    let mut editor = editor_with_text("one\ntwo\nthree");
+
+    press(&mut editor, &keys("jdg"));
+
+    assert_eq!(editor.current_mode, Mode::OperatorPending);
+}
