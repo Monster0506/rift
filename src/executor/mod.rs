@@ -86,7 +86,9 @@ pub fn compute_motion_range(
 
     let count = count.min(MAX_MOTION_REPEAT);
 
-    for _ in 0..count {
+    for i in 0..count {
+        let iter_start = doc.buffer.cursor();
+
         motion.apply(
             &mut doc.buffer,
             None,
@@ -94,6 +96,10 @@ pub fn compute_motion_range(
             viewport_height,
             last_search_query,
         );
+
+        if i + 1 == count && matches!(motion, Motion::NextWord | Motion::NextBigWord) {
+            clamp_to_line_end(&mut doc.buffer, iter_start);
+        }
     }
 
     let new_cursor = doc.buffer.cursor();
@@ -112,8 +118,20 @@ pub fn compute_motion_range(
     }
 }
 
-/// Converts a resolved `MotionRange` into a half-open `(start, end)` char offset pair, shared by
-/// `Delete`/`Change`/`AddSurround`. `consume_trailing_newline` controls whether the Linewise end includes the line terminator.
+fn clamp_to_line_end(buf: &mut crate::buffer::TextBuffer, from: usize) {
+    let start_line = buf.line_index.get_line_at(from);
+    if buf.line_index.get_line_at(buf.cursor()) <= start_line {
+        return;
+    }
+
+    let Some(end) = buf.line_index.get_end(start_line, buf.len()) else {
+        return;
+    };
+    if from < end {
+        let _ = buf.set_cursor(end);
+    }
+}
+
 pub(crate) fn range_to_offsets(
     range: &crate::wrap::MotionRange,
     doc: &Document,

@@ -506,3 +506,14 @@ mod treesitter_tests {
         assert_eq!(src.get(r.0..=r.1), Some("<div><p>hello</p></div>"));
     }
 }
+
+#[test]
+fn inner_word_on_trailing_whitespace_stops_at_eol() {
+    // "foo  \n  bar": trailing spaces are [3,4], indent is [6,7].
+    for kind in [ObjectKind::Word, ObjectKind::BigWord] {
+        assert_eq!(res(inner(kind), "foo  \n  bar", 3), Some((3, 4, true)));
+        assert_eq!(res(inner(kind), "foo  \n  bar", 4), Some((3, 4, true)));
+        assert_eq!(res(inner(kind), "foo  \n  bar", 6), Some((6, 7, true)));
+        assert_eq!(res(inner(kind), "foo  \n  bar", 7), Some((6, 7, true)));
+    }
+}

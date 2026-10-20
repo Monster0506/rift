@@ -611,3 +611,112 @@ fn test_execute_delete_5_lines_up_cursor_mid_line() {
     assert_eq!(remaining_lines[2], "line 8 with some extra text");
     assert_eq!(remaining_lines[3], "line 9 with some extra text");
 }
+
+#[test]
+fn bug_dw_last_word_of_line_joins_lines() {
+    let mut doc = create_doc();
+    doc.buffer.insert_str("foo bar\nbaz").unwrap();
+    doc.buffer.set_cursor(4).unwrap();
+
+    execute_command(
+        Command::Delete(Motion::NextWord, 1),
+        &mut doc,
+        false,
+        8,
+        24,
+        None,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(doc.buffer.to_string(), "foo \nbaz");
+}
+
+#[test]
+fn d2w_across_lines_clamps_last_word_only() {
+    let mut doc = create_doc();
+    doc.buffer.insert_str("foo\nbar baz\nqux").unwrap();
+    doc.buffer.set_cursor(0).unwrap();
+
+    execute_command(
+        Command::Delete(Motion::NextWord, 2),
+        &mut doc,
+        false,
+        8,
+        24,
+        None,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(doc.buffer.to_string(), "baz\nqux");
+}
+
+#[test]
+fn word_delete_at_line_end_cases() {
+    // (text, cursor, motion, count, expected)
+    let cases = [
+        ("foo bar\nbaz", 4, Motion::NextBigWord, 1, "foo \nbaz"),
+        ("foo bar.\nbaz", 4, Motion::NextBigWord, 1, "foo \nbaz"),
+        ("foo bar.\nbaz", 7, Motion::NextWord, 1, "foo bar\nbaz"),
+        ("foo bar  \nbaz", 4, Motion::NextWord, 1, "foo \nbaz"),
+        ("foo   \nbar", 3, Motion::NextWord, 1, "foo\nbar"),
+        ("foo bar\n", 4, Motion::NextWord, 1, "foo \n"),
+        ("foo bar", 4, Motion::NextWord, 1, "foo "),
+        ("foo\n\nbar", 0, Motion::NextWord, 1, "\n\nbar"),
+        ("a b\nc d", 2, Motion::NextWord, 2, "a d"),
+        ("a b\nc\nd", 2, Motion::NextWord, 2, "a \nd"),
+        ("a b\nc\nd", 2, Motion::NextWord, 3, "a "),
+        ("foo\nbar", 0, Motion::NextWord, 2, ""),
+        ("foo\n\nbar", 4, Motion::NextWord, 1, "foo\nbar"),
+        ("foo\n\nbar", 4, Motion::NextBigWord, 1, "foo\nbar"),
+        ("foo bar\nbaz qux", 4, Motion::NextWord, 2, "foo qux"),
+    ];
+
+    for (text, cursor, motion, count, expected) in cases {
+        let mut doc = create_doc();
+        doc.buffer.insert_str(text).unwrap();
+        doc.buffer.set_cursor(cursor).unwrap();
+
+        execute_command(
+            Command::Delete(motion, count),
+            &mut doc,
+            false,
+            8,
+            24,
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            doc.buffer.to_string(),
+            expected,
+            "d{count}{motion:?} on {text:?} at {cursor}"
+        );
+    }
+}
+
+#[test]
+fn cw_and_yw_stop_at_line_end() {
+    let mut doc = create_doc();
+    doc.buffer.insert_str("foo bar\nbaz").unwrap();
+    doc.buffer.set_cursor(4).unwrap();
+
+    let range =
+        crate::executor::compute_motion_range(Motion::NextWord, 1, &mut doc, 24, None).unwrap();
+    let (start, end) = crate::executor::range_to_offsets(&range, &doc, false);
+    assert_eq!((start, end), (4, 7));
+
+    execute_command(
+        Command::Change(Motion::NextWord, 1),
+        &mut doc,
+        false,
+        8,
+        24,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(doc.buffer.to_string(), "foo \nbaz");
+}

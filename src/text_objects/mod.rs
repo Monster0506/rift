@@ -336,6 +336,8 @@ fn char_class_small(ch: Character) -> u8 {
     }
 }
 
+const CLASS_WHITESPACE: u8 = 1;
+
 // Returns 0 = non-whitespace, 1 = whitespace
 const fn char_class_big(ch: Character) -> u8 {
     match ch {
@@ -365,10 +367,14 @@ fn resolve_word(
     };
     let cursor_class = class_fn(ch_at);
 
+    let stops_at_eol = cursor_class == CLASS_WHITESPACE && ch_at != Character::Newline;
+    let in_run =
+        |ch: Character| class_fn(ch) == cursor_class && !(stops_at_eol && ch == Character::Newline);
+
     let mut start = cursor;
     while start > 0 {
         match buf.char_at(start - 1) {
-            Some(ch) if class_fn(ch) == cursor_class => start -= 1,
+            Some(ch) if in_run(ch) => start -= 1,
             _ => break,
         }
     }
@@ -376,7 +382,7 @@ fn resolve_word(
     let mut end = cursor;
     while end + 1 < len {
         match buf.char_at(end + 1) {
-            Some(ch) if class_fn(ch) == cursor_class => end += 1,
+            Some(ch) if in_run(ch) => end += 1,
             _ => break,
         }
     }
