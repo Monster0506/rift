@@ -470,6 +470,14 @@ impl Document {
     }
 
     /// # Errors
+    /// Propagates errors from `delete_range`, `set_cursor` and `insert_str`.
+    pub fn replace_range(&mut self, start: usize, end: usize, text: &str) -> Result<(), RiftError> {
+        self.delete_range(start, end)?;
+        self.buffer.set_cursor(start)?;
+        self.insert_str(text)
+    }
+
+    /// # Errors
     /// Returns an `Internal` error when `end` is past the end of the buffer.
     pub fn delete_range(&mut self, start: usize, end: usize) -> Result<(), RiftError> {
         use crate::buffer::api::BufferView;

@@ -477,14 +477,7 @@ fn execute_substitute(
 
             let mut changes_made = 0;
             for m in valid_matches {
-                // Delete the matched text using undo-aware method
-                if let Err(e) = document.delete_range(m.range.start, m.range.end) {
-                    state.handle_error(e);
-                    continue;
-                }
-
-                // Insert replacement text using undo-aware method
-                if let Err(e) = document.insert_str(replacement) {
+                if let Err(e) = document.replace_range(m.range.start, m.range.end, replacement) {
                     state.handle_error(e);
                     continue;
                 }

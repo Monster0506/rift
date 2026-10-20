@@ -1236,6 +1236,44 @@ fn substitute_with_nonempty_set_scopes_to_banked_regions_only() {
     assert!(document.selection_set.is_empty());
 }
 
+fn substitute_at_cursor(text: &str, cursor: usize, pattern: &str, replacement: &str) -> String {
+    let mut state = State::new();
+    let settings_registry = create_settings_registry();
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
+    document.buffer.insert_str(text).unwrap();
+    document.buffer.set_cursor(cursor).unwrap();
+
+    let command = ParsedCommand::Substitute {
+        pattern: pattern.to_string(),
+        replacement: replacement.to_string(),
+        flags: String::new(),
+        range: None,
+        bangs: 0,
+    };
+
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
+
+    assert_eq!(result, ExecutionResult::Redraw);
+    document.buffer.to_string()
+}
+
+#[test]
+fn bug_substitute_end_anchor_appends_at_cursor() {
+    assert_eq!(substitute_at_cursor("abc", 0, "$", ";"), "abc;");
+}
+
+#[test]
+fn bug_substitute_start_anchor_prepends_at_cursor() {
+    assert_eq!(substitute_at_cursor("abc", 2, "^", "> "), "> abc");
+}
+
 #[test]
 fn test_execute_undotree() {
     let mut state = State::new();
