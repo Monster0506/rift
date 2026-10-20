@@ -461,6 +461,7 @@ fn test_control_char_tail_included_when_control_introduced() {
 fn test_cell_visual_width_values() {
     assert_eq!(cell_visual_width(&Cell::new(Character::Control(1))), 2);
     assert_eq!(cell_visual_width(&Cell::new(Character::Byte(0xAB))), 4);
+    assert_eq!(cell_visual_width(&Cell::new(Character::Control(0x85))), 4);
     assert_eq!(cell_visual_width(&Cell::from_char('A')), 1);
 }
 

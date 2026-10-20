@@ -33,6 +33,7 @@ impl Character {
             Self::Byte(b) => write!(out, "\\x{b:02X}"),
             Self::Tab => write!(out, "\t"),
             Self::Newline => writeln!(out),
+            Self::Control(b) if *b >= C1_CONTROL_MIN => write!(out, "<{b:02X}>"),
             Self::Control(b) => {
                 if *b == b'\r' {
                     write!(out, "\\n")
@@ -48,7 +49,7 @@ impl Character {
     pub fn render_width(&self, col: usize, tab_width: usize) -> usize {
         match self {
             Self::Unicode(c) => UnicodeWidthChar::width(*c).unwrap_or(0),
-            Self::Byte(_) => 4, // \xNN is 4 chars
+            Self::Byte(_) | Self::Control(C1_CONTROL_MIN..=u8::MAX) => 4, // \xNN or <NN>
             Self::Tab => tab_width - (col % tab_width),
             Self::Newline => 0,
             Self::Control(_) => 2, // ^C is 2 chars

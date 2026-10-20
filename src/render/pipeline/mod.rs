@@ -1,6 +1,6 @@
 use crate::buffer::api::BufferView;
 use crate::buffer::TextBuffer;
-use crate::character::Character;
+use crate::character::{Character, C1_CONTROL_MIN};
 use crate::render::Color;
 use std::iter::Iterator;
 use unicode_width::UnicodeWidthChar;
@@ -408,8 +408,8 @@ impl<I: Iterator<Item = RenderItem>> Iterator for TabLayout<I> {
             match item.char {
                 Character::Unicode(c) if c.is_ascii() => 1,
                 Character::Unicode(c) => UnicodeWidthChar::width(c).unwrap_or(0),
-                Character::Byte(_) => 4,                  // \xNN
-                Character::Control(_) => 2,               // ^C
+                Character::Byte(_) | Character::Control(C1_CONTROL_MIN..=u8::MAX) => 4, // \xNN or <NN>
+                Character::Control(_) => 2,                                             // ^C
                 Character::Newline | Character::Tab => 0, // Tab handled above
             }
         };

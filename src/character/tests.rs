@@ -51,6 +51,16 @@ fn c1_control_encodes_as_utf8() {
 }
 
 #[test]
+fn c1_control_renders_as_hex_escape() {
+    let c = Character::Control(0x85);
+    let mut out = String::new();
+    c.render(&mut out).unwrap();
+
+    assert_eq!(out, "<85>");
+    assert_eq!(c.render_width(0, 4), out.len());
+}
+
+#[test]
 fn wide_char_render_width() {
     assert_eq!(Character::Unicode('中').render_width(0, 4), 2);
     assert_eq!(Character::Unicode('🦀').render_width(0, 4), 2);

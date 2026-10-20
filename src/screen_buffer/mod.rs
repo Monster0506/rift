@@ -1,7 +1,7 @@
 //! Double-buffered screen buffer: tracks current/previous frames and produces
 //! minimal diffs for terminal rendering; first frame and resizes force a full redraw.
 
-use crate::character::Character;
+use crate::character::{Character, C1_CONTROL_MIN};
 use crate::color::Color;
 use crate::error::RiftError;
 use crate::layer::{Cell, Rect};
@@ -31,8 +31,8 @@ pub enum StyleOp {
 
 const fn cell_visual_width(cell: &Cell) -> usize {
     match &cell.content {
+        Character::Control(C1_CONTROL_MIN..=u8::MAX) | Character::Byte(_) => 4,
         Character::Control(_) => 2,
-        Character::Byte(_) => 4,
         _ => 1,
     }
 }
