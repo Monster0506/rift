@@ -39,6 +39,7 @@ fn run_save_job(path: PathBuf, content: &str) -> bool {
         piece_table,
         path,
         crate::document::LineEnding::LF,
+        false,
         0,
     ));
     job.run(1, tx, make_signal());
@@ -82,4 +83,29 @@ fn file_load_job_decodes_multibyte_utf8() {
     assert_eq!(chars[0], Character::Unicode('a'));
     assert_eq!(chars[1], Character::Unicode('—'));
     assert_eq!(chars[2], Character::Unicode('b'));
+}
+
+#[test]
+fn file_load_then_save_job_preserves_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("rt.txt");
+    let bytes = b"\xEF\xBB\xBFa\r\nb\nc\rd";
+    std::fs::write(&path, bytes).unwrap();
+
+    let loaded = run_load_job(path.clone());
+    let (tx, rx) = mpsc::channel();
+    let job = Box::new(FileSaveJob::new(
+        crate::document::DocumentId::new(1),
+        loaded.line_index.table,
+        path.clone(),
+        loaded.line_ending,
+        loaded.has_bom,
+        0,
+    ));
+    job.run(1, tx, make_signal());
+    assert!(rx
+        .into_iter()
+        .any(|m| matches!(m, JobMessage::Finished(_, true))));
+
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
 }

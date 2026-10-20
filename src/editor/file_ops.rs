@@ -287,6 +287,7 @@ impl<T: TerminalBackend> Editor<T> {
                     document.buffer.line_index.table.clone(),
                     path,
                     document.options.line_ending,
+                    document.options.has_bom,
                     document.history.current_seq(),
                 );
                 self.job_manager.spawn(job);
@@ -320,6 +321,7 @@ impl<T: TerminalBackend> Editor<T> {
                         doc.path().unwrap().to_path_buf(),
                         doc.buffer.line_index.table.clone(),
                         doc.options.line_ending,
+                        doc.options.has_bom,
                         doc.history.current_seq(),
                     ))
                 } else if let Some(path) = &self.state.file_path {
@@ -328,6 +330,7 @@ impl<T: TerminalBackend> Editor<T> {
                         std::path::PathBuf::from(path),
                         doc.buffer.line_index.table.clone(),
                         doc.options.line_ending,
+                        doc.options.has_bom,
                         doc.history.current_seq(),
                     ))
                 } else {
@@ -335,12 +338,13 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             };
             match res {
-                Ok((doc_id, path, table, line_ending, saved_seq)) => {
+                Ok((doc_id, path, table, line_ending, has_bom, saved_seq)) => {
                     let job = crate::job_manager::jobs::file_operations::FileSaveJob::new(
                         doc_id,
                         table,
                         path.clone(),
                         line_ending,
+                        has_bom,
                         saved_seq,
                     );
                     let id = self.job_manager.spawn(job);

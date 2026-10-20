@@ -19,29 +19,57 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 
-pub fn decode_file_bytes(
-    bytes: &[u8],
-) -> (Vec<crate::character::Character>, LineEnding, Vec<usize>) {
+pub(crate) const UTF8_BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
+
+pub struct DecodedFile {
+    pub chars: Vec<crate::character::Character>,
+    pub line_ending: LineEnding,
+    pub starts: Vec<usize>,
+    pub has_bom: bool,
+}
+
+fn detect_line_ending(bytes: &[u8]) -> LineEnding {
+    let mut newlines = 0usize;
+    let mut prev = 0u8;
+    for &b in bytes {
+        if b == b'\n' {
+            if prev != b'\r' {
+                return LineEnding::LF;
+            }
+            newlines += 1;
+        }
+        prev = b;
+    }
+
+    if newlines > 0 {
+        LineEnding::CRLF
+    } else {
+        LineEnding::LF
+    }
+}
+
+pub fn decode_file_bytes(bytes: &[u8]) -> DecodedFile {
     use crate::character::Character;
-    let mut line_ending = LineEnding::LF;
-    let mut chars = Vec::with_capacity(bytes.len());
-    let mut starts = vec![0usize];
-    let mut remaining = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        &bytes[3..]
+    let has_bom = bytes.starts_with(&UTF8_BOM);
+    let mut remaining = if has_bom {
+        &bytes[UTF8_BOM.len()..]
     } else {
         bytes
     };
+    let line_ending = detect_line_ending(remaining);
+    let mut chars = Vec::with_capacity(bytes.len());
+    let mut starts = vec![0usize];
     while !remaining.is_empty() {
         match std::str::from_utf8(remaining) {
             Ok(s) => {
-                push_normalized(s, &mut chars, &mut starts, &mut line_ending);
+                push_decoded(s, &mut chars, &mut starts, line_ending);
                 break;
             }
             Err(e) => {
                 let valid_up_to = e.valid_up_to();
                 // SAFETY: `valid_up_to` is the length of the prefix `from_utf8` validated.
                 let valid = unsafe { std::str::from_utf8_unchecked(&remaining[..valid_up_to]) };
-                push_normalized(valid, &mut chars, &mut starts, &mut line_ending);
+                push_decoded(valid, &mut chars, &mut starts, line_ending);
                 let error_len = e.error_len().unwrap_or(1);
                 for &b in &remaining[valid_up_to..valid_up_to + error_len] {
                     chars.push(Character::Byte(b));
@@ -50,31 +78,34 @@ pub fn decode_file_bytes(
             }
         }
     }
-    (chars, line_ending, starts)
+    DecodedFile {
+        chars,
+        line_ending,
+        starts,
+        has_bom,
+    }
 }
 
-fn push_normalized(
+fn push_decoded(
     s: &str,
     out: &mut Vec<crate::character::Character>,
     starts: &mut Vec<usize>,
-    line_ending: &mut LineEnding,
+    line_ending: LineEnding,
 ) {
     use crate::character::Character;
     let mut it = s.chars().peekable();
     while let Some(c) = it.next() {
-        if c == '\r' {
-            if it.peek() == Some(&'\n') {
-                *line_ending = LineEnding::CRLF;
-                it.next();
-                out.push(Character::Newline);
-                starts.push(out.len());
-            }
-        } else if c == '\n' {
+        if c == '\n' {
             out.push(Character::Newline);
             starts.push(out.len());
-        } else {
-            out.push(Character::from(c));
+            continue;
         }
+
+        let is_crlf = line_ending == LineEnding::CRLF && c == '\r' && it.peek() == Some(&'\n');
+        if is_crlf {
+            continue;
+        }
+        out.push(Character::from(c));
     }
 }
 
@@ -133,11 +164,11 @@ impl Document {
         path: Option<&Path>,
         bytes: Vec<u8>,
     ) -> Result<Self, RiftError> {
-        let (chars, line_ending, starts) = decode_file_bytes(&bytes);
+        let decoded = decode_file_bytes(&bytes);
         drop(bytes);
-        let table = crate::buffer::rope::PieceTable::new(chars);
+        let table = crate::buffer::rope::PieceTable::new(decoded.chars);
         let line_index =
-            crate::buffer::line_index::LineIndex::from_table_with_starts(table, starts);
+            crate::buffer::line_index::LineIndex::from_table_with_starts(table, decoded.starts);
 
         let mut buffer = TextBuffer::new(4096).map_err(io::Error::other)?;
         buffer.line_index = line_index;
@@ -145,7 +176,8 @@ impl Document {
 
         Ok(Self {
             options: DocumentOptions {
-                line_ending,
+                line_ending: decoded.line_ending,
+                has_bom: decoded.has_bom,
                 ..DocumentOptions::default()
             },
             file_path: path.map(Self::normalize_path),

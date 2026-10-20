@@ -1103,7 +1103,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
 
-        doc.apply_loaded_content(res.line_index, res.line_ending);
+        doc.apply_loaded_content(res.line_index, res.line_ending, res.has_bom);
         if res.is_reload {
             doc.mark_lsp_full_sync();
         }

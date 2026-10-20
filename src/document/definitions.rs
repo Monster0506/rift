@@ -33,6 +33,9 @@ pub struct DocumentOptions {
     /// Line ending character(s) to use for this document
     pub line_ending: LineEnding,
 
+    /// Whether the file started with a UTF-8 BOM, written back on save
+    pub has_bom: bool,
+
     /// Tab width in spaces (for display and expansion)
     pub tab_width: usize,
     /// Whether to expand tabs to spaces when inserting
@@ -47,6 +50,7 @@ impl Default for DocumentOptions {
     fn default() -> Self {
         Self {
             line_ending: LineEnding::LF,
+            has_bom: false,
             tab_width: 4,
             expand_tabs: true,
             show_line_numbers: true,

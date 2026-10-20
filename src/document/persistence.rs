@@ -134,6 +134,7 @@ impl Document {
         &mut self,
         line_index: crate::buffer::line_index::LineIndex,
         line_ending: LineEnding,
+        has_bom: bool,
     ) {
         use crate::buffer::TextBuffer;
         let mut buffer =
@@ -143,6 +144,7 @@ impl Document {
 
         self.buffer = buffer;
         self.options.line_ending = line_ending;
+        self.options.has_bom = has_bom;
         self.history = crate::history::UndoTree::new();
         self.current_transaction = None;
         self.syntax = None;
@@ -157,6 +159,9 @@ impl Document {
     /// implementation is registered for this target.
     fn write_to_file(&self, path: &Path) -> Result<(), RiftError> {
         let mut content = Vec::new();
+        if self.options.has_bom {
+            content.extend_from_slice(&super::factories::UTF8_BOM);
+        }
         let line_ending_bytes = self.options.line_ending.as_bytes();
         let total_lines = self.buffer.get_total_lines();
         for i in 0..total_lines {

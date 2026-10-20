@@ -175,15 +175,15 @@ fn test_resolve_display_map_cached_detects_placeholder_to_loaded_swap() {
     );
 
     let loaded_text = "line one\nline two\nline three\n";
-    let (chars, line_ending, starts) = crate::document::decode_file_bytes(loaded_text.as_bytes());
-    let piece_table = crate::buffer::rope::PieceTable::new(chars);
+    let decoded = crate::document::decode_file_bytes(loaded_text.as_bytes());
+    let piece_table = crate::buffer::rope::PieceTable::new(decoded.chars);
     let line_index =
-        crate::buffer::line_index::LineIndex::from_table_with_starts(piece_table, starts);
+        crate::buffer::line_index::LineIndex::from_table_with_starts(piece_table, decoded.starts);
     editor
         .document_manager
         .get_document_mut(doc_id)
         .unwrap()
-        .apply_loaded_content(line_index, line_ending);
+        .apply_loaded_content(line_index, decoded.line_ending, decoded.has_bom);
 
     let dm = editor
         .resolve_display_map_cached(doc_id, 80, 0, 100)
@@ -210,15 +210,15 @@ fn test_opening_a_file_shows_its_content_immediately_not_after_a_later_edit() {
     editor.force_full_redraw().unwrap();
 
     let loaded_text = "line one\nline two\nline three\n";
-    let (chars, line_ending, starts) = crate::document::decode_file_bytes(loaded_text.as_bytes());
-    let piece_table = crate::buffer::rope::PieceTable::new(chars);
+    let decoded = crate::document::decode_file_bytes(loaded_text.as_bytes());
+    let piece_table = crate::buffer::rope::PieceTable::new(decoded.chars);
     let line_index =
-        crate::buffer::line_index::LineIndex::from_table_with_starts(piece_table, starts);
+        crate::buffer::line_index::LineIndex::from_table_with_starts(piece_table, decoded.starts);
     editor
         .document_manager
         .get_document_mut(doc_id)
         .unwrap()
-        .apply_loaded_content(line_index, line_ending);
+        .apply_loaded_content(line_index, decoded.line_ending, decoded.has_bom);
     editor.force_full_redraw().unwrap();
 
     let screen = render_ascii(&mut editor);

@@ -25,6 +25,7 @@ pub struct FileSaveJob {
     pub piece_table: PieceTable,
     pub path: PathBuf,
     pub line_ending: LineEnding,
+    pub has_bom: bool,
     pub saved_seq: EditSeq,
     pub token: Option<crate::job_manager::AsyncToken>,
 }
@@ -36,6 +37,7 @@ impl FileSaveJob {
         piece_table: PieceTable,
         path: PathBuf,
         line_ending: LineEnding,
+        has_bom: bool,
         saved_seq: EditSeq,
     ) -> Self {
         Self {
@@ -43,6 +45,7 @@ impl FileSaveJob {
             piece_table,
             path,
             line_ending,
+            has_bom,
             saved_seq,
             token: None,
         }
@@ -87,6 +90,9 @@ impl Job for FileSaveJob {
             let line_ending_bytes = self.line_ending.as_bytes();
 
             let mut writer = std::io::BufWriter::new(file);
+            if self.has_bom {
+                writer.write_all(&crate::document::UTF8_BOM)?;
+            }
 
             for chunk in self.piece_table.chunks() {
                 if signal.is_cancelled() {
@@ -166,6 +172,7 @@ pub struct FileLoadResult {
     pub document_id: DocumentId,
     pub line_index: LineIndex,
     pub line_ending: LineEnding,
+    pub has_bom: bool,
     pub path: PathBuf,
     pub is_reload: bool,
     pub content_hash: crate::history::persist::Sha256Digest,
@@ -237,16 +244,16 @@ impl Job for FileLoadJob {
                 ));
             }
 
-            let (normalized_chars, line_ending, starts) =
-                crate::document::decode_file_bytes(&bytes);
-            let piece_table = PieceTable::new(normalized_chars);
+            let decoded = crate::document::decode_file_bytes(&bytes);
+            let piece_table = PieceTable::new(decoded.chars);
             let content_hash = crate::history::persist::sha256(&piece_table.to_logical_bytes());
-            let line_index = LineIndex::from_table_with_starts(piece_table, starts);
+            let line_index = LineIndex::from_table_with_starts(piece_table, decoded.starts);
 
             Ok(FileLoadResult {
                 document_id: self.document_id,
                 line_index,
-                line_ending,
+                line_ending: decoded.line_ending,
+                has_bom: decoded.has_bom,
                 path: self.path.clone(),
                 is_reload: self.is_reload,
                 content_hash,

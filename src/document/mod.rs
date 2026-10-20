@@ -20,7 +20,7 @@ use crate::history::{EditTransaction, UndoTree};
 use crate::syntax::Syntax;
 use crate::term::Terminal;
 use definitions::DocumentOptions;
-pub(crate) use factories::decode_file_bytes;
+pub(crate) use factories::{decode_file_bytes, UTF8_BOM};
 pub use kind::BufferKind;
 pub use manager::{
     CreationReservation, DocumentDraft, DocumentManager, DraftCommitTarget, PreparedRemoval,

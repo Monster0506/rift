@@ -21,7 +21,7 @@ I use this daily and primarily.
 - Ranger-style file explorer (open, rename, delete, copy, bulk ops, hidden-file toggle)
 - Clipboard ring buffer with system clipboard integration
 - Fast search (sub-15ms on a 1MB buffer) with smartcase and background index warming
-- Full Unicode support: multi-width rendering, correct decoding, BOM stripping
+- Full Unicode support: multi-width rendering, correct decoding, lossless BOM and line-ending round-trip
 - Command-line completion for commands, settings, and file paths
 - Command and search history with navigation
 - Everything-is-a-buffer architecture (explorer, undotree, terminal all buffers)
