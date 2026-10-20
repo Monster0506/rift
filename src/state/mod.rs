@@ -480,19 +480,29 @@ impl State {
         self.command_line_cursor = 0;
     }
 
+    fn command_line_word_target(&self, motion: fn(&str, usize) -> usize) -> usize {
+        let line = &self.command_line;
+        let cursor = self.command_line_cursor.min(line.len());
+        let char_cursor = line.get(..cursor).map_or(0, |s| s.chars().count());
+        let target = motion(line, char_cursor);
+
+        line.char_indices()
+            .nth(target)
+            .map_or(line.len(), |(byte, _)| byte)
+    }
+
     pub fn move_command_line_word_left(&mut self) {
         self.command_line_cursor =
-            crate::movement::boundaries::prev_word(&self.command_line, self.command_line_cursor);
+            self.command_line_word_target(crate::movement::boundaries::prev_word);
     }
 
     pub fn move_command_line_word_right(&mut self) {
         self.command_line_cursor =
-            crate::movement::boundaries::next_word(&self.command_line, self.command_line_cursor);
+            self.command_line_word_target(crate::movement::boundaries::next_word);
     }
 
     pub fn delete_word_back_command_line(&mut self) {
-        let start =
-            crate::movement::boundaries::prev_word(&self.command_line, self.command_line_cursor);
+        let start = self.command_line_word_target(crate::movement::boundaries::prev_word);
         if start < self.command_line_cursor {
             self.command_line
                 .replace_range(start..self.command_line_cursor, "");

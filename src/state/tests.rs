@@ -319,6 +319,32 @@ fn test_command_line_cursor_tracks_multibyte_char_byte_length() {
 }
 
 #[test]
+fn test_command_line_word_motions_with_multibyte_chars() {
+    let mut state = State::new();
+    for ch in "é foo".chars() {
+        state.append_to_command_line(ch);
+    }
+    assert_eq!(state.command_line_cursor, 6);
+
+    state.move_command_line_word_left();
+    assert_eq!(state.command_line_cursor, 3);
+    state.move_command_line_word_left();
+    assert_eq!(state.command_line_cursor, 0);
+
+    state.move_command_line_word_right();
+    assert_eq!(state.command_line_cursor, 3);
+    state.move_command_line_word_right();
+    assert_eq!(state.command_line_cursor, 6);
+
+    state.delete_word_back_command_line();
+    assert_eq!(state.command_line, "é ");
+    assert_eq!(state.command_line_cursor, 3);
+    state.delete_word_back_command_line();
+    assert_eq!(state.command_line, "");
+    assert_eq!(state.command_line_cursor, 0);
+}
+
+#[test]
 fn test_gutter_width_follows_the_digit_count() {
     let mut state = State::new();
     assert_eq!(state.gutter_width, 3);
