@@ -148,6 +148,16 @@ fn create_file_makes_an_empty_file_and_its_parents() {
 }
 
 #[test]
+fn create_file_errs_and_keeps_contents_when_file_exists() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("keep.txt");
+    std::fs::write(&path, b"precious").unwrap();
+
+    assert!(backend().create_file(&path).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), b"precious");
+}
+
+#[test]
 fn rename_moves_a_file() {
     let dir = tempfile::tempdir().unwrap();
     let old = dir.path().join("old.txt");

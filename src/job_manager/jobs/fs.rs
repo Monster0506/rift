@@ -293,7 +293,11 @@ impl Job for FsCreateJob {
                     return;
                 }
             }
-            fs::File::create(&self.path).map(|_| ())
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&self.path)
+                .map(|_| ())
         };
 
         match result {

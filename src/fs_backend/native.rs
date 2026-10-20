@@ -104,7 +104,10 @@ impl FileSystem for NativeFileSystem {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).ok();
         }
-        fs::File::create(path)?;
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)?;
         Ok(())
     }
 

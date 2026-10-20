@@ -157,3 +157,16 @@ fn copy_recursive_does_not_loop_on_self_referential_symlink() {
         "self_link must be recreated as a symlink, not recursed into"
     );
 }
+
+#[test]
+fn create_job_errors_and_keeps_contents_when_file_exists() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("keep.txt");
+    std::fs::write(&path, b"precious").unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    Box::new(FsCreateJob::new(path.clone(), false)).run(0, tx, fresh_signal());
+
+    assert!(matches!(rx.try_recv(), Ok(JobMessage::Error(0, _))));
+    assert_eq!(std::fs::read(&path).unwrap(), b"precious");
+}
