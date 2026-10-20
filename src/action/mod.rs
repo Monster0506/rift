@@ -352,7 +352,7 @@ pub enum EditorAction {
     HistoryDown,
     /// Repeat last buffer mutation (dot-repeat)
     DotRepeat,
-    QuitForce,
+    QuitKey,
     OpenFile {
         path: Option<String>,
         force: bool,
