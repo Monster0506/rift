@@ -4,6 +4,9 @@ use unicode_width::UnicodeWidthChar;
 /// First C1 control code point; encodes as two UTF-8 bytes.
 pub const C1_CONTROL_MIN: u8 = 0x80;
 
+/// Bit toggled to map a control byte to its caret letter (0x01 -> 'A', 0x7F -> '?').
+const CARET_FLIP: u8 = 0x40;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Character {
     /// A Unicode scalar value
@@ -38,7 +41,7 @@ impl Character {
                 if *b == b'\r' {
                     write!(out, "\\n")
                 } else {
-                    write!(out, "^{}", (b + 64) as char)
+                    write!(out, "^{}", (b ^ CARET_FLIP) as char)
                 }
             }
         }

@@ -61,6 +61,14 @@ fn c1_control_renders_as_hex_escape() {
 }
 
 #[test]
+fn del_renders_as_caret_question() {
+    let mut out = String::new();
+    Character::from('\u{7f}').render(&mut out).unwrap();
+
+    assert_eq!(out, "^?");
+}
+
+#[test]
 fn wide_char_render_width() {
     assert_eq!(Character::Unicode('中').render_width(0, 4), 2);
     assert_eq!(Character::Unicode('🦀').render_width(0, 4), 2);
