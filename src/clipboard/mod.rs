@@ -134,6 +134,15 @@ pub fn capture_current_line(buf: &TextBuffer, count: usize) -> Vec<Character> {
     buf.chars(start..end).collect()
 }
 
+#[must_use]
+pub fn normalize_newlines(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains('\r') {
+        return std::borrow::Cow::Borrowed(text);
+    }
+
+    std::borrow::Cow::Owned(text.replace("\r\n", "\n").replace('\r', "\n"))
+}
+
 const SYSTEM_CLIPBOARD_REFRESH_INTERVAL: std::time::Duration =
     std::time::Duration::from_millis(250);
 

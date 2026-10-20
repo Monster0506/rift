@@ -613,6 +613,9 @@ impl<T: TerminalBackend> Editor<T> {
             return self.update_and_render();
         }
 
+        let text = crate::clipboard::normalize_newlines(text);
+        let text = text.as_ref();
+
         match self.current_mode {
             Mode::Insert | Mode::Replace => {
                 self.insert_pasted_text_at_cursor(text);

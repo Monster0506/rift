@@ -871,6 +871,7 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::PutSystemClipboard { before } => {
                 let text = crate::clipboard::read_system_clipboard_text();
                 if let Some(text) = text {
+                    let text = crate::clipboard::normalize_newlines(&text);
                     let text: Vec<crate::character::Character> = text
                         .chars()
                         .map(crate::character::Character::from)

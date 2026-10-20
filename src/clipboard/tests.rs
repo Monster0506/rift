@@ -35,6 +35,19 @@ fn capture_text_preserves_byte_and_control_chars() {
 }
 
 #[test]
+fn normalize_newlines_maps_crlf_and_lone_cr_to_lf() {
+    assert_eq!(normalize_newlines("a\r\nb\rc\n\r\nd"), "a\nb\nc\n\nd");
+}
+
+#[test]
+fn normalize_newlines_borrows_when_no_cr() {
+    assert!(matches!(
+        normalize_newlines("a\nb"),
+        std::borrow::Cow::Borrowed("a\nb")
+    ));
+}
+
+#[test]
 fn read_system_clipboard_text_never_blocks_past_timeout() {
     // Can't simulate a truly hung owner here, but a non-hung read should
     // return well within the bounded read deadline.
