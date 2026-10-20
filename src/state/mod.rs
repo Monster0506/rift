@@ -67,6 +67,7 @@ impl Default for StatusLineSettings {
 pub struct EditingSettings {
     pub expand_tabs: bool,
     pub ghost_cut: bool,
+    pub quit_on_q: bool,
 }
 
 impl Default for EditingSettings {
@@ -74,6 +75,7 @@ impl Default for EditingSettings {
         Self {
             expand_tabs: true,
             ghost_cut: true,
+            quit_on_q: true,
         }
     }
 }

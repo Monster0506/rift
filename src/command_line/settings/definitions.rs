@@ -411,6 +411,18 @@ fn set_ghost_cut(settings: &mut UserSettings, value: &SettingValue) -> Result<()
     }
 }
 
+fn set_quit_on_q(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
+    match value {
+        &SettingValue::Bool(b) => {
+            settings.editing.quit_on_q = b;
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError(
+            "Expected boolean".to_string(),
+        )),
+    }
+}
+
 fn set_persistent_undo(
     settings: &mut UserSettings,
     value: &SettingValue,
@@ -683,6 +695,15 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Delete d-cuts immediately but grey them out in place until something resolves the paint, instead of removing them from the screen right away",
         ty: SettingType::Boolean,
         set: set_ghost_cut,
+        get: None,
+        needs_full_redraw: false,
+    },
+    SettingDescriptor {
+        name: "quitonq",
+        aliases: &["qq"],
+        description: "Make q in normal mode quit the editor immediately, discarding unsaved changes. When off, q behaves like :q",
+        ty: SettingType::Boolean,
+        set: set_quit_on_q,
         get: None,
         needs_full_redraw: false,
     },

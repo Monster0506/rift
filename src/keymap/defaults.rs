@@ -260,7 +260,7 @@ fn register_normal_defaults(keymap: &mut KeyMap) {
     keymap.register(
         KeyContext::Normal,
         Key::char('q'),
-        Action::Editor(EditorAction::QuitForce),
+        Action::Editor(EditorAction::QuitKey),
     );
     keymap.register(
         KeyContext::Normal,

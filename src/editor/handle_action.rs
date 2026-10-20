@@ -701,8 +701,12 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::DotRepeat => self.execute_dot_repeat(),
-            EditorAction::QuitForce => {
-                self.should_quit = true;
+            EditorAction::QuitKey => {
+                if self.state.settings.editing.quit_on_q {
+                    self.should_quit = true;
+                } else {
+                    self.do_quit(false);
+                }
                 true
             }
             _ => self.handle_file_action(action, editor_action),

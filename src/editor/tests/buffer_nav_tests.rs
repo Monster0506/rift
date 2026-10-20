@@ -157,6 +157,42 @@ fn test_quit_dirty_last_buffer_refuses() {
 }
 
 #[test]
+fn q_key_refuses_dirty_buffer_when_quitonq_off() {
+    let mut editor = create_editor();
+    editor.execute_command_line("set noquitonq");
+    editor.active_document().insert_char('x').unwrap();
+    assert!(editor.active_document().is_dirty());
+
+    feed_keys(&mut editor, "q");
+
+    assert!(!editor.should_quit, "q must honor the dirty check");
+}
+
+#[test]
+fn q_key_quits_dirty_buffer_by_default() {
+    let mut editor = create_editor();
+    editor.active_document().insert_char('x').unwrap();
+    assert!(editor.active_document().is_dirty());
+
+    feed_keys(&mut editor, "q");
+
+    assert!(editor.should_quit);
+}
+
+#[test]
+fn q_key_closes_split_when_quitonq_off() {
+    let mut editor = create_editor();
+    editor.execute_command_line("set noquitonq");
+    do_vsplit(&mut editor);
+    assert_eq!(editor.split_tree.window_count(), 2);
+
+    feed_keys(&mut editor, "q");
+
+    assert!(!editor.should_quit);
+    assert_eq!(editor.split_tree.window_count(), 1);
+}
+
+#[test]
 fn test_handle_execution_result_quit_only_checks_current_buffer() {
     let mut editor = create_editor();
 
