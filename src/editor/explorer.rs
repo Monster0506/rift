@@ -2,8 +2,6 @@ use super::Editor;
 use super::{PanelKind, PanelLayout};
 use crate::term::TerminalBackend;
 
-/// Tracks the path and job id of the explorer preview currently in flight,
-/// so repeated cursor moves dedupe against it instead of spawning duplicates.
 #[derive(Debug, Clone)]
 pub(super) struct PendingExplorerPreview {
     pub(super) path: std::path::PathBuf,
@@ -34,9 +32,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.job_manager.spawn(job);
     }
 
-    /// Handle `<CR>` in a directory (file explorer) buffer.
     pub(super) fn handle_explorer_select(&mut self) {
-        // If we're in the explorer center pane, delegate to split-aware select.
         let is_explorer_dir = self.panel_layout.as_ref().is_some_and(|l| {
             l.kind == PanelKind::FileExplorer && self.split_tree.focused_window_id() == l.dir_win_id
         });
@@ -64,8 +60,6 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(dir_path) = doc.directory_path().cloned() else {
                 return;
             };
-            // Prefer the entry's name/is_dir from its fs.entry payload (dynamic),
-            // falling back to line-text parsing below when absent.
             let entry_info = doc.annotations.directory_entry_info_at_line(line_num);
             (doc.id, line_text, dir_path, entry_info)
         };
@@ -77,13 +71,10 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        // Route through the annotation dispatch: the fs.entry's `activate` action
-        // resolves to the OpenEntry builtin, which descends/opens from the payload.
         if entry_info.is_some() && self.activate_annotation_at_cursor() {
             return;
         }
 
-        // Fallback for lines without an fs.entry annotation (e.g. after an undo).
         let entry_name = line_text.trim_end_matches('/').to_string();
         if entry_name.is_empty() {
             return;
@@ -101,9 +92,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Handle `-` in a directory buffer: navigate to parent.
     pub(super) fn handle_explorer_parent(&mut self) {
-        // If we're in the explorer center pane, delegate to split-aware parent.
         let is_explorer_dir = self.panel_layout.as_ref().is_some_and(|l| {
             l.kind == PanelKind::FileExplorer && self.split_tree.focused_window_id() == l.dir_win_id
         });
@@ -127,11 +116,19 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Open a 2-panel file explorer centred on `dir`: [left: dir | right: preview].
-    /// # Panics
-    /// Panics if the focused window is not a leaf, which cannot happen after focusing.
+    fn abort_panel_open(
+        &mut self,
+        win_id: crate::split::window::WindowId,
+        original_doc_id: crate::document::DocumentId,
+        private_docs: &[crate::document::DocumentId],
+    ) {
+        self.split_tree.set_window_document(win_id, original_doc_id);
+        for id in private_docs {
+            let _ = self.remove_private_document(*id);
+        }
+    }
+
     pub fn open_explorer(&mut self, dir: std::path::PathBuf) {
-        // If already active, just focus the dir pane.
         if let Some(ref layout) = self.panel_layout.clone() {
             self.split_tree.set_focus(layout.dir_win_id);
             let _ = self.document_manager.switch_to_document(layout.dir_doc_id);
@@ -172,16 +169,16 @@ impl<T: TerminalBackend> Editor<T> {
         let original_doc_id = self.split_tree.focused_window().document_id;
         self.split_tree.set_window_document(dir_win_id, dir_doc_id);
 
-        let preview_win_id = self
-            .split_tree
-            .split(
-                crate::split::tree::SplitDirection::Vertical,
-                dir_win_id,
-                preview_doc_id,
-                rows,
-                cols,
-            )
-            .expect("dir_win_id is the focused window, which is always a valid leaf");
+        let Some(preview_win_id) = self.split_tree.split(
+            crate::split::tree::SplitDirection::Vertical,
+            dir_win_id,
+            preview_doc_id,
+            rows,
+            cols,
+        ) else {
+            self.abort_panel_open(dir_win_id, original_doc_id, &[dir_doc_id, preview_doc_id]);
+            return;
+        };
 
         self.split_tree.set_focus(dir_win_id);
         let _ = self.document_manager.switch_to_document(dir_doc_id);
@@ -195,24 +192,20 @@ impl<T: TerminalBackend> Editor<T> {
             original_doc_id,
         });
 
-        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
-            dir_doc_id, dir, false, /* new explorer always starts with hidden off */
-        );
+        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(dir_doc_id, dir, false);
         self.job_manager.spawn(job);
 
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
 
-    /// Close the active explorer or undotree split session.
     pub fn close_split_panel(&mut self) {
         let Some(layout) = self.panel_layout.take() else {
             return;
         };
 
         match layout.kind {
-            PanelKind::FileExplorer => {
-                // Close preview window, restore original doc to dir window, remove both private docs.
+            PanelKind::FileExplorer | PanelKind::Clipboard => {
                 self.split_tree.close_window(layout.preview_win_id);
                 let _ = self.remove_private_document(layout.preview_doc_id);
                 self.split_tree
@@ -224,7 +217,6 @@ impl<T: TerminalBackend> Editor<T> {
                     .switch_to_document(layout.original_doc_id);
             }
             PanelKind::UndoTree => {
-                // Reassign the preview window to show the original file before removing preview clone.
                 self.split_tree
                     .set_window_document(layout.preview_win_id, layout.original_doc_id);
                 self.split_tree.close_window(layout.dir_win_id);
@@ -235,27 +227,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .document_manager
                     .switch_to_document(layout.original_doc_id);
             }
-            PanelKind::Clipboard => {
-                self.split_tree.close_window(layout.preview_win_id);
-                let _ = self.remove_private_document(layout.preview_doc_id);
-                self.split_tree
-                    .set_window_document(layout.dir_win_id, layout.original_doc_id);
-                let _ = self.remove_private_document(layout.dir_doc_id);
-                self.split_tree.set_focus(layout.dir_win_id);
-                let _ = self
-                    .document_manager
-                    .switch_to_document(layout.original_doc_id);
-            }
-            PanelKind::LocationList => {
-                // Close the location list window; focus returns to the source window.
-                self.split_tree.close_window(layout.dir_win_id);
-                let _ = self.remove_private_document(layout.dir_doc_id);
-                self.split_tree.set_focus(layout.preview_win_id);
-                let _ = self
-                    .document_manager
-                    .switch_to_document(layout.original_doc_id);
-            }
-            PanelKind::Regions => {
+            PanelKind::LocationList | PanelKind::Regions => {
                 self.split_tree.close_window(layout.dir_win_id);
                 let _ = self.remove_private_document(layout.dir_doc_id);
                 self.split_tree.set_focus(layout.preview_win_id);
@@ -264,8 +236,6 @@ impl<T: TerminalBackend> Editor<T> {
                     .switch_to_document(layout.original_doc_id);
             }
             PanelKind::BufferList => {
-                // The preview window shows a real, already-open document (not a
-                // private clone), so only the list window/doc need tearing down.
                 self.split_tree.close_window(layout.preview_win_id);
                 self.split_tree
                     .set_window_document(layout.dir_win_id, layout.original_doc_id);
@@ -280,7 +250,6 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    /// Open the messages log as a standalone buffer in the current window.
     pub fn open_messages(&mut self, show_all: bool) {
         let id = self.document_manager.next_id();
         let mut doc = match crate::document::Document::new_messages(id, show_all) {
@@ -293,7 +262,6 @@ impl<T: TerminalBackend> Editor<T> {
 
         let log = self.state.error_manager.notifications().message_log();
         doc.populate_messages_buffer(&log);
-        // On initial open, position at the end so the newest messages are visible
         let len = doc.buffer.len();
         let _ = doc.buffer.set_cursor(len.saturating_sub(1));
 
@@ -310,11 +278,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    /// Open the clipboard ring as a two-pane split: left = index, right = preview.
-    /// # Panics
-    /// Panics if the focused window is not a leaf, which cannot happen after focusing.
     pub fn open_clipboard(&mut self) {
-        // If already open, just focus the index pane.
         if let Some(ref layout) = self.panel_layout.clone() {
             if layout.kind == PanelKind::Clipboard {
                 self.split_tree.set_focus(layout.dir_win_id);
@@ -356,16 +320,20 @@ impl<T: TerminalBackend> Editor<T> {
         self.split_tree
             .set_window_document(index_win_id, index_doc_id);
 
-        let preview_win_id = self
-            .split_tree
-            .split(
-                crate::split::tree::SplitDirection::Vertical,
+        let Some(preview_win_id) = self.split_tree.split(
+            crate::split::tree::SplitDirection::Vertical,
+            index_win_id,
+            preview_doc_id,
+            rows,
+            cols,
+        ) else {
+            self.abort_panel_open(
                 index_win_id,
-                preview_doc_id,
-                rows,
-                cols,
-            )
-            .expect("index_win_id is the focused window, which is always a valid leaf");
+                original_doc_id,
+                &[index_doc_id, preview_doc_id],
+            );
+            return;
+        };
 
         self.split_tree.set_focus(index_win_id);
         let _ = self.document_manager.switch_to_document(index_doc_id);
@@ -384,12 +352,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    /// Open the buffer list as a two-pane split: left = status list,
-    /// right = a live preview of the buffer under the cursor.
-    /// # Panics
-    /// Panics if the focused window is not a leaf, which cannot happen after focusing.
     pub fn open_buffer_list_panel(&mut self) {
-        // If already open, just refocus and refresh the list content.
         if let Some(layout) = self.panel_layout.clone() {
             if layout.kind == PanelKind::BufferList {
                 self.split_tree.set_focus(layout.dir_win_id);
@@ -426,16 +389,16 @@ impl<T: TerminalBackend> Editor<T> {
         let preview_target = infos.first().map_or(original_doc_id, |i| i.id);
         self.split_tree.set_window_document(dir_win_id, dir_doc_id);
 
-        let preview_win_id = self
-            .split_tree
-            .split(
-                crate::split::tree::SplitDirection::Vertical,
-                dir_win_id,
-                preview_target,
-                rows,
-                cols,
-            )
-            .expect("dir_win_id is the focused window, which is always a valid leaf");
+        let Some(preview_win_id) = self.split_tree.split(
+            crate::split::tree::SplitDirection::Vertical,
+            dir_win_id,
+            preview_target,
+            rows,
+            cols,
+        ) else {
+            self.abort_panel_open(dir_win_id, original_doc_id, &[dir_doc_id]);
+            return;
+        };
 
         self.split_tree.set_focus(dir_win_id);
         let _ = self.document_manager.switch_to_document(dir_doc_id);
@@ -453,8 +416,6 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    /// Repopulate an already-open buffer-list panel's list pane, preserving
-    /// the cursor's row (clamped to the new entry count).
     pub(super) fn refresh_buffer_list_panel(&mut self) {
         let Some(layout) = self.panel_layout_of(PanelKind::BufferList) else {
             return;
@@ -473,8 +434,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Called after every cursor movement in the buffer-list pane: point the
-    /// preview window at the real buffer under the cursor.
     pub(super) fn update_buffer_list_preview(&mut self) {
         let layout = match &self.panel_layout {
             Some(l)
@@ -517,7 +476,6 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.update_and_render();
     }
 
-    /// Handle `<CR>` in the buffer-list pane: switch to the buffer on the cursor line.
     pub(super) fn handle_buffer_list_select(&mut self) {
         let layout = match self.panel_layout.clone() {
             Some(l) if l.kind == PanelKind::BufferList => l,
@@ -547,7 +505,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Called after every cursor movement in the clipboard index pane: update the preview.
     pub(super) fn update_clipboard_preview(&mut self) {
         let layout = match &self.panel_layout {
             Some(l)
@@ -569,7 +526,6 @@ impl<T: TerminalBackend> Editor<T> {
             let line_text = String::from_utf8_lossy(&line_bytes);
             let line_text = line_text.trim();
 
-            // Lines are `[N]`: parse N to look up the entry in the snapshot
             let idx = line_text
                 .strip_prefix('[')
                 .and_then(|r| r.strip_suffix(']'))
@@ -597,7 +553,6 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    /// Apply the order/deletions from the clipboard index buffer back to the ring.
     pub(super) fn apply_clipboard_diff(&mut self) {
         let (entries_snapshot, order) = {
             let Some(doc) = self.document_manager.active_document() else {
@@ -613,23 +568,19 @@ impl<T: TerminalBackend> Editor<T> {
             (entries, order)
         };
 
-        // Rebuild the ring from the parsed order
         let new_entries: std::collections::VecDeque<Vec<crate::character::Character>> = order
             .into_iter()
             .filter_map(|i| entries_snapshot.get(i).cloned())
             .collect();
 
-        // Replace ring contents (newest = index 0)
         self.clipboard_ring = {
             let mut ring = crate::clipboard::ClipboardRing::new();
-            // Push in reverse so index 0 ends up at front
             for entry in new_entries.into_iter().rev() {
                 ring.push(entry);
             }
             ring
         };
 
-        // Repopulate the index buffer to reflect the canonical [N] indices
         if let Some(doc) = self.document_manager.active_document_mut() {
             doc.populate_clipboard_buffer(self.clipboard_ring.entries());
         }
@@ -643,9 +594,6 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    /// Open the undo tree for the active document as a split pane.
-    /// # Panics
-    /// Panics if the focused window is not a leaf, which cannot happen after focusing.
     pub fn open_undotree_split(&mut self) {
         if let Some(ref layout) = self.panel_layout.clone() {
             if layout.kind == PanelKind::UndoTree {
@@ -667,8 +615,6 @@ impl<T: TerminalBackend> Editor<T> {
         };
         self.document_manager.add_private_document(ut_doc);
 
-        // Create a private read-only preview doc (clone of linked) so goto_seq never
-        // touches the original file and show_line_numbers is naturally false.
         let preview_id = self.document_manager.next_id();
         let preview_doc = {
             let Some(linked) = self.document_manager.get_document(linked_id) else {
@@ -692,18 +638,19 @@ impl<T: TerminalBackend> Editor<T> {
         let cols = size.cols as usize;
 
         let dir_win_id = self.split_tree.focused_window_id();
+        let original_doc_id = self.split_tree.focused_window().document_id;
         self.split_tree.set_window_document(dir_win_id, ut_id);
 
-        let preview_win_id = self
-            .split_tree
-            .split(
-                crate::split::tree::SplitDirection::Vertical,
-                dir_win_id,
-                preview_id,
-                rows,
-                cols,
-            )
-            .expect("dir_win_id is the focused window, which is always a valid leaf");
+        let Some(preview_win_id) = self.split_tree.split(
+            crate::split::tree::SplitDirection::Vertical,
+            dir_win_id,
+            preview_id,
+            rows,
+            cols,
+        ) else {
+            self.abort_panel_open(dir_win_id, original_doc_id, &[ut_id, preview_id]);
+            return;
+        };
 
         if let Some(linked_doc) = self.document_manager.get_document(linked_id) {
             let (text, seqs, lc) = crate::undotree_view::render_tree_to_text(&linked_doc.history);
@@ -728,7 +675,6 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.update_and_render();
     }
 
-    /// The active panel's layout, if one is open and matches `kind`.
     pub(super) fn panel_layout_of(&self, kind: PanelKind) -> Option<PanelLayout> {
         match &self.panel_layout {
             Some(l) if l.kind == kind => Some(l.clone()),
@@ -736,8 +682,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// The path that should currently be shown in the explorer preview, used
-    /// both to decide whether to spawn a new preview job and to reject stale results.
     pub(super) fn current_explorer_target_path(&self) -> Option<std::path::PathBuf> {
         let layout = match &self.panel_layout {
             Some(l)
@@ -762,7 +706,6 @@ impl<T: TerminalBackend> Editor<T> {
         Some(dir_path.join(entry_name))
     }
 
-    /// Called after every cursor movement: if in the explorer dir pane, spawn a preview job.
     pub(super) fn update_explorer_preview(&mut self) {
         let layout = match &self.panel_layout {
             Some(l)
@@ -779,7 +722,6 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let preview_doc_id = layout.preview_doc_id;
 
-        // Skip if the preview pane is already showing this path.
         let already_showing = self
             .document_manager
             .get_document(preview_doc_id)
@@ -793,14 +735,12 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        // Skip if a job for this exact path is already pending/in-flight.
         if let Some(pending) = &self.pending_explorer_preview {
             if pending.path == target_path {
                 return;
             }
         }
 
-        // Cancel any prior still-in-flight preview job before starting a new one.
         if let Some(pending) = self.pending_explorer_preview.take() {
             self.job_manager.cancel_job(pending.job_id);
         }
@@ -817,7 +757,6 @@ impl<T: TerminalBackend> Editor<T> {
         });
     }
 
-    /// Called after every cursor movement in the undotree pane: applies `goto_seq` on the linked doc.
     pub(super) fn update_undotree_preview(&mut self) {
         let layout = match &self.panel_layout {
             Some(l)
@@ -849,10 +788,8 @@ impl<T: TerminalBackend> Editor<T> {
             .get_document_mut(layout.preview_doc_id)
         {
             let _ = linked_doc.goto_seq(seq);
-            // Reset cursor to top so the preview viewport starts from the beginning
             let _ = linked_doc.buffer.set_cursor(0);
         }
-        // Sync the preview window's cursor_position so update_window_viewports uses position 0
         if let Some(w) = self.split_tree.get_window_mut(layout.preview_win_id) {
             w.cursor_position = 0;
         }
@@ -860,7 +797,6 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.update_and_render();
     }
 
-    /// Enter a directory or open a file from the explorer dir pane.
     pub(super) fn handle_explorer_split_select(&mut self) {
         let Some(layout) = self.panel_layout.clone() else {
             return;
@@ -892,8 +828,6 @@ impl<T: TerminalBackend> Editor<T> {
         let (entry_name, is_dir) = if let Some((name, is_dir)) = entry_info {
             (name, is_dir)
         } else {
-            // No listing-time payload: use symlink_metadata so a symlink is
-            // never reported as a directory based on a live, possibly-changed target.
             let name = line_text.trim_end_matches('/').to_string();
             let is_dir = std::fs::symlink_metadata(dir_path.join(&name))
                 .map(|m| m.is_dir())
@@ -923,7 +857,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Navigate the explorer dir pane to its parent directory.
     pub(super) fn handle_explorer_split_parent(&mut self) {
         let Some(layout) = self.panel_layout.clone() else {
             return;
@@ -946,14 +879,12 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
 
-        // Remember which child entry to restore the cursor to after the listing arrives.
         self.pending_cursor_entry = child_name;
 
         self.reload_directory_buffer(layout.dir_doc_id, parent_path);
         self.update_explorer_preview();
     }
 
-    /// Handle `<CR>` in an undo-tree buffer: jump to the node on the cursor line.
     pub(super) fn handle_undotree_select(&mut self) {
         let (linked_doc_id, seq) = {
             let doc_id = self.active_document_id();
@@ -974,7 +905,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         if seq == u64::MAX {
             return;
-        } // connector line
+        }
 
         if let Some(linked_doc) = self.document_manager.get_document_mut(linked_doc_id) {
             if linked_doc.goto_seq(seq).is_err() {
@@ -983,11 +914,9 @@ impl<T: TerminalBackend> Editor<T> {
         }
         self.spawn_syntax_parse_job(linked_doc_id);
 
-        // Close the undo tree pane and focus the linked document
         self.close_split_panel();
     }
 
-    /// Move the cursor up (`delta=-1`) or down (`delta=1`) in the undo tree, skipping connector lines.
     pub(super) fn handle_undotree_move(&mut self, delta: i64) {
         let doc_id = self.active_document_id();
         let target_line = {
@@ -1002,7 +931,6 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             };
             let mut target = line_num + delta;
-            // Skip over connector lines in the direction of travel.
             while target >= 0
                 && target < total
                 && sequences
@@ -1023,9 +951,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.update_undotree_preview();
     }
 
-    /// Toggle hidden-file visibility for the active file explorer pane.
     pub(super) fn handle_explorer_toggle_hidden(&mut self) {
-        // Find the directory document for the active explorer (split or standalone).
         let dir_doc_id = if let Some(layout) = self.panel_layout.as_ref() {
             if layout.kind == PanelKind::FileExplorer {
                 layout.dir_doc_id
@@ -1033,7 +959,6 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         } else {
-            // Standalone directory buffer
             match self.document_manager.active_document() {
                 Some(d) => d.id,
                 None => return,
@@ -1050,7 +975,6 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
 
-        // Guard: refuse to discard unsaved renames/deletes/creates.
         if let Some(doc) = self.document_manager.get_document(dir_doc_id) {
             let diff = doc.parse_directory_diff();
             if !diff.renames.is_empty() || !diff.deletes.is_empty() || !diff.creates.is_empty() {
@@ -1076,7 +1000,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.job_manager.spawn(job);
     }
 
-    /// Re-read the directory listing for the active file explorer pane.
     pub(super) fn handle_explorer_refresh(&mut self) {
         let dir_doc_id = if let Some(l) = self.panel_layout.as_ref() {
             if l.kind == PanelKind::FileExplorer {
@@ -1120,8 +1043,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.job_manager.spawn(job);
     }
 
-    /// Re-render the undotree buffer off the main thread (fires on every
-    /// cursor move in the pane; a large history shouldn't block input).
     pub(super) fn handle_undotree_refresh(&mut self) {
         let Some(layout) = self.panel_layout_of(PanelKind::UndoTree) else {
             return;
@@ -1135,7 +1056,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Apply the diff from a directory buffer to the filesystem.
     pub(super) fn apply_directory_diff(&mut self) {
         let (dir_doc_id, dir_path, dir_show_hidden, diff) = {
             let Some(doc) = self.document_manager.active_document() else {
@@ -1161,13 +1081,135 @@ impl<T: TerminalBackend> Editor<T> {
                 .notify(crate::notification::NotificationType::Error, err);
         }
 
-        // Re-read the current directory now that all operations are complete.
         let reload = crate::job_manager::jobs::explorer::DirectoryListJob::new(
             dir_doc_id,
             dir_path,
             dir_show_hidden,
         );
         self.job_manager.spawn(reload);
+    }
+}
+
+const RENAME_TMP_PREFIX: &str = ".rift-rename-";
+
+fn rename_error(old: &std::path::Path, msg: &str) -> String {
+    format!(
+        "rename {}: {msg}",
+        old.file_name().unwrap_or_default().display()
+    )
+}
+
+fn is_same_entry(
+    fs: &dyn crate::fs_backend::FileSystem,
+    a: &std::path::Path,
+    b: &std::path::Path,
+) -> bool {
+    fs.canonicalize(a) == fs.canonicalize(b)
+}
+
+fn plan_renames(
+    fs: &dyn crate::fs_backend::FileSystem,
+    dir_path: &std::path::Path,
+    renames: &[(std::path::PathBuf, String)],
+    errors: &mut Vec<String>,
+) -> Vec<(std::path::PathBuf, std::path::PathBuf)> {
+    let mut targeted = std::collections::HashSet::new();
+    let mut plan = Vec::new();
+
+    for (old_path, new_name) in renames {
+        let new_path = old_path.parent().unwrap_or(dir_path).join(new_name);
+
+        if fs.is_dir(old_path) {
+            let old_canonical = fs.canonicalize(old_path);
+            let new_parent_raw = new_path.parent().unwrap_or(&new_path);
+            let new_canonical = fs.canonicalize(new_parent_raw);
+            if new_canonical.starts_with(&old_canonical) {
+                errors.push(rename_error(old_path, "destination is inside the source"));
+                continue;
+            }
+        }
+
+        if !targeted.insert(new_path.clone()) {
+            errors.push(rename_error(old_path, "another rename has the same name"));
+            continue;
+        }
+        plan.push((old_path.clone(), new_path));
+    }
+
+    loop {
+        let sources: std::collections::HashSet<std::path::PathBuf> =
+            plan.iter().map(|(old, _)| old.clone()).collect();
+        let before = plan.len();
+
+        plan.retain(|(old, new)| {
+            let blocked =
+                fs.path_exists(new) && !sources.contains(new) && !is_same_entry(fs, old, new);
+            if blocked {
+                errors.push(rename_error(old, "destination already exists"));
+            }
+            !blocked
+        });
+
+        if plan.len() == before {
+            return plan;
+        }
+    }
+}
+
+fn tmp_path(fs: &dyn crate::fs_backend::FileSystem, near: &std::path::Path) -> std::path::PathBuf {
+    let parent = near.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let mut n = 0u32;
+    loop {
+        let candidate = parent.join(format!("{RENAME_TMP_PREFIX}{n}"));
+        if !fs.path_exists(&candidate) {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
+fn run_renames(
+    fs: &dyn crate::fs_backend::FileSystem,
+    plan: Vec<(std::path::PathBuf, std::path::PathBuf)>,
+    errors: &mut Vec<String>,
+) {
+    let destinations: std::collections::HashSet<std::path::PathBuf> =
+        plan.iter().map(|(_, new)| new.clone()).collect();
+    let mut staged = Vec::new();
+
+    for (old, new) in plan {
+        if !destinations.contains(&old) {
+            staged.push((old.clone(), old, new));
+            continue;
+        }
+
+        let tmp = tmp_path(fs, &old);
+        match fs.rename(&old, &tmp) {
+            Ok(()) => staged.push((tmp, old, new)),
+            Err(e) => errors.push(rename_error(&old, &e.message)),
+        }
+    }
+
+    for (src, old, new) in staged {
+        let result = if fs.path_exists(&new) && !is_same_entry(fs, &src, &new) {
+            Err("destination already exists".to_string())
+        } else {
+            fs.rename(&src, &new).map_err(|e| e.message)
+        };
+        let Err(msg) = result else {
+            continue;
+        };
+
+        errors.push(rename_error(&old, &msg));
+        if src == old {
+            continue;
+        }
+        if let Err(e) = fs.rename(&src, &old) {
+            errors.push(rename_error(
+                &old,
+                &format!("could not restore from {}: {}", src.display(), e.message),
+            ));
+        }
     }
 }
 
@@ -1178,32 +1220,9 @@ fn apply_directory_diff_to_fs(
     let fs = crate::fs_backend::backend();
     let mut errors: Vec<String> = Vec::new();
 
-    // Renames: run synchronously so the reload sees the final state
-    for (old_path, new_name) in &diff.renames {
-        let new_path = old_path.parent().unwrap_or(dir_path).join(new_name);
-        // Guard: moving a directory inside itself is never valid.
-        if fs.is_dir(old_path) {
-            let old_canonical = fs.canonicalize(old_path);
-            let new_parent_raw = new_path.parent().unwrap_or(&new_path);
-            let new_canonical = fs.canonicalize(new_parent_raw);
-            if new_canonical.starts_with(&old_canonical) {
-                errors.push(format!(
-                    "rename {}: destination is inside the source",
-                    old_path.file_name().unwrap_or_default().display()
-                ));
-                continue;
-            }
-        }
-        if let Err(e) = fs.rename(old_path, &new_path) {
-            errors.push(format!(
-                "rename {}: {}",
-                old_path.file_name().unwrap_or_default().display(),
-                e.message
-            ));
-        }
-    }
+    let plan = plan_renames(fs, dir_path, &diff.renames, &mut errors);
+    run_renames(fs, plan, &mut errors);
 
-    // Deletes
     for path in &diff.deletes {
         if let Err(e) = fs.delete_recursive(path) {
             errors.push(format!(
@@ -1214,11 +1233,9 @@ fn apply_directory_diff_to_fs(
         }
     }
 
-    // Creates
     for name in &diff.creates {
         let is_dir = name.ends_with('/');
         let clean_name = name.trim_end_matches('/');
-        // Guard: reject path traversal in create names.
         if std::path::Path::new(clean_name)
             .components()
             .any(|c| c == std::path::Component::ParentDir)
@@ -1243,3 +1260,7 @@ fn apply_directory_diff_to_fs(
 
     errors
 }
+
+#[cfg(test)]
+#[path = "explorer_tests.rs"]
+mod explorer_tests;

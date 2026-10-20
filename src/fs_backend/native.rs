@@ -2,6 +2,7 @@
 
 use super::{FileSystem, FsEntry};
 use crate::error::RiftError;
+use crate::job_manager::jobs::fs::{is_cross_device, FsCopyJob};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
@@ -115,16 +116,19 @@ impl FileSystem for NativeFileSystem {
         if let Some(parent) = new.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::rename(old, new).or_else(|_| {
-            // Cross-device fallback: copy then delete.
-            crate::job_manager::jobs::fs::FsCopyJob::copy_recursive_pub(old, new).and_then(|()| {
-                if old.is_dir() {
-                    fs::remove_dir_all(old)
-                } else {
-                    fs::remove_file(old)
-                }
-            })
-        })?;
+        let Err(rename_err) = fs::rename(old, new) else {
+            return Ok(());
+        };
+        if !is_cross_device(&rename_err) {
+            return Err(rename_err.into());
+        }
+
+        FsCopyJob::copy_recursive_pub(old, new)?;
+        if old.is_dir() {
+            fs::remove_dir_all(old)?;
+        } else {
+            fs::remove_file(old)?;
+        }
         Ok(())
     }
 

@@ -4,8 +4,27 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 
-/// Recreate a symlink found at `entry_path` as a symlink at `dest`.
-/// Falls back to copying the link's target path on platforms without symlink support.
+#[cfg(unix)]
+const CROSS_DEVICE_OS_CODE: i32 = 18;
+#[cfg(windows)]
+const CROSS_DEVICE_OS_CODE: i32 = 17;
+
+#[must_use]
+pub fn is_cross_device(err: &std::io::Error) -> bool {
+    if err.kind() == std::io::ErrorKind::CrossesDevices {
+        return true;
+    }
+
+    #[cfg(any(unix, windows))]
+    {
+        err.raw_os_error() == Some(CROSS_DEVICE_OS_CODE)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        false
+    }
+}
+
 fn recreate_symlink(entry_path: &Path, dest: &Path) -> std::io::Result<()> {
     let target = fs::read_link(entry_path)?;
     #[cfg(unix)]
@@ -187,30 +206,33 @@ impl Job for FsMoveJob {
             }
         }
 
-        match fs::rename(&self.source, &self.destination) {
+        let rename_err = match fs::rename(&self.source, &self.destination) {
+            Ok(()) => {
+                let _ = sender.send(JobMessage::Finished(id, false));
+                return;
+            }
+            Err(e) => e,
+        };
+
+        if !is_cross_device(&rename_err) {
+            let _ = sender.send(JobMessage::Error(id, rename_err.into()));
+            return;
+        }
+
+        let moved = FsCopyJob::copy_recursive_pub(&self.source, &self.destination).and_then(|()| {
+            if self.source.is_dir() {
+                fs::remove_dir_all(&self.source)
+            } else {
+                fs::remove_file(&self.source)
+            }
+        });
+        match moved {
             Ok(()) => {
                 let _ = sender.send(JobMessage::Finished(id, false));
             }
-            Err(_) => match FsCopyJob::copy_recursive_pub(&self.source, &self.destination) {
-                Ok(()) => {
-                    let del = if self.source.is_dir() {
-                        fs::remove_dir_all(&self.source)
-                    } else {
-                        fs::remove_file(&self.source)
-                    };
-                    match del {
-                        Ok(()) => {
-                            let _ = sender.send(JobMessage::Finished(id, false));
-                        }
-                        Err(e) => {
-                            let _ = sender.send(JobMessage::Error(id, e.into()));
-                        }
-                    }
-                }
-                Err(e) => {
-                    let _ = sender.send(JobMessage::Error(id, e.into()));
-                }
-            },
+            Err(e) => {
+                let _ = sender.send(JobMessage::Error(id, e.into()));
+            }
         }
     }
 }

@@ -204,3 +204,19 @@ fn delete_recursive_removes_a_directory_and_its_contents() {
 
     assert!(!sub.exists());
 }
+
+#[test]
+fn bug_rename_dir_onto_nonempty_dir_merges() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a");
+    let b = dir.path().join("b");
+    std::fs::create_dir(&a).unwrap();
+    std::fs::create_dir(&b).unwrap();
+    std::fs::write(a.join("same.txt"), b"from a").unwrap();
+    std::fs::write(b.join("same.txt"), b"from b").unwrap();
+
+    assert!(backend().rename(&a, &b).is_err());
+
+    assert_eq!(std::fs::read(a.join("same.txt")).unwrap(), b"from a");
+    assert_eq!(std::fs::read(b.join("same.txt")).unwrap(), b"from b");
+}
