@@ -274,3 +274,147 @@ fn dg_waits_for_second_g() {
 
     assert_eq!(editor.current_mode, Mode::OperatorPending);
 }
+
+#[test]
+fn bug_replace_mode_backspace_restores_overwritten() {
+    let mut editor = editor_with_text("abcdef");
+
+    press(&mut editor, &keys("Rxy<BS><Esc>"));
+
+    assert_eq!(buffer_text(&mut editor), "xbcdef");
+}
+
+#[test]
+fn bug_replace_mode_backspace_before_typing_keeps_text() {
+    let mut editor = editor_with_text("abcdef");
+
+    press(&mut editor, &keys("lllR<BS><Esc>"));
+
+    assert_eq!(buffer_text(&mut editor), "abcdef");
+}
+
+#[test]
+fn bug_replace_mode_backspace_removes_appended() {
+    let mut editor = editor_with_text("ab");
+
+    press(&mut editor, &keys("lRxyz<BS><Esc>"));
+
+    assert_eq!(buffer_text(&mut editor), "axy");
+}
+
+#[test]
+fn bug_replace_mode_backspace_stack_resets_per_session() {
+    let mut editor = editor_with_text("abc");
+
+    press(&mut editor, &keys("Rx<Esc>lR<BS><Esc>"));
+
+    assert_eq!(buffer_text(&mut editor), "xbc");
+}
+
+#[test]
+fn bug_replace_mode_dot_repeat_replays_session() {
+    let mut editor = editor_with_text("abcdefgh");
+
+    press(&mut editor, &keys("Rxy<Esc>0ll."));
+
+    assert_eq!(buffer_text(&mut editor), "xyxyefgh");
+}
+
+#[test]
+fn bug_replace_mode_dot_repeat_skips_backspaced_text() {
+    let mut editor = editor_with_text("abcdef");
+
+    press(&mut editor, &keys("Rxy<BS><Esc>0ll."));
+
+    assert_eq!(buffer_text(&mut editor), "xbxdef");
+}
+
+#[test]
+fn bug_replace_mode_paste_overwrites() {
+    let mut editor = editor_with_text("abcdef");
+    press(&mut editor, &keys("R"));
+
+    editor.handle_paste("xy").unwrap();
+
+    assert_eq!(buffer_text(&mut editor), "xycdef");
+}
+
+#[test]
+fn bug_replace_mode_paste_appends_past_line_end() {
+    let mut editor = editor_with_text("ab\ncd");
+    press(&mut editor, &keys("lR"));
+
+    editor.handle_paste("xyz").unwrap();
+
+    assert_eq!(buffer_text(&mut editor), "axyz\ncd");
+}
+
+#[test]
+fn bug_replace_mode_backspace_restores_after_paste() {
+    let mut editor = editor_with_text("abcdef");
+    press(&mut editor, &keys("R"));
+    editor.handle_paste("xy").unwrap();
+
+    press(&mut editor, &keys("<BS><Esc>"));
+
+    assert_eq!(buffer_text(&mut editor), "xbcdef");
+}
+
+#[test]
+fn bug_replace_mode_tab_overwrites_one_char() {
+    let mut editor = editor_with_text("abc");
+    editor.active_document().options.expand_tabs = false;
+
+    press(&mut editor, &keys("R<Tab><Esc>"));
+
+    assert_eq!(buffer_text(&mut editor), "\tbc");
+}
+
+#[test]
+fn bug_replace_mode_expanded_tab_overwrites_spaces() {
+    let mut editor = editor_with_text("abcdefgh");
+    editor.active_document().options.expand_tabs = true;
+    editor.active_document().options.tab_width = 4;
+
+    press(&mut editor, &keys("R<Tab><BS><Esc>"));
+
+    assert_eq!(buffer_text(&mut editor), "   defgh");
+}
+
+#[test]
+fn bug_replace_mode_backspace_undoes_line_break() {
+    let mut editor = editor_with_text("abcd");
+
+    press(&mut editor, &keys("Rx<CR><BS><BS><Esc>"));
+
+    assert_eq!(buffer_text(&mut editor), "abcd");
+}
+
+#[test]
+fn bug_replace_mode_ctrl_w_restores_typed_word() {
+    let mut editor = editor_with_text("abcdef");
+
+    press(&mut editor, &[Key::char('R')]);
+    press(&mut editor, &keys("xyz"));
+    press(&mut editor, &[Key::ctrl('w'), Key::ESC]);
+
+    assert_eq!(buffer_text(&mut editor), "abcdef");
+}
+
+#[test]
+fn bug_replace_mode_backspace_after_cursor_move_only_moves() {
+    let mut editor = editor_with_text("abcdef");
+
+    press(&mut editor, &keys("Rxy<Left><BS><Esc>"));
+
+    assert_eq!(buffer_text(&mut editor), "xycdef");
+}
+
+#[test]
+fn bug_replace_mode_backspace_after_move_round_trip_only_moves() {
+    let mut editor = editor_with_text("abcdef");
+
+    press(&mut editor, &keys("Rx<Left><Right><BS><Esc>"));
+
+    assert_eq!(buffer_text(&mut editor), "xbcdef");
+}

@@ -26,6 +26,10 @@ pub enum Command {
     InsertChar(char),
     /// Replace `count` chars at cursor with `ch` (`r<ch>` with optional count).
     ReplaceChar(char, usize),
+    /// Replace-mode typing: overwrite the char under the cursor, or insert at line end.
+    OverwriteChar(char),
+    /// Replace-mode Backspace: put back the displaced char, or delete an appended one.
+    ReplaceBackspace(Option<crate::character::Character>),
     /// Enter Replace mode (R: each char overwrites instead of inserting).
     EnterReplaceMode,
     /// Delete an existing surround pair, keeping its contents (`sd<ch>`).
@@ -88,6 +92,8 @@ impl Command {
                 | Self::OpenLineAbove
                 | Self::InsertChar(_)
                 | Self::ReplaceChar(_, _)
+                | Self::OverwriteChar(_)
+                | Self::ReplaceBackspace(_)
                 | Self::DeleteSurround(_, _)
                 | Self::ChangeSurround(_, _, _)
                 | Self::AddSurround(_, _, _, _)

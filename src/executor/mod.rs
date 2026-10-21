@@ -8,8 +8,6 @@ use crate::document::Document;
 use crate::error::RiftError;
 use crate::wrap::DisplayMap;
 
-/// Calculate the current visual column position on the current line
-/// Accounts for tab width when calculating visual position
 fn calculate_current_column(buf: &TextBuffer, tab_width: usize) -> usize {
     use crate::buffer::api::BufferView;
     let cursor = buf.cursor();
@@ -27,9 +25,10 @@ fn calculate_current_column(buf: &TextBuffer, tab_width: usize) -> usize {
     col
 }
 
-/// Compute the byte range that a motion-operator pair would affect, without applying it.
-///
-/// Temporarily moves the cursor to simulate the motion, records the range, then restores the cursor; returns `None` if the range is empty.
+pub(crate) fn tab_fill_width(buf: &TextBuffer, tab_width: usize) -> usize {
+    tab_width - (calculate_current_column(buf, tab_width) % tab_width)
+}
+
 pub fn compute_motion_range(
     motion: Motion,
     count: usize,
@@ -181,10 +180,7 @@ pub(crate) fn range_to_offsets(
     }
 }
 
-/// Execute a command on the editor buffer
-///
 /// # Errors
-/// Returns the first `RiftError` raised by a document operation.
 pub fn execute_command(
     cmd: Command,
     doc: &mut Document,
@@ -228,6 +224,12 @@ pub fn execute_command(
         }
         Command::ReplaceChar(ch, count) => {
             replace_char_cmd(doc, ch, count)?;
+        }
+        Command::OverwriteChar(ch) => {
+            doc.overwrite_char(ch)?;
+        }
+        Command::ReplaceBackspace(restore) => {
+            replace_backspace_cmd(doc, restore)?;
         }
         Command::DeleteSurround(ch, count) => {
             delete_surround_cmd(doc, ch, count);
@@ -388,9 +390,7 @@ fn insert_char_cmd(
     ch: char,
 ) -> Result<(), RiftError> {
     if ch == '\t' && expand_tabs {
-        let current_col = calculate_current_column(&doc.buffer, tab_width);
-        let spaces_needed = tab_width - (current_col % tab_width);
-        for _ in 0..spaces_needed {
+        for _ in 0..tab_fill_width(&doc.buffer, tab_width) {
             doc.insert_char(' ')?;
         }
         return Ok(());
@@ -411,7 +411,22 @@ fn replace_char_cmd(doc: &mut Document, ch: char, count: usize) -> Result<(), Ri
     Ok(())
 }
 
-/// Delete the surrounding pair (`DeleteSurround`).
+fn replace_backspace_cmd(
+    doc: &mut Document,
+    restore: Option<crate::character::Character>,
+) -> Result<(), RiftError> {
+    let Some(original) = restore else {
+        doc.delete_backward();
+        return Ok(());
+    };
+    let Some(pos) = doc.buffer.cursor().checked_sub(1) else {
+        return Ok(());
+    };
+
+    doc.replace_chars(pos, 1, &[original])?;
+    doc.buffer.set_cursor(pos)
+}
+
 fn delete_surround_cmd(doc: &mut Document, ch: char, count: usize) {
     if let Some((open_range, close_range)) =
         crate::text_objects::resolve_surround_pair(ch, &doc.buffer, count)
@@ -423,7 +438,6 @@ fn delete_surround_cmd(doc: &mut Document, ch: char, count: usize) {
     }
 }
 
-/// Replace the surrounding pair (`ChangeSurround`).
 fn change_surround_cmd(doc: &mut Document, from: char, to: char, count: usize) {
     if let (Some((open_range, close_range)), Some((new_open, new_close))) = (
         crate::text_objects::resolve_surround_pair(from, &doc.buffer, count),
@@ -440,7 +454,6 @@ fn change_surround_cmd(doc: &mut Document, from: char, to: char, count: usize) {
     }
 }
 
-/// Wrap a motion's range in a surround pair (`AddSurround`).
 fn add_surround_cmd(
     doc: &mut Document,
     motion: Motion,
@@ -471,13 +484,11 @@ fn add_surround_cmd(
     doc.commit_transaction();
 }
 
-/// Undo the last edit (`Undo`).
 fn undo_cmd(doc: &mut Document) {
     crate::perf_span!("history_undo", crate::perf::PerfFields::default());
     doc.undo();
 }
 
-/// Redo the last undone edit (`Redo`).
 fn redo_cmd(doc: &mut Document) {
     crate::perf_span!("history_redo", crate::perf::PerfFields::default());
     doc.redo();

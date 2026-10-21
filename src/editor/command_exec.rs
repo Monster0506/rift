@@ -70,7 +70,14 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
 
-            if is_mutating && self.current_mode == Mode::Insert && !self.dot_repeat.is_replaying() {
+            let records_dot = match self.current_mode {
+                Mode::Insert => is_mutating,
+                Mode::Replace => {
+                    is_mutating && !matches!(command, crate::command::Command::ReplaceBackspace(_))
+                }
+                _ => false,
+            };
+            if records_dot && !self.dot_repeat.is_replaying() {
                 self.dot_repeat.record_insert_command(command);
             }
 

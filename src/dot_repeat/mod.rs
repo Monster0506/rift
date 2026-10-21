@@ -67,8 +67,6 @@ impl DotRepeat {
         self.register = Some(DotRegister::Single(cmd));
     }
 
-    /// Store a region-build session: the actions that constructed a
-    /// `SelectionSet`, plus what to do once `.` rebuilds it.
     pub fn record_region_build_session(
         &mut self,
         actions: Vec<crate::action::Action>,
@@ -77,7 +75,6 @@ impl DotRepeat {
         self.register = Some(DotRegister::RegionBuildSession { actions, follow_up });
     }
 
-    /// Begin recording an insert session with the given entry command.
     pub fn start_insert_recording(&mut self, entry: Command) {
         self.recording = Some(InsertRecording {
             entry,
@@ -85,15 +82,18 @@ impl DotRepeat {
         });
     }
 
-    /// Push a command into the current insert recording.
     pub fn record_insert_command(&mut self, cmd: Command) {
         if let Some(ref mut rec) = self.recording {
             rec.commands.push(cmd);
         }
     }
 
-    /// Finalize the in-progress insert recording into the register.
-    /// Only stores if there were actual commands recorded.
+    pub fn pop_insert_command(&mut self) {
+        if let Some(rec) = &mut self.recording {
+            rec.commands.pop();
+        }
+    }
+
     pub fn finish_insert_recording(&mut self) {
         if let Some(rec) = self.recording.take() {
             if !rec.commands.is_empty() {

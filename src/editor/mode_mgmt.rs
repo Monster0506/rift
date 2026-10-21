@@ -100,6 +100,9 @@ impl<T: TerminalBackend> Editor<T> {
             Command::EnterReplaceMode => {
                 let doc = self.document_manager.active_document_mut().unwrap();
                 doc.begin_transaction("Replace");
+                if !self.dot_repeat.is_replaying() {
+                    self.dot_repeat.start_insert_recording(command);
+                }
                 self.set_mode(Mode::Replace);
             }
             Command::EnterCommandMode => {
@@ -344,6 +347,10 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         self.current_mode = mode;
+
+        if old_mode != mode && (old_mode == Mode::Replace || mode == Mode::Replace) {
+            self.replace_originals.clear();
+        }
 
         if old_mode != mode {
             self.update_lua_state();

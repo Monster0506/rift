@@ -30,6 +30,7 @@ mod panel_handlers;
 mod pending_grammar;
 mod plugin_ops;
 pub(crate) mod rendering;
+mod replace_mode;
 mod run_loop;
 mod text_object_input;
 mod undo_persist;
@@ -160,6 +161,7 @@ pub struct Editor<T: TerminalBackend> {
     pending_keys_started_at: Option<crate::time::Instant>,
     pub(super) visual_anchor: Option<usize>,
     pub(super) pending_multi_insert_anchors: Vec<usize>,
+    replace_originals: Vec<replace_mode::ReplaceEntry>,
     pub(super) region_build_recording: Vec<crate::action::Action>,
     pub(super) expand_history: Vec<(usize, usize)>,
     display_map_cache: Vec<DisplayMapCacheEntry>,

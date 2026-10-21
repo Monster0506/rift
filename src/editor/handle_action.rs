@@ -142,6 +142,10 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::Move(motion) => {
                 use crate::action::Motion;
 
+                if self.current_mode == Mode::Replace {
+                    self.replace_originals.clear();
+                }
+
                 if matches!(
                     motion,
                     Motion::RepeatFindForward | Motion::RepeatFindBackward
@@ -331,6 +335,18 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_edit_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
+            EditorAction::Delete(crate::action::Motion::Left)
+                if self.current_mode == Mode::Replace =>
+            {
+                self.replace_backspace();
+                true
+            }
+            EditorAction::Delete(crate::action::Motion::PreviousWord)
+                if self.current_mode == Mode::Replace =>
+            {
+                self.replace_delete_word();
+                true
+            }
             EditorAction::Delete(motion) => {
                 if self.current_mode == Mode::Command
                     || self.current_mode == Mode::Search
@@ -398,6 +414,10 @@ impl<T: TerminalBackend> Editor<T> {
                     || self.current_mode == Mode::Rename
                 {
                     self.handle_mode_management(crate::command::Command::AppendToCommandLine(*c));
+                    return true;
+                }
+                if self.current_mode == Mode::Replace {
+                    self.replace_type(*c);
                     return true;
                 }
                 let command = crate::command::Command::InsertChar(*c);

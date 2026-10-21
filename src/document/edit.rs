@@ -268,6 +268,21 @@ impl Document {
         Ok(())
     }
 
+    #[must_use]
+    pub fn char_to_overwrite(&self) -> Option<Character> {
+        self.buffer
+            .char_at(self.buffer.cursor())
+            .filter(|c| *c != Character::Newline)
+    }
+
+    /// # Errors
+    pub fn overwrite_char(&mut self, ch: char) -> Result<(), RiftError> {
+        if self.char_to_overwrite().is_none() {
+            return self.insert_char(ch);
+        }
+        self.replace_chars(self.buffer.cursor(), 1, &[Character::from(ch)])
+    }
+
     pub fn delete_backward(&mut self) -> bool {
         if self.is_read_only() {
             return false;

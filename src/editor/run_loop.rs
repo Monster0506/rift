@@ -497,28 +497,13 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn handle_single_unmatched_key(&mut self) {
-        if self.current_mode == Mode::Insert {
+        if matches!(self.current_mode, Mode::Insert | Mode::Replace) {
             let k = self.pending_keys[0];
             self.pending_keys.clear();
             if let Some(ch) = k.text() {
                 self.handle_action(&Action::Editor(EditorAction::InsertChar(ch)));
             }
             // Else ignore?
-        } else if self.current_mode == Mode::Replace {
-            let k = self.pending_keys[0];
-            self.pending_keys.clear();
-            if let Some(ch) = k.text() {
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    let pos = doc.buffer.cursor();
-                    if pos < doc.buffer.len()
-                        && doc.buffer.char_at(pos) != Some(crate::character::Character::Newline)
-                    {
-                        let _ = doc.replace_chars(pos, 1, &[crate::character::Character::from(ch)]);
-                    } else {
-                        let _ = doc.insert_char(ch);
-                    }
-                }
-            }
         } else if self.current_mode == Mode::Command
             || self.current_mode == Mode::Search
             || self.current_mode == Mode::Rename
@@ -639,8 +624,11 @@ impl<T: TerminalBackend> Editor<T> {
         let text = text.as_ref();
 
         match self.current_mode {
-            Mode::Insert | Mode::Replace => {
+            Mode::Insert => {
                 self.insert_pasted_text_at_cursor(text);
+            }
+            Mode::Replace => {
+                self.replace_paste(text);
             }
             Mode::Command | Mode::Search | Mode::Rename => {
                 for ch in text.chars() {
