@@ -26,8 +26,7 @@ fn visual_resumes_a_banked_region_under_the_cursor() {
     load_text(&mut editor, "hello world");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(4, 0, RangeKind::Charwise));
+        .bank_region(Region::new(4, 0, RangeKind::Charwise));
 
     editor.active_document().buffer.set_cursor(2).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
@@ -246,8 +245,7 @@ fn escape_in_normal_clears_a_nonempty_banked_set() {
     load_text(&mut editor, "hello world");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 2, RangeKind::Charwise));
+        .bank_region(Region::new(0, 2, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
@@ -263,10 +261,8 @@ fn set_aware_delete_surround_handles_two_regions_sharing_one_enclosing_pair() {
     load_text(&mut editor, "(a(b)c)");
     {
         let doc = editor.active_document();
-        doc.selection_set
-            .bank(Region::new(5, 5, RangeKind::Charwise));
-        doc.selection_set
-            .bank(Region::new(1, 1, RangeKind::Charwise));
+        doc.bank_region(Region::new(5, 5, RangeKind::Charwise));
+        doc.bank_region(Region::new(1, 1, RangeKind::Charwise));
     }
 
     assert!(editor.try_run_set_aware_delete_surround('(', 1));
@@ -328,12 +324,10 @@ fn n_cycles_banked_regions_when_set_is_nonempty() {
     load_text(&mut editor, "0123456789abcdefghij");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 1, RangeKind::Charwise));
+        .bank_region(Region::new(0, 1, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(10, 11, RangeKind::Charwise));
+        .bank_region(Region::new(10, 11, RangeKind::Charwise));
     editor.active_document().buffer.set_cursor(0).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
@@ -361,12 +355,10 @@ fn shift_n_cycles_backward_when_set_is_nonempty() {
     load_text(&mut editor, "0123456789abcdefghij");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 1, RangeKind::Charwise));
+        .bank_region(Region::new(0, 1, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(10, 11, RangeKind::Charwise));
+        .bank_region(Region::new(10, 11, RangeKind::Charwise));
     editor.active_document().buffer.set_cursor(15).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
@@ -401,8 +393,7 @@ fn region_bank_occurrence_next_finds_and_moves_cursor() {
     load_text(&mut editor, "foo bar foo baz foo");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 2, RangeKind::Charwise));
+        .bank_region(Region::new(0, 2, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::RegionBankOccurrenceNext));
 
@@ -433,8 +424,7 @@ fn region_bank_occurrence_disabled_for_blockwise_last_region() {
     load_text(&mut editor, "foo bar foo");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 2, RangeKind::Blockwise));
+        .bank_region(Region::new(0, 2, RangeKind::Blockwise));
 
     let handled = editor.handle_action(&Action::Editor(EditorAction::RegionBankOccurrenceNext));
 
@@ -452,8 +442,7 @@ fn gv_toggle_opens_and_closes_regardless_of_focus() {
     load_text(&mut editor, "hello world");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 4, RangeKind::Charwise));
+        .bank_region(Region::new(0, 4, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::ToggleRegionsWindow));
     assert!(editor.panel_layout.is_some(), "gv opens the window");
@@ -489,12 +478,10 @@ fn regions_window_x_drops_the_selected_entry() {
     load_text(&mut editor, "0123456789");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 1, RangeKind::Charwise));
+        .bank_region(Region::new(0, 1, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 6, RangeKind::Charwise));
+        .bank_region(Region::new(5, 6, RangeKind::Charwise));
     editor.handle_action(&Action::Editor(EditorAction::ToggleRegionsWindow));
 
     editor.handle_action(&Action::Editor(EditorAction::RegionsListDrop));
@@ -526,12 +513,10 @@ fn regions_window_j_moves_the_list_cursor_and_live_jumps_the_preview() {
     load_text(&mut editor, "0123456789");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 1, RangeKind::Charwise));
+        .bank_region(Region::new(0, 1, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 6, RangeKind::Charwise));
+        .bank_region(Region::new(5, 6, RangeKind::Charwise));
     let source_id = editor.active_document_id();
     editor.handle_action(&Action::Editor(EditorAction::ToggleRegionsWindow));
     let list_cursor_before = editor.active_document().buffer.cursor();
@@ -565,12 +550,10 @@ fn regions_window_operator_redirects_to_the_source_document() {
     load_text(&mut editor, "0123456789");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 1, RangeKind::Charwise));
+        .bank_region(Region::new(0, 1, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 6, RangeKind::Charwise));
+        .bank_region(Region::new(5, 6, RangeKind::Charwise));
     let source_id = editor.active_document_id();
     editor.handle_action(&Action::Editor(EditorAction::ToggleRegionsWindow));
 

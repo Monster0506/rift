@@ -1,6 +1,9 @@
 use super::Editor;
 use crate::character::Character;
+use crate::document::Document;
+use crate::selection::Region;
 use crate::term::TerminalBackend;
+use crate::wrap::RangeKind;
 
 fn line_start_offset(buf: &crate::buffer::TextBuffer, row: usize) -> usize {
     buf.line_index.get_start(row).unwrap_or(0)
@@ -15,6 +18,47 @@ fn line_end_offset(buf: &crate::buffer::TextBuffer, row: usize) -> usize {
     } else {
         buf.len()
     }
+}
+
+fn fill_runs(buf: &crate::buffer::TextBuffer, region: &Region) -> Vec<(usize, usize)> {
+    use crate::buffer::api::BufferView;
+
+    let (start, end) = region.buffer_span(buf);
+    if region.kind != RangeKind::Linewise {
+        return vec![(start, end.saturating_sub(start))];
+    }
+
+    let mut runs = Vec::new();
+    let mut run_start = start;
+    for (i, ch) in buf.chars(start..end).enumerate() {
+        if ch != Character::Newline {
+            continue;
+        }
+        runs.push((run_start, start + i - run_start));
+        run_start = start + i + 1;
+    }
+    runs.push((run_start, end - run_start));
+    runs.retain(|&(_, len)| len > 0);
+    runs
+}
+
+fn put_lines(doc: &mut Document, offset: usize, before: bool, text: &[Character]) -> bool {
+    let line = doc.buffer.line_index.get_line_at(offset);
+    let next_line = line + 1;
+    let (pos, needs_newline) = if before {
+        (line_start_offset(&doc.buffer, line), false)
+    } else if next_line < doc.buffer.get_total_lines() {
+        (line_start_offset(&doc.buffer, next_line), false)
+    } else {
+        (doc.buffer.len(), true)
+    };
+    let _ = doc.buffer.set_cursor(pos);
+    if !needs_newline {
+        return doc.insert_characters(text).is_ok();
+    }
+
+    let trimmed = text.strip_suffix(&[Character::Newline]).unwrap_or(text);
+    doc.insert_characters(&[Character::Newline]).is_ok() && doc.insert_characters(trimmed).is_ok()
 }
 
 fn merge_spans(mut spans: Vec<(usize, usize, bool)>) -> Vec<(usize, usize)> {
@@ -216,8 +260,7 @@ impl<T: TerminalBackend> Editor<T> {
         {
             if let Some(doc) = self.document_manager.active_document_mut() {
                 let cursor = doc.buffer.cursor();
-                doc.selection_set
-                    .bank(crate::selection::Region::new(anchor, cursor, kind));
+                doc.bank_region(crate::selection::Region::new(anchor, cursor, kind));
             }
         }
         self.visual_anchor = None;
@@ -405,12 +448,11 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = editor.document_manager.active_document_mut() else {
                 return false;
             };
-            let (start, end) = region.buffer_span(&doc.buffer);
-            let count = end.saturating_sub(start);
-            if count == 0 {
-                return false;
+            let mut any = false;
+            for (pos, len) in fill_runs(&doc.buffer, &region) {
+                any |= doc.replace_repeat(pos, len, ch).is_ok();
             }
-            doc.replace_repeat(start, count, ch).is_ok()
+            any
         })
     }
 
@@ -523,11 +565,16 @@ impl<T: TerminalBackend> Editor<T> {
             return false;
         }
         let text = text.to_vec();
+        let is_linewise = matches!(text.last(), Some(Character::Newline));
         self.apply_to_each_region(|editor, region| {
             let Some(doc) = editor.document_manager.active_document_mut() else {
                 return false;
             };
             let (start, end) = region.buffer_span(&doc.buffer);
+            if is_linewise {
+                let offset = if before { start } else { end.saturating_sub(1) };
+                return put_lines(doc, offset, before, &text);
+            }
             let pos = if before { start } else { end };
             let _ = doc.buffer.set_cursor(pos);
             doc.insert_characters(&text).is_ok()

@@ -611,8 +611,7 @@ fn undo_clears_selection_set() {
 
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.buffer.insert_str("hello world").unwrap();
-    doc.selection_set
-        .bank(Region::new(0, 4, RangeKind::Charwise));
+    doc.bank_region(Region::new(0, 4, RangeKind::Charwise));
     assert!(!doc.selection_set.is_empty());
 
     doc.insert_char('!').unwrap();
@@ -632,8 +631,7 @@ fn redo_clears_selection_set() {
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("hello world").unwrap();
     assert!(doc.undo());
-    doc.selection_set
-        .bank(Region::new(0, 4, RangeKind::Charwise));
+    doc.bank_region(Region::new(0, 4, RangeKind::Charwise));
     assert!(!doc.selection_set.is_empty());
 
     assert!(doc.redo());

@@ -243,6 +243,10 @@ impl Document {
         self.syntax = Some(syntax);
     }
 
+    pub fn bank_region(&mut self, region: crate::selection::Region) {
+        self.selection_set.bank(region, &self.buffer);
+    }
+
     pub(crate) fn check_invariants(
         &self,
         registry: &BufferKindRegistry,

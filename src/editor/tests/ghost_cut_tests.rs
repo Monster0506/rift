@@ -36,12 +36,10 @@ fn escape_commits_every_entry_in_a_multi_region_ghost_list() {
     load_text(&mut editor, "0123456789");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 1, RangeKind::Charwise));
+        .bank_region(Region::new(0, 1, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 6, RangeKind::Charwise));
+        .bank_region(Region::new(5, 6, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
@@ -315,12 +313,10 @@ fn set_noghostcut_makes_banked_region_delete_immediate() {
     editor.execute_command_line("set noghostcut");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 1, RangeKind::Charwise));
+        .bank_region(Region::new(0, 1, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 6, RangeKind::Charwise));
+        .bank_region(Region::new(5, 6, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,

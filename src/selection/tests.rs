@@ -6,14 +6,19 @@ fn region(a: usize, c: usize) -> Region {
     Region::new(a, c, RangeKind::Charwise)
 }
 
+fn empty_buf() -> TextBuffer {
+    TextBuffer::new(30).unwrap()
+}
+
 #[test]
 fn touching_regions_do_not_merge() {
     // "foo\n\nfoofoo": bank "foo" (0..2), then the two "foo"s inside "foofoo"
     // at indices 6..8 and 9..11 -- 8's neighbor is 9, sharing zero chars.
+    let buf = empty_buf();
     let mut set = SelectionSet::default();
-    set.bank(region(0, 2));
-    set.bank(region(6, 8));
-    set.bank(region(9, 11));
+    set.bank(region(0, 2), &buf);
+    set.bank(region(6, 8), &buf);
+    set.bank(region(9, 11), &buf);
     assert_eq!(
         set.regions.len(),
         3,
@@ -23,34 +28,48 @@ fn touching_regions_do_not_merge() {
 
 #[test]
 fn true_overlap_merges_into_union() {
+    let buf = empty_buf();
     let mut set = SelectionSet::default();
-    set.bank(region(0, 5));
-    set.bank(region(3, 8));
+    set.bank(region(0, 5), &buf);
+    set.bank(region(3, 8), &buf);
     assert_eq!(set.regions.len(), 1);
     assert_eq!(set.regions[0].span(), (0, 9));
 }
 
 #[test]
 fn overlap_merge_chains_through_a_third_region() {
+    let buf = empty_buf();
     let mut set = SelectionSet::default();
-    set.bank(region(0, 2));
-    set.bank(region(10, 12));
+    set.bank(region(0, 2), &buf);
+    set.bank(region(10, 12), &buf);
     // Overlaps both the first (0..2) and the second (10..12) at once.
-    set.bank(region(1, 11));
+    set.bank(region(1, 11), &buf);
     assert_eq!(set.regions.len(), 1);
     assert_eq!(set.regions[0].span(), (0, 13));
 }
 
 #[test]
-fn merge_never_crosses_kinds() {
+fn bank_merges_mixed_kind_overlap() {
+    let mut buf = TextBuffer::new(20).unwrap();
+    buf.insert_str("abc\ndef\nghi").unwrap();
     let mut set = SelectionSet::default();
-    set.bank(region(0, 5));
-    set.bank(Region::new(2, 7, RangeKind::Linewise));
-    assert_eq!(
-        set.regions.len(),
-        2,
-        "Charwise and Linewise must never merge"
-    );
+    set.bank(region(5, 6), &buf);
+    set.bank(Region::new(5, 5, RangeKind::Linewise), &buf);
+
+    assert_eq!(set.regions.len(), 1);
+    assert_eq!(set.regions[0].kind, RangeKind::Linewise);
+    assert_eq!(set.regions[0].buffer_span(&buf), (4, 8));
+}
+
+#[test]
+fn bank_keeps_touching_mixed_kinds_separate() {
+    let mut buf = TextBuffer::new(20).unwrap();
+    buf.insert_str("abc\ndef\nghi").unwrap();
+    let mut set = SelectionSet::default();
+    set.bank(region(0, 3), &buf);
+    set.bank(Region::new(5, 5, RangeKind::Linewise), &buf);
+
+    assert_eq!(set.regions.len(), 2);
 }
 
 #[test]
@@ -59,37 +78,40 @@ fn commit_active_banks_into_the_set() {
         active: Some(region(0, 3)),
         ..Default::default()
     };
-    set.commit_active();
+    set.commit_active(&empty_buf());
     assert!(set.active.is_none());
     assert_eq!(set.regions.len(), 1);
 }
 
 #[test]
-fn take_for_batch_dedupes_same_line_linewise_regions() {
-    // Same line, different columns: raw spans don't overlap (bank keeps
-    // both) but buffer_span is identical -- must dedupe to one in the batch.
+fn bank_merges_same_line_linewise_regions() {
     let mut buf = TextBuffer::new(20).unwrap();
     buf.insert_str("hello world\nfoo\n").unwrap();
     let mut set = SelectionSet::default();
-    set.bank(Region::new(0, 0, RangeKind::Linewise));
-    set.bank(Region::new(5, 5, RangeKind::Linewise));
-    assert_eq!(set.regions.len(), 2, "bank() itself still keeps both");
+    set.bank(Region::new(0, 0, RangeKind::Linewise), &buf);
+    set.bank(Region::new(5, 5, RangeKind::Linewise), &buf);
+    assert_eq!(set.regions.len(), 1);
+}
+
+#[test]
+fn take_for_batch_dedupes_regions_with_identical_buffer_span() {
+    let mut buf = TextBuffer::new(20).unwrap();
+    buf.insert_str("hello world\nfoo\n").unwrap();
+    let mut set = SelectionSet::default();
+    set.regions.push(Region::new(0, 0, RangeKind::Linewise));
+    set.regions.push(Region::new(5, 5, RangeKind::Linewise));
 
     let batch = set.take_for_batch(&buf);
-    assert_eq!(
-        batch.len(),
-        1,
-        "take_for_batch must dedupe by buffer_span, not raw span"
-    );
+    assert_eq!(batch.len(), 1);
 }
 
 #[test]
 fn take_for_batch_orders_highest_offset_first_and_clears() {
+    let buf = empty_buf();
     let mut set = SelectionSet::default();
-    set.bank(region(0, 2));
-    set.bank(region(10, 12));
-    set.bank(region(20, 22));
-    let buf = TextBuffer::new(30).unwrap();
+    set.bank(region(0, 2), &buf);
+    set.bank(region(10, 12), &buf);
+    set.bank(region(20, 22), &buf);
     let batch = set.take_for_batch(&buf);
     assert_eq!(
         batch.iter().map(|r| r.span().0).collect::<Vec<_>>(),
@@ -100,18 +122,20 @@ fn take_for_batch_orders_highest_offset_first_and_clears() {
 
 #[test]
 fn next_region_cycles_and_wraps() {
+    let buf = empty_buf();
     let mut set = SelectionSet::default();
-    set.bank(region(0, 2));
-    set.bank(region(10, 12));
+    set.bank(region(0, 2), &buf);
+    set.bank(region(10, 12), &buf);
     assert_eq!(set.next_region(5).unwrap().span().0, 10);
     assert_eq!(set.next_region(15).unwrap().span().0, 0, "wraps to first");
 }
 
 #[test]
 fn prev_region_cycles_and_wraps() {
+    let buf = empty_buf();
     let mut set = SelectionSet::default();
-    set.bank(region(0, 2));
-    set.bank(region(10, 12));
+    set.bank(region(0, 2), &buf);
+    set.bank(region(10, 12), &buf);
     assert_eq!(set.prev_region(15).unwrap().span().0, 10);
     assert_eq!(set.prev_region(1).unwrap().span().0, 10, "wraps to last");
 }
@@ -121,7 +145,7 @@ fn bank_occurrence_finds_next_match_and_wraps() {
     let mut buf = TextBuffer::new(20).unwrap();
     buf.insert_str("foo bar foo baz foo").unwrap();
     let mut set = SelectionSet::default();
-    set.bank(region(0, 2)); // first "foo"
+    set.bank(region(0, 2), &buf); // first "foo"
     let (found, needle) = set.bank_occurrence(&buf, true).unwrap();
     assert_eq!(needle, "foo");
     assert_eq!(found.span(), (8, 11));
@@ -133,8 +157,8 @@ fn bank_occurrence_returns_none_when_all_occurrences_banked() {
     let mut buf = TextBuffer::new(20).unwrap();
     buf.insert_str("foo foo").unwrap();
     let mut set = SelectionSet::default();
-    set.bank(region(0, 2));
-    set.bank(region(4, 6));
+    set.bank(region(0, 2), &buf);
+    set.bank(region(4, 6), &buf);
     assert!(set.bank_occurrence(&buf, true).is_none());
 }
 
@@ -143,7 +167,7 @@ fn bank_occurrence_disabled_for_blockwise() {
     let mut buf = TextBuffer::new(20).unwrap();
     buf.insert_str("foo foo").unwrap();
     let mut set = SelectionSet::default();
-    set.bank(Region::new(0, 2, RangeKind::Blockwise));
+    set.bank(Region::new(0, 2, RangeKind::Blockwise), &buf);
     assert!(set.bank_occurrence(&buf, true).is_none());
 }
 
@@ -154,7 +178,7 @@ fn bank_occurrence_matches_the_whole_line_for_linewise_not_one_char() {
     let mut set = SelectionSet::default();
     // V at the line start with no movement: anchor == cursor == 0. Using
     // span() instead of buffer_span() would collapse the needle to "f".
-    set.bank(Region::new(0, 0, RangeKind::Linewise));
+    set.bank(Region::new(0, 0, RangeKind::Linewise), &buf);
     let (found, needle) = set.bank_occurrence(&buf, true).unwrap();
     assert_eq!(needle, "foo\n");
     assert_eq!(found.buffer_span(&buf), (8, 12));
@@ -162,16 +186,17 @@ fn bank_occurrence_matches_the_whole_line_for_linewise_not_one_char() {
 
 #[test]
 fn blockwise_regions_only_merge_with_other_blockwise_overlap() {
+    let buf = empty_buf();
     let mut set = SelectionSet::default();
-    set.bank(Region::new(0, 5, RangeKind::Blockwise));
-    set.bank(Region::new(3, 8, RangeKind::Charwise)); // overlaps in raw offsets, wrong kind
+    set.bank(Region::new(0, 5, RangeKind::Blockwise), &buf);
+    set.bank(Region::new(3, 8, RangeKind::Charwise), &buf); // overlaps in raw offsets, wrong kind
     assert_eq!(
         set.regions.len(),
         2,
         "Blockwise must not merge with an overlapping Charwise region"
     );
 
-    set.bank(Region::new(3, 8, RangeKind::Blockwise)); // overlaps the first Blockwise region
+    set.bank(Region::new(3, 8, RangeKind::Blockwise), &buf); // overlaps the first Blockwise region
     assert_eq!(
         set.regions.len(),
         2,

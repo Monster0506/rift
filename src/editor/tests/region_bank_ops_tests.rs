@@ -11,12 +11,10 @@ fn apply_to_each_region_runs_f_once_per_region_highest_offset_first() {
     load_text(&mut editor, "0123456789");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 1, RangeKind::Charwise));
+        .bank_region(Region::new(0, 1, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 6, RangeKind::Charwise));
+        .bank_region(Region::new(5, 6, RangeKind::Charwise));
 
     let mut seen_starts = Vec::new();
     let handled = editor.apply_to_each_region(|_editor, region| {
@@ -51,12 +49,10 @@ fn apply_to_each_region_deletes_are_one_undo_step() {
     load_text(&mut editor, "0123456789");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 1, RangeKind::Charwise));
+        .bank_region(Region::new(0, 1, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 6, RangeKind::Charwise));
+        .bank_region(Region::new(5, 6, RangeKind::Charwise));
 
     editor.apply_to_each_region(|editor, region| {
         let (start, end) = region.span();
@@ -86,12 +82,10 @@ fn enter_multi_insert_replays_typed_session_at_every_remaining_anchor() {
     load_text(&mut editor, "0123456789");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 0, RangeKind::Charwise));
+        .bank_region(Region::new(0, 0, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 5, RangeKind::Charwise));
+        .bank_region(Region::new(5, 5, RangeKind::Charwise));
 
     let handled =
         editor.enter_multi_insert(Command::EnterInsertMode, |_doc, region| region.span().0);
@@ -138,16 +132,13 @@ fn set_aware_delete_removes_every_banked_region_as_one_op() {
     load_text(&mut editor, "foo\n\nfoofoo\n");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 2, RangeKind::Charwise));
+        .bank_region(Region::new(0, 2, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 7, RangeKind::Charwise));
+        .bank_region(Region::new(5, 7, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(8, 10, RangeKind::Charwise));
+        .bank_region(Region::new(8, 10, RangeKind::Charwise));
     assert_eq!(
         editor.active_document().selection_set.regions.len(),
         3,
@@ -178,12 +169,10 @@ fn set_aware_delete_is_one_undo_step() {
     load_text(&mut editor, "0123456789");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 1, RangeKind::Charwise));
+        .bank_region(Region::new(0, 1, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 6, RangeKind::Charwise));
+        .bank_region(Region::new(5, 6, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
@@ -207,12 +196,10 @@ fn set_aware_yank_captures_each_region_without_mutating() {
     load_text(&mut editor, "foo bar baz");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 2, RangeKind::Charwise));
+        .bank_region(Region::new(0, 2, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(8, 10, RangeKind::Charwise));
+        .bank_region(Region::new(8, 10, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
 
@@ -240,8 +227,7 @@ fn visual_d_commits_active_region_then_runs_the_batch() {
     load_text(&mut editor, "0123456789");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 6, RangeKind::Charwise));
+        .bank_region(Region::new(5, 6, RangeKind::Charwise));
     editor.active_document().buffer.set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(
@@ -289,16 +275,13 @@ fn canonical_change_across_touching_regions_does_not_merge_them() {
     load_text(&mut editor, "foo\n\nfoofoo\n");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 2, RangeKind::Charwise));
+        .bank_region(Region::new(0, 2, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 7, RangeKind::Charwise));
+        .bank_region(Region::new(5, 7, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(8, 10, RangeKind::Charwise));
+        .bank_region(Region::new(8, 10, RangeKind::Charwise));
     assert_eq!(editor.active_document().selection_set.regions.len(), 3);
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
@@ -353,12 +336,10 @@ fn multi_i_inserts_at_start_of_every_region() {
     load_text(&mut editor, "0123456789");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 1, RangeKind::Charwise));
+        .bank_region(Region::new(0, 1, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 6, RangeKind::Charwise));
+        .bank_region(Region::new(5, 6, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
     assert_eq!(editor.current_mode, Mode::Insert);
@@ -378,12 +359,10 @@ fn multi_a_inserts_after_end_of_every_region() {
     load_text(&mut editor, "0123456789");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 0, RangeKind::Charwise));
+        .bank_region(Region::new(0, 0, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 5, RangeKind::Charwise));
+        .bank_region(Region::new(5, 5, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertModeAfter));
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
@@ -402,12 +381,10 @@ fn multi_capital_i_inserts_at_line_start_of_each_region_row() {
     load_text(&mut editor, "aaa\nbbb\nccc");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 5, RangeKind::Charwise));
+        .bank_region(Region::new(5, 5, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(9, 9, RangeKind::Charwise));
+        .bank_region(Region::new(9, 9, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertModeAtLineStart));
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
@@ -429,12 +406,10 @@ fn multi_capital_a_inserts_at_line_end_of_each_region_row() {
     load_text(&mut editor, "aaa\nbbb\nccc");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(4, 4, RangeKind::Charwise));
+        .bank_region(Region::new(4, 4, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(8, 8, RangeKind::Charwise));
+        .bank_region(Region::new(8, 8, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertModeAtLineEnd));
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
@@ -456,12 +431,10 @@ fn multi_o_opens_a_new_line_below_each_region_row() {
     load_text(&mut editor, "aaa\nbbb\nccc");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 0, RangeKind::Charwise));
+        .bank_region(Region::new(0, 0, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(4, 4, RangeKind::Charwise));
+        .bank_region(Region::new(4, 4, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::OpenLineBelow));
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
@@ -483,12 +456,10 @@ fn multi_capital_o_opens_a_new_line_above_each_region_row() {
     load_text(&mut editor, "aaa\nbbb\nccc");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 0, RangeKind::Charwise));
+        .bank_region(Region::new(0, 0, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(4, 4, RangeKind::Charwise));
+        .bank_region(Region::new(4, 4, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::OpenLineAbove));
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
@@ -529,12 +500,10 @@ fn set_aware_replace_char_fills_each_region_to_its_own_length() {
     load_text(&mut editor, "0123456789");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 1, RangeKind::Charwise));
+        .bank_region(Region::new(0, 1, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 8, RangeKind::Charwise));
+        .bank_region(Region::new(5, 8, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::ReplaceCharPending));
     let grammar = editor.pending_grammar.take().unwrap();
@@ -555,12 +524,10 @@ fn set_aware_sd_strips_surrounding_parens_from_every_region() {
     load_text(&mut editor, "(a) (b)");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(1, 1, RangeKind::Charwise));
+        .bank_region(Region::new(1, 1, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 5, RangeKind::Charwise));
+        .bank_region(Region::new(5, 5, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
@@ -584,16 +551,13 @@ fn set_aware_sg_wraps_each_region_independently() {
     load_text(&mut editor, "foo\n\nfoofoo\n");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 2, RangeKind::Charwise));
+        .bank_region(Region::new(0, 2, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 7, RangeKind::Charwise));
+        .bank_region(Region::new(5, 7, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(8, 10, RangeKind::Charwise));
+        .bank_region(Region::new(8, 10, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
@@ -623,12 +587,10 @@ fn set_aware_put_inserts_same_text_at_every_region() {
     editor.clipboard_ring.push_str("X");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 0, RangeKind::Charwise));
+        .bank_region(Region::new(0, 0, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 5, RangeKind::Charwise));
+        .bank_region(Region::new(5, 5, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
 
@@ -651,12 +613,10 @@ fn set_aware_put_before_inserts_ahead_of_every_region() {
     editor.clipboard_ring.push_str("X");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 0, RangeKind::Charwise));
+        .bank_region(Region::new(0, 0, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 5, RangeKind::Charwise));
+        .bank_region(Region::new(5, 5, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::Put { before: true }));
 
@@ -678,12 +638,10 @@ fn bare_repeated_p_after_set_aware_put_only_affects_single_cursor() {
     editor.clipboard_ring.push_str("X");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 0, RangeKind::Charwise));
+        .bank_region(Region::new(0, 0, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 5, RangeKind::Charwise));
+        .bank_region(Region::new(5, 5, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
@@ -710,12 +668,10 @@ fn multi_insert_is_one_undo_step() {
     load_text(&mut editor, "0123456789");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 0, RangeKind::Charwise));
+        .bank_region(Region::new(0, 0, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 5, RangeKind::Charwise));
+        .bank_region(Region::new(5, 5, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
@@ -794,12 +750,10 @@ fn multi_region_put_is_one_undo_step() {
     editor.clipboard_ring.push_str("X");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 0, RangeKind::Charwise));
+        .bank_region(Region::new(0, 0, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 5, RangeKind::Charwise));
+        .bank_region(Region::new(5, 5, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
     assert_eq!(editor.active_document().buffer.to_string(), "0X12345X6789");
@@ -991,8 +945,7 @@ fn undo_of_unrelated_edit_clears_a_banked_set() {
     editor.active_document().insert_char('!').unwrap();
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 1, RangeKind::Charwise));
+        .bank_region(Region::new(0, 1, RangeKind::Charwise));
     assert!(!editor.active_document().selection_set.is_empty());
 
     assert!(editor.active_document().undo());
@@ -1009,12 +962,10 @@ fn every_set_aware_command_clears_the_set_after_acting() {
     let fresh_set = |editor: &mut Editor<MockTerminal>| {
         editor
             .active_document()
-            .selection_set
-            .bank(Region::new(0, 0, RangeKind::Charwise));
+            .bank_region(Region::new(0, 0, RangeKind::Charwise));
         editor
             .active_document()
-            .selection_set
-            .bank(Region::new(4, 4, RangeKind::Charwise));
+            .bank_region(Region::new(4, 4, RangeKind::Charwise));
     };
 
     let mut editor = create_editor();
@@ -1142,12 +1093,10 @@ fn cycle_paste_after_set_clears_only_touches_the_single_most_recent_position() {
     editor.clipboard_ring.push_str("X");
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(0, 0, RangeKind::Charwise));
+        .bank_region(Region::new(0, 0, RangeKind::Charwise));
     editor
         .active_document()
-        .selection_set
-        .bank(Region::new(5, 5, RangeKind::Charwise));
+        .bank_region(Region::new(5, 5, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
     editor.handle_action(&Action::Editor(EditorAction::CyclePaste { forward: true }));
@@ -1174,8 +1123,7 @@ fn delete_linewise_regions(text: &str, offsets: &[usize]) -> String {
     for &at in offsets {
         editor
             .active_document()
-            .selection_set
-            .bank(Region::new(at, at, RangeKind::Linewise));
+            .bank_region(Region::new(at, at, RangeKind::Linewise));
     }
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
@@ -1191,4 +1139,108 @@ fn set_aware_linewise_delete_of_last_line_leaves_no_blank_line() {
 #[test]
 fn set_aware_linewise_delete_of_adjacent_tail_lines() {
     assert_eq!(delete_linewise_regions("a\nb\nc\nd", &[4, 6]), "a\nb");
+}
+
+#[test]
+fn mixed_kind_overlap_deletes_only_banked_text() {
+    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "abc\ndef\nghi");
+    editor
+        .active_document()
+        .bank_region(Region::new(5, 5, RangeKind::Linewise));
+    editor
+        .active_document()
+        .bank_region(Region::new(5, 6, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "abc\nghi");
+}
+
+#[test]
+fn linewise_replace_char_keeps_newline() {
+    use crate::action::{Action, EditorAction};
+    use crate::key::Key;
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "abc\ndef");
+    editor
+        .active_document()
+        .bank_region(Region::new(0, 0, RangeKind::Linewise));
+
+    editor.handle_action(&Action::Editor(EditorAction::ReplaceCharPending));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::char('x'));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "xxx\ndef");
+}
+
+#[test]
+fn linewise_replace_char_on_last_line_without_newline() {
+    use crate::action::{Action, EditorAction};
+    use crate::key::Key;
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "abc\ndef");
+    editor
+        .active_document()
+        .bank_region(Region::new(4, 4, RangeKind::Linewise));
+
+    editor.handle_action(&Action::Editor(EditorAction::ReplaceCharPending));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::char('x'));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "abc\nxxx");
+}
+
+#[test]
+fn multi_region_linewise_put_goes_on_new_lines() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "aa\nbb");
+    editor.clipboard_ring.push_str("X\n");
+    editor
+        .active_document()
+        .bank_region(Region::new(0, 0, RangeKind::Charwise));
+    editor
+        .active_document()
+        .bank_region(Region::new(3, 3, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "aa\nX\nbb\nX");
+}
+
+#[test]
+fn multi_region_linewise_put_before_goes_above_each_line() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "aa\nbb");
+    editor.clipboard_ring.push_str("X\n");
+    editor
+        .active_document()
+        .bank_region(Region::new(0, 0, RangeKind::Charwise));
+    editor
+        .active_document()
+        .bank_region(Region::new(3, 3, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::Put { before: true }));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "X\naa\nX\nbb");
 }

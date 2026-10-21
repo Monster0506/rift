@@ -1204,12 +1204,8 @@ fn substitute_with_nonempty_set_scopes_to_banked_regions_only() {
     document.buffer.insert_str("foo bar foo baz foo").unwrap();
     // Bank the first and third "foo" (char spans 0..3, 16..19); middle (8..11)
     // is left out. Region::span() is inclusive of cursor, so end = cursor + 1.
-    document
-        .selection_set
-        .bank(Region::new(0, 2, RangeKind::Charwise));
-    document
-        .selection_set
-        .bank(Region::new(16, 18, RangeKind::Charwise));
+    document.bank_region(Region::new(0, 2, RangeKind::Charwise));
+    document.bank_region(Region::new(16, 18, RangeKind::Charwise));
 
     let command = ParsedCommand::Substitute {
         pattern: "foo".to_string(),

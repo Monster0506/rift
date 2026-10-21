@@ -62,12 +62,13 @@ impl Region {
         (start - 1, end)
     }
 
-    fn overlaps(&self, other: &Self) -> bool {
-        if self.kind != other.kind {
+    fn overlaps(&self, other: &Self, buf: &TextBuffer) -> bool {
+        let has_linewise = self.kind == RangeKind::Linewise || other.kind == RangeKind::Linewise;
+        if self.kind != other.kind && !has_linewise {
             return false;
         }
-        let (a_start, a_end) = self.span();
-        let (b_start, b_end) = other.span();
+        let (a_start, a_end) = self.buffer_span(buf);
+        let (b_start, b_end) = other.buffer_span(buf);
         a_start < b_end && b_start < a_end
     }
 
@@ -107,23 +108,30 @@ impl SelectionSet {
         self.active = None;
     }
 
-    /// Merge overlapping same-kind regions; touching regions stay separate.
-    pub fn bank(&mut self, region: Region) {
+    /// Merge overlapping regions; touching regions stay separate. A linewise
+    /// region absorbs overlapping regions of other kinds. Charwise and
+    /// blockwise regions never merge with each other.
+    pub fn bank(&mut self, region: Region, buf: &TextBuffer) {
         let mut cur = region;
-        while let Some(idx) = self.regions.iter().position(|r| r.overlaps(&cur)) {
+        while let Some(idx) = self.regions.iter().position(|r| r.overlaps(&cur, buf)) {
             let other = self.regions.remove(idx);
-            let (a_start, a_end) = cur.span();
-            let (b_start, b_end) = other.span();
+            let (a_start, a_end) = cur.buffer_span(buf);
+            let (b_start, b_end) = other.buffer_span(buf);
+            let kind = if cur.kind == other.kind {
+                cur.kind
+            } else {
+                RangeKind::Linewise
+            };
             let start = a_start.min(b_start);
             let end = a_end.max(b_end);
-            cur = Region::new(start, end.saturating_sub(1), cur.kind);
+            cur = Region::new(start, end.saturating_sub(1), kind);
         }
         self.regions.push(cur);
     }
 
-    pub fn commit_active(&mut self) {
+    pub fn commit_active(&mut self, buf: &TextBuffer) {
         if let Some(region) = self.active.take() {
-            self.bank(region);
+            self.bank(region, buf);
         }
     }
 
@@ -134,10 +142,8 @@ impl SelectionSet {
         v
     }
 
-    /// Dedupes by `buffer_span` so same-line Linewise regions (identical
-    /// `buffer_span`, non-overlapping raw span) aren't applied twice.
     pub fn take_for_batch(&mut self, buf: &TextBuffer) -> Vec<Region> {
-        self.commit_active();
+        self.commit_active(buf);
         let mut v = std::mem::take(&mut self.regions);
         v.sort_by_key(|r| std::cmp::Reverse(r.span().0));
         let mut seen = std::collections::HashSet::new();
@@ -217,7 +223,7 @@ impl SelectionSet {
             return None;
         }
         let region = Region::new(new_start, new_end, last.kind);
-        self.bank(region);
+        self.bank(region, buf);
         Some((region, needle))
     }
 
@@ -236,9 +242,9 @@ impl SelectionSet {
         if tier >= InvariantTier::Standard {
             for i in 0..self.regions.len() {
                 for j in (i + 1)..self.regions.len() {
-                    if self.regions[i].overlaps(&self.regions[j]) {
+                    if self.regions[i].overlaps(&self.regions[j], buf) {
                         out.push(format!(
-                            "regions {i} and {j} of the same kind overlap: {:?} and {:?}",
+                            "regions {i} and {j} overlap: {:?} and {:?}",
                             self.regions[i], self.regions[j]
                         ));
                     }
