@@ -68,7 +68,7 @@ fn wait_idle_returns_after_roughly_its_timeout() {
 #[test]
 fn assertions_pass_against_matching_state() {
     let script = "new\nkeys ihello<Esc>\n\
-                  assert mode normal\nassert cursor 0 5\nassert line 0 \"hello\"\n\
+                  assert mode normal\nassert cursor 0 4\nassert line 0 \"hello\"\n\
                   assert buffer\n<<<\nhello\n>>>\n";
     let ops = parse(script).unwrap();
     run(&ops, Vec::new()).unwrap();
@@ -80,7 +80,7 @@ fn assert_cursor_fails_with_actual_position_in_the_message() {
     let err = run(&ops, Vec::new()).unwrap_err();
     assert_eq!(err.code, "REPLAY_ASSERT");
     assert!(err.message.contains("0:0"));
-    assert!(err.message.contains("0:5"));
+    assert!(err.message.contains("0:4"));
 }
 
 #[test]

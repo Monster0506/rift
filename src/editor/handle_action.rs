@@ -292,6 +292,12 @@ impl<T: TerminalBackend> Editor<T> {
                     if let Some(doc) = self.document_manager.active_document_mut() {
                         doc.commit_transaction();
                     }
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        if doc.buffer.get_col() > 0 {
+                            doc.buffer.move_left();
+                        }
+                        doc.buffer.clear_desired_col();
+                    }
                 }
                 self.state.command_history.reset_navigation();
                 self.state.search_history.reset_navigation();
