@@ -471,6 +471,44 @@ fn test_get_lines_returns_correct_lines() {
     }
 }
 
+fn count_lines_returned(call: &str) -> i64 {
+    let host = make_host();
+    host.update_state(StateUpdate {
+        buf_id: 1,
+        buf_kind: "file".to_string(),
+        source: lines_source(&["alpha", "beta", "gamma"]),
+        tab_width: 4,
+        expand_tabs: true,
+        mode: "normal",
+        line_ending: "lf",
+        ..Default::default()
+    });
+    assert!(host
+        .exec(&format!("_n = #rift.get_lines({call})"))
+        .is_none());
+    assert!(host.exec("rift.notify('info', tostring(_n))").is_none());
+    match &host.drain_mutations()[0] {
+        PluginMutation::Notify { message, .. } => message.parse().unwrap(),
+        _ => panic!("expected Notify"),
+    }
+}
+
+#[test]
+fn get_lines_inverted_range_returns_empty() {
+    assert_eq!(count_lines_returned("3, 1"), 0);
+}
+
+#[test]
+fn get_lines_start_past_end_returns_empty() {
+    assert_eq!(count_lines_returned("10, 20"), 0);
+    assert_eq!(count_lines_returned("4, -1"), 0);
+}
+
+#[test]
+fn get_lines_min_integer_start_does_not_overflow() {
+    assert_eq!(count_lines_returned("math.mininteger, -1"), 3);
+}
+
 #[test]
 fn test_line_count_and_find_materialize_from_deferred_source() {
     let host = make_host();

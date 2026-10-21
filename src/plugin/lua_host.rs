@@ -1204,13 +1204,16 @@ impl LuaHost {
             let f = lua.create_function(move |lua, (start, end_): (i64, i64)| {
                 let lines = sh.borrow_mut().lines();
                 let len = lua_int(lines.len());
-                let start = lua_index(start - 1);
+                let start = lua_index(start.saturating_sub(1)).min(lines.len());
                 let end_ = lua_index(if end_ < 0 {
                     len + end_ + 1
                 } else {
                     end_.min(len)
                 });
                 let t = lua.create_table()?;
+                if start >= end_ {
+                    return Ok(t);
+                }
                 for (i, line) in lines[start..end_].iter().enumerate() {
                     t.set(i + 1, line.as_str())?;
                 }

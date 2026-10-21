@@ -299,10 +299,10 @@ impl AnnotationStore {
     }
 
     fn ensure_index(&self) {
+        self.ensure_aux();
         if !self.index_dirty.get() {
             return;
         }
-        self.ensure_aux();
         let mut items: Vec<(std::ops::Range<usize>, AnnotationId)> = Vec::new();
         let mut starts: Vec<(usize, AnnotationId)> = Vec::new();
         for a in &self.annotations {
@@ -1521,6 +1521,7 @@ impl AnnotationStore {
         if self.index_dirty.get() {
             return;
         }
+        self.ensure_aux();
         let by_id = self.by_id.borrow();
         if let Some(tree) = self.index.borrow_mut().as_mut() {
             tree.resync(|id| {

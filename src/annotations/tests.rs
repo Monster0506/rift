@@ -1016,3 +1016,37 @@ fn test_snapshot_restore_keeps_live_lsp_annotations() {
     assert_eq!(diags.len(), 1);
     assert_eq!(diags[0].anchor, Anchor::Line(5));
 }
+
+fn store_with_line_entry_then_point() -> (AnnotationStore, AnnotationId) {
+    let mut store = AnnotationStore::new();
+    store.create_directory_entry(1, 1);
+    let point = store.add(Annotation::new(
+        Kind::new("a.point"),
+        Anchor::point(0),
+        AnnotationOwner::User,
+    ));
+    // Build the index so it goes clean before the deletion.
+    assert_eq!(store.query_at(0).count(), 1);
+    (store, point)
+}
+
+#[test]
+fn query_by_id_after_lines_deleted_returns_survivors() {
+    let (mut store, point) = store_with_line_entry_then_point();
+
+    store.on_lines_deleted(1, 1, 1);
+
+    let ids: Vec<_> = store.query_at(0).map(|a| a.id).collect();
+    assert_eq!(ids, vec![point]);
+}
+
+#[test]
+fn edit_after_lines_deleted_keeps_index_consistent() {
+    let (mut store, point) = store_with_line_entry_then_point();
+
+    store.on_lines_deleted(1, 1, 1);
+    store.on_edit(0, 0, 3);
+
+    let ids: Vec<_> = store.query_at(0).map(|a| a.id).collect();
+    assert_eq!(ids, vec![point]);
+}
