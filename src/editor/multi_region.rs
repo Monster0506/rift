@@ -338,82 +338,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         match op {
-            OperatorType::Delete => {
-                let batch = {
-                    let Some(doc) = self.document_manager.active_document_mut() else {
-                        return false;
-                    };
-                    doc.selection_set.take_for_batch(&doc.buffer)
-                };
-                if batch.is_empty() {
-                    return false;
-                }
-                let (clips, ranges): (Vec<Vec<Character>>, Vec<(usize, usize)>) = {
-                    let Some(doc) = self.document_manager.active_document() else {
-                        return false;
-                    };
-                    let live: Vec<&crate::selection::Region> = batch
-                        .iter()
-                        .filter(|r| {
-                            let (s, e) = r.buffer_span(&doc.buffer);
-                            s < e
-                        })
-                        .collect();
-                    let clips = live
-                        .iter()
-                        .map(|r| {
-                            let (s, e) = r.buffer_span(&doc.buffer);
-                            doc.buffer.chars(s..e).collect()
-                        })
-                        .collect();
-                    let spans = live
-                        .iter()
-                        .map(|r| {
-                            let (start, end) = r.delete_span(&doc.buffer);
-                            (start, end, start < r.buffer_span(&doc.buffer).0)
-                        })
-                        .collect();
-                    (clips, merge_spans(spans))
-                };
-                if ranges.is_empty() {
-                    return false;
-                }
-                for text in clips {
-                    self.clipboard_ring.push(text);
-                }
-                self.refresh_clipboard_buffer_if_open();
-                let ghost_allowed = self
-                    .document_manager
-                    .active_document()
-                    .is_some_and(super::super::document::Document::ghost_cut_allowed);
-                if self.state.settings.editing.ghost_cut && ghost_allowed {
-                    let cursor_target = ranges.iter().map(|&(s, _)| s).min();
-                    let ghosted_doc = self.document_manager.active_document_mut().map(|doc| {
-                        doc.create_ghosts(&ranges);
-                        if let Some(pos) = cursor_target {
-                            let _ = doc.buffer.set_cursor(pos);
-                        }
-                        doc.id
-                    });
-                    if ghosted_doc.is_some() {
-                        self.do_incremental_syntax_parse();
-                    }
-                    if let Some(id) = ghosted_doc {
-                        self.document_manager.set_most_recent_ghost_doc(Some(id));
-                    }
-                    ghosted_doc.is_some()
-                } else {
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        doc.begin_transaction("MultiRegion");
-                        for &(start, end) in &ranges {
-                            let _ = doc.delete_range(start, end);
-                        }
-                        doc.commit_transaction();
-                    }
-                    self.do_incremental_syntax_parse();
-                    true
-                }
-            }
+            OperatorType::Delete => self.run_set_delete(),
             OperatorType::Yank => self.apply_to_each_region(|editor, region| {
                 let Some(doc) = editor.document_manager.active_document() else {
                     return false;
@@ -433,6 +358,85 @@ impl<T: TerminalBackend> Editor<T> {
                     start
                 })
             }
+        }
+    }
+
+    fn run_set_delete(&mut self) -> bool {
+        use crate::buffer::api::BufferView;
+
+        let batch = {
+            let Some(doc) = self.document_manager.active_document_mut() else {
+                return false;
+            };
+            doc.selection_set.take_for_batch(&doc.buffer)
+        };
+        if batch.is_empty() {
+            return false;
+        }
+        let (clips, ranges): (Vec<Vec<Character>>, Vec<(usize, usize)>) = {
+            let Some(doc) = self.document_manager.active_document() else {
+                return false;
+            };
+            let live: Vec<&crate::selection::Region> = batch
+                .iter()
+                .filter(|r| {
+                    let (s, e) = r.buffer_span(&doc.buffer);
+                    s < e
+                })
+                .collect();
+            let clips = live
+                .iter()
+                .map(|r| {
+                    let (s, e) = r.buffer_span(&doc.buffer);
+                    doc.buffer.chars(s..e).collect()
+                })
+                .collect();
+            let spans = live
+                .iter()
+                .map(|r| {
+                    let (start, end) = r.delete_span(&doc.buffer);
+                    (start, end, start < r.buffer_span(&doc.buffer).0)
+                })
+                .collect();
+            (clips, merge_spans(spans))
+        };
+        if ranges.is_empty() {
+            return false;
+        }
+        for text in clips {
+            self.clipboard_ring.push(text);
+        }
+        self.refresh_clipboard_buffer_if_open();
+        let ghost_allowed = self
+            .document_manager
+            .active_document()
+            .is_some_and(super::super::document::Document::ghost_cut_allowed);
+        if self.state.settings.editing.ghost_cut && ghost_allowed {
+            let cursor_target = ranges.iter().map(|&(s, _)| s).min();
+            let ghosted_doc = self.document_manager.active_document_mut().map(|doc| {
+                doc.create_ghosts(&ranges);
+                if let Some(pos) = cursor_target {
+                    let _ = doc.buffer.set_cursor(pos);
+                }
+                doc.id
+            });
+            if ghosted_doc.is_some() {
+                self.do_incremental_syntax_parse();
+            }
+            if let Some(id) = ghosted_doc {
+                self.document_manager.set_most_recent_ghost_doc(Some(id));
+            }
+            ghosted_doc.is_some()
+        } else {
+            if let Some(doc) = self.document_manager.active_document_mut() {
+                doc.begin_transaction("MultiRegion");
+                for &(start, end) in &ranges {
+                    let _ = doc.delete_range(start, end);
+                }
+                doc.commit_transaction();
+            }
+            self.do_incremental_syntax_parse();
+            true
         }
     }
 
