@@ -17,6 +17,24 @@ fn line_end_offset(buf: &crate::buffer::TextBuffer, row: usize) -> usize {
     }
 }
 
+fn merge_spans(mut spans: Vec<(usize, usize, bool)>) -> Vec<(usize, usize)> {
+    spans.sort_unstable();
+    let mut merged: Vec<(usize, usize, bool)> = Vec::with_capacity(spans.len());
+    for (start, end, took) in spans {
+        match merged.last_mut() {
+            Some(last) if start < last.1 => {
+                last.1 = last.1.max(end);
+                if took && !last.2 {
+                    last.0 = last.0.saturating_sub(1);
+                    last.2 = true;
+                }
+            }
+            _ => merged.push((start, end, took)),
+        }
+    }
+    merged.into_iter().rev().map(|(s, e, _)| (s, e)).collect()
+}
+
 const EXPAND_CANDIDATES: &[(crate::text_objects::ObjectKind, u8)] = &[
     (crate::text_objects::ObjectKind::Word, 1),
     (crate::text_objects::ObjectKind::DoubleQuote, 1),
@@ -287,24 +305,37 @@ impl<T: TerminalBackend> Editor<T> {
                 if batch.is_empty() {
                     return false;
                 }
-                let ranges: Vec<(usize, usize)> = {
+                let (clips, ranges): (Vec<Vec<Character>>, Vec<(usize, usize)>) = {
                     let Some(doc) = self.document_manager.active_document() else {
                         return false;
                     };
-                    batch
+                    let live: Vec<&crate::selection::Region> = batch
                         .iter()
-                        .map(|region| region.buffer_span(&doc.buffer))
-                        .filter(|&(s, e)| s < e)
-                        .collect()
+                        .filter(|r| {
+                            let (s, e) = r.buffer_span(&doc.buffer);
+                            s < e
+                        })
+                        .collect();
+                    let clips = live
+                        .iter()
+                        .map(|r| {
+                            let (s, e) = r.buffer_span(&doc.buffer);
+                            doc.buffer.chars(s..e).collect()
+                        })
+                        .collect();
+                    let spans = live
+                        .iter()
+                        .map(|r| {
+                            let (start, end) = r.delete_span(&doc.buffer);
+                            (start, end, start < r.buffer_span(&doc.buffer).0)
+                        })
+                        .collect();
+                    (clips, merge_spans(spans))
                 };
                 if ranges.is_empty() {
                     return false;
                 }
-                for &(start, end) in &ranges {
-                    let Some(doc) = self.document_manager.active_document() else {
-                        continue;
-                    };
-                    let text: Vec<Character> = doc.buffer.chars(start..end).collect();
+                for text in clips {
                     self.clipboard_ring.push(text);
                 }
                 self.refresh_clipboard_buffer_if_open();

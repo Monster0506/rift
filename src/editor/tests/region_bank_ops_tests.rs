@@ -1163,3 +1163,32 @@ fn cycle_paste_after_set_clears_only_touches_the_single_most_recent_position() {
         "multi-region put never sets post_paste_state, so CyclePaste correctly no-ops"
     );
 }
+
+fn delete_linewise_regions(text: &str, offsets: &[usize]) -> String {
+    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, text);
+    for &at in offsets {
+        editor
+            .active_document()
+            .selection_set
+            .bank(Region::new(at, at, RangeKind::Linewise));
+    }
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.active_document().buffer.to_string()
+}
+
+#[test]
+fn set_aware_linewise_delete_of_last_line_leaves_no_blank_line() {
+    assert_eq!(delete_linewise_regions("a\nb\nc\nd", &[2, 6]), "a\nc");
+}
+
+#[test]
+fn set_aware_linewise_delete_of_adjacent_tail_lines() {
+    assert_eq!(delete_linewise_regions("a\nb\nc\nd", &[4, 6]), "a\nb");
+}

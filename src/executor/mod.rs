@@ -147,7 +147,7 @@ pub(crate) fn range_to_offsets(
             } else {
                 (end_line, start_line)
             };
-            let start = doc.buffer.line_index.get_start(first_line).unwrap_or(0);
+            let mut start = doc.buffer.line_index.get_start(first_line).unwrap_or(0);
             let len = doc.buffer.len();
             let end = if consume_trailing_newline {
                 if last_line + 1 < doc.buffer.get_total_lines() {
@@ -156,6 +156,7 @@ pub(crate) fn range_to_offsets(
                         .get_start(last_line + 1)
                         .unwrap_or(len)
                 } else {
+                    start = start.saturating_sub(1);
                     len
                 }
             } else {
@@ -330,7 +331,7 @@ fn change_motion_cmd(
     else {
         return;
     };
-    let (delete_start, delete_end) = range_to_offsets(&range, doc, true);
+    let (delete_start, delete_end) = range_to_offsets(&range, doc, false);
     if delete_end > delete_start {
         let _ = doc.delete_range(delete_start, delete_end);
     }

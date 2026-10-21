@@ -720,3 +720,61 @@ fn cw_and_yw_stop_at_line_end() {
     .unwrap();
     assert_eq!(doc.buffer.to_string(), "foo \nbaz");
 }
+
+fn run_linewise(text: &str, cursor: usize, cmd: Command, typed: &str) -> String {
+    let mut doc = create_doc();
+    doc.buffer.insert_str(text).unwrap();
+    doc.buffer.set_cursor(cursor).unwrap();
+    execute_command(cmd, &mut doc, false, 8, 24, None, None).unwrap();
+    for ch in typed.chars() {
+        execute_command(Command::InsertChar(ch), &mut doc, false, 8, 24, None, None).unwrap();
+    }
+    doc.buffer.to_string()
+}
+
+#[test]
+fn dj_onto_last_line_removes_preceding_newline() {
+    let out = run_linewise("a\nb\nc", 2, Command::Delete(Motion::Down, 1), "");
+    assert_eq!(out, "a");
+}
+
+#[test]
+fn dk_from_last_line_removes_preceding_newline() {
+    let out = run_linewise("a\nb\nc", 4, Command::Delete(Motion::Up, 1), "");
+    assert_eq!(out, "a");
+}
+
+#[test]
+#[allow(non_snake_case)]
+fn dG_to_last_line_removes_preceding_newline() {
+    let out = run_linewise("a\nb\nc", 2, Command::Delete(Motion::EndOfFile, 1), "");
+    assert_eq!(out, "a");
+}
+
+#[test]
+fn dj_on_two_line_buffer_leaves_empty_buffer() {
+    let out = run_linewise("a\nb", 0, Command::Delete(Motion::Down, 1), "");
+    assert_eq!(out, "");
+}
+
+#[test]
+fn change_down_keeps_line_terminator() {
+    let out = run_linewise(
+        "one\ntwo\nthree\nfour",
+        4,
+        Command::Change(Motion::Down, 1),
+        "X",
+    );
+    assert_eq!(out, "one\nX\nfour");
+}
+
+#[test]
+fn change_to_file_start_keeps_line_terminator() {
+    let out = run_linewise(
+        "one\ntwo\nthree\nfour",
+        4,
+        Command::Change(Motion::StartOfFile, 1),
+        "X",
+    );
+    assert_eq!(out, "X\nthree\nfour");
+}

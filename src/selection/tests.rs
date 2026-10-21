@@ -178,3 +178,27 @@ fn blockwise_regions_only_merge_with_other_blockwise_overlap() {
         "but DOES merge with an overlapping Blockwise region"
     );
 }
+
+#[test]
+fn linewise_region_on_last_line_includes_preceding_newline() {
+    let mut buf = TextBuffer::new(20).unwrap();
+    buf.insert_str("a\nb\nc").unwrap();
+
+    let last = Region::new(4, 4, RangeKind::Linewise);
+    assert_eq!(last.delete_span(&buf), (3, 5));
+
+    let middle = Region::new(2, 2, RangeKind::Linewise);
+    assert_eq!(middle.delete_span(&buf), (2, 4));
+
+    let only = Region::new(0, 0, RangeKind::Linewise);
+    assert_eq!(only.delete_span(&buf), (0, 2));
+}
+
+#[test]
+fn linewise_region_on_single_line_buffer_deletes_from_zero() {
+    let mut buf = TextBuffer::new(20).unwrap();
+    buf.insert_str("abc").unwrap();
+
+    let only = Region::new(1, 1, RangeKind::Linewise);
+    assert_eq!(only.delete_span(&buf), (0, 3));
+}

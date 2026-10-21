@@ -50,6 +50,18 @@ impl Region {
         }
     }
 
+    pub fn delete_span(&self, buf: &TextBuffer) -> (usize, usize) {
+        let (start, end) = self.buffer_span(buf);
+        if self.kind != RangeKind::Linewise || start == 0 {
+            return (start, end);
+        }
+        let last_line = buf.line_index.get_line_at(self.anchor.max(self.cursor));
+        if last_line + 1 < buf.get_total_lines() {
+            return (start, end);
+        }
+        (start - 1, end)
+    }
+
     fn overlaps(&self, other: &Self) -> bool {
         if self.kind != other.kind {
             return false;
