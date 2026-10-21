@@ -76,10 +76,7 @@ pub fn compute_motion_range(
             | Motion::StartOfFile
             | Motion::EndOfFile
     );
-    let is_inclusive = matches!(
-        motion,
-        Motion::FindCharForward(_) | Motion::FindCharBackward(_)
-    );
+    let is_inclusive = matches!(motion, Motion::FindCharForward(_) | Motion::WordEnd);
 
     let anchor = doc.buffer.cursor();
 
@@ -115,6 +112,52 @@ pub fn compute_motion_range(
     } else {
         Some(MotionRange::charwise(anchor, new_cursor))
     }
+}
+
+pub fn compute_change_range(
+    motion: Motion,
+    count: usize,
+    doc: &mut Document,
+    viewport_height: usize,
+    last_search_query: Option<&str>,
+) -> Option<crate::wrap::MotionRange> {
+    if !matches!(motion, Motion::NextWord) || !on_non_blank(&doc.buffer) {
+        return compute_motion_range(motion, count, doc, viewport_height, last_search_query);
+    }
+
+    let cursor = doc.buffer.cursor();
+    let remaining = if on_word_end(&doc.buffer) {
+        count.max(1) - 1
+    } else {
+        count
+    };
+    if remaining == 0 {
+        return Some(crate::wrap::MotionRange::charwise_inclusive(cursor, cursor));
+    }
+
+    compute_motion_range(
+        Motion::WordEnd,
+        remaining,
+        doc,
+        viewport_height,
+        last_search_query,
+    )
+}
+
+fn on_non_blank(buf: &TextBuffer) -> bool {
+    use crate::movement::classify::{classify_character, CharClass};
+    buf.char_at(buf.cursor())
+        .is_some_and(|c| classify_character(c) != CharClass::Whitespace)
+}
+
+fn on_word_end(buf: &TextBuffer) -> bool {
+    use crate::movement::classify::classify_character;
+    let cursor = buf.cursor();
+    let Some(cur) = buf.char_at(cursor) else {
+        return false;
+    };
+
+    buf.char_at(cursor + 1).map(classify_character) != Some(classify_character(cur))
 }
 
 fn clamp_to_line_end(buf: &mut crate::buffer::TextBuffer, from: usize) {
@@ -329,7 +372,7 @@ fn change_motion_cmd(
     viewport_height: usize,
     last_search_query: Option<&str>,
 ) {
-    let Some(range) = compute_motion_range(motion, count, doc, viewport_height, last_search_query)
+    let Some(range) = compute_change_range(motion, count, doc, viewport_height, last_search_query)
     else {
         return;
     };

@@ -98,43 +98,71 @@ fn test_delete_find_char_forward_inclusive_partial() {
 }
 
 #[test]
-fn test_delete_find_char_backward_includes_cursor_char() {
-    // dFa in "abcd" with cursor at 3 ('d') should delete "abcd" (includes cursor char 'd')
-    let mut doc = create_doc();
-    doc.buffer.insert_str("abcd").unwrap();
-    doc.buffer.set_cursor(3).unwrap();
-
-    execute_command(
-        Command::Delete(Motion::FindCharBackward('a'), 1),
-        &mut doc,
-        false,
-        8,
-        24,
-        None,
-        None,
-    )
-    .unwrap();
-    assert_eq!(doc.buffer.to_string(), "");
+fn de_deletes_through_word_end() {
+    assert_eq!(
+        run_op("foo bar", 0, Command::Delete(Motion::WordEnd, 1)),
+        " bar"
+    );
 }
 
 #[test]
-fn test_delete_find_char_backward_partial() {
-    // dFb in "abcd" with cursor at 3 ('d') should delete "bcd" (from 'b' through 'd' inclusive)
-    let mut doc = create_doc();
-    doc.buffer.insert_str("abcd").unwrap();
-    doc.buffer.set_cursor(3).unwrap();
+fn d_back_find_excludes_cursor_char() {
+    assert_eq!(
+        run_op("abcd", 3, Command::Delete(Motion::FindCharBackward('b'), 1)),
+        "ad"
+    );
+}
 
-    execute_command(
-        Command::Delete(Motion::FindCharBackward('b'), 1),
-        &mut doc,
-        false,
-        8,
-        24,
-        None,
-        None,
-    )
-    .unwrap();
-    assert_eq!(doc.buffer.to_string(), "a");
+#[test]
+fn d_back_till_keeps_target_char() {
+    assert_eq!(
+        run_op(
+            "abxcd",
+            4,
+            Command::Delete(Motion::TillCharBackward('x'), 1)
+        ),
+        "abxd"
+    );
+}
+
+#[test]
+fn cw_keeps_trailing_whitespace() {
+    assert_eq!(
+        run_op("foo bar", 0, Command::Change(Motion::NextWord, 1)),
+        " bar"
+    );
+}
+
+#[test]
+fn cw_on_last_char_of_word_changes_that_char_only() {
+    assert_eq!(
+        run_op("foo bar", 2, Command::Change(Motion::NextWord, 1)),
+        "fo bar"
+    );
+}
+
+#[test]
+fn cw_count_on_word_end_reaches_next_word_end() {
+    assert_eq!(
+        run_op("a bc d", 0, Command::Change(Motion::NextWord, 2)),
+        " d"
+    );
+}
+
+#[test]
+fn cw_on_blank_changes_blanks_only() {
+    assert_eq!(
+        run_op("a   b", 1, Command::Change(Motion::NextWord, 1)),
+        "ab"
+    );
+}
+
+fn run_op(text: &str, cursor: usize, cmd: Command) -> String {
+    let mut doc = create_doc();
+    doc.buffer.insert_str(text).unwrap();
+    doc.buffer.set_cursor(cursor).unwrap();
+    execute_command(cmd, &mut doc, false, 8, 24, None, None).unwrap();
+    doc.buffer.to_string()
 }
 
 #[test]

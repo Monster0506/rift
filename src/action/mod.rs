@@ -159,7 +159,7 @@ impl Motion {
                 jump_to_match(buf, last_search_query, SearchDirection::Backward);
             }
             Self::TillCharForward(ch) => till_char_forward(buf, ch, op_ctx),
-            Self::TillCharBackward(ch) => till_char_backward(buf, ch, op_ctx),
+            Self::TillCharBackward(ch) => till_char_backward(buf, ch),
             // Text objects resolve at operator level; normal mode does not move.
             Self::RepeatFindForward | Self::RepeatFindBackward | Self::TextObject(_) => {}
             Self::ToLine(line_idx) => {
@@ -205,11 +205,7 @@ fn till_char_forward(
     }
 }
 
-fn till_char_backward(
-    buf: &mut crate::buffer::TextBuffer,
-    ch: char,
-    op_ctx: crate::wrap::OperatorContext,
-) {
+fn till_char_backward(buf: &mut crate::buffer::TextBuffer, ch: char) {
     buf.clear_desired_col();
     let target = crate::character::Character::from(ch);
     let current_line = buf.get_line();
@@ -224,12 +220,7 @@ fn till_char_backward(
         if end > line_start {
             for pos in (line_start..end).rev() {
                 if buf.char_at(pos) == Some(target) {
-                    let land = if op_ctx == crate::wrap::OperatorContext::Operator {
-                        pos
-                    } else {
-                        pos + 1
-                    };
-                    let _ = buf.set_cursor(land);
+                    let _ = buf.set_cursor(pos + 1);
                     return;
                 }
             }

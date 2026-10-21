@@ -41,8 +41,14 @@ impl<T: TerminalBackend> Editor<T> {
 
         let viewport_height = self.render_system.viewport.visible_rows();
         let last_search_query = self.state.last_search_query.clone();
+        let is_change = op == crate::action::OperatorType::Change;
         let motion_range = self.document_manager.active_document_mut().and_then(|doc| {
-            crate::executor::compute_motion_range(
+            let compute = if is_change {
+                crate::executor::compute_change_range
+            } else {
+                crate::executor::compute_motion_range
+            };
+            compute(
                 motion,
                 count,
                 doc,

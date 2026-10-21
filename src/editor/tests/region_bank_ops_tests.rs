@@ -340,7 +340,7 @@ fn single_region_change_unaffected_by_the_new_batching_branch() {
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "Xbar");
+    assert_eq!(editor.active_document().buffer.to_string(), "X bar");
 }
 
 #[test]
