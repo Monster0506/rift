@@ -1,36 +1,36 @@
 //! CLI argument parser for rift.
 
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub(crate) const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Goto {
+pub(crate) enum Goto {
     LastLine,
     Line(usize),
 }
 
 /// Parsed CLI arguments.
 #[derive(Debug, Default, PartialEq, Eq)]
-pub struct Args {
-    pub file: Option<String>,
-    pub goto: Option<Goto>,
-    pub search: Option<String>,
-    pub commands: Vec<String>,
-    pub daemon: bool,
-    pub detach: bool,
-    pub connect: Option<String>,
-    pub list_sessions: bool,
-    pub lsp_broker: Option<String>,
+pub(crate) struct Args {
+    pub(crate) file: Option<String>,
+    pub(crate) goto: Option<Goto>,
+    pub(crate) search: Option<String>,
+    pub(crate) commands: Vec<String>,
+    pub(crate) daemon: bool,
+    pub(crate) detach: bool,
+    pub(crate) connect: Option<String>,
+    pub(crate) list_sessions: bool,
+    pub(crate) lsp_broker: Option<String>,
 }
 
-pub const USAGE: &str = "Usage: rift [+] [+N] [+/pattern] [-c cmd] [--cmd cmd] [-v|--version] [--daemon] [-d|--detach] [--connect [user@]host] [--list-sessions] [file]";
+pub(crate) const USAGE: &str = "Usage: rift [+] [+N] [+/pattern] [-c cmd] [--cmd cmd] [-v|--version] [--daemon] [-d|--detach] [--connect [user@]host] [--list-sessions] [file]";
 
-pub fn parse() -> Result<Option<Args>, String> {
+pub(crate) fn parse() -> Result<Option<Args>, String> {
     let raw: Vec<String> = std::env::args().skip(1).collect();
     let strs: Vec<&str> = raw.iter().map(String::as_str).collect();
     parse_args(&strs)
 }
 
-pub fn parse_args(args: &[&str]) -> Result<Option<Args>, String> {
+pub(crate) fn parse_args(args: &[&str]) -> Result<Option<Args>, String> {
     let mut result = Args::default();
     let mut i = 0;
 

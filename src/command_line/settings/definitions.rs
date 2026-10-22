@@ -463,7 +463,7 @@ fn get_undo_dir(s: &UserSettings) -> SettingValue {
     )
 }
 
-pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
+pub(crate) const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "command_line.borderstyle",
         aliases: &["clborderstyle"],
@@ -728,6 +728,6 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
 ];
 
 #[must_use]
-pub const fn create_settings_registry() -> SettingsRegistry<UserSettings> {
+pub(crate) const fn create_settings_registry() -> SettingsRegistry<UserSettings> {
     SettingsRegistry::new(SETTINGS)
 }

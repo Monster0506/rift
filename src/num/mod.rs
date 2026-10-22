@@ -20,13 +20,14 @@ pub fn u64_to_f64(v: u64) -> f64 {
 
 /// Nearest `f64` to `v` (ties to even), identical to `v as f64`.
 #[must_use]
-pub fn usize_to_f64(v: usize) -> f64 {
+pub(crate) fn usize_to_f64(v: usize) -> f64 {
     u64_to_f64(u64::try_from(v).unwrap_or(u64::MAX))
 }
 
+#[cfg(test)]
 /// Nearest `f64` to `v` (ties to even), identical to `v as f64`.
 #[must_use]
-pub fn i64_to_f64(v: i64) -> f64 {
+pub(crate) fn i64_to_f64(v: i64) -> f64 {
     let magnitude = u64_to_f64(v.unsigned_abs());
     if v < 0 {
         -magnitude
@@ -38,7 +39,7 @@ pub fn i64_to_f64(v: i64) -> f64 {
 /// Truncates toward zero. NaN and values below 1 give 0; values past
 /// `u64::MAX` (including infinity) saturate.
 #[must_use]
-pub fn f64_to_u64(x: f64) -> u64 {
+pub(crate) fn f64_to_u64(x: f64) -> u64 {
     if x.is_nan() || x < 1.0 {
         return 0;
     }
@@ -59,7 +60,7 @@ pub fn f64_to_u64(x: f64) -> u64 {
 
 /// Truncates toward zero, saturating at the `i64` range. NaN gives 0.
 #[must_use]
-pub fn f64_to_i64(x: f64) -> i64 {
+pub(crate) fn f64_to_i64(x: f64) -> i64 {
     if x.is_nan() {
         return 0;
     }
@@ -72,7 +73,7 @@ pub fn f64_to_i64(x: f64) -> i64 {
 
 /// Truncates toward zero. NaN and negatives give 0; saturates at `usize::MAX`.
 #[must_use]
-pub fn f64_to_usize(x: f64) -> usize {
+pub(crate) fn f64_to_usize(x: f64) -> usize {
     usize::try_from(f64_to_u64(x)).unwrap_or(usize::MAX)
 }
 

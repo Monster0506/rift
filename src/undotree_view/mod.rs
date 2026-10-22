@@ -160,7 +160,7 @@ impl TreeRows {
 
 #[must_use]
 // One layout pass; the column state is shared across every row.
-pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSeq>, usize) {
+pub(crate) fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSeq>, usize) {
     let mut all_seqs: Vec<EditSeq> = tree.nodes.keys().copied().collect();
     all_seqs.sort_by(|a, b| b.cmp(a)); // Descending
 
@@ -203,7 +203,7 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
 
 type Highlights = Vec<(std::ops::Range<usize>, crate::color::Color)>;
 #[must_use]
-pub fn render_tree_to_text(tree: &UndoTree) -> (String, Vec<EditSeq>, Highlights) {
+pub(crate) fn render_tree_to_text(tree: &UndoTree) -> (String, Vec<EditSeq>, Highlights) {
     let (lines, sequences, _cursor) = render_tree(tree);
     let mut text = String::new();
     let mut highlights: Highlights = Vec::new();

@@ -1,7 +1,7 @@
 //! CLI runner for replay scripts: parses a script file, runs it against a
 //! headless `Editor`, and prints marks, key latency, and a perf breakdown.
 
-use monster_rift::replay::{self, RunReport};
+use monster_rift::{parse_replay, run_replay, RunReport};
 use std::time::Duration;
 
 fn main() {
@@ -15,12 +15,12 @@ fn main() {
         std::process::exit(1);
     });
 
-    let ops = replay::parse(&source).unwrap_or_else(|e| {
+    let ops = parse_replay(&source).unwrap_or_else(|e| {
         eprintln!("rift-replay: {path}: {e}");
         std::process::exit(1);
     });
 
-    let report = replay::run(&ops, std::io::sink()).unwrap_or_else(|e| {
+    let report = run_replay(&ops, std::io::sink()).unwrap_or_else(|e| {
         eprintln!("rift-replay: {path}: [{}] {}", e.code, e.message);
         std::process::exit(1);
     });
@@ -32,8 +32,8 @@ fn main() {
 
 #[cfg(feature = "perf_instrumentation")]
 fn print_span_alloc_stats() {
-    use monster_rift::num::u64_to_f64;
-    let mut stats = monster_rift::perf::span_stats();
+    use monster_rift::u64_to_f64;
+    let mut stats = monster_rift::span_stats();
     if stats.is_empty() {
         return;
     }
@@ -67,8 +67,8 @@ const fn print_span_alloc_stats() {}
 
 #[cfg(feature = "perf_instrumentation")]
 fn print_frame_stats() {
-    use monster_rift::num::u64_to_f64;
-    let s = monster_rift::perf::frame_stats();
+    use monster_rift::u64_to_f64;
+    let s = monster_rift::frame_stats();
     if s.count == 0 {
         return;
     }
@@ -102,13 +102,13 @@ fn print_frame_stats() {
         "  clones: avg={:.1} min={} max={}",
         s.avg_clones, s.min_clones, s.max_clones
     );
-    let cursor_advances = monster_rift::perf::cursor_advance_count();
+    let cursor_advances = monster_rift::cursor_advance_count();
     println!(
         "  cursor advances (render decorators, whole run): total={} avg/frame={:.1}",
         cursor_advances,
         u64_to_f64(cursor_advances) / count
     );
-    let (rows_painted, rows_skipped) = monster_rift::perf::row_paint_counts();
+    let (rows_painted, rows_skipped) = monster_rift::row_paint_counts();
     let rows_total = rows_painted + rows_skipped;
     let skip_pct = if rows_total == 0 {
         0.0

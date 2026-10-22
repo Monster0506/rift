@@ -1,5 +1,5 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ParsedCommand {
+pub(crate) enum ParsedCommand {
     /// Quit command
     Quit {
         bangs: usize,

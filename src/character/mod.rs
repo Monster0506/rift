@@ -2,7 +2,7 @@ use std::fmt::{self, Display, Formatter};
 use unicode_width::UnicodeWidthChar;
 
 /// First C1 control code point; encodes as two UTF-8 bytes.
-pub const C1_CONTROL_MIN: u8 = 0x80;
+pub(crate) const C1_CONTROL_MIN: u8 = 0x80;
 
 /// Bit toggled to map a control byte to its caret letter (0x01 -> 'A', 0x7F -> '?').
 const CARET_FLIP: u8 = 0x40;
@@ -25,12 +25,13 @@ pub enum Character {
     Control(u8),
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 impl Character {
     /// Render the character to a formatter/output
     ///
     /// # Errors
     /// Returns an error if writing to `out` fails.
-    pub fn render(&self, out: &mut impl fmt::Write) -> fmt::Result {
+    pub(crate) fn render(&self, out: &mut impl fmt::Write) -> fmt::Result {
         match self {
             Self::Unicode(c) => write!(out, "{c}"),
             Self::Byte(b) => write!(out, "\\x{b:02X}"),
@@ -49,7 +50,7 @@ impl Character {
 
     /// Get the visual width of the character at a specific column
     #[must_use]
-    pub fn render_width(&self, col: usize, tab_width: usize) -> usize {
+    pub(crate) fn render_width(&self, col: usize, tab_width: usize) -> usize {
         match self {
             Self::Unicode(c) => UnicodeWidthChar::width(*c).unwrap_or(0),
             Self::Byte(_) | Self::Control(C1_CONTROL_MIN..=u8::MAX) => 4, // \xNN or <NN>
@@ -59,15 +60,9 @@ impl Character {
         }
     }
 
-    /// Get the logical width (unit of movement)
-    #[must_use]
-    pub const fn logical_width(&self) -> usize {
-        1
-    }
-
     /// Get the UTF-8 byte length for serialization
     #[must_use]
-    pub const fn len_utf8(&self) -> usize {
+    pub(crate) const fn len_utf8(&self) -> usize {
         match self {
             Self::Unicode(c) => c.len_utf8(),
             Self::Control(b) if *b >= C1_CONTROL_MIN => 2,
@@ -76,7 +71,7 @@ impl Character {
     }
 
     /// Encode the character as UTF-8 bytes into a buffer
-    pub fn encode_utf8(&self, buf: &mut Vec<u8>) {
+    pub(crate) fn encode_utf8(&self, buf: &mut Vec<u8>) {
         match self {
             Self::Unicode(c) => {
                 let mut b = [0; 4];
@@ -96,7 +91,8 @@ impl Character {
 
     /// Convert to char if possible (best effort for display/search)
     #[must_use]
-    pub const fn to_char_lossy(&self) -> char {
+    #[allow(clippy::wrong_self_convention)]
+    pub(crate) const fn to_char_lossy(&self) -> char {
         match self {
             Self::Unicode(c) => *c,
             Self::Byte(_) => '\u{FFFD}',

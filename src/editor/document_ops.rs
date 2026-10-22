@@ -35,7 +35,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// # Errors
     /// Returns `Err` when the document is unknown, not in tab order, has unsaved changes
     /// on a normal removal, or a replacement buffer cannot be created.
-    pub fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
+    pub(crate) fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
         self.remove_document_with_intent(id, crate::document::RemovalIntent::Normal)
     }
 
@@ -144,7 +144,11 @@ impl<T: TerminalBackend> Editor<T> {
     /// Returns `Err` when an undo file cannot be opened, a placeholder cannot be created,
     /// the parent directory is missing, or the active document cannot be reloaded
     /// (unsaved changes without `force`, or reload unsupported).
-    pub fn open_file(&mut self, file_path: Option<String>, force: bool) -> Result<(), RiftError> {
+    pub(crate) fn open_file(
+        &mut self,
+        file_path: Option<String>,
+        force: bool,
+    ) -> Result<(), RiftError> {
         if let Some(path_str) = file_path {
             let path_str = self.resolve_link_path(path_str);
             let path = std::path::PathBuf::from(&path_str);
@@ -238,7 +242,7 @@ impl<T: TerminalBackend> Editor<T> {
         reload_dispatch: crate::document::ReloadDispatch,
     ) -> Result<(), RiftError> {
         match reload_dispatch {
-            crate::document::ReloadDispatch::Native(_) => {
+            crate::document::ReloadDispatch::Native => {
                 let handler = self.native_reload_handlers.get(&kind_id).copied();
                 match handler {
                     Some(NativeReloadHandler::Infallible(handler)) => handler(self),
@@ -265,7 +269,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// # Errors
     /// Returns `Err` when the scratch document cannot be created or switched to.
-    pub fn create_scratch_buffer(
+    pub(crate) fn create_scratch_buffer(
         &mut self,
         title: String,
         lines: &[String],
@@ -291,7 +295,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// cannot be created.
     /// # Panics
     /// Panics if the new terminal document has no handle (`terminal_emulation` builds).
-    pub fn open_terminal(&mut self, shell_cmd: Option<String>) -> Result<(), RiftError> {
+    pub(crate) fn open_terminal(&mut self, shell_cmd: Option<String>) -> Result<(), RiftError> {
         let size = self
             .term
             .get_size()

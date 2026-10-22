@@ -4,15 +4,15 @@ use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 
 #[derive(Debug)]
-pub struct ExplorerPreviewResult {
-    pub right_doc_id: DocumentId,
-    pub path: PathBuf,
-    pub dir_entries: Option<Vec<DirEntry>>,
-    pub file_text: Option<String>,
-    pub undo_file: Option<crate::history::persist::ParsedUndoFile>,
+pub(crate) struct ExplorerPreviewResult {
+    pub(crate) right_doc_id: DocumentId,
+    pub(crate) path: PathBuf,
+    pub(crate) dir_entries: Option<Vec<DirEntry>>,
+    pub(crate) file_text: Option<String>,
+    pub(crate) undo_file: Option<crate::history::persist::ParsedUndoFile>,
 }
 
-crate::impl_job_payload!(ExplorerPreviewResult);
+crate::job_manager::impl_job_payload!(ExplorerPreviewResult);
 
 const FILE_PREVIEW_BYTES: usize = 8 * 1024; // 8 KiB
 const CUSTOM_PREVIEW_BYTES: usize = 4 * 1024 * 1024; // 4 MiB
@@ -29,7 +29,7 @@ fn decode_preview_text(slice: &[u8]) -> Option<&str> {
 }
 
 #[derive(Debug)]
-pub struct ExplorerPreviewJob {
+pub(crate) struct ExplorerPreviewJob {
     right_doc_id: DocumentId,
     path: PathBuf,
     show_hidden: bool,
@@ -38,19 +38,13 @@ pub struct ExplorerPreviewJob {
 
 impl ExplorerPreviewJob {
     #[must_use]
-    pub const fn new(right_doc_id: DocumentId, path: PathBuf, show_hidden: bool) -> Self {
+    pub(crate) const fn new(right_doc_id: DocumentId, path: PathBuf, show_hidden: bool) -> Self {
         Self {
             right_doc_id,
             path,
             show_hidden,
             token: None,
         }
-    }
-
-    #[must_use]
-    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
-        self.token = Some(token);
-        self
     }
 }
 

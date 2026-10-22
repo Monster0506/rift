@@ -28,12 +28,12 @@ fn char_safe_suffix(s: &str, max_chars: usize) -> &str {
 }
 
 /// Status bar renderer
-pub struct StatusBar;
+pub(crate) struct StatusBar;
 
 impl StatusBar {
     /// Format mode name for display
     #[must_use]
-    pub const fn format_mode(mode: Mode) -> &'static str {
+    pub(crate) const fn format_mode(mode: Mode) -> &'static str {
         match mode {
             Mode::Normal => crate::constants::modes::NORMAL,
             Mode::Insert => crate::constants::modes::INSERT,
@@ -66,7 +66,7 @@ impl StatusBar {
     }
 
     /// Render status into the caller-owned scratch frame.
-    pub fn render_to_layer(
+    pub(crate) fn render_to_layer(
         layer: &mut Layer,
         state: &StatusDrawState,
         frame: &mut crate::paint::PaintFrame,

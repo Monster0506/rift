@@ -15,11 +15,11 @@ use crate::color::Color;
 use crate::error::RiftError;
 use crate::key::{InputEvent, Key, KeyCode as RiftCode, Mods};
 use crate::screen_buffer::{AttrKind, StyleOp};
-use crate::term::{ColorTerminal, Size, TerminalBackend};
+use crate::term::{Size, TerminalBackend};
 
 /// Convert the core `Color` type to crossterm's `Color`.
 #[must_use]
-pub const fn color_to_crossterm(color: Color) -> CrosstermColor {
+pub(crate) const fn color_to_crossterm(color: Color) -> CrosstermColor {
     match color {
         Color::Reset => CrosstermColor::Reset,
         Color::Black => CrosstermColor::Black,
@@ -43,9 +43,10 @@ pub const fn color_to_crossterm(color: Color) -> CrosstermColor {
     }
 }
 
+#[cfg(test)]
 /// Convert crossterm's `Color` to the core `Color` type.
 #[must_use]
-pub const fn color_from_crossterm(color: CrosstermColor) -> Color {
+pub(crate) const fn color_from_crossterm(color: CrosstermColor) -> Color {
     match color {
         CrosstermColor::Reset => Color::Reset,
         CrosstermColor::Black => Color::Black,
@@ -91,7 +92,7 @@ const fn crossterm_attr(kind: AttrKind, on: bool) -> crossterm::style::Attribute
 ///
 /// # Errors
 /// Returns `Err` if a style op cannot be encoded into `buf`.
-pub fn encode_style_ops(ops: &[StyleOp], buf: &mut Vec<u8>) -> Result<(), RiftError> {
+pub(crate) fn encode_style_ops(ops: &[StyleOp], buf: &mut Vec<u8>) -> Result<(), RiftError> {
     use crossterm::style::{Attribute, SetAttribute};
 
     for op in ops {
@@ -146,7 +147,7 @@ impl CrosstermBackend<std::io::Stdout> {
 impl<W: Write> CrosstermBackend<W> {
     /// Build a backend that encodes through the same crossterm calls as
     /// `new()` but writes to `writer` instead of stdout (no TTY required).
-    pub fn with_writer(writer: W) -> Self {
+    pub(crate) fn with_writer(writer: W) -> Self {
         Self {
             writer: BufWriter::with_capacity(256 * 1024, writer),
             raw_mode_enabled: false,
@@ -282,25 +283,6 @@ impl<W: Write> TerminalBackend for CrosstermBackend<W> {
             CursorShape::SteadyBar => cursor::SetCursorStyle::SteadyBar,
         };
         queue!(self.writer, style).map_err(|e| format!("Failed to set cursor shape: {e}"))?;
-        Ok(())
-    }
-}
-
-impl<W: Write> ColorTerminal for CrosstermBackend<W> {
-    fn set_foreground_color(&mut self, color: Color) -> Result<(), String> {
-        execute!(self.writer, SetForegroundColor(color_to_crossterm(color)))
-            .map_err(|e| format!("Failed to set foreground color: {e}"))?;
-        Ok(())
-    }
-
-    fn set_background_color(&mut self, color: Color) -> Result<(), String> {
-        execute!(self.writer, SetBackgroundColor(color_to_crossterm(color)))
-            .map_err(|e| format!("Failed to set background color: {e}"))?;
-        Ok(())
-    }
-
-    fn reset_colors(&mut self) -> Result<(), String> {
-        execute!(self.writer, ResetColor).map_err(|e| format!("Failed to reset colors: {e}"))?;
         Ok(())
     }
 }

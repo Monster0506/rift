@@ -64,7 +64,7 @@ struct GitStatusView<'a> {
 }
 
 impl Document {
-    pub fn replace_buffer_content(&mut self, content: &str) {
+    pub(crate) fn replace_buffer_content(&mut self, content: &str) {
         let old_revision = self.buffer.revision;
         if let Ok(mut new_buffer) = TextBuffer::new(content.len().max(64)) {
             let _ = new_buffer.insert_str(content);
@@ -88,7 +88,7 @@ impl Document {
         }
     }
 
-    pub fn populate_directory_buffer(&mut self, mut entries: Vec<DirEntry>) {
+    pub(crate) fn populate_directory_buffer(&mut self, mut entries: Vec<DirEntry>) {
         use crate::color::Color;
 
         let Some(state) = self.state.try_get(DIRECTORY_STATE_KEY) else {
@@ -157,7 +157,7 @@ impl Document {
         self.history.mark_saved();
     }
 
-    pub fn recompute_directory_highlights(&mut self) {
+    pub(crate) fn recompute_directory_highlights(&mut self) {
         use crate::color::Color;
 
         let Some(state) = self.state.try_get(DIRECTORY_STATE_KEY) else {
@@ -231,7 +231,7 @@ impl Document {
         self.custom_highlights = highlights;
     }
 
-    pub fn populate_undotree_buffer(
+    pub(crate) fn populate_undotree_buffer(
         &mut self,
         text: &str,
         sequences: Vec<crate::history::EditSeq>,
@@ -247,7 +247,10 @@ impl Document {
         self.history.mark_saved();
     }
 
-    pub fn populate_undo_file_view(&mut self, parsed: &crate::history::persist::ParsedUndoFile) {
+    pub(crate) fn populate_undo_file_view(
+        &mut self,
+        parsed: &crate::history::persist::ParsedUndoFile,
+    ) {
         let mut hash_hex = String::new();
         for b in &parsed.content_hash {
             let _ = write!(hash_hex, "{b:02x}");
@@ -278,7 +281,7 @@ impl Document {
         self.history.mark_saved();
     }
 
-    pub fn populate_messages_buffer(&mut self, log: &[crate::notification::MessageEntry]) {
+    pub(crate) fn populate_messages_buffer(&mut self, log: &[crate::notification::MessageEntry]) {
         use crate::color::Color;
         use crate::notification::{JobEventKind, MessageEntry, NotificationType};
 
@@ -374,7 +377,7 @@ impl Document {
         self.history.mark_saved();
     }
 
-    pub fn populate_clipboard_buffer(
+    pub(crate) fn populate_clipboard_buffer(
         &mut self,
         entries: &std::collections::VecDeque<Vec<crate::character::Character>>,
     ) {
@@ -407,7 +410,10 @@ impl Document {
         self.history.mark_saved();
     }
 
-    pub fn populate_buffer_list_buffer(&mut self, infos: &[crate::document::manager::BufferInfo]) {
+    pub(crate) fn populate_buffer_list_buffer(
+        &mut self,
+        infos: &[crate::document::manager::BufferInfo],
+    ) {
         use crate::color::Color;
 
         let mut content = String::new();
@@ -456,7 +462,7 @@ impl Document {
         self.history.mark_saved();
     }
 
-    pub fn populate_regions_buffer(
+    pub(crate) fn populate_regions_buffer(
         &mut self,
         source_buf: &TextBuffer,
         regions: &[crate::selection::Region],
@@ -492,7 +498,7 @@ impl Document {
         self.history.mark_saved();
     }
 
-    pub fn parse_clipboard_order(&self) -> Vec<usize> {
+    pub(crate) fn parse_clipboard_order(&self) -> Vec<usize> {
         let Some(entries_len) = self
             .state
             .try_get(CLIPBOARD_STATE_KEY)
@@ -518,7 +524,7 @@ impl Document {
         order
     }
 
-    pub fn parse_directory_diff(&self) -> DirectoryDiff {
+    pub(crate) fn parse_directory_diff(&self) -> DirectoryDiff {
         let Some(state) = self.state.try_get(DIRECTORY_STATE_KEY) else {
             return DirectoryDiff::default();
         };
@@ -618,11 +624,11 @@ impl Document {
         }
     }
 
-    pub fn handle_terminal_data(&mut self, _data: &[u8]) {
+    pub(crate) fn handle_terminal_data(&mut self, _data: &[u8]) {
         self.sync_terminal_buffer();
     }
 
-    pub fn sync_terminal_buffer(&mut self) {
+    pub(crate) fn sync_terminal_buffer(&mut self) {
         let (content, cursor_line, cursor_col, cell_colors) = match self.terminal() {
             Some(terminal) => terminal.read_screen(),
             None => return,
@@ -653,7 +659,7 @@ impl Document {
         }
     }
 
-    pub fn populate_git_status_buffer(
+    pub(crate) fn populate_git_status_buffer(
         &mut self,
         snapshot: crate::git::status::StatusSnapshot,
         head_subject: Option<String>,
@@ -668,7 +674,7 @@ impl Document {
         self.history.mark_saved();
     }
 
-    pub fn set_git_status_expanded(
+    pub(crate) fn set_git_status_expanded(
         &mut self,
         path: std::path::PathBuf,
         staged_side: bool,
@@ -681,7 +687,7 @@ impl Document {
         self.render_git_status();
     }
 
-    pub fn collapse_git_status_entry(&mut self, path: &std::path::Path, staged_side: bool) {
+    pub(crate) fn collapse_git_status_entry(&mut self, path: &std::path::Path, staged_side: bool) {
         let Some(state) = self.state.try_get_mut(GIT_STATUS_STATE_KEY) else {
             return;
         };
@@ -691,7 +697,7 @@ impl Document {
         self.render_git_status();
     }
 
-    pub fn is_git_status_expanded(&self, path: &std::path::Path, staged_side: bool) -> bool {
+    pub(crate) fn is_git_status_expanded(&self, path: &std::path::Path, staged_side: bool) -> bool {
         self.state
             .try_get(GIT_STATUS_STATE_KEY)
             .is_some_and(|state| {
@@ -701,7 +707,7 @@ impl Document {
             })
     }
 
-    pub fn is_git_status_entry_untracked(&self, path: &std::path::Path) -> bool {
+    pub(crate) fn is_git_status_entry_untracked(&self, path: &std::path::Path) -> bool {
         self.state
             .try_get(GIT_STATUS_STATE_KEY)
             .is_some_and(|state| {
@@ -1018,8 +1024,10 @@ impl Document {
             RebaseVerb::Pick => Color::Green,
             RebaseVerb::Squash => Color::Yellow,
             RebaseVerb::Fixup => Color::DarkYellow,
+            #[cfg(test)]
             RebaseVerb::Reword => Color::Blue,
             RebaseVerb::Edit => Color::Magenta,
+            #[cfg(test)]
             RebaseVerb::Drop => Color::DarkGrey,
         }
     }
@@ -1153,7 +1161,7 @@ impl Document {
         }
     }
 
-    pub fn render_git_rebase_paused(
+    pub(crate) fn render_git_rebase_paused(
         &mut self,
         remaining: &[crate::git::rebase::RebaseStep],
         banner: &str,
@@ -1185,7 +1193,7 @@ impl Document {
         self.history.mark_saved();
     }
 
-    pub fn move_git_rebase_step(&mut self, sha: &str, down: bool) {
+    pub(crate) fn move_git_rebase_step(&mut self, sha: &str, down: bool) {
         let Some(state) = self.state.try_get_mut(GIT_REBASE_TODO_STATE_KEY) else {
             return;
         };
@@ -1213,7 +1221,7 @@ impl Document {
         self.render_git_rebase_todo(description);
     }
 
-    pub fn set_git_rebase_verb(&mut self, sha: &str, verb: crate::git::rebase::RebaseVerb) {
+    pub(crate) fn set_git_rebase_verb(&mut self, sha: &str, verb: crate::git::rebase::RebaseVerb) {
         let Some(state) = self.state.try_get_mut(GIT_REBASE_TODO_STATE_KEY) else {
             return;
         };
@@ -1225,7 +1233,7 @@ impl Document {
         self.render_git_rebase_todo(&format!("Set commit to {}", verb.as_str()));
     }
 
-    pub fn remove_git_rebase_step(&mut self, sha: &str) {
+    pub(crate) fn remove_git_rebase_step(&mut self, sha: &str) {
         let Some(state) = self.state.try_get_mut(GIT_REBASE_TODO_STATE_KEY) else {
             return;
         };
@@ -1238,7 +1246,7 @@ impl Document {
         self.render_git_rebase_todo("Drop commit");
     }
 
-    pub fn toggle_git_rebase_expand(&mut self, sha: &str, repo_root: &std::path::Path) {
+    pub(crate) fn toggle_git_rebase_expand(&mut self, sha: &str, repo_root: &std::path::Path) {
         let Some(state) = self.state.try_get_mut(GIT_REBASE_TODO_STATE_KEY) else {
             return;
         };
@@ -1261,7 +1269,11 @@ impl Document {
         self.render_git_rebase_todo("Toggle commit preview");
     }
 
-    pub fn git_rebase_current_message(&self, sha: &str, repo_root: &std::path::Path) -> String {
+    pub(crate) fn git_rebase_current_message(
+        &self,
+        sha: &str,
+        repo_root: &std::path::Path,
+    ) -> String {
         let Some(state) = self.state.try_get(GIT_REBASE_TODO_STATE_KEY) else {
             return String::new();
         };
@@ -1274,7 +1286,7 @@ impl Document {
             .to_string()
     }
 
-    pub fn set_git_rebase_message_override(&mut self, sha: &str, message: String) {
+    pub(crate) fn set_git_rebase_message_override(&mut self, sha: &str, message: String) {
         let Some(state) = self.state.try_get_mut(GIT_REBASE_TODO_STATE_KEY) else {
             return;
         };
@@ -1289,11 +1301,14 @@ impl Document {
         self.render_git_rebase_todo("Reword commit");
     }
 
-    pub fn set_git_gutter_signs(&mut self, signs: &[(usize, crate::git::diff::GutterSignKind)]) {
+    pub(crate) fn set_git_gutter_signs(
+        &mut self,
+        signs: &[(usize, crate::git::diff::GutterSignKind)],
+    ) {
         self.annotations.replace_git_gutter_signs(signs);
     }
 
-    pub fn populate_git_blame_buffer(&mut self, lines: Vec<crate::git::blame::BlameLine>) {
+    pub(crate) fn populate_git_blame_buffer(&mut self, lines: Vec<crate::git::blame::BlameLine>) {
         let Some(state) = self.state.try_get_mut(GIT_BLAME_STATE_KEY) else {
             return;
         };
@@ -1304,7 +1319,7 @@ impl Document {
         self.history.mark_saved();
     }
 
-    pub fn set_git_blame_wrap_rows(
+    pub(crate) fn set_git_blame_wrap_rows(
         &mut self,
         wrap_key: (super::DocumentId, usize, usize, u64),
         wrap_rows: Vec<usize>,
@@ -1383,7 +1398,7 @@ impl Document {
         }
     }
 
-    pub fn populate_git_log_buffer(&mut self, commits: Vec<crate::git::log::CommitSummary>) {
+    pub(crate) fn populate_git_log_buffer(&mut self, commits: Vec<crate::git::log::CommitSummary>) {
         let Some(state) = self.state.try_get_mut(super::GIT_LOG_STATE_KEY) else {
             return;
         };
@@ -1394,7 +1409,7 @@ impl Document {
         self.history.mark_saved();
     }
 
-    pub fn set_git_log_expanded(&mut self, sha: Option<String>, body: Option<String>) {
+    pub(crate) fn set_git_log_expanded(&mut self, sha: Option<String>, body: Option<String>) {
         let Some(state) = self.state.try_get_mut(super::GIT_LOG_STATE_KEY) else {
             return;
         };
@@ -1474,12 +1489,12 @@ fn dir_entry_color(
 }
 
 mod git_status_sections {
-    pub const UNMERGED: &str = "unmerged";
-    pub const STAGED: &str = "staged";
-    pub const UNSTAGED: &str = "unstaged";
-    pub const UNTRACKED: &str = "untracked";
+    pub(crate) const UNMERGED: &str = "unmerged";
+    pub(crate) const STAGED: &str = "staged";
+    pub(crate) const UNSTAGED: &str = "unstaged";
+    pub(crate) const UNTRACKED: &str = "untracked";
 
-    pub fn header_text(section: &str, count: usize) -> String {
+    pub(crate) fn header_text(section: &str, count: usize) -> String {
         match section {
             UNMERGED => format!("Unmerged paths ({count})"),
             STAGED => format!("Staged changes ({count})"),

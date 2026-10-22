@@ -1,18 +1,16 @@
 //! Job modules. Import `Job` and `JobPayload` from here in any test file,
 //! including nested test modules.
-pub use crate::job_manager::{AsyncOpDomain, AsyncToken};
-pub mod cache_warming;
-pub mod completion;
-pub mod explorer;
-pub mod explorer_preview;
-pub mod file_operations;
-pub mod fs;
-pub mod git;
+pub(crate) mod completion;
+pub(crate) mod explorer;
+pub(crate) mod explorer_preview;
+pub(crate) mod file_operations;
+pub(crate) mod fs;
+pub(crate) mod git;
 #[cfg(feature = "treesitter")]
-pub mod syntax;
+pub(crate) mod syntax;
 #[cfg(feature = "terminal_emulation")]
-pub mod terminal_job;
-pub mod undotree;
+pub(crate) mod terminal_job;
+pub(crate) mod undotree;
 
 #[cfg(test)]
 #[path = "test_support.rs"]

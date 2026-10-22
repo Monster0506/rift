@@ -6,13 +6,13 @@ use crate::character::Character;
 
 /// One visual row on screen.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VisualRowInfo {
-    pub logical_line: usize,
-    pub char_start: usize,
-    pub char_end: usize,
-    pub segment_col_start: usize,
-    pub segment_col_end: usize,
-    pub is_first: bool,
+pub(crate) struct VisualRowInfo {
+    pub(crate) logical_line: usize,
+    pub(crate) char_start: usize,
+    pub(crate) char_end: usize,
+    pub(crate) segment_col_start: usize,
+    pub(crate) segment_col_end: usize,
+    pub(crate) is_first: bool,
 }
 
 /// Precomputed mapping from visual rows -> buffer positions. May cover only
@@ -21,8 +21,8 @@ pub struct VisualRowInfo {
 pub struct DisplayMap {
     rows: Vec<VisualRowInfo>,
     line_first_visual: Vec<usize>,
-    pub wrap_width: usize,
-    pub tab_width: usize,
+    pub(crate) wrap_width: usize,
+    pub(crate) tab_width: usize,
     complete: bool,
     /// Sorted lines whose end-of-line needs its own row when the text exactly
     /// fills the last segment (they carry trailing virtual text).
@@ -211,7 +211,7 @@ impl DisplayMap {
 
     /// `build`, giving the lines in `eol_rows` (sorted) an extra row for
     /// their line end when their text exactly fills the last segment.
-    pub fn build_with(
+    pub(crate) fn build_with(
         buf: &TextBuffer,
         wrap_width: usize,
         tab_width: usize,
@@ -255,7 +255,7 @@ impl DisplayMap {
     /// An empty map that covers nothing yet. Callers extend it on demand via
     /// `extend_to_row`/`extend_to_char` before reading past what's built.
     #[must_use]
-    pub const fn empty(wrap_width: usize, tab_width: usize) -> Self {
+    pub(crate) const fn empty(wrap_width: usize, tab_width: usize) -> Self {
         Self {
             rows: Vec::new(),
             line_first_visual: Vec::new(),
@@ -268,7 +268,7 @@ impl DisplayMap {
 
     /// Set the EOL-row lines on a map that has not wrapped anything yet.
     #[must_use]
-    pub fn with_eol_rows(mut self, eol_rows: Vec<usize>) -> Self {
+    pub(crate) fn with_eol_rows(mut self, eol_rows: Vec<usize>) -> Self {
         debug_assert!(self.rows.is_empty(), "eol rows must be set before wrapping");
         self.eol_rows = eol_rows;
         self
@@ -276,13 +276,14 @@ impl DisplayMap {
 
     /// Lines that get an EOL row when their text exactly fills the wrap width.
     #[must_use]
-    pub fn eol_rows(&self) -> &[usize] {
+    pub(crate) fn eol_rows(&self) -> &[usize] {
         &self.eol_rows
     }
 
+    #[cfg(test)]
     /// Whether the map has been extended through the end of the document.
     #[must_use]
-    pub const fn is_complete(&self) -> bool {
+    pub(crate) const fn is_complete(&self) -> bool {
         self.complete
     }
 
@@ -390,22 +391,23 @@ impl DisplayMap {
     }
 
     /// Extend until at least `min_rows` rows exist, or the document ends.
-    pub fn extend_to_row(&mut self, buf: &TextBuffer, min_rows: usize) {
+    pub(crate) fn extend_to_row(&mut self, buf: &TextBuffer, min_rows: usize) {
         while !self.complete && self.rows.len() < min_rows {
             self.extend_batch(buf);
         }
     }
 
     /// Extend until a row covering `char_offset` exists, or the document ends.
-    pub fn extend_to_char(&mut self, buf: &TextBuffer, char_offset: usize) {
+    pub(crate) fn extend_to_char(&mut self, buf: &TextBuffer, char_offset: usize) {
         while !self.complete && self.rows.last().is_none_or(|r| r.char_end <= char_offset) {
             self.extend_batch(buf);
         }
     }
 
+    #[cfg(test)]
     /// Extend fully through the end of the document. Equivalent in cost to
     /// `DisplayMap::build`; only pay this when the whole document is genuinely needed.
-    pub fn extend_to_end(&mut self, buf: &TextBuffer) {
+    pub(crate) fn extend_to_end(&mut self, buf: &TextBuffer) {
         while !self.complete {
             self.extend_batch(buf);
         }
@@ -414,7 +416,7 @@ impl DisplayMap {
     /// Whether covering `char_offset` plus `extend_margin_rows` rows needs
     /// wrapping work - lets a shared `Arc<DisplayMap>` skip `Arc::make_mut`.
     #[must_use]
-    pub fn needs_extension(&self, char_offset: usize, extend_margin_rows: usize) -> bool {
+    pub(crate) fn needs_extension(&self, char_offset: usize, extend_margin_rows: usize) -> bool {
         if self.complete {
             return false;
         }
@@ -427,7 +429,7 @@ impl DisplayMap {
 
     /// Patch only the affected lines after an edit; return false when rebuilding is required.
     /// `eol_rows` must match unchanged lines outside the rewrapped region.
-    pub fn apply_edit(
+    pub(crate) fn apply_edit(
         &mut self,
         buf: &TextBuffer,
         pos: usize,
@@ -547,30 +549,21 @@ impl DisplayMap {
     /// Rows built so far. Equals the true document total once `is_complete()`;
     /// callers that need the true total unconditionally call `extend_to_end` first.
     #[must_use]
-    pub const fn total_visual_rows(&self) -> usize {
+    pub(crate) const fn total_visual_rows(&self) -> usize {
         self.rows.len()
     }
 
     #[must_use]
-    pub fn get_visual_row(&self, visual_row: usize) -> Option<&VisualRowInfo> {
+    pub(crate) fn get_visual_row(&self, visual_row: usize) -> Option<&VisualRowInfo> {
         self.rows.get(visual_row)
     }
 
     #[must_use]
-    pub fn logical_to_first_visual(&self, logical_line: usize) -> usize {
+    pub(crate) fn logical_to_first_visual(&self, logical_line: usize) -> usize {
         self.line_first_visual
             .get(logical_line)
             .copied()
             .unwrap_or(0)
-    }
-
-    #[must_use]
-    pub fn logical_to_last_visual(&self, logical_line: usize) -> usize {
-        if logical_line + 1 < self.line_first_visual.len() {
-            self.line_first_visual[logical_line + 1].saturating_sub(1)
-        } else {
-            self.rows.len().saturating_sub(1)
-        }
     }
 
     #[must_use]
@@ -583,7 +576,7 @@ impl DisplayMap {
         }
     }
 
-    pub fn char_to_visual_col(&self, char_offset: usize, buf: &TextBuffer) -> usize {
+    pub(crate) fn char_to_visual_col(&self, char_offset: usize, buf: &TextBuffer) -> usize {
         let row_idx = self.char_to_visual_row(char_offset);
         let row = &self.rows[row_idx];
         let mut col: usize = 0;
@@ -630,7 +623,7 @@ impl DisplayMap {
 
     /// Like `visual_down` but uses `target_col` instead of the cursor's current column.
     /// Pass `usize::MAX` to always land at end-of-visual-row (the `$` case).
-    pub fn visual_down_to_col(
+    pub(crate) fn visual_down_to_col(
         &self,
         char_offset: usize,
         target_col: usize,
@@ -651,7 +644,7 @@ impl DisplayMap {
 
     /// Like `visual_up` but uses `target_col` instead of the cursor's current column.
     /// Pass `usize::MAX` to always land at end-of-visual-row (the `$` case).
-    pub fn visual_up_to_col(
+    pub(crate) fn visual_up_to_col(
         &self,
         char_offset: usize,
         target_col: usize,
@@ -682,21 +675,23 @@ impl DisplayMap {
         pos
     }
 
+    #[cfg(test)]
     /// Extending counterpart of `char_to_visual_row`: grows the map to cover
     /// `char_offset` before answering, so the result is always exact.
-    pub fn char_to_visual_row_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
+    pub(crate) fn char_to_visual_row_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
         self.extend_to_char(buf, char_offset);
         self.char_to_visual_row(char_offset)
     }
 
     /// Extending counterpart of `char_to_visual_col`.
-    pub fn char_to_visual_col_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
+    pub(crate) fn char_to_visual_col_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
         self.extend_to_char(buf, char_offset);
         self.char_to_visual_col(char_offset, buf)
     }
 
+    #[cfg(test)]
     /// Extending counterpart of `get_visual_row`.
-    pub fn get_visual_row_ext(
+    pub(crate) fn get_visual_row_ext(
         &mut self,
         visual_row: usize,
         buf: &TextBuffer,
@@ -705,8 +700,9 @@ impl DisplayMap {
         self.get_visual_row(visual_row)
     }
 
+    #[cfg(test)]
     /// Extending counterpart of `visual_down`.
-    pub fn visual_down_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
+    pub(crate) fn visual_down_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
         self.extend_to_char(buf, char_offset);
         let cur_row = self.char_to_visual_row(char_offset);
         self.extend_to_row(buf, cur_row + 3);
@@ -714,7 +710,7 @@ impl DisplayMap {
     }
 
     /// Extending counterpart of `visual_down_to_col`.
-    pub fn visual_down_to_col_ext(
+    pub(crate) fn visual_down_to_col_ext(
         &mut self,
         char_offset: usize,
         target_col: usize,
@@ -726,15 +722,16 @@ impl DisplayMap {
         self.visual_down_to_col(char_offset, target_col, buf)
     }
 
+    #[cfg(test)]
     /// Extending counterpart of `visual_up` - upward motion never needs new
     /// wrapping once `char_offset`'s own row is built.
-    pub fn visual_up_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
+    pub(crate) fn visual_up_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
         self.extend_to_char(buf, char_offset);
         self.visual_up(char_offset, buf)
     }
 
     /// Extending counterpart of `visual_up_to_col`.
-    pub fn visual_up_to_col_ext(
+    pub(crate) fn visual_up_to_col_ext(
         &mut self,
         char_offset: usize,
         target_col: usize,
@@ -747,26 +744,18 @@ impl DisplayMap {
 
 #[inline]
 #[must_use]
-pub fn char_visual_width(ch: Character, abs_col: usize, tab_width: usize) -> usize {
+pub(crate) fn char_visual_width(ch: Character, abs_col: usize, tab_width: usize) -> usize {
     ch.render_width(abs_col, tab_width)
 }
 
-pub struct MotionContext<'a> {
-    pub buf: &'a TextBuffer,
-    pub tab_width: usize,
-    pub wrap_width: usize,
-    pub display_map: &'a DisplayMap,
-    pub last_search_query: Option<&'a str>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperatorContext {
+pub(crate) enum OperatorContext {
     Move,
     Operator,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RangeKind {
+pub(crate) enum RangeKind {
     Charwise,
     Linewise,
     /// Rectangular column-bounded selection (Ctrl-V Visual Block).
@@ -774,17 +763,17 @@ pub enum RangeKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct MotionRange {
-    pub anchor: usize,
-    pub new_cursor: usize,
-    pub kind: RangeKind,
+pub(crate) struct MotionRange {
+    pub(crate) anchor: usize,
+    pub(crate) new_cursor: usize,
+    pub(crate) kind: RangeKind,
     /// When true, the endpoint (`new_cursor` for forward, anchor for backward) is included.
-    pub inclusive: bool,
+    pub(crate) inclusive: bool,
 }
 
 impl MotionRange {
     #[must_use]
-    pub const fn charwise(anchor: usize, new_cursor: usize) -> Self {
+    pub(crate) const fn charwise(anchor: usize, new_cursor: usize) -> Self {
         Self {
             anchor,
             new_cursor,
@@ -793,7 +782,7 @@ impl MotionRange {
         }
     }
     #[must_use]
-    pub const fn charwise_inclusive(anchor: usize, new_cursor: usize) -> Self {
+    pub(crate) const fn charwise_inclusive(anchor: usize, new_cursor: usize) -> Self {
         Self {
             anchor,
             new_cursor,
@@ -802,7 +791,7 @@ impl MotionRange {
         }
     }
     #[must_use]
-    pub const fn linewise(anchor: usize, new_cursor: usize) -> Self {
+    pub(crate) const fn linewise(anchor: usize, new_cursor: usize) -> Self {
         Self {
             anchor,
             new_cursor,

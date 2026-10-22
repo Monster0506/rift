@@ -5,7 +5,7 @@ use crate::error::RiftError;
 use crate::key::InputEvent;
 use crate::term::{CursorShape, Size, TerminalBackend};
 
-pub struct ChannelBackend {
+pub(crate) struct ChannelBackend {
     input_rx: Receiver<InputEvent>,
     output_tx: Sender<Vec<u8>>,
     detach_tx: Option<SyncSender<()>>,
@@ -16,7 +16,7 @@ pub struct ChannelBackend {
 
 impl ChannelBackend {
     #[must_use]
-    pub const fn new(
+    pub(crate) const fn new(
         input_rx: Receiver<InputEvent>,
         output_tx: Sender<Vec<u8>>,
         detach_tx: SyncSender<()>,

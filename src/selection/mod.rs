@@ -5,15 +5,15 @@ use crate::buffer::TextBuffer;
 use crate::wrap::RangeKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Region {
-    pub anchor: usize,
-    pub cursor: usize,
-    pub kind: RangeKind,
+pub(crate) struct Region {
+    pub(crate) anchor: usize,
+    pub(crate) cursor: usize,
+    pub(crate) kind: RangeKind,
 }
 
 impl Region {
     #[must_use]
-    pub const fn new(anchor: usize, cursor: usize, kind: RangeKind) -> Self {
+    pub(crate) const fn new(anchor: usize, cursor: usize, kind: RangeKind) -> Self {
         Self {
             anchor,
             cursor,
@@ -23,7 +23,7 @@ impl Region {
 
     /// Ordered exclusive-end span for selection bookkeeping.
     #[must_use]
-    pub fn span(&self) -> (usize, usize) {
+    pub(crate) fn span(&self) -> (usize, usize) {
         (
             self.anchor.min(self.cursor),
             self.anchor.max(self.cursor) + 1,
@@ -31,7 +31,7 @@ impl Region {
     }
 
     /// Return this region's buffer range, expanding linewise selections to whole lines.
-    pub fn buffer_span(&self, buf: &TextBuffer) -> (usize, usize) {
+    pub(crate) fn buffer_span(&self, buf: &TextBuffer) -> (usize, usize) {
         match self.kind {
             RangeKind::Linewise => {
                 let first = self.anchor.min(self.cursor);
@@ -50,7 +50,7 @@ impl Region {
         }
     }
 
-    pub fn delete_span(&self, buf: &TextBuffer) -> (usize, usize) {
+    pub(crate) fn delete_span(&self, buf: &TextBuffer) -> (usize, usize) {
         let (start, end) = self.buffer_span(buf);
         if self.kind != RangeKind::Linewise || start == 0 {
             return (start, end);
@@ -92,18 +92,18 @@ impl Region {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct SelectionSet {
-    pub regions: Vec<Region>,
-    pub active: Option<Region>,
+pub(crate) struct SelectionSet {
+    pub(crate) regions: Vec<Region>,
+    pub(crate) active: Option<Region>,
 }
 
 impl SelectionSet {
     #[must_use]
-    pub const fn is_empty(&self) -> bool {
+    pub(crate) const fn is_empty(&self) -> bool {
         self.regions.is_empty() && self.active.is_none()
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.regions.clear();
         self.active = None;
     }
@@ -111,7 +111,7 @@ impl SelectionSet {
     /// Merge overlapping regions; touching regions stay separate. A linewise
     /// region absorbs overlapping regions of other kinds. Charwise and
     /// blockwise regions never merge with each other.
-    pub fn bank(&mut self, region: Region, buf: &TextBuffer) {
+    pub(crate) fn bank(&mut self, region: Region, buf: &TextBuffer) {
         let mut cur = region;
         while let Some(idx) = self.regions.iter().position(|r| r.overlaps(&cur, buf)) {
             let other = self.regions.remove(idx);
@@ -129,20 +129,20 @@ impl SelectionSet {
         self.regions.push(cur);
     }
 
-    pub fn commit_active(&mut self, buf: &TextBuffer) {
+    pub(crate) fn commit_active(&mut self, buf: &TextBuffer) {
         if let Some(region) = self.active.take() {
             self.bank(region, buf);
         }
     }
 
     #[must_use]
-    pub fn sorted(&self) -> Vec<Region> {
+    pub(crate) fn sorted(&self) -> Vec<Region> {
         let mut v = self.regions.clone();
         v.sort_by_key(|r| r.span().0);
         v
     }
 
-    pub fn take_for_batch(&mut self, buf: &TextBuffer) -> Vec<Region> {
+    pub(crate) fn take_for_batch(&mut self, buf: &TextBuffer) -> Vec<Region> {
         self.commit_active(buf);
         let mut v = std::mem::take(&mut self.regions);
         v.sort_by_key(|r| std::cmp::Reverse(r.span().0));
@@ -152,7 +152,7 @@ impl SelectionSet {
     }
 
     #[must_use]
-    pub fn region_containing(&self, offset: usize) -> Option<usize> {
+    pub(crate) fn region_containing(&self, offset: usize) -> Option<usize> {
         self.regions.iter().position(|r| {
             let (s, e) = r.span();
             s <= offset && offset < e
@@ -160,7 +160,7 @@ impl SelectionSet {
     }
 
     #[must_use]
-    pub fn next_region(&self, after: usize) -> Option<Region> {
+    pub(crate) fn next_region(&self, after: usize) -> Option<Region> {
         let sorted = self.sorted();
         if sorted.is_empty() {
             return None;
@@ -173,7 +173,7 @@ impl SelectionSet {
     }
 
     #[must_use]
-    pub fn prev_region(&self, before: usize) -> Option<Region> {
+    pub(crate) fn prev_region(&self, before: usize) -> Option<Region> {
         let sorted = self.sorted();
         if sorted.is_empty() {
             return None;
@@ -188,7 +188,11 @@ impl SelectionSet {
 
     /// `m`/`M`: bank the next/previous literal occurrence of the most recently
     /// banked region's text via `crate::search::find_next`. Disabled for Blockwise (S7).
-    pub fn bank_occurrence(&mut self, buf: &TextBuffer, forward: bool) -> Option<(Region, String)> {
+    pub(crate) fn bank_occurrence(
+        &mut self,
+        buf: &TextBuffer,
+        forward: bool,
+    ) -> Option<(Region, String)> {
         use crate::buffer::api::BufferView;
         use crate::search::{find_next, SearchDirection};
 

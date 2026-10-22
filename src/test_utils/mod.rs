@@ -9,17 +9,17 @@ use crate::term::{CursorShape, Size, TerminalBackend};
 
 /// Mock `TerminalBackend` for testing; records writes, cursor moves, and
 /// clear-screen calls for later assertion.
-pub struct MockTerminal {
-    pub writes: Vec<Vec<u8>>,
-    pub cursor_moves: Vec<(u16, u16)>,
-    pub clear_screen_calls: usize,
-    pub size: (u16, u16),
+pub(crate) struct MockTerminal {
+    pub(crate) writes: Vec<Vec<u8>>,
+    pub(crate) cursor_moves: Vec<(u16, u16)>,
+    pub(crate) clear_screen_calls: usize,
+    pub(crate) size: (u16, u16),
 }
 
 impl MockTerminal {
     /// Create a new mock terminal with specified dimensions
     #[must_use]
-    pub fn new(rows: u16, cols: u16) -> Self {
+    pub(crate) fn new(rows: u16, cols: u16) -> Self {
         Self {
             writes: Vec::new(),
             cursor_moves: Vec::new(),
@@ -30,18 +30,18 @@ impl MockTerminal {
 
     /// Get all written bytes as a single vector
     #[must_use]
-    pub fn get_written_bytes(&self) -> Vec<u8> {
+    pub(crate) fn get_written_bytes(&self) -> Vec<u8> {
         self.writes.iter().flatten().copied().collect()
     }
 
     /// Get all written bytes as a string (lossy UTF-8 conversion)
     #[must_use]
-    pub fn get_written_string(&self) -> String {
+    pub(crate) fn get_written_string(&self) -> String {
         String::from_utf8_lossy(&self.get_written_bytes()).to_string()
     }
 
     /// Clear all recorded operations (useful for testing multiple renders)
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.writes.clear();
         self.cursor_moves.clear();
         self.clear_screen_calls = 0;

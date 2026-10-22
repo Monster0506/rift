@@ -5,7 +5,7 @@ use crate::document::Document;
 use crate::error::RiftError;
 use crate::state::State;
 
-pub fn execute_local_command(
+pub(crate) fn execute_local_command(
     command: ParsedCommand,
     state: &mut State,
     document: &mut Document,

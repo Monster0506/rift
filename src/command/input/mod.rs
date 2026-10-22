@@ -1,20 +1,27 @@
 //! Shared input handling logic
 //! translates raw keys into abstract input intents (Type, Move, Delete, etc.)
 
-use crate::key::{Key, KeyCode, Mods};
+#[cfg(test)]
+use crate::key::Key;
+#[cfg(test)]
+use crate::key::KeyCode;
+#[cfg(test)]
+use crate::key::Mods;
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Direction {
+pub(crate) enum Direction {
     Left,
     Right,
     Up,
     Down,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// How much content move/select/delete/change applies to, independent of
 /// direction. Ordered conceptually finest (`Character`) to coarsest (`Document`).
-pub enum Granularity {
+pub(crate) enum Granularity {
     /// A single Unicode scalar value; does not correspond to grapheme
     /// clusters, so combined characters count as multiple.
     Character,
@@ -23,15 +30,8 @@ pub enum Granularity {
     /// are implementation-defined).
     Word,
 
-    /// A natural-language sentence, boundaries typically detected via
-    /// '.', '!', or '?' followed by whitespace.
-    Sentence,
-
     /// A logical (newline-delimited) line; does not account for soft wrapping.
     Line,
-
-    /// A paragraph, typically delimited by one or more blank lines.
-    Paragraph,
 
     /// A viewport-sized vertical region, like Page Up/Page Down.
     Page,
@@ -40,9 +40,10 @@ pub enum Granularity {
     Document,
 }
 
+#[cfg(test)]
 /// Abstract intent for text input
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InputIntent {
+pub(crate) enum InputIntent {
     /// Type a character
     Type(char),
     /// Move cursor
@@ -55,9 +56,10 @@ pub enum InputIntent {
     Cancel,
 }
 
+#[cfg(test)]
 /// Resolve a key into an input intent
 #[must_use]
-pub fn resolve_input(key: Key) -> Option<InputIntent> {
+pub(crate) fn resolve_input(key: Key) -> Option<InputIntent> {
     let ctrl = key.mods.contains(Mods::CTRL);
     let move_by = |direction, plain, ctrl_unit| {
         let unit = if ctrl { ctrl_unit } else { plain };
@@ -92,6 +94,7 @@ pub fn resolve_input(key: Key) -> Option<InputIntent> {
     }
 }
 
+#[cfg(test)]
 fn resolve_char(key: Key, ch: char) -> Option<InputIntent> {
     if let Some(text) = key.text() {
         return Some(InputIntent::Type(text));

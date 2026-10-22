@@ -4,19 +4,19 @@ use crate::error::{ErrorType, RiftError};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-pub mod apply;
-pub mod blame;
-pub mod diff;
-pub mod log;
-pub mod rebase;
-pub mod status;
+pub(crate) mod apply;
+pub(crate) mod blame;
+pub(crate) mod diff;
+pub(crate) mod log;
+pub(crate) mod rebase;
+pub(crate) mod status;
 
 /// Captured result of running a `git` subprocess: exit status plus stdout/stderr.
 #[derive(Debug, Clone)]
-pub struct GitOutput {
-    pub stdout: String,
-    pub stderr: String,
-    pub success: bool,
+pub(crate) struct GitOutput {
+    pub(crate) stdout: String,
+    pub(crate) stderr: String,
+    pub(crate) success: bool,
 }
 
 /// Run `git <args>` in `cwd`, capturing stdout/stderr.
@@ -25,7 +25,7 @@ pub struct GitOutput {
 ///
 /// # Errors
 /// Returns `Err` when the `git` process cannot be spawned.
-pub fn run(cwd: &Path, args: &[&str]) -> Result<GitOutput, RiftError> {
+pub(crate) fn run(cwd: &Path, args: &[&str]) -> Result<GitOutput, RiftError> {
     let output = Command::new("git")
         .args(args)
         .current_dir(cwd)
@@ -56,7 +56,7 @@ pub fn run(cwd: &Path, args: &[&str]) -> Result<GitOutput, RiftError> {
 ///
 /// # Errors
 /// Returns `Err` when the spawn fails or git exits with a non-zero status.
-pub fn run_checked(cwd: &Path, args: &[&str]) -> Result<String, RiftError> {
+pub(crate) fn run_checked(cwd: &Path, args: &[&str]) -> Result<String, RiftError> {
     let out = run(cwd, args)?;
     if out.success {
         Ok(out.stdout)
@@ -71,11 +71,11 @@ pub fn run_checked(cwd: &Path, args: &[&str]) -> Result<String, RiftError> {
 
 /// The two roots that matter for a repository: its worktree root and its git-dir. Both come from `git rev-parse`, which already resolves worktrees, submodules, and `GIT_DIR` overrides correctly; no bespoke worktree handling is needed on top of this.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RepoPaths {
+pub(crate) struct RepoPaths {
     /// Top-level worktree directory (`git rev-parse --show-toplevel`).
-    pub root: PathBuf,
+    pub(crate) root: PathBuf,
     /// Absolute git directory. `git rev-parse --git-dir` prints a path relative to `start` when invoked with a relative cwd, so this is resolved against `start` to always be absolute.
-    pub git_dir: PathBuf,
+    pub(crate) git_dir: PathBuf,
 }
 
 /// Discover the repository containing `start` (a directory). Fails with a
@@ -83,7 +83,7 @@ pub struct RepoPaths {
 ///
 /// # Errors
 /// Returns `Err` when `start` is not inside a repository or `git rev-parse` fails.
-pub fn discover_repo(start: &Path) -> Result<RepoPaths, RiftError> {
+pub(crate) fn discover_repo(start: &Path) -> Result<RepoPaths, RiftError> {
     let root = run_checked(start, &["rev-parse", "--show-toplevel"])?;
     let git_dir_raw = run_checked(start, &["rev-parse", "--git-dir"])?;
 
@@ -104,7 +104,7 @@ pub fn discover_repo(start: &Path) -> Result<RepoPaths, RiftError> {
 ///
 /// # Errors
 /// Returns `Err` when `git rev-parse --git-dir` fails in `repo_root`.
-pub fn git_dir(repo_root: &Path) -> Result<PathBuf, RiftError> {
+pub(crate) fn git_dir(repo_root: &Path) -> Result<PathBuf, RiftError> {
     let raw = run_checked(repo_root, &["rev-parse", "--git-dir"])?;
     let raw = PathBuf::from(raw.trim());
     Ok(if raw.is_absolute() {
@@ -116,7 +116,7 @@ pub fn git_dir(repo_root: &Path) -> Result<PathBuf, RiftError> {
 
 /// Format a Unix timestamp as a UTC `YYYY-MM-DD` date. No timezone library dependency (this crate has none); good enough for blame/log display; deliberately not adjusted by a commit's own `author_tz`/`committer_tz`.
 #[must_use]
-pub fn format_unix_date(unix_seconds: i64) -> String {
+pub(crate) fn format_unix_date(unix_seconds: i64) -> String {
     let days = unix_seconds.div_euclid(86400);
     let (y, m, d) = civil_from_days(days);
     format!("{y:04}-{m:02}-{d:02}")
@@ -124,7 +124,7 @@ pub fn format_unix_date(unix_seconds: i64) -> String {
 
 /// Format a Unix timestamp as a UTC `YYYY-MM-DD HH:MM` timestamp.
 #[must_use]
-pub fn format_unix_datetime(unix_seconds: i64) -> String {
+pub(crate) fn format_unix_datetime(unix_seconds: i64) -> String {
     let days = unix_seconds.div_euclid(86400);
     let seconds = unix_seconds.rem_euclid(86400);
     let (y, m, d) = civil_from_days(days);

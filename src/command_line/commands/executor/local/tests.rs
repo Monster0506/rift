@@ -30,7 +30,7 @@ fn test_execute_setlocal_line_ending() {
     );
 
     assert_eq!(result, ExecutionResult::Success);
-    assert_eq!(document.options.line_ending, LineEnding::CRLF);
+    assert_eq!(document.options.line_ending, LineEnding::Crlf);
 }
 
 fn set_wrap(value: &str) -> (ExecutionResult, DocumentOptions) {

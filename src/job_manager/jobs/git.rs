@@ -7,18 +7,18 @@ use std::sync::mpsc::Sender;
 
 /// Result of a `GitStatusJob`: a freshly parsed status snapshot for `doc_id`.
 #[derive(Debug)]
-pub struct GitStatusResult {
-    pub doc_id: DocumentId,
-    pub repo_root: PathBuf,
-    pub snapshot: crate::git::status::StatusSnapshot,
+pub(crate) struct GitStatusResult {
+    pub(crate) doc_id: DocumentId,
+    pub(crate) repo_root: PathBuf,
+    pub(crate) snapshot: crate::git::status::StatusSnapshot,
     /// HEAD's subject line, for the status header's `HEAD <sha> <subject>` summary (Enter on it opens the Log browser). `None` on an unborn branch with no commits yet.
-    pub head_subject: Option<String>,
+    pub(crate) head_subject: Option<String>,
 }
-crate::impl_job_payload!(GitStatusResult);
+crate::job_manager::impl_job_payload!(GitStatusResult);
 
 /// Runs `git status --porcelain=v2 --branch --untracked-files=all` and parses it.
 #[derive(Debug)]
-pub struct GitStatusJob {
+pub(crate) struct GitStatusJob {
     doc_id: DocumentId,
     repo_root: PathBuf,
     token: Option<crate::job_manager::AsyncToken>,
@@ -26,18 +26,12 @@ pub struct GitStatusJob {
 
 impl GitStatusJob {
     #[must_use]
-    pub const fn new(doc_id: DocumentId, repo_root: PathBuf) -> Self {
+    pub(crate) const fn new(doc_id: DocumentId, repo_root: PathBuf) -> Self {
         Self {
             doc_id,
             repo_root,
             token: None,
         }
-    }
-
-    #[must_use]
-    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
-        self.token = Some(token);
-        self
     }
 }
 
@@ -103,19 +97,19 @@ impl Job for GitStatusJob {
 /// Result of a `GitDiffJob`: hunks for one file's diff, to expand inline
 /// under its entry in a status buffer.
 #[derive(Debug)]
-pub struct GitDiffResult {
-    pub doc_id: DocumentId,
-    pub path: PathBuf,
+pub(crate) struct GitDiffResult {
+    pub(crate) doc_id: DocumentId,
+    pub(crate) path: PathBuf,
     /// `true` = this came from `git diff --cached` (the staged side).
-    pub staged_side: bool,
-    pub hunks: Vec<crate::git::diff::Hunk>,
+    pub(crate) staged_side: bool,
+    pub(crate) hunks: Vec<crate::git::diff::Hunk>,
 }
-crate::impl_job_payload!(GitDiffResult);
+crate::job_manager::impl_job_payload!(GitDiffResult);
 
 /// Runs `git diff --no-ext-diff [--cached] -- <path>` scoped to one file and
 /// parses it, for status-buffer hunk expansion (`=`).
 #[derive(Debug)]
-pub struct GitDiffJob {
+pub(crate) struct GitDiffJob {
     doc_id: DocumentId,
     repo_root: PathBuf,
     path: PathBuf,
@@ -127,7 +121,7 @@ pub struct GitDiffJob {
 
 impl GitDiffJob {
     #[must_use]
-    pub const fn new(
+    pub(crate) const fn new(
         doc_id: DocumentId,
         repo_root: PathBuf,
         path: PathBuf,
@@ -142,12 +136,6 @@ impl GitDiffJob {
             untracked,
             token: None,
         }
-    }
-
-    #[must_use]
-    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
-        self.token = Some(token);
-        self
     }
 }
 
@@ -235,15 +223,15 @@ impl Job for GitDiffJob {
 
 /// Result of a `GitBlameJob`: a freshly parsed blame listing for `doc_id`.
 #[derive(Debug)]
-pub struct GitBlameResult {
-    pub doc_id: DocumentId,
-    pub lines: Vec<crate::git::blame::BlameLine>,
+pub(crate) struct GitBlameResult {
+    pub(crate) doc_id: DocumentId,
+    pub(crate) lines: Vec<crate::git::blame::BlameLine>,
 }
-crate::impl_job_payload!(GitBlameResult);
+crate::job_manager::impl_job_payload!(GitBlameResult);
 
 /// Runs `git blame --porcelain [<commit>] -- <path>` and parses it.
 #[derive(Debug)]
-pub struct GitBlameJob {
+pub(crate) struct GitBlameJob {
     doc_id: DocumentId,
     repo_root: PathBuf,
     path: PathBuf,
@@ -253,7 +241,7 @@ pub struct GitBlameJob {
 
 impl GitBlameJob {
     #[must_use]
-    pub const fn new(
+    pub(crate) const fn new(
         doc_id: DocumentId,
         repo_root: PathBuf,
         path: PathBuf,
@@ -266,12 +254,6 @@ impl GitBlameJob {
             at_commit,
             token: None,
         }
-    }
-
-    #[must_use]
-    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
-        self.token = Some(token);
-        self
     }
 }
 
@@ -330,15 +312,15 @@ impl Job for GitBlameJob {
 
 /// Result of a `GitLogJob`: a freshly parsed commit listing for `doc_id`.
 #[derive(Debug)]
-pub struct GitLogResult {
-    pub doc_id: DocumentId,
-    pub commits: Vec<crate::git::log::CommitSummary>,
+pub(crate) struct GitLogResult {
+    pub(crate) doc_id: DocumentId,
+    pub(crate) commits: Vec<crate::git::log::CommitSummary>,
 }
-crate::impl_job_payload!(GitLogResult);
+crate::job_manager::impl_job_payload!(GitLogResult);
 
 /// Runs `git log --format=<LOG_FORMAT> [-- <path>]` and parses it.
 #[derive(Debug)]
-pub struct GitLogJob {
+pub(crate) struct GitLogJob {
     doc_id: DocumentId,
     repo_root: PathBuf,
     path: Option<PathBuf>,
@@ -347,19 +329,13 @@ pub struct GitLogJob {
 
 impl GitLogJob {
     #[must_use]
-    pub const fn new(doc_id: DocumentId, repo_root: PathBuf, path: Option<PathBuf>) -> Self {
+    pub(crate) const fn new(doc_id: DocumentId, repo_root: PathBuf, path: Option<PathBuf>) -> Self {
         Self {
             doc_id,
             repo_root,
             path,
             token: None,
         }
-    }
-
-    #[must_use]
-    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
-        self.token = Some(token);
-        self
     }
 }
 
@@ -418,16 +394,16 @@ impl Job for GitLogJob {
 /// Result of a `GitShowJob`: the raw `git show` body for one commit, to
 /// expand inline under it in a log buffer. Opaque text, not reparsed.
 #[derive(Debug)]
-pub struct GitShowResult {
-    pub doc_id: DocumentId,
-    pub sha: String,
-    pub body: String,
+pub(crate) struct GitShowResult {
+    pub(crate) doc_id: DocumentId,
+    pub(crate) sha: String,
+    pub(crate) body: String,
 }
-crate::impl_job_payload!(GitShowResult);
+crate::job_manager::impl_job_payload!(GitShowResult);
 
 /// Runs `git show <sha>` for view-only output and honors a configured `diff.external`.
 #[derive(Debug)]
-pub struct GitShowJob {
+pub(crate) struct GitShowJob {
     doc_id: DocumentId,
     repo_root: PathBuf,
     sha: String,
@@ -436,7 +412,7 @@ pub struct GitShowJob {
 
 impl GitShowJob {
     #[must_use]
-    pub const fn new(doc_id: DocumentId, repo_root: PathBuf, sha: String) -> Self {
+    pub(crate) const fn new(doc_id: DocumentId, repo_root: PathBuf, sha: String) -> Self {
         Self {
             doc_id,
             repo_root,
@@ -446,7 +422,7 @@ impl GitShowJob {
     }
 
     #[must_use]
-    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+    pub(crate) const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
         self.token = Some(token);
         self
     }
@@ -499,32 +475,25 @@ impl Job for GitShowJob {
 /// Result of a `GitCommandJob`: combined stdout+stderr for an arbitrary
 /// `git <args>` invocation (`:Git <args>` escape hatch).
 #[derive(Debug)]
-pub struct GitCommandResult {
-    /// The active document at the time `:Git` was run, so the editor can return focus there after showing output (not otherwise used for staleness checks; this job is one-shot, not tied to a specific buffer).
-    pub origin_doc_id: DocumentId,
-    pub repo_root: PathBuf,
-    pub args: String,
-    pub output: String,
-    pub success: bool,
+pub(crate) struct GitCommandResult {
+    pub(crate) repo_root: PathBuf,
+    pub(crate) args: String,
+    pub(crate) output: String,
+    pub(crate) success: bool,
 }
-crate::impl_job_payload!(GitCommandResult);
+crate::job_manager::impl_job_payload!(GitCommandResult);
 
 /// Runs `git <args>` with whitespace splitting and captures stdout plus stderr for display.
 #[derive(Debug)]
-pub struct GitCommandJob {
-    origin_doc_id: DocumentId,
+pub(crate) struct GitCommandJob {
     repo_root: PathBuf,
     args: String,
 }
 
 impl GitCommandJob {
     #[must_use]
-    pub const fn new(origin_doc_id: DocumentId, repo_root: PathBuf, args: String) -> Self {
-        Self {
-            origin_doc_id,
-            repo_root,
-            args,
-        }
+    pub(crate) const fn new(repo_root: PathBuf, args: String) -> Self {
+        Self { repo_root, args }
     }
 }
 
@@ -553,7 +522,6 @@ impl Job for GitCommandJob {
             Err(e) => (e.message, false),
         };
         let result = Box::new(GitCommandResult {
-            origin_doc_id: self.origin_doc_id,
             repo_root: self.repo_root,
             args: self.args,
             output: text,
@@ -569,16 +537,16 @@ impl Job for GitCommandJob {
 
 /// Result of a `GitGutterDiffJob`: fresh gutter signs for `doc_id`, tagged with the buffer revision they were computed from so a stale result (the buffer changed again while this job was running) can be discarded.
 #[derive(Debug)]
-pub struct GitGutterDiffResult {
-    pub doc_id: DocumentId,
-    pub revision: u64,
-    pub signs: Vec<(usize, crate::git::diff::GutterSignKind)>,
+pub(crate) struct GitGutterDiffResult {
+    pub(crate) doc_id: DocumentId,
+    pub(crate) revision: u64,
+    pub(crate) signs: Vec<(usize, crate::git::diff::GutterSignKind)>,
 }
-crate::impl_job_payload!(GitGutterDiffResult);
+crate::job_manager::impl_job_payload!(GitGutterDiffResult);
 
 /// Diffs a `File` buffer's live (possibly unsaved) content against its git index version, for gutter-diff signs. Writes both sides to temp files and shells `git diff --no-ext-diff --no-index -U0`, since there's no `git` plumbing that diffs an index blob against arbitrary in-memory text directly..
 #[derive(Debug)]
-pub struct GitGutterDiffJob {
+pub(crate) struct GitGutterDiffJob {
     doc_id: DocumentId,
     revision: u64,
     repo_root: PathBuf,
@@ -589,7 +557,7 @@ pub struct GitGutterDiffJob {
 
 impl GitGutterDiffJob {
     #[must_use]
-    pub const fn new(
+    pub(crate) const fn new(
         doc_id: DocumentId,
         revision: u64,
         repo_root: PathBuf,
@@ -604,12 +572,6 @@ impl GitGutterDiffJob {
             buffer_text,
             token: None,
         }
-    }
-
-    #[must_use]
-    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
-        self.token = Some(token);
-        self
     }
 }
 

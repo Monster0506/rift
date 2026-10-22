@@ -1,16 +1,8 @@
 use crate::command_line::commands::{
-    CommandDescriptor, CommandParser, CommandRegistry, CompletionHint, MatchResult, ParsedCommand,
-    COMMANDS,
+    CommandDescriptor, CommandParser, CompletionHint, MatchResult, ParsedCommand, COMMANDS,
 };
 use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 use crate::state::UserSettings;
-
-impl CommandParser {
-    #[must_use]
-    pub fn get_option_registry(&self) -> CommandRegistry {
-        self.settings_registry.build_option_registry()
-    }
-}
 
 fn parse_quit(_: &SettingsRegistry<UserSettings>, _: &[&str], bangs: usize) -> ParsedCommand {
     ParsedCommand::Quit { bangs }

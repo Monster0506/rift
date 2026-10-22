@@ -419,7 +419,7 @@ fn rust_parser() -> Parser {
 
 fn rust_syntax() -> Syntax {
     let lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
-    Syntax::new(LoadedLanguage::bundled(lang, "rust"), None).expect("Syntax::new")
+    Syntax::new(LoadedLanguage::bundled(lang, "rust"), None)
 }
 
 /// Patch path wired up as `Syntax`/`editor::jobs` would drive it must

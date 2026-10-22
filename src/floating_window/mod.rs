@@ -16,7 +16,7 @@ struct RenderLayout {
 }
 
 /// Border characters for floating windows
-pub use constants::ui::borders::BorderSet as BorderChars;
+pub(crate) use constants::ui::borders::BorderSet as BorderChars;
 
 impl Default for BorderChars {
     /// Create default border characters (Unicode box drawing)
@@ -26,29 +26,10 @@ impl Default for BorderChars {
 }
 
 impl BorderChars {
-    /// Create border characters from byte slices
-    #[must_use]
-    pub const fn new(
-        top_left: char,
-        top_right: char,
-        bottom_left: char,
-        bottom_right: char,
-        horizontal: char,
-        vertical: char,
-    ) -> Self {
-        Self {
-            top_left,
-            top_right,
-            bottom_left,
-            bottom_right,
-            horizontal,
-            vertical,
-        }
-    }
-
+    #[cfg(test)]
     /// Create border characters from single-byte ASCII characters
     #[must_use]
-    pub const fn from_ascii(
+    pub(crate) const fn from_ascii(
         top_left: char,
         top_right: char,
         bottom_left: char,
@@ -69,7 +50,7 @@ impl BorderChars {
 
 /// Position for floating window
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WindowPosition {
+pub(crate) enum WindowPosition {
     /// Center the window horizontally and vertically
     Center,
     /// Position at specific row and column (0-indexed)
@@ -82,17 +63,17 @@ pub enum WindowPosition {
 
 /// Window style configuration
 #[derive(Debug, Clone)]
-pub struct WindowStyle {
+pub(crate) struct WindowStyle {
     /// Whether to draw a border around the window
-    pub border: bool,
+    pub(crate) border: bool,
     /// Custom border characters (None uses defaults)
-    pub border_chars: Option<BorderChars>,
+    pub(crate) border_chars: Option<BorderChars>,
     /// Foreground color for window content
-    pub fg: Option<Color>,
+    pub(crate) fg: Option<Color>,
     /// Background color for window content
-    pub bg: Option<Color>,
+    pub(crate) bg: Option<Color>,
     /// Whether to use reverse video (swap fg/bg)
-    pub reverse_video: bool,
+    pub(crate) reverse_video: bool,
 }
 
 impl Default for WindowStyle {
@@ -110,41 +91,34 @@ impl Default for WindowStyle {
 impl WindowStyle {
     /// Create a new window style with defaults
     #[must_use]
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
     /// Set whether to draw a border
     #[must_use]
-    pub const fn with_border(mut self, border: bool) -> Self {
+    pub(crate) const fn with_border(mut self, border: bool) -> Self {
         self.border = border;
-        self
-    }
-
-    /// Set custom border characters
-    #[must_use]
-    pub const fn with_border_chars(mut self, border_chars: BorderChars) -> Self {
-        self.border_chars = Some(border_chars);
         self
     }
 
     /// Set foreground color
     #[must_use]
-    pub const fn with_fg(mut self, fg: Color) -> Self {
+    pub(crate) const fn with_fg(mut self, fg: Color) -> Self {
         self.fg = Some(fg);
         self
     }
 
     /// Set background color
     #[must_use]
-    pub const fn with_bg(mut self, bg: Color) -> Self {
+    pub(crate) const fn with_bg(mut self, bg: Color) -> Self {
         self.bg = Some(bg);
         self
     }
 
     /// Set reverse video mode
     #[must_use]
-    pub const fn with_reverse_video(mut self, reverse: bool) -> Self {
+    pub(crate) const fn with_reverse_video(mut self, reverse: bool) -> Self {
         self.reverse_video = reverse;
         self
     }
@@ -167,7 +141,7 @@ impl WindowStyle {
 /// A rectangular overlay window, rendered on a layer, with optional borders,
 /// custom colors, and various positioning options.
 #[derive(Debug, Clone)]
-pub struct FloatingWindow {
+pub(crate) struct FloatingWindow {
     /// Window position
     position: WindowPosition,
     /// Window width in columns (includes border if enabled)
@@ -179,9 +153,10 @@ pub struct FloatingWindow {
 }
 
 impl FloatingWindow {
+    #[cfg(test)]
     /// Create a new floating window with default style
     #[must_use]
-    pub fn new(position: WindowPosition, width: usize, height: usize) -> Self {
+    pub(crate) fn new(position: WindowPosition, width: usize, height: usize) -> Self {
         Self {
             position,
             width,
@@ -192,7 +167,7 @@ impl FloatingWindow {
 
     /// Create a new floating window with custom style
     #[must_use]
-    pub const fn with_style(
+    pub(crate) const fn with_style(
         position: WindowPosition,
         width: usize,
         height: usize,
@@ -206,42 +181,48 @@ impl FloatingWindow {
         }
     }
 
+    #[cfg(test)]
     /// Set whether to draw a border (builder pattern for compatibility)
     #[must_use]
-    pub const fn with_border(mut self, border: bool) -> Self {
+    pub(crate) const fn with_border(mut self, border: bool) -> Self {
         self.style.border = border;
         self
     }
 
+    #[cfg(test)]
     /// Set whether to use reverse video (builder pattern for compatibility)
     #[must_use]
-    pub const fn with_reverse_video(mut self, reverse: bool) -> Self {
+    pub(crate) const fn with_reverse_video(mut self, reverse: bool) -> Self {
         self.style.reverse_video = reverse;
         self
     }
 
+    #[cfg(test)]
     /// Set custom border characters (builder pattern for compatibility)
     #[must_use]
-    pub const fn with_border_chars(mut self, border_chars: BorderChars) -> Self {
+    pub(crate) const fn with_border_chars(mut self, border_chars: BorderChars) -> Self {
         self.style.border_chars = Some(border_chars);
         self
     }
 
+    #[cfg(test)]
     /// Get the width of the window
     #[must_use]
-    pub const fn width(&self) -> usize {
+    pub(crate) const fn width(&self) -> usize {
         self.width
     }
 
+    #[cfg(test)]
     /// Get the height of the window
     #[must_use]
-    pub const fn height(&self) -> usize {
+    pub(crate) const fn height(&self) -> usize {
         self.height
     }
 
+    #[cfg(test)]
     /// Get the content width (width minus border if enabled)
     #[must_use]
-    pub const fn content_width(&self) -> usize {
+    pub(crate) const fn content_width(&self) -> usize {
         if self.style.border {
             self.width.saturating_sub(2)
         } else {
@@ -249,9 +230,10 @@ impl FloatingWindow {
         }
     }
 
+    #[cfg(test)]
     /// Get the content height (height minus border if enabled)
     #[must_use]
-    pub const fn content_height(&self) -> usize {
+    pub(crate) const fn content_height(&self) -> usize {
         if self.style.border {
             self.height.saturating_sub(2)
         } else {
@@ -262,7 +244,7 @@ impl FloatingWindow {
     /// Calculate the actual position of the window given layer/terminal dimensions
     /// Returns (row, col) where the window should be positioned (0-indexed)
     #[must_use]
-    pub fn calculate_position(&self, rows: u16, cols: u16) -> (u16, u16) {
+    pub(crate) fn calculate_position(&self, rows: u16, cols: u16) -> (u16, u16) {
         let width = u16::try_from(self.width).unwrap_or(u16::MAX).min(cols);
         let height = u16::try_from(self.height).unwrap_or(u16::MAX).min(rows);
 
@@ -293,18 +275,18 @@ impl FloatingWindow {
 
     /// Render the floating window to `layer` at the position calculated from
     /// the layer's dimensions, using `content` as the line-by-line body.
-    pub fn render(&self, layer: &mut Layer, content: &[Vec<char>]) {
+    pub(crate) fn render(&self, layer: &mut Layer, content: &[Vec<char>]) {
         self.render_with_border_chars(layer, content, None);
     }
 
     /// Render the floating window with Cells (colored content)
-    pub fn render_cells(&self, layer: &mut Layer, content: &[Vec<Cell>]) {
+    pub(crate) fn render_cells(&self, layer: &mut Layer, content: &[Vec<Cell>]) {
         self.render_cells_with_border_chars(layer, content, None);
     }
 
     /// Like [`Self::render`], but `border_chars_override` optionally
     /// overrides the window's configured border characters.
-    pub fn render_with_border_chars(
+    pub(crate) fn render_with_border_chars(
         &self,
         layer: &mut Layer,
         content: &[Vec<char>],
@@ -361,7 +343,7 @@ impl FloatingWindow {
     }
 
     /// Render with custom border chars and Cells
-    pub fn render_cells_with_border_chars(
+    pub(crate) fn render_cells_with_border_chars(
         &self,
         layer: &mut Layer,
         content: &[Vec<Cell>],

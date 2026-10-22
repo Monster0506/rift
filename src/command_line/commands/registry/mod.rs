@@ -3,7 +3,7 @@
 
 /// Result of matching a command input
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MatchResult {
+pub(crate) enum MatchResult {
     /// Exact match found (command name or explicit alias)
     Exact(String),
     /// Shortest unambiguous prefix match
@@ -19,20 +19,20 @@ pub enum MatchResult {
 
 /// Command definition
 #[derive(Debug, Clone)]
-pub struct CommandDef {
+pub(crate) struct CommandDef {
     /// Canonical command name
-    pub name: String,
+    pub(crate) name: String,
     /// Explicit aliases for this command
-    pub aliases: Vec<String>,
+    pub(crate) aliases: Vec<String>,
     /// Description of the command
-    pub description: String,
+    pub(crate) description: String,
     /// Subcommands registry
-    pub subcommands: Option<CommandRegistry>,
+    pub(crate) subcommands: Option<CommandRegistry>,
 }
 
 impl CommandDef {
     /// Create a new command definition
-    pub fn new(name: impl Into<String>) -> Self {
+    pub(crate) fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             aliases: Vec::new(),
@@ -43,21 +43,21 @@ impl CommandDef {
 
     /// Add a description
     #[must_use]
-    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+    pub(crate) fn with_description(mut self, description: impl Into<String>) -> Self {
         self.description = description.into();
         self
     }
 
     /// Add an explicit alias
     #[must_use]
-    pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
+    pub(crate) fn with_alias(mut self, alias: impl Into<String>) -> Self {
         self.aliases.push(alias.into());
         self
     }
 
     /// Add multiple explicit aliases
     #[must_use]
-    pub fn with_aliases(mut self, aliases: Vec<impl Into<String>>) -> Self {
+    pub(crate) fn with_aliases(mut self, aliases: Vec<impl Into<String>>) -> Self {
         for alias in aliases {
             self.aliases.push(alias.into());
         }
@@ -66,7 +66,7 @@ impl CommandDef {
 
     /// Add a subcommand
     #[must_use]
-    pub fn with_subcommand(mut self, cmd: Self) -> Self {
+    pub(crate) fn with_subcommand(mut self, cmd: Self) -> Self {
         let mut registry = self.subcommands.unwrap_or_default();
         registry = registry.register(cmd);
         self.subcommands = Some(registry);
@@ -76,14 +76,14 @@ impl CommandDef {
 
 /// Command registry
 #[derive(Debug, Clone)]
-pub struct CommandRegistry {
+pub(crate) struct CommandRegistry {
     commands: Vec<CommandDef>,
 }
 
 impl CommandRegistry {
     /// Create a new empty registry
     #[must_use]
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             commands: Vec::new(),
         }
@@ -91,22 +91,15 @@ impl CommandRegistry {
 
     /// Register a command
     #[must_use]
-    pub fn register(mut self, cmd: CommandDef) -> Self {
+    pub(crate) fn register(mut self, cmd: CommandDef) -> Self {
         self.commands.push(cmd);
-        self
-    }
-
-    /// Register multiple commands
-    #[must_use]
-    pub fn register_all(mut self, cmds: Vec<CommandDef>) -> Self {
-        self.commands.extend(cmds);
         self
     }
 
     /// Match an input string to a command: exact name/alias, then shortest
     /// unambiguous prefix, else ambiguous (multiple matches) or unknown.
     #[must_use]
-    pub fn match_command(&self, input: &str) -> MatchResult {
+    pub(crate) fn match_command(&self, input: &str) -> MatchResult {
         let input = input.trim();
         let input_lower = input.to_lowercase();
 
@@ -160,15 +153,16 @@ impl CommandRegistry {
         }
     }
 
+    #[cfg(test)]
     /// Get all registered command names
     #[must_use]
-    pub fn command_names(&self) -> Vec<&String> {
+    pub(crate) fn command_names(&self) -> Vec<&String> {
         self.commands.iter().map(|c| &c.name).collect()
     }
 
     /// Get a command definition by canonical name
     #[must_use]
-    pub fn get(&self, name: &str) -> Option<&CommandDef> {
+    pub(crate) fn get(&self, name: &str) -> Option<&CommandDef> {
         self.commands.iter().find(|c| c.name == name)
     }
 }

@@ -7,11 +7,11 @@ use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
-pub const MAGIC: [u8; 8] = *b"\x89RiftUDO";
+pub(crate) const MAGIC: [u8; 8] = *b"\x89RiftUDO";
 
 const CURRENT_VERSION: u16 = 1;
 
-pub type Sha256Digest = [u8; 32];
+pub(crate) type Sha256Digest = [u8; 32];
 
 struct DecodedNode {
     seq: EditSeq,
@@ -29,20 +29,20 @@ struct Decoded {
 }
 
 #[derive(Debug)]
-pub struct ParsedUndoFile {
-    pub source_path: PathBuf,
-    pub content_hash: Sha256Digest,
-    pub tree: UndoTree,
+pub(crate) struct ParsedUndoFile {
+    pub(crate) source_path: PathBuf,
+    pub(crate) content_hash: Sha256Digest,
+    pub(crate) tree: UndoTree,
 }
 
 #[must_use]
-pub fn sha256(bytes: &[u8]) -> Sha256Digest {
+pub(crate) fn sha256(bytes: &[u8]) -> Sha256Digest {
     use sha2::{Digest, Sha256};
     Sha256::digest(bytes).into()
 }
 
 #[must_use]
-pub fn expand_tilde(path: &str) -> PathBuf {
+pub(crate) fn expand_tilde(path: &str) -> PathBuf {
     let home = || {
         let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
         std::env::var(var).ok()
@@ -62,7 +62,7 @@ pub fn expand_tilde(path: &str) -> PathBuf {
 }
 
 #[must_use]
-pub fn resolve_undo_dir(configured: Option<&Path>) -> PathBuf {
+pub(crate) fn resolve_undo_dir(configured: Option<&Path>) -> PathBuf {
     configured.map_or_else(
         || crate::editor::user_config_dir().join("undofiles"),
         Path::to_path_buf,
@@ -81,12 +81,12 @@ fn undo_file_name(path: &Path) -> String {
 }
 
 #[must_use]
-pub fn undo_file_path(undo_dir: &Path, doc_path: &Path) -> PathBuf {
+pub(crate) fn undo_file_path(undo_dir: &Path, doc_path: &Path) -> PathBuf {
     undo_dir.join(undo_file_name(doc_path))
 }
 
 #[must_use]
-pub fn has_magic(bytes: &[u8]) -> bool {
+pub(crate) fn has_magic(bytes: &[u8]) -> bool {
     bytes.len() >= MAGIC.len() + 2 && bytes[..MAGIC.len()] == MAGIC
 }
 
@@ -109,7 +109,7 @@ fn decode_payload(version: u16, payload: &[u8]) -> Result<Decoded, String> {
 ///
 /// # Errors
 /// Returns `Err` when `undo_dir` cannot be created or the file cannot be written.
-pub fn save(
+pub(crate) fn save(
     undo_dir: &Path,
     doc_path: &Path,
     tree: &UndoTree,
@@ -164,7 +164,11 @@ fn build_tree(nodes: Vec<DecodedNode>, current: EditSeq) -> Option<UndoTree> {
 }
 
 #[must_use]
-pub fn load(undo_dir: &Path, doc_path: &Path, content_hash: Sha256Digest) -> Option<UndoTree> {
+pub(crate) fn load(
+    undo_dir: &Path,
+    doc_path: &Path,
+    content_hash: Sha256Digest,
+) -> Option<UndoTree> {
     let bytes = std::fs::read(undo_file_path(undo_dir, doc_path)).ok()?;
     let (version, payload) = split_envelope(&bytes)?;
     let file = decode_payload(version, payload).ok()?;
@@ -179,7 +183,7 @@ pub fn load(undo_dir: &Path, doc_path: &Path, content_hash: Sha256Digest) -> Opt
 ///
 /// # Errors
 /// Returns `Err` when the envelope or version is unrecognized, the payload fails to decode, or the tree is corrupt.
-pub fn parse_for_display(bytes: &[u8]) -> Result<ParsedUndoFile, String> {
+pub(crate) fn parse_for_display(bytes: &[u8]) -> Result<ParsedUndoFile, String> {
     let (version, payload) =
         split_envelope(bytes).ok_or_else(|| "unrecognized undo file format".to_string())?;
     let file = decode_payload(version, payload)?;

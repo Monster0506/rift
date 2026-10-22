@@ -2,21 +2,21 @@ use super::tree::{SplitNode, SplitTree};
 use super::window::WindowId;
 use crate::num::f64_to_usize;
 
-pub const MIN_WINDOW_ROWS: usize = 3;
-pub const MIN_WINDOW_COLS: usize = 10;
+pub(crate) const MIN_WINDOW_ROWS: usize = 3;
+pub(crate) const MIN_WINDOW_COLS: usize = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WindowLayout {
-    pub window_id: WindowId,
-    pub row: usize,
-    pub col: usize,
-    pub rows: usize,
-    pub cols: usize,
+pub(crate) struct WindowLayout {
+    pub(crate) window_id: WindowId,
+    pub(crate) row: usize,
+    pub(crate) col: usize,
+    pub(crate) rows: usize,
+    pub(crate) cols: usize,
 }
 
 impl SplitTree {
     #[must_use]
-    pub fn compute_layout(&self, total_rows: usize, total_cols: usize) -> Vec<WindowLayout> {
+    pub(crate) fn compute_layout(&self, total_rows: usize, total_cols: usize) -> Vec<WindowLayout> {
         let mut layouts = Vec::new();
         compute_node_layout(&self.root, 0, 0, total_rows, total_cols, &mut layouts);
         layouts

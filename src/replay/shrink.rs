@@ -4,7 +4,7 @@ use crate::invariants::InvariantTier;
 use crate::key::{format_key, Key};
 
 #[must_use]
-pub fn reproduces_area(keys: &[Key], target_area: &'static str) -> bool {
+pub(crate) fn reproduces_area(keys: &[Key], target_area: &'static str) -> bool {
     let backend = ReplayBackend::new(std::io::sink(), 24, 80);
     let Ok(mut ed) = Editor::with_file(backend, None) else {
         return false;
@@ -30,7 +30,7 @@ pub fn reproduces_area(keys: &[Key], target_area: &'static str) -> bool {
 ///
 /// # Panics
 /// Panics if `reproduces` does not hold for the initial `keys`.
-pub fn ddmin(mut keys: Vec<Key>, reproduces: impl Fn(&[Key]) -> bool) -> Vec<Key> {
+pub(crate) fn ddmin(mut keys: Vec<Key>, reproduces: impl Fn(&[Key]) -> bool) -> Vec<Key> {
     assert!(
         reproduces(&keys),
         "ddmin: the initial input must already reproduce the failure"
@@ -87,13 +87,7 @@ pub fn ddmin(mut keys: Vec<Key>, reproduces: impl Fn(&[Key]) -> bool) -> Vec<Key
     keys
 }
 
-pub fn format_keys(keys: &[Key]) -> (String, String) {
-    let notation: String = keys.iter().copied().map(format_key).collect();
-    let literal = format!("{keys:?}");
-    (notation, literal)
-}
-
-pub fn bracket_list(keys: &[Key]) -> String {
+pub(crate) fn bracket_list(keys: &[Key]) -> String {
     let tokens: Vec<String> = keys.iter().copied().map(format_key).collect();
     format!("[{}]", tokens.join(", "))
 }

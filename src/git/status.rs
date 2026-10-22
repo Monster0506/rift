@@ -5,20 +5,20 @@ use std::path::PathBuf;
 /// Ahead/behind + identity of the current branch, from the `# branch.*`
 /// header lines porcelain v2 emits when invoked with `--branch`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct BranchInfo {
+pub(crate) struct BranchInfo {
     /// HEAD commit. `None` on a fresh repo with no commits yet (`(initial)`).
-    pub oid: Option<String>,
+    pub(crate) oid: Option<String>,
     /// Current branch name. `None` in detached-HEAD state.
-    pub head: Option<String>,
+    pub(crate) head: Option<String>,
     /// Configured upstream ref, if any.
-    pub upstream: Option<String>,
-    pub ahead: u32,
-    pub behind: u32,
+    pub(crate) upstream: Option<String>,
+    pub(crate) ahead: u32,
+    pub(crate) behind: u32,
 }
 
 /// One side (`X` = index-vs-HEAD, `Y` = worktree-vs-index) of a changed entry's status code. Also reused for unmerged entries' `XY`, where the only letters git emits are `U`/`A`/`D`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FileState {
+pub(crate) enum FileState {
     Unmodified,
     Modified,
     TypeChanged,
@@ -47,7 +47,7 @@ impl FileState {
 
 /// What kind of porcelain-v2 record produced a [`StatusEntry`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EntryKind {
+pub(crate) enum EntryKind {
     /// `1 ...` ordinary changed entry.
     Ordinary,
     /// `2 ...` renamed or copied entry. `score` is e.g. `"R100"`/`"C75"`.
@@ -62,36 +62,36 @@ pub enum EntryKind {
 
 /// One file-level record from a porcelain v2 status listing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StatusEntry {
-    pub path: PathBuf,
+pub(crate) struct StatusEntry {
+    pub(crate) path: PathBuf,
     /// Previous path, populated only for a rename/copy record.
-    pub orig_path: Option<PathBuf>,
+    pub(crate) orig_path: Option<PathBuf>,
     /// `X`: staged (index-vs-HEAD) state. `Unmodified` for untracked/ignored.
-    pub index_state: FileState,
+    pub(crate) index_state: FileState,
     /// `Y`: unstaged (worktree-vs-index) state. `Unmodified` for untracked/ignored.
-    pub worktree_state: FileState,
-    pub kind: EntryKind,
+    pub(crate) worktree_state: FileState,
+    pub(crate) kind: EntryKind,
 }
 
 impl StatusEntry {
     #[must_use]
-    pub const fn is_untracked(&self) -> bool {
+    pub(crate) const fn is_untracked(&self) -> bool {
         matches!(self.kind, EntryKind::Untracked)
     }
 
     #[must_use]
-    pub const fn is_ignored(&self) -> bool {
+    pub(crate) const fn is_ignored(&self) -> bool {
         matches!(self.kind, EntryKind::Ignored)
     }
 
     #[must_use]
-    pub const fn is_unmerged(&self) -> bool {
+    pub(crate) const fn is_unmerged(&self) -> bool {
         matches!(self.kind, EntryKind::Unmerged)
     }
 
     /// Whether this entry belongs under a status buffer's "Staged" section.
     #[must_use]
-    pub fn is_staged(&self) -> bool {
+    pub(crate) fn is_staged(&self) -> bool {
         !self.is_untracked()
             && !self.is_ignored()
             && !self.is_unmerged()
@@ -100,7 +100,7 @@ impl StatusEntry {
 
     /// Whether this entry belongs under a status buffer's "Unstaged" section.
     #[must_use]
-    pub fn is_unstaged(&self) -> bool {
+    pub(crate) fn is_unstaged(&self) -> bool {
         !self.is_untracked()
             && !self.is_ignored()
             && !self.is_unmerged()
@@ -110,14 +110,14 @@ impl StatusEntry {
 
 /// A fully parsed `git status --porcelain=v2 --branch` listing.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct StatusSnapshot {
-    pub branch: BranchInfo,
-    pub entries: Vec<StatusEntry>,
+pub(crate) struct StatusSnapshot {
+    pub(crate) branch: BranchInfo,
+    pub(crate) entries: Vec<StatusEntry>,
 }
 
 /// Parse porcelain v2 stdout. Malformed or unrecognized lines are skipped rather than failing the whole parse: status output is advisory, and one unexpected line from a newer/older git shouldn't blank the buffer.
 #[must_use]
-pub fn parse_status(input: &str) -> StatusSnapshot {
+pub(crate) fn parse_status(input: &str) -> StatusSnapshot {
     let mut snapshot = StatusSnapshot::default();
 
     for line in input.lines() {

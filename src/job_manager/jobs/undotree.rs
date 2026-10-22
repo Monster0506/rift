@@ -7,22 +7,22 @@ use std::sync::mpsc::Sender;
 
 /// Result of a background undo-tree render
 #[derive(Debug)]
-pub struct UndoTreeRenderResult {
+pub(crate) struct UndoTreeRenderResult {
     /// The undotree buffer document to update
-    pub ut_doc_id: DocumentId,
+    pub(crate) ut_doc_id: DocumentId,
     /// Rendered text content
-    pub text: String,
+    pub(crate) text: String,
     /// Per-line sequence mapping (`u64::MAX` = connector line)
-    pub sequences: Vec<EditSeq>,
+    pub(crate) sequences: Vec<EditSeq>,
     /// Per-byte-range foreground colour highlights
-    pub highlights: Vec<(Range<usize>, Color)>,
+    pub(crate) highlights: Vec<(Range<usize>, Color)>,
 }
 
-crate::impl_job_payload!(UndoTreeRenderResult);
+crate::job_manager::impl_job_payload!(UndoTreeRenderResult);
 
 /// Job that renders an undo-tree to text in a background thread, on a cloned
 /// snapshot so the expensive `render_tree_to_text` call never blocks the main thread.
-pub struct UndoTreeRenderJob {
+pub(crate) struct UndoTreeRenderJob {
     ut_doc_id: DocumentId,
     tree: UndoTree,
     token: Option<crate::job_manager::AsyncToken>,
@@ -38,18 +38,12 @@ impl std::fmt::Debug for UndoTreeRenderJob {
 
 impl UndoTreeRenderJob {
     #[must_use]
-    pub const fn new(ut_doc_id: DocumentId, tree: UndoTree) -> Self {
+    pub(crate) const fn new(ut_doc_id: DocumentId, tree: UndoTree) -> Self {
         Self {
             ut_doc_id,
             tree,
             token: None,
         }
-    }
-
-    #[must_use]
-    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
-        self.token = Some(token);
-        self
     }
 }
 

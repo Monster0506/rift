@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 /// Result of looking up a key sequence
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MatchResult<'a> {
+pub(crate) enum MatchResult<'a> {
     /// Exact match found
     Exact(&'a Action),
     /// Sequence is a valid prefix of multiple bindings but has no action itself
@@ -17,7 +17,7 @@ pub enum MatchResult<'a> {
 
 /// How a lookup treats modifiers that carry no text meaning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Strictness {
+pub(crate) enum Strictness {
     /// Only exact keys match.
     Exact,
     /// An unbound key retries as `Key::fallback`.
@@ -26,7 +26,7 @@ pub enum Strictness {
 
 /// A node in the key sequence trie
 #[derive(Debug, Default, Clone)]
-pub struct TrieNode {
+pub(crate) struct TrieNode {
     /// Children nodes mapped by key
     children: HashMap<Key, Self>,
     /// Action associated with this sequence (if any)
@@ -34,13 +34,8 @@ pub struct TrieNode {
 }
 
 impl TrieNode {
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Insert a sequence into the trie
-    pub fn insert(&mut self, keys: &[Key], action: Action) {
+    pub(crate) fn insert(&mut self, keys: &[Key], action: Action) {
         if keys.is_empty() {
             self.action = Some(action);
             return;
@@ -54,7 +49,7 @@ impl TrieNode {
     }
 
     /// Remove a sequence from the trie. Returns `true` if a binding was removed.
-    pub fn remove(&mut self, keys: &[Key]) -> bool {
+    pub(crate) fn remove(&mut self, keys: &[Key]) -> bool {
         if keys.is_empty() {
             let had = self.action.is_some();
             self.action = None;
@@ -74,7 +69,7 @@ impl TrieNode {
 
     /// Look up a sequence
     #[must_use]
-    pub fn lookup<'a>(&'a self, keys: &[Key], strictness: Strictness) -> MatchResult<'a> {
+    pub(crate) fn lookup<'a>(&'a self, keys: &[Key], strictness: Strictness) -> MatchResult<'a> {
         if keys.is_empty() {
             // A node with both an action and children is Ambiguous: the caller
             // waits for more keys, then flushes to this action on timeout.

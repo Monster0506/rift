@@ -425,7 +425,6 @@ fn shutdown_all_clears_clients_and_kills_the_process() {
             // A long-running, stdio-redirect-safe placeholder "server".
             command: "ping".to_string(),
             args: vec!["-n".to_string(), "30".to_string(), "127.0.0.1".to_string()],
-            extensions: vec![],
             root_markers: vec![],
             capabilities: vec![],
             initialization_options: None,
@@ -461,7 +460,6 @@ fn did_open_logs_when_the_server_command_fails_to_spawn() {
         LspServerConfig {
             command: "this-binary-does-not-exist-rift-test".to_string(),
             args: vec![],
-            extensions: vec![],
             root_markers: vec![],
             capabilities: vec![],
             initialization_options: None,
@@ -499,7 +497,6 @@ fn a_server_that_exits_is_forgotten_and_respawn_stops_after_the_budget() {
         LspServerConfig {
             command,
             args,
-            extensions: vec![],
             root_markers: vec![],
             capabilities: vec![],
             initialization_options: None,
@@ -542,7 +539,6 @@ fn a_server_that_exits_is_forgotten_and_respawn_stops_after_the_budget() {
         LspServerConfig {
             command: "ping".to_string(),
             args: vec!["-n".to_string(), "30".to_string(), "127.0.0.1".to_string()],
-            extensions: vec![],
             root_markers: vec![],
             capabilities: vec![],
             initialization_options: None,
@@ -564,7 +560,6 @@ fn did_close_stops_tracking_a_previously_opened_document() {
         LspServerConfig {
             command: "ping".to_string(),
             args: vec!["-n".to_string(), "30".to_string(), "127.0.0.1".to_string()],
-            extensions: vec![],
             root_markers: vec![],
             capabilities: vec![],
             initialization_options: None,
@@ -594,7 +589,6 @@ fn requests_outside_declared_capabilities_are_rejected() {
         LspServerConfig {
             command: "ping".to_string(),
             args: vec!["-n".to_string(), "30".to_string(), "127.0.0.1".to_string()],
-            extensions: vec![],
             root_markers: vec![],
             capabilities: vec![LspCapability::Hover],
             initialization_options: None,
@@ -642,7 +636,6 @@ fn a_server_with_no_declared_capabilities_allows_everything() {
         LspServerConfig {
             command: "ping".to_string(),
             args: vec!["-n".to_string(), "30".to_string(), "127.0.0.1".to_string()],
-            extensions: vec![],
             root_markers: vec![],
             capabilities: vec![],
             initialization_options: None,

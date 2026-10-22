@@ -24,7 +24,7 @@ fn test_from_file_normalizes_crlf() {
         "buffer should not contain \\r after CRLF normalization"
     );
     assert_eq!(text, "line1\nline2\nline3");
-    assert_eq!(doc.options.line_ending, LineEnding::CRLF);
+    assert_eq!(doc.options.line_ending, LineEnding::Crlf);
 }
 
 #[test]

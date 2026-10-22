@@ -117,13 +117,14 @@ impl<T: Clone> IntervalTree<T> {
         }
     }
 
-    // Helper to get all items (e.g. for iteration)
-    pub fn iter(&self) -> impl Iterator<Item = (&Range<usize>, &T)> {
+    /// Helper to get all items (e.g. for iteration).
+    #[cfg(feature = "treesitter")]
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&Range<usize>, &T)> {
         self.nodes.iter().map(|n| (&n.range, &n.val))
     }
 
-    /// In-order traversal: same relative ordering as `query`, unlike `iter`
-    /// (which walks `self.nodes` in build order and can reorder same-range ties).
+    #[cfg(any(test, feature = "treesitter"))]
+    /// In-order traversal: same relative ordering as `query`.
     fn in_order(&self) -> Vec<(Range<usize>, T)> {
         let mut results = Vec::with_capacity(self.nodes.len());
         if let Some(root) = self.root {
@@ -132,6 +133,7 @@ impl<T: Clone> IntervalTree<T> {
         results
     }
 
+    #[cfg(any(test, feature = "treesitter"))]
     fn in_order_recursive(&self, node_idx: usize, results: &mut Vec<(Range<usize>, T)>) {
         let node = &self.nodes[node_idx];
         if let Some(left) = node.left {
@@ -144,7 +146,7 @@ impl<T: Clone> IntervalTree<T> {
     }
 
     /// Update every node's range from `get_range` in place, preserving tree topology, then recompute `max` bottom-up.
-    pub fn resync(&mut self, mut get_range: impl FnMut(&T) -> Option<Range<usize>>) {
+    pub(crate) fn resync(&mut self, mut get_range: impl FnMut(&T) -> Option<Range<usize>>) {
         for node in &mut self.nodes {
             if let Some(r) = get_range(&node.val) {
                 node.range = r;
@@ -166,8 +168,9 @@ impl<T: Clone> IntervalTree<T> {
 
     /// Ranges at/before the edit are kept, at/after its old end shift by the
     /// delta, overlapping it are dropped (caller must also filter its fresh requery for touching cases).
+    #[cfg(any(test, feature = "treesitter"))]
     #[must_use]
-    pub fn shift_for_edit(
+    pub(crate) fn shift_for_edit(
         &self,
         start_byte: usize,
         old_end_byte: usize,

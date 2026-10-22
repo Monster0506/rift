@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use monster_rift::character::Character;
-use monster_rift::layer::Cell;
-use monster_rift::screen_buffer::DoubleBuffer;
+use monster_rift::bench_api::character::Character;
+use monster_rift::bench_api::layer::Cell;
+use monster_rift::bench_api::screen_buffer::DoubleBuffer;
 use std::hint::black_box;
 
 fn screen_diffing(c: &mut Criterion) {

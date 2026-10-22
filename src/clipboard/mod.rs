@@ -10,12 +10,12 @@ use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
 use crate::layer::{Cell, Layer};
 use crate::wrap::{MotionRange, RangeKind};
 
-pub const DEFAULT_RING_CAPACITY: usize = 10;
+pub(crate) const DEFAULT_RING_CAPACITY: usize = 10;
 const TOOLTIP_MAX_WIDTH: usize = 42;
 
 /// Stores entries as `Character` sequences, not `String`, so yanked raw
 /// bytes/control chars round-trip through paste instead of becoming U+FFFD.
-pub struct ClipboardRing {
+pub(crate) struct ClipboardRing {
     entries: VecDeque<Vec<Character>>,
     capacity: usize,
 }
@@ -28,7 +28,7 @@ impl Default for ClipboardRing {
 
 impl ClipboardRing {
     #[must_use]
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             entries: VecDeque::with_capacity(DEFAULT_RING_CAPACITY),
             capacity: DEFAULT_RING_CAPACITY,
@@ -37,7 +37,7 @@ impl ClipboardRing {
 
     /// Push a new entry to the front (index 0 = most recent).
     /// Empty entries are ignored. Oldest entry is dropped when at capacity.
-    pub fn push(&mut self, text: Vec<Character>) {
+    pub(crate) fn push(&mut self, text: Vec<Character>) {
         if text.is_empty() {
             return;
         }
@@ -47,14 +47,15 @@ impl ClipboardRing {
         }
     }
 
+    #[cfg(test)]
     /// Convenience for callers that only have a `String` (e.g. the system
     /// clipboard, which is plain text and has no byte-faithful representation).
-    pub fn push_str(&mut self, text: &str) {
+    pub(crate) fn push_str(&mut self, text: &str) {
         self.push(text.chars().map(Character::from).collect());
     }
 
     /// Update the ring capacity, trimming oldest entries if needed.
-    pub fn set_capacity(&mut self, new_capacity: usize) {
+    pub(crate) fn set_capacity(&mut self, new_capacity: usize) {
         let cap = new_capacity.max(1);
         self.capacity = cap;
         while self.entries.len() > cap {
@@ -63,38 +64,38 @@ impl ClipboardRing {
     }
 
     #[must_use]
-    pub const fn capacity(&self) -> usize {
+    pub(crate) const fn capacity(&self) -> usize {
         self.capacity
     }
 
-    pub fn get(&self, index: usize) -> Option<&[Character]> {
+    pub(crate) fn get(&self, index: usize) -> Option<&[Character]> {
         self.entries.get(index).map(Vec::as_slice)
     }
 
     #[must_use]
-    pub fn most_recent(&self) -> Option<&[Character]> {
+    pub(crate) fn most_recent(&self) -> Option<&[Character]> {
         self.get(0)
     }
 
     #[must_use]
-    pub const fn entries(&self) -> &VecDeque<Vec<Character>> {
+    pub(crate) const fn entries(&self) -> &VecDeque<Vec<Character>> {
         &self.entries
     }
 
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.entries.len()
     }
 
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 }
 
 /// Extract the text covered by a `MotionRange` from the buffer, preserving
 /// raw bytes/control chars so it round-trips through the clipboard ring.
-pub fn capture_text(buf: &TextBuffer, range: &MotionRange) -> Vec<Character> {
+pub(crate) fn capture_text(buf: &TextBuffer, range: &MotionRange) -> Vec<Character> {
     let (start, end) = match range.kind {
         RangeKind::Linewise => {
             let first = range.anchor.min(range.new_cursor);
@@ -121,7 +122,7 @@ pub fn capture_text(buf: &TextBuffer, range: &MotionRange) -> Vec<Character> {
 }
 
 /// Capture `count` lines (including newlines) starting at the cursor's line.
-pub fn capture_current_line(buf: &TextBuffer, count: usize) -> Vec<Character> {
+pub(crate) fn capture_current_line(buf: &TextBuffer, count: usize) -> Vec<Character> {
     let cursor = buf.cursor();
     let line = buf.line_index.get_line_at(cursor);
     let last_line = (line + count.max(1).saturating_sub(1)).min(buf.get_total_lines() - 1);
@@ -135,7 +136,7 @@ pub fn capture_current_line(buf: &TextBuffer, count: usize) -> Vec<Character> {
 }
 
 #[must_use]
-pub fn normalize_newlines(text: &str) -> std::borrow::Cow<'_, str> {
+pub(crate) fn normalize_newlines(text: &str) -> std::borrow::Cow<'_, str> {
     if !text.contains('\r') {
         return std::borrow::Cow::Borrowed(text);
     }
@@ -190,7 +191,7 @@ impl ClipboardWorker {
 /// Read the system clipboard text without blocking the caller past
 /// `CLIPBOARD_READ_TIMEOUT`, reusing a single shared connection.
 #[cfg(feature = "system_clipboard")]
-pub fn read_system_clipboard_text() -> Option<String> {
+pub(crate) fn read_system_clipboard_text() -> Option<String> {
     use std::sync::OnceLock;
     static WORKER: OnceLock<ClipboardWorker> = OnceLock::new();
     WORKER.get_or_init(ClipboardWorker::new).read()
@@ -199,12 +200,12 @@ pub fn read_system_clipboard_text() -> Option<String> {
 /// Returns None when system clipboard support is disabled.
 #[cfg(not(feature = "system_clipboard"))]
 #[must_use]
-pub const fn read_system_clipboard_text() -> Option<String> {
+pub(crate) const fn read_system_clipboard_text() -> Option<String> {
     None
 }
 
 #[derive(Default)]
-pub struct SystemClipboardCache {
+pub(crate) struct SystemClipboardCache {
     text: Option<String>,
     last_refreshed: Option<crate::time::Instant>,
     /// Number of completed reads, for tests to observe refresh behavior.
@@ -213,11 +214,11 @@ pub struct SystemClipboardCache {
 
 impl SystemClipboardCache {
     #[must_use]
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
-    pub fn refresh_if_stale(&mut self) {
+    pub(crate) fn refresh_if_stale(&mut self) {
         let stale = self
             .last_refreshed
             .is_none_or(|t| t.elapsed() >= SYSTEM_CLIPBOARD_REFRESH_INTERVAL);
@@ -230,22 +231,23 @@ impl SystemClipboardCache {
     }
 
     #[must_use]
-    pub fn text(&self) -> Option<&str> {
+    pub(crate) fn text(&self) -> Option<&str> {
         self.text.as_deref()
     }
 
+    #[cfg(test)]
     #[must_use]
-    pub const fn read_count(&self) -> u32 {
+    pub(crate) const fn read_count(&self) -> u32 {
         self.read_count
     }
 }
 
-pub struct ClipboardTooltip;
+pub(crate) struct ClipboardTooltip;
 
 impl ClipboardTooltip {
     /// Renders the tooltip near the cursor. `selected` is the ring index staged
     /// for paste; `sys_clip` is the last [`SystemClipboardCache`] read, not read live here.
-    pub fn render(
+    pub(crate) fn render(
         ring: &ClipboardRing,
         selected: usize,
         sys_clip: Option<&str>,

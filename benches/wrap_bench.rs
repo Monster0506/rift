@@ -1,9 +1,9 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use monster_rift::buffer::line_index::LineIndex;
-use monster_rift::buffer::rope::PieceTable;
-use monster_rift::buffer::TextBuffer;
-use monster_rift::character::Character;
-use monster_rift::wrap::DisplayMap;
+use monster_rift::bench_api::buffer::LineIndex;
+use monster_rift::bench_api::buffer::PieceTable;
+use monster_rift::bench_api::buffer::TextBuffer;
+use monster_rift::bench_api::character::Character;
+use monster_rift::bench_api::wrap::DisplayMap;
 use std::hint::black_box;
 
 fn make_buf(lines: usize, line_len: usize) -> TextBuffer {

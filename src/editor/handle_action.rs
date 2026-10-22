@@ -92,14 +92,6 @@ impl<T: TerminalBackend> Editor<T> {
                     return true;
                 }
 
-                if matches!(action_dispatch, ActionDispatch::Reject) {
-                    self.state.notify(
-                        crate::notification::NotificationType::Warning,
-                        "Action not supported in this buffer".to_string(),
-                    );
-                    return true;
-                }
-
                 match action_dispatch {
                     ActionDispatch::Native(handler) => {
                         handler(handle);
@@ -112,7 +104,7 @@ impl<T: TerminalBackend> Editor<T> {
                             .invoke_buffer_action(doc_id, &kind_name, id);
                         self.apply_plugin_mutations();
                     }
-                    ActionDispatch::Disabled | ActionDispatch::Reject => {}
+                    ActionDispatch::Disabled => {}
                 }
                 return true;
             }

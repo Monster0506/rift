@@ -11,17 +11,22 @@ use std::collections::BTreeMap;
 
 /// A rectangular region
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Rect {
-    pub start_row: usize,
-    pub start_col: usize,
-    pub end_row: usize,
-    pub end_col: usize,
+pub(crate) struct Rect {
+    pub(crate) start_row: usize,
+    pub(crate) start_col: usize,
+    pub(crate) end_row: usize,
+    pub(crate) end_col: usize,
 }
 
 impl Rect {
     /// Create a new rectangle
     #[must_use]
-    pub const fn new(start_row: usize, start_col: usize, end_row: usize, end_col: usize) -> Self {
+    pub(crate) const fn new(
+        start_row: usize,
+        start_col: usize,
+        end_row: usize,
+        end_col: usize,
+    ) -> Self {
         Self {
             start_row,
             start_col,
@@ -31,7 +36,7 @@ impl Rect {
     }
     /// Check if two rects intersect
     #[must_use]
-    pub const fn intersects(&self, other: &Self) -> bool {
+    pub(crate) const fn intersects(&self, other: &Self) -> bool {
         self.start_row <= other.end_row
             && self.end_row >= other.start_row
             && self.start_col <= other.end_col
@@ -40,7 +45,7 @@ impl Rect {
 
     /// Check if two rects are adjacent (touching)
     #[must_use]
-    pub const fn is_adjacent(&self, other: &Self) -> bool {
+    pub(crate) const fn is_adjacent(&self, other: &Self) -> bool {
         // Expand self by 1 in all directions and check for intersection
         let expanded = Self {
             start_row: self.start_row.saturating_sub(1),
@@ -53,7 +58,7 @@ impl Rect {
 
     /// Union of two rects (bounding box)
     #[must_use]
-    pub fn union(&self, other: &Self) -> Self {
+    pub(crate) fn union(&self, other: &Self) -> Self {
         Self {
             start_row: self.start_row.min(other.start_row),
             start_col: self.start_col.min(other.start_col),
@@ -87,25 +92,25 @@ fn merge_dirty_rects(mut rects: Vec<Rect>) -> Vec<Rect> {
 
 /// Layer priority - higher values render on top
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LayerPriority(pub u8);
+pub(crate) struct LayerPriority(pub u8);
 
 impl LayerPriority {
     /// Main text buffer content
-    pub const CONTENT: Self = Self(0);
+    pub(crate) const CONTENT: Self = Self(0);
     /// Status line at the bottom of the screen
-    pub const STATUS_BAR: Self = Self(10);
+    pub(crate) const STATUS_BAR: Self = Self(10);
     /// Floating windows like command line, dialogs
-    pub const FLOATING_WINDOW: Self = Self(20);
+    pub(crate) const FLOATING_WINDOW: Self = Self(20);
     /// Popup menus like autocomplete
-    pub const POPUP: Self = Self(30);
+    pub(crate) const POPUP: Self = Self(30);
     /// Hover information
-    pub const HOVER: Self = Self(40);
+    pub(crate) const HOVER: Self = Self(40);
     /// Tooltips and hints
-    pub const TOOLTIP: Self = Self(50);
+    pub(crate) const TOOLTIP: Self = Self(50);
     /// Notifications
-    pub const NOTIFICATION: Self = Self(60);
+    pub(crate) const NOTIFICATION: Self = Self(60);
     /// Software cursor
-    pub const CURSOR: Self = Self(100);
+    pub(crate) const CURSOR: Self = Self(100);
 }
 
 /// Text rendering attributes that compose on top of fg/bg color.
@@ -114,11 +119,11 @@ impl LayerPriority {
 pub struct CellAttrs(u8);
 
 impl CellAttrs {
-    pub const BOLD: Self = Self(0x01);
-    pub const ITALIC: Self = Self(0x02);
+    pub(crate) const BOLD: Self = Self(0x01);
+    pub(crate) const ITALIC: Self = Self(0x02);
     pub const UNDERLINE: Self = Self(0x04);
-    pub const STRIKE: Self = Self(0x08);
-    pub const REVERSE: Self = Self(0x10);
+    pub(crate) const STRIKE: Self = Self(0x08);
+    pub(crate) const REVERSE: Self = Self(0x10);
 
     /// Attribute names used by Lua style tables and serialized output, in bit order.
     pub(crate) const NAMED: [(&'static str, Self); 5] = [
@@ -130,44 +135,44 @@ impl CellAttrs {
     ];
 
     #[must_use]
-    pub fn is_empty(self) -> bool {
+    pub(crate) fn is_empty(self) -> bool {
         self == Self::default()
     }
 
     /// True when every attribute in `other` is also set.
     #[must_use]
-    pub const fn contains(self, other: Self) -> bool {
+    pub(crate) const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
     }
 
     /// Both sets of attributes (an underline composes over syntax bold/italic).
     #[must_use]
-    pub const fn union(self, other: Self) -> Self {
+    pub(crate) const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
 
     #[must_use]
-    pub const fn is_bold(self) -> bool {
+    pub(crate) const fn is_bold(self) -> bool {
         self.contains(Self::BOLD)
     }
 
     #[must_use]
-    pub const fn is_italic(self) -> bool {
+    pub(crate) const fn is_italic(self) -> bool {
         self.contains(Self::ITALIC)
     }
 
     #[must_use]
-    pub const fn is_underline(self) -> bool {
+    pub(crate) const fn is_underline(self) -> bool {
         self.contains(Self::UNDERLINE)
     }
 
     #[must_use]
-    pub const fn is_strike(self) -> bool {
+    pub(crate) const fn is_strike(self) -> bool {
         self.contains(Self::STRIKE)
     }
 
     #[must_use]
-    pub const fn is_reverse(self) -> bool {
+    pub(crate) const fn is_reverse(self) -> bool {
         self.contains(Self::REVERSE)
     }
 }
@@ -200,22 +205,22 @@ impl<'de> Deserialize<'de> for CellAttrs {
 /// A fully-resolved cell style: optional fg/bg plus text attributes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct CellStyle {
-    pub fg: Option<Color>,
-    pub bg: Option<Color>,
-    pub attrs: CellAttrs,
+    pub(crate) fg: Option<Color>,
+    pub(crate) bg: Option<Color>,
+    pub(crate) attrs: CellAttrs,
 }
 
 /// A cell in the terminal buffer
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cell {
     /// The character to display
-    pub content: Character,
+    pub(crate) content: Character,
     /// Foreground color (None = default)
-    pub fg: Option<Color>,
+    pub(crate) fg: Option<Color>,
     /// Background color (None = default)
-    pub bg: Option<Color>,
+    pub(crate) bg: Option<Color>,
     /// Text attributes (bold/italic/underline/strike/reverse).
-    pub attrs: CellAttrs,
+    pub(crate) attrs: CellAttrs,
 }
 
 impl Cell {
@@ -232,14 +237,15 @@ impl Cell {
 
     /// Convert cell content to char (best effort)
     #[must_use]
-    pub const fn to_char(&self) -> char {
+    #[allow(clippy::wrong_self_convention)]
+    pub(crate) const fn to_char(&self) -> char {
         self.content.to_char_lossy()
     }
 
     /// Create a new cell with UTF-8 content
     /// Note: This expects a single char bytes, or will map to Character
     #[must_use]
-    pub fn from_bytes(bytes: &[u8]) -> Self {
+    pub(crate) fn from_bytes(bytes: &[u8]) -> Self {
         if let Ok(s) = std::str::from_utf8(bytes) {
             if let Some(c) = s.chars().next() {
                 return Self::new(Character::from(c));
@@ -254,33 +260,33 @@ impl Cell {
 
     /// Create a new cell from a char
     #[must_use]
-    pub fn from_char(ch: char) -> Self {
+    pub(crate) fn from_char(ch: char) -> Self {
         Self::new(Character::from(ch))
     }
 
     /// Create an empty (space) cell
     #[must_use]
-    pub fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self::from_char(' ')
     }
 
     /// Set foreground color
     #[must_use]
-    pub const fn with_fg(mut self, fg: Color) -> Self {
+    pub(crate) const fn with_fg(mut self, fg: Color) -> Self {
         self.fg = Some(fg);
         self
     }
 
     /// Set background color
     #[must_use]
-    pub const fn with_bg(mut self, bg: Color) -> Self {
+    pub(crate) const fn with_bg(mut self, bg: Color) -> Self {
         self.bg = Some(bg);
         self
     }
 
     /// Set both foreground and background colors
     #[must_use]
-    pub const fn with_colors(mut self, fg: Option<Color>, bg: Option<Color>) -> Self {
+    pub(crate) const fn with_colors(mut self, fg: Option<Color>, bg: Option<Color>) -> Self {
         self.fg = fg;
         self.bg = bg;
         self
@@ -288,7 +294,7 @@ impl Cell {
 
     /// Set text attributes.
     #[must_use]
-    pub const fn with_attrs(mut self, attrs: CellAttrs) -> Self {
+    pub(crate) const fn with_attrs(mut self, attrs: CellAttrs) -> Self {
         self.attrs = attrs;
         self
     }
@@ -302,8 +308,9 @@ impl Default for Cell {
 
 /// A single rendering layer: a grid of optional cells, `None` = transparent.
 #[derive(Debug, Clone)]
-pub struct Layer {
+pub(crate) struct Layer {
     /// The priority (z-order) of this layer
+    #[cfg(test)]
     priority: LayerPriority,
     /// Flat grid of cells - index = row * cols + col
     /// None = transparent, Some = content
@@ -322,9 +329,12 @@ impl Layer {
 
     /// Create a new layer with the given dimensions
     #[must_use]
-    pub fn new(priority: LayerPriority, rows: usize, cols: usize) -> Self {
+    pub(crate) fn new(priority: LayerPriority, rows: usize, cols: usize) -> Self {
         let cells = vec![None; rows * cols];
+        #[cfg(not(test))]
+        let _ = priority;
         Self {
+            #[cfg(test)]
             priority,
             cells,
             // Initial state is fully dirty
@@ -339,26 +349,28 @@ impl Layer {
         }
     }
 
+    #[cfg(test)]
     /// Get the layer's priority
     #[must_use]
-    pub const fn priority(&self) -> LayerPriority {
+    pub(crate) const fn priority(&self) -> LayerPriority {
         self.priority
     }
 
     /// Check if the layer has been modified
     #[must_use]
-    pub const fn is_dirty(&self) -> bool {
+    pub(crate) const fn is_dirty(&self) -> bool {
         !self.dirty_rects.is_empty()
     }
 
+    #[cfg(test)]
     /// Get the list of dirty rectangles
     #[must_use]
-    pub fn get_dirty_rects(&self) -> &[Rect] {
+    pub(crate) fn get_dirty_rects(&self) -> &[Rect] {
         &self.dirty_rects
     }
 
     /// Add a dirty rectangle to the tracking list
-    pub fn add_dirty_rect(&mut self, rect: Rect) {
+    pub(crate) fn add_dirty_rect(&mut self, rect: Rect) {
         let mut merged = false;
         for existing in &mut self.dirty_rects {
             if existing.intersects(&rect) || existing.is_adjacent(&rect) {
@@ -405,12 +417,13 @@ impl Layer {
     }
 
     /// Mark the layer as clean (after compositing)
-    pub fn mark_clean(&mut self) {
+    pub(crate) fn mark_clean(&mut self) {
         self.dirty_rects.clear();
     }
 
+    #[cfg(test)]
     /// Mark the entire layer as dirty without changing content
-    pub fn mark_fully_dirty(&mut self) {
+    pub(crate) fn mark_fully_dirty(&mut self) {
         self.dirty_rects.clear();
         self.dirty_rects.push(Rect::new(
             0,
@@ -421,7 +434,7 @@ impl Layer {
     }
 
     /// Clear all cells in the layer (make transparent)
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         for cell in &mut self.cells {
             *cell = None;
         }
@@ -442,7 +455,7 @@ impl Layer {
 
     /// Set a cell at the given position
     /// Returns false if position is out of bounds
-    pub fn set_cell(&mut self, row: usize, col: usize, cell: Cell) -> bool {
+    pub(crate) fn set_cell(&mut self, row: usize, col: usize, cell: Cell) -> bool {
         if row < self.rows && col < self.cols {
             let idx = self.idx(row, col);
             // Optimization: only mark dirty if cell actually changed
@@ -461,7 +474,7 @@ impl Layer {
     }
 
     /// Set a cell to transparent at the given position
-    pub fn clear_cell(&mut self, row: usize, col: usize) -> bool {
+    pub(crate) fn clear_cell(&mut self, row: usize, col: usize) -> bool {
         if row < self.rows && col < self.cols {
             let idx = self.idx(row, col);
             let changed = self.cells[idx].is_some();
@@ -477,7 +490,7 @@ impl Layer {
 
     /// Get a cell at the given position
     #[must_use]
-    pub fn get_cell(&self, row: usize, col: usize) -> Option<&Cell> {
+    pub(crate) fn get_cell(&self, row: usize, col: usize) -> Option<&Cell> {
         if row < self.rows && col < self.cols {
             let idx = self.idx(row, col);
             self.cells[idx].as_ref()
@@ -486,8 +499,9 @@ impl Layer {
         }
     }
 
+    #[cfg(test)]
     /// Write a string of text at the given position from a string slice
-    pub fn write_str(&mut self, row: usize, start_col: usize, text: &str) {
+    pub(crate) fn write_str(&mut self, row: usize, start_col: usize, text: &str) {
         for (i, ch) in text.chars().enumerate() {
             let col = start_col + i;
             if col < self.cols {
@@ -496,25 +510,9 @@ impl Layer {
         }
     }
 
-    /// Write a string of text with colors at the given position
-    pub fn write_str_colored(
-        &mut self,
-        row: usize,
-        start_col: usize,
-        text: &str,
-        fg: Option<Color>,
-        bg: Option<Color>,
-    ) {
-        for (i, ch) in text.chars().enumerate() {
-            let col = start_col + i;
-            if col < self.cols {
-                self.set_cell(row, col, Cell::from_char(ch).with_colors(fg, bg));
-            }
-        }
-    }
-
+    #[cfg(test)]
     /// Fill a row with a character
-    pub fn fill_row(&mut self, row: usize, ch: char, fg: Option<Color>, bg: Option<Color>) {
+    pub(crate) fn fill_row(&mut self, row: usize, ch: char, fg: Option<Color>, bg: Option<Color>) {
         if row < self.rows {
             for col in 0..self.cols {
                 self.set_cell(row, col, Cell::from_char(ch).with_colors(fg, bg));
@@ -522,8 +520,9 @@ impl Layer {
         }
     }
 
+    #[cfg(test)]
     /// Fill a rectangular region with a cell
-    pub fn fill_rect(&mut self, rect: Rect, cell: Cell) {
+    pub(crate) fn fill_rect(&mut self, rect: Rect, cell: Cell) {
         for row in rect.start_row..=rect.end_row.min(self.rows.saturating_sub(1)) {
             for col in rect.start_col..=rect.end_col.min(self.cols.saturating_sub(1)) {
                 self.set_cell(row, col, cell);
@@ -533,7 +532,7 @@ impl Layer {
 
     /// Resize the layer to new dimensions
     /// Content is preserved where possible
-    pub fn resize(&mut self, new_rows: usize, new_cols: usize) {
+    pub(crate) fn resize(&mut self, new_rows: usize, new_cols: usize) {
         let mut new_cells = vec![None; new_rows * new_cols];
 
         // Copy existing content
@@ -559,19 +558,19 @@ impl Layer {
 
     /// Get the number of rows
     #[must_use]
-    pub const fn rows(&self) -> usize {
+    pub(crate) const fn rows(&self) -> usize {
         self.rows
     }
 
     /// Get the number of columns
     #[must_use]
-    pub const fn cols(&self) -> usize {
+    pub(crate) const fn cols(&self) -> usize {
         self.cols
     }
 }
 
 /// Layer compositor that manages multiple layers and composites them for rendering
-pub struct LayerCompositor {
+pub(crate) struct LayerCompositor {
     /// Layers indexed by priority
     layers: BTreeMap<LayerPriority, Layer>,
     /// Terminal dimensions
@@ -584,7 +583,7 @@ pub struct LayerCompositor {
 impl LayerCompositor {
     /// Create a new compositor with the given terminal dimensions
     #[must_use]
-    pub fn new(rows: usize, cols: usize) -> Self {
+    pub(crate) fn new(rows: usize, cols: usize) -> Self {
         Self {
             layers: BTreeMap::new(),
             rows,
@@ -613,20 +612,22 @@ impl LayerCompositor {
     }
 
     /// Get or create a layer with the given priority
-    pub fn get_layer_mut(&mut self, priority: LayerPriority) -> &mut Layer {
+    pub(crate) fn get_layer_mut(&mut self, priority: LayerPriority) -> &mut Layer {
         self.layers
             .entry(priority)
             .or_insert_with(|| Layer::new(priority, self.rows, self.cols))
     }
 
+    #[cfg(test)]
     /// Get a layer by priority (read-only)
     #[must_use]
-    pub fn get_layer(&self, priority: LayerPriority) -> Option<&Layer> {
+    pub(crate) fn get_layer(&self, priority: LayerPriority) -> Option<&Layer> {
         self.layers.get(&priority)
     }
 
+    #[cfg(test)]
     /// Remove a layer
-    pub fn remove_layer(&mut self, priority: LayerPriority) -> Option<Layer> {
+    pub(crate) fn remove_layer(&mut self, priority: LayerPriority) -> Option<Layer> {
         // Removing a layer may reveal content underneath.
         // For now, mark all other layers as dirty to ensure a full re-composite.
 
@@ -640,22 +641,15 @@ impl LayerCompositor {
         removed
     }
 
-    /// Clear all layers
-    pub fn clear_all(&mut self) {
-        for layer in self.layers.values_mut() {
-            layer.clear();
-        }
-    }
-
     /// Clear a specific layer
-    pub fn clear_layer(&mut self, priority: LayerPriority) {
+    pub(crate) fn clear_layer(&mut self, priority: LayerPriority) {
         if let Some(layer) = self.layers.get_mut(&priority) {
             layer.clear();
         }
     }
 
     /// Resize all layers to new dimensions
-    pub fn resize(&mut self, new_rows: usize, new_cols: usize) {
+    pub(crate) fn resize(&mut self, new_rows: usize, new_cols: usize) {
         self.rows = new_rows;
         self.cols = new_cols;
         self.buffer.resize(new_rows, new_cols);
@@ -667,13 +661,13 @@ impl LayerCompositor {
 
     /// Check if any layer has dirty rects
     #[must_use]
-    pub fn has_dirty(&self) -> bool {
+    pub(crate) fn has_dirty(&self) -> bool {
         self.layers.values().any(Layer::is_dirty)
     }
 
     /// Composite all layers into the output buffer
     /// Layers are merged from lowest priority to highest
-    pub fn composite(&mut self) {
+    pub(crate) fn composite(&mut self) {
         // Collect all dirty rects from all layers
         // We do this to know WHICH pixels need updating.
         let mut dirty_rects = Vec::new();
@@ -727,9 +721,10 @@ impl LayerCompositor {
         }
     }
 
+    #[cfg(test)]
     /// Get the composited buffer (read-only)
     /// Automatically composites if any layer is dirty
-    pub fn get_composited_slice(&mut self) -> &[Cell] {
+    pub(crate) fn get_composited_slice(&mut self) -> &[Cell] {
         if self.has_dirty() {
             self.composite();
         }
@@ -737,7 +732,7 @@ impl LayerCompositor {
     }
 
     /// Get a single composited cell, compositing first if any layer is dirty.
-    pub fn get_composited_cell(&mut self, row: usize, col: usize) -> Option<Cell> {
+    pub(crate) fn get_composited_cell(&mut self, row: usize, col: usize) -> Option<Cell> {
         if self.has_dirty() {
             self.composite();
         }
@@ -753,7 +748,7 @@ impl LayerCompositor {
     ///
     /// # Errors
     /// Returns an error if the terminal backend fails to apply the scroll or write the frame.
-    pub fn render_to_terminal<T: crate::term::TerminalBackend>(
+    pub(crate) fn render_to_terminal<T: crate::term::TerminalBackend>(
         &mut self,
         term: &mut T,
         needs_clear: bool,
@@ -777,13 +772,13 @@ impl LayerCompositor {
 
     /// Get the number of rows
     #[must_use]
-    pub const fn rows(&self) -> usize {
+    pub(crate) const fn rows(&self) -> usize {
         self.rows
     }
 
     /// Get the number of columns
     #[must_use]
-    pub const fn cols(&self) -> usize {
+    pub(crate) const fn cols(&self) -> usize {
         self.cols
     }
 }

@@ -3,14 +3,14 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionInfo {
-    pub pid: u32,
-    pub host: String,
-    pub port: u16,
-    pub token: String,
+pub(crate) struct SessionInfo {
+    pub(crate) pid: u32,
+    pub(crate) host: String,
+    pub(crate) port: u16,
+    pub(crate) token: String,
 }
 
-pub fn data_dir() -> PathBuf {
+pub(crate) fn data_dir() -> PathBuf {
     #[cfg(windows)]
     {
         std::env::var("APPDATA")
@@ -32,7 +32,7 @@ pub fn data_dir() -> PathBuf {
 }
 
 #[must_use]
-pub fn session_path(pid: u32) -> PathBuf {
+pub(crate) fn session_path(pid: u32) -> PathBuf {
     data_dir().join("sessions").join(format!("{pid}.json"))
 }
 
@@ -40,7 +40,7 @@ pub fn session_path(pid: u32) -> PathBuf {
 ///
 /// # Errors
 /// Returns `Err` if the parent directory cannot be created, the info cannot be serialized, or the file cannot be written.
-pub fn write(info: &SessionInfo, path: &Path) -> std::io::Result<()> {
+pub(crate) fn write(info: &SessionInfo, path: &Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -53,17 +53,17 @@ pub fn write(info: &SessionInfo, path: &Path) -> std::io::Result<()> {
 ///
 /// # Errors
 /// Returns `Err` if the file cannot be read or does not contain valid session JSON.
-pub fn read(path: &Path) -> anyhow::Result<SessionInfo> {
+pub(crate) fn read(path: &Path) -> anyhow::Result<SessionInfo> {
     let data = std::fs::read_to_string(path)?;
     Ok(serde_json::from_str(&data)?)
 }
 
-pub fn remove(path: &Path) {
+pub(crate) fn remove(path: &Path) {
     let _ = std::fs::remove_file(path);
 }
 
 #[must_use]
-pub fn is_alive(pid: u32) -> bool {
+pub(crate) fn is_alive(pid: u32) -> bool {
     #[cfg(target_os = "linux")]
     {
         Path::new(&format!("/proc/{pid}")).exists()
@@ -93,7 +93,7 @@ pub fn is_alive(pid: u32) -> bool {
 /// # Panics
 /// Panics if the OS random number generator fails.
 #[must_use]
-pub fn generate_token() -> String {
+pub(crate) fn generate_token() -> String {
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes).expect("os rng failed");
     let mut s = String::with_capacity(64);
@@ -127,7 +127,7 @@ pub fn print_newest() -> ExitCode {
 ///
 /// # Errors
 /// Returns `Err` if the sessions directory cannot be read or no live session exists.
-pub fn find_local() -> anyhow::Result<PathBuf> {
+pub(crate) fn find_local() -> anyhow::Result<PathBuf> {
     let sessions_dir = data_dir().join("sessions");
 
     let mut entries: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(&sessions_dir)

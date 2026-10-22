@@ -5,9 +5,9 @@ use crate::wrap::MotionRange;
 use tree_sitter::{Node, Tree};
 
 /// A parsed buffer's tree-sitter state, `source` must be the same byte representation the tree was parsed from
-pub struct SyntaxContext<'a> {
-    pub tree: &'a Tree,
-    pub source: &'a [u8],
+pub(crate) struct SyntaxContext<'a> {
+    pub(crate) tree: &'a Tree,
+    pub(crate) source: &'a [u8],
 }
 
 const BRACKET_TRIM_PAIRS: [(char, char); 3] = [('(', ')'), ('{', '}'), ('[', ']')];

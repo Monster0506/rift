@@ -69,9 +69,10 @@ fn startup_state(
 }
 
 impl<T: TerminalBackend> Editor<T> {
+    #[cfg(test)]
     /// # Errors
     /// Returns an error if the terminal cannot be initialized or the startup buffer cannot be created.
-    pub fn new(terminal: T) -> Result<Self, RiftError> {
+    pub(crate) fn new(terminal: T) -> Result<Self, RiftError> {
         Self::with_file(terminal, None)
     }
 
@@ -204,15 +205,6 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.update_and_render();
         self.startup_first_paint = Some(crate::time::Instant::now());
 
-        if let Some(doc) = self.document_manager.active_document() {
-            let table = doc.buffer.line_index.table.clone();
-            let revision = doc.buffer.revision;
-            let job =
-                crate::job_manager::jobs::cache_warming::CacheWarmingJob::new(table, revision);
-
-            self.job_manager.spawn(job);
-        }
-
         if let Some(doc_id) = self.document_manager.active_document_id() {
             #[cfg(feature = "treesitter")]
             self.attach_syntax_for_document(doc_id);
@@ -256,13 +248,13 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub fn active_document_id(&self) -> DocumentId {
+    pub(crate) fn active_document_id(&self) -> DocumentId {
         self.split_tree.focused_window().document_id
     }
 
     /// # Panics
     /// Panics if the focused window's document is missing from the document manager.
-    pub fn active_document(&mut self) -> &mut Document {
+    pub(crate) fn active_document(&mut self) -> &mut Document {
         let doc_id = self.split_tree.focused_window().document_id;
         self.document_manager
             .get_document_mut(doc_id)
@@ -423,7 +415,7 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
-    pub const fn set_remote(&mut self, remote: bool) {
+    pub(crate) const fn set_remote(&mut self, remote: bool) {
         self.state.is_remote = remote;
     }
 }

@@ -52,7 +52,7 @@ impl Iterator for RevChars<'_> {
 
 /// Move cursor forward by one word in the buffer.
 /// Returns `true` if the cursor moved, `false` if already at end.
-pub fn move_word_right(buffer: &mut TextBuffer) -> bool {
+pub(crate) fn move_word_right(buffer: &mut TextBuffer) -> bool {
     let len = buffer.len();
     if buffer.cursor() >= len {
         return false;
@@ -93,7 +93,7 @@ pub fn move_word_right(buffer: &mut TextBuffer) -> bool {
 
 /// Move cursor to the end of the current or next word (vim's inclusive `e` motion).
 /// Returns `true` if the cursor moved, `false` if already at end.
-pub fn move_word_end(buffer: &mut TextBuffer) -> bool {
+pub(crate) fn move_word_end(buffer: &mut TextBuffer) -> bool {
     let len = buffer.len();
     if buffer.cursor() >= len {
         return false;
@@ -150,7 +150,7 @@ pub fn move_word_end(buffer: &mut TextBuffer) -> bool {
 
 /// Move cursor backward by one word in the buffer.
 /// Returns `true` if the cursor moved, `false` if already at beginning.
-pub fn move_word_left(buffer: &mut TextBuffer) -> bool {
+pub(crate) fn move_word_left(buffer: &mut TextBuffer) -> bool {
     if buffer.cursor() == 0 {
         return false;
     }
@@ -197,7 +197,7 @@ pub fn move_word_left(buffer: &mut TextBuffer) -> bool {
 
 /// Move cursor forward by one WORD (whitespace-delimited, no punctuation boundary).
 /// Returns `true` if the cursor moved, `false` if already at end.
-pub fn move_big_word_right(buffer: &mut TextBuffer) -> bool {
+pub(crate) fn move_big_word_right(buffer: &mut TextBuffer) -> bool {
     let len = buffer.len();
     if buffer.cursor() >= len {
         return false;
@@ -238,7 +238,7 @@ pub fn move_big_word_right(buffer: &mut TextBuffer) -> bool {
 
 /// Move cursor backward by one WORD (whitespace-delimited, no punctuation boundary).
 /// Returns `true` if the cursor moved, `false` if already at beginning.
-pub fn move_big_word_left(buffer: &mut TextBuffer) -> bool {
+pub(crate) fn move_big_word_left(buffer: &mut TextBuffer) -> bool {
     if buffer.cursor() == 0 {
         return false;
     }
@@ -284,7 +284,7 @@ pub fn move_big_word_left(buffer: &mut TextBuffer) -> bool {
 
 /// Move cursor forward to the next sentence.
 /// Returns `true` if the cursor moved, `false` if already at end.
-pub fn move_sentence_forward(buffer: &mut TextBuffer) -> bool {
+pub(crate) fn move_sentence_forward(buffer: &mut TextBuffer) -> bool {
     let len = buffer.len();
     if buffer.cursor() >= len {
         return false;
@@ -327,7 +327,7 @@ pub fn move_sentence_forward(buffer: &mut TextBuffer) -> bool {
 
 /// Move cursor backward to the previous sentence.
 /// Returns `true` if the cursor moved, `false` if already at beginning.
-pub fn move_sentence_backward(buffer: &mut TextBuffer) -> bool {
+pub(crate) fn move_sentence_backward(buffer: &mut TextBuffer) -> bool {
     if buffer.cursor() == 0 {
         return false;
     }
@@ -375,7 +375,7 @@ pub fn move_sentence_backward(buffer: &mut TextBuffer) -> bool {
 
 /// Move cursor forward to the next paragraph.
 /// Returns `true` if the cursor moved, `false` if already at end.
-pub fn move_paragraph_forward(buffer: &mut TextBuffer) -> bool {
+pub(crate) fn move_paragraph_forward(buffer: &mut TextBuffer) -> bool {
     let current_line = buffer.get_line();
     let total_lines = buffer.get_total_lines();
     let start_pos = buffer.cursor();
@@ -403,7 +403,7 @@ pub fn move_paragraph_forward(buffer: &mut TextBuffer) -> bool {
 
 /// Move cursor backward to the previous paragraph.
 /// Returns `true` if the cursor moved, `false` if already at beginning.
-pub fn move_paragraph_backward(buffer: &mut TextBuffer) -> bool {
+pub(crate) fn move_paragraph_backward(buffer: &mut TextBuffer) -> bool {
     let current_line = buffer.get_line();
     let start_pos = buffer.cursor();
 

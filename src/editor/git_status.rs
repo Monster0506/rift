@@ -135,7 +135,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// `<Space>gs` opens a `GitStatus` buffer in the active window. Open a split first to create another instance.
-    pub fn open_git_status(&mut self) {
+    pub(crate) fn open_git_status(&mut self) {
         self.open_git_status_inner();
     }
 
@@ -495,13 +495,13 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// `cc` in the status buffer: open an empty commit message buffer.
-    pub fn open_git_commit_new(&mut self) {
+    pub(crate) fn open_git_commit_new(&mut self) {
         self.open_git_commit_message(GitCommitTarget::New, "");
     }
 
     /// `ca`/`cw` in the status buffer: open a commit message buffer prefilled
     /// with HEAD's message, amending on save.
-    pub fn open_git_commit_amend(&mut self) {
+    pub(crate) fn open_git_commit_amend(&mut self) {
         let repo_root = match self.resolve_git_repo_root() {
             Ok(root) => root,
             Err(e) => {
@@ -516,7 +516,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// `cf` in the status buffer: commit currently-staged changes as a fixup
     /// of HEAD (`git commit --fixup=HEAD`);  no message buffer needed.
-    pub fn run_git_commit_fixup(&mut self) {
+    pub(crate) fn run_git_commit_fixup(&mut self) {
         let repo_root = match self.resolve_git_repo_root() {
             Ok(root) => root,
             Err(e) => {
@@ -633,50 +633,65 @@ impl<T: TerminalBackend> Editor<T> {
 
         let tmp_path_str = tmp_path.to_string_lossy().into_owned();
         let mut args = vec!["commit", "-F", tmp_path_str.as_str(), "--quiet"];
-        let is_reword = matches!(target, GitCommitTarget::RebaseReword { .. });
-        if target == GitCommitTarget::Amend || is_reword {
+        let amend = match target {
+            GitCommitTarget::Amend => true,
+            #[cfg(test)]
+            GitCommitTarget::RebaseReword { .. } => true,
+            _ => false,
+        };
+        if amend {
             args.push("--amend");
         }
         let result = crate::git::run_checked(&repo_root, &args);
         let _ = std::fs::remove_file(&tmp_path);
 
         match result {
-            Ok(_) => {
-                self.state.clear_command_line();
-                if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                    doc.history.mark_saved();
-                }
-                if let Err(e) = self.remove_document(doc_id) {
-                    self.state.handle_error(e);
-                    return;
-                }
-                let paused_edit_rebase = if target == GitCommitTarget::Amend {
-                    self.find_paused_edit_rebase(&repo_root)
-                } else {
-                    None
-                };
-                if let GitCommitTarget::RebaseReword { rebase_doc_id } = target {
-                    self.resume_rebase_after_reword(rebase_doc_id, &repo_root);
-                } else if let Some((rebase_doc_id, remaining)) = paused_edit_rebase {
-                    self.state.notify(
-                        crate::notification::NotificationType::Info,
-                        "Amended — resuming rebase".to_string(),
-                    );
-                    self.resume_rebase_after_edit_amend(rebase_doc_id, &repo_root, remaining);
-                } else {
-                    self.state.notify(
-                        crate::notification::NotificationType::Info,
-                        "Committed".to_string(),
-                    );
-                    self.refresh_git_status_buffers_for(&repo_root);
-                }
-            }
+            Ok(_) => self.finish_commit(doc_id, &target, &repo_root),
             Err(e) => self.state.handle_error(e),
         }
     }
 
+    fn finish_commit(
+        &mut self,
+        doc_id: crate::document::DocumentId,
+        target: &GitCommitTarget,
+        repo_root: &Path,
+    ) {
+        self.state.clear_command_line();
+        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+            doc.history.mark_saved();
+        }
+        if let Err(e) = self.remove_document(doc_id) {
+            self.state.handle_error(e);
+            return;
+        }
+        #[cfg(test)]
+        if let GitCommitTarget::RebaseReword { rebase_doc_id } = *target {
+            self.resume_rebase_after_reword(rebase_doc_id, repo_root);
+            return;
+        }
+        let paused_edit_rebase = if *target == GitCommitTarget::Amend {
+            self.find_paused_edit_rebase(repo_root)
+        } else {
+            None
+        };
+        if let Some((rebase_doc_id, remaining)) = paused_edit_rebase {
+            self.state.notify(
+                crate::notification::NotificationType::Info,
+                "Amended — resuming rebase".to_string(),
+            );
+            self.resume_rebase_after_edit_amend(rebase_doc_id, repo_root, remaining);
+        } else {
+            self.state.notify(
+                crate::notification::NotificationType::Info,
+                "Committed".to_string(),
+            );
+            self.refresh_git_status_buffers_for(repo_root);
+        }
+    }
+
     /// `:Git <args>` escape hatch: run an arbitrary git subcommand and show its output. View-only; no `--no-ext-diff`, so a configured `diff.external` etc. is respected for anything that falls through. Fugitive convention: bare `:Git`/`:G` opens the status buffer, bare `:Git log` opens the log browser, bare `:Git`.
-    pub fn run_git_command(&mut self, args: String) {
+    pub(crate) fn run_git_command(&mut self, args: String) {
         let trimmed = args.trim();
         if trimmed.is_empty() {
             self.open_git_status();
@@ -734,8 +749,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
-        let origin_doc_id = self.active_document_id();
-        let job = crate::job_manager::jobs::git::GitCommandJob::new(origin_doc_id, repo_root, args);
+        let job = crate::job_manager::jobs::git::GitCommandJob::new(repo_root, args);
         self.job_manager.spawn(job);
     }
 

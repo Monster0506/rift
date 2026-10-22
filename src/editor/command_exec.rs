@@ -196,6 +196,7 @@ impl<T: TerminalBackend> Editor<T> {
         outcome: crate::document::SyntaxSync,
     ) {
         match outcome {
+            #[cfg(feature = "treesitter")]
             crate::document::SyntaxSync::Completed => self.cancel_pending_syntax_reparse(doc_id),
             crate::document::SyntaxSync::Deferred => self.debounce_syntax_reparse(doc_id),
             crate::document::SyntaxSync::NoSyntax => {}

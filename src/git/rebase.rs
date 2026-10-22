@@ -2,32 +2,37 @@
 
 /// A `Squash` or `Fixup` step folds into the previous surviving step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RebaseVerb {
+pub(crate) enum RebaseVerb {
     Pick,
     Squash,
     Fixup,
+    #[cfg(test)]
     Reword,
     Edit,
+    #[cfg(test)]
     Drop,
 }
 
 impl RebaseVerb {
     #[must_use]
-    pub const fn as_str(self) -> &'static str {
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Pick => "pick",
             Self::Squash => "squash",
             Self::Fixup => "fixup",
+            #[cfg(test)]
             Self::Reword => "reword",
             Self::Edit => "edit",
+            #[cfg(test)]
             Self::Drop => "drop",
         }
     }
 
+    #[cfg(test)]
     /// Parse a verb from its full word or git's single-letter abbreviation
     /// (`p`/`s`/`f`/`r`/`e`/`d`), case-insensitively.
     #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
+    pub(crate) fn parse(s: &str) -> Option<Self> {
         match s.to_ascii_lowercase().as_str() {
             "pick" | "p" => Some(Self::Pick),
             "squash" | "s" => Some(Self::Squash),
@@ -42,30 +47,31 @@ impl RebaseVerb {
 
 /// One line of a rebase todo list.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RebaseStep {
-    pub verb: RebaseVerb,
+pub(crate) struct RebaseStep {
+    pub(crate) verb: RebaseVerb,
     /// Commit sha; full or abbreviated; git's own plumbing (`cherry-pick`, `log -1`) accepts either directly, so no separate resolution step is needed before executing a step.
-    pub sha: String,
+    pub(crate) sha: String,
     /// Decorative only;  never authoritative; git provides the real message.
-    pub subject: String,
+    pub(crate) subject: String,
 }
 
 /// Why a rebase is currently paused, and what's left to run once it resumes.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RebasePause {
+pub(crate) enum RebasePause {
     /// Paused after cherry-picking an `edit` step's commit. Make changes in
     /// the worktree, then `:w` the todo buffer to resume `remaining`.
     Edit { remaining: Vec<RebaseStep> },
     /// Paused mid-cherry-pick on a conflict. Resolve it (surfaced in the status buffer's Unmerged section), stage the fix, then `:w` to resume: retries `cherry-pick --continue` before running `remaining`.
     Conflict { remaining: Vec<RebaseStep> },
     /// Paused for a `reword` step: a commit-message buffer is open to amend the just-cherry-picked commit. `:w` the todo buffer while in this state is a no-op; finish the message buffer first, which resumes `remaining` itself once saved.
+    #[cfg(test)]
     AwaitingReword { remaining: Vec<RebaseStep> },
 }
 
 /// Build the initial todo list from `git log --format=<sha>\x1f<subject> base..head`
 /// oldest-first output (a rebase replays oldest to newest), all steps `Pick`.
 #[must_use]
-pub fn initial_todo_from_log(commits: &[crate::git::log::CommitSummary]) -> Vec<RebaseStep> {
+pub(crate) fn initial_todo_from_log(commits: &[crate::git::log::CommitSummary]) -> Vec<RebaseStep> {
     commits
         .iter()
         .rev() // `git log` prints newest-first; a todo list replays oldest-first.
@@ -77,10 +83,11 @@ pub fn initial_todo_from_log(commits: &[crate::git::log::CommitSummary]) -> Vec<
         .collect()
 }
 
+#[cfg(test)]
 /// Render a todo list as `<verb> <short-sha> <subject>` lines, git's own
 /// `rebase -i` visual format (we parse and execute it ourselves, not git).
 #[must_use]
-pub fn render_todo(steps: &[RebaseStep]) -> String {
+pub(crate) fn render_todo(steps: &[RebaseStep]) -> String {
     steps
         .iter()
         .map(|s| {
@@ -91,9 +98,10 @@ pub fn render_todo(steps: &[RebaseStep]) -> String {
         .join("\n")
 }
 
+#[cfg(test)]
 /// Parse an edited todo buffer back into steps. Unrecognized lines (bad verb, too few tokens, blank/comment lines) are skipped; a rebase todo, like a git status buffer, tolerates stray text without failing the whole parse. `sha` fields may be abbreviated; resolve with `resolve_short_shas` before executing.
 #[must_use]
-pub fn parse_todo(text: &str) -> Vec<RebaseStep> {
+pub(crate) fn parse_todo(text: &str) -> Vec<RebaseStep> {
     text.lines()
         .filter_map(|line| {
             let trimmed = line.trim();
@@ -111,7 +119,7 @@ pub fn parse_todo(text: &str) -> Vec<RebaseStep> {
 
 /// Combines squash messages with a blank line and without an editor prompt.
 #[must_use]
-pub fn combine_squash_messages(into: &str, incoming: &str) -> String {
+pub(crate) fn combine_squash_messages(into: &str, incoming: &str) -> String {
     let into = into.trim_end();
     let incoming = incoming.trim();
     if incoming.is_empty() {

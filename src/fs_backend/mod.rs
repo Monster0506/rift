@@ -7,14 +7,14 @@ use std::path::{Path, PathBuf};
 mod native;
 
 /// One entry returned by [`FileSystem::list_children`].
-pub struct FsEntry {
-    pub name: String,
-    pub is_dir: bool,
+pub(crate) struct FsEntry {
+    pub(crate) name: String,
+    pub(crate) is_dir: bool,
 }
 
 /// Everything the editor needs from "a filesystem" -- only `std::fs` today,
 /// but the seam means an alternate backend can slot in without touching callers.
-pub trait FileSystem: Send + Sync {
+pub(crate) trait FileSystem: Send + Sync {
     /// Read the full contents of a file.
     ///
     /// # Errors
@@ -28,6 +28,7 @@ pub trait FileSystem: Send + Sync {
     /// Returns an error if the file cannot be opened or read.
     fn read_file_prefix(&self, path: &Path, max_bytes: usize) -> Result<Vec<u8>, RiftError>;
 
+    #[cfg(test)]
     /// Write `content`, replacing any existing file at `path`.
     ///
     /// # Errors
@@ -79,7 +80,7 @@ pub trait FileSystem: Send + Sync {
 }
 
 #[must_use]
-pub fn backend() -> &'static dyn FileSystem {
+pub(crate) fn backend() -> &'static dyn FileSystem {
     &native::NativeFileSystem
 }
 

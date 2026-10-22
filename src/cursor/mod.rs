@@ -8,15 +8,15 @@ use crate::mode::Mode;
 use crate::num::{f64_to_usize, usize_to_f64};
 
 #[must_use]
-pub const fn is_software_cursor(mode: Mode) -> bool {
+pub(crate) const fn is_software_cursor(mode: Mode) -> bool {
     matches!(mode, Mode::Normal | Mode::OperatorPending)
 }
 
-pub struct SoftCursor;
+pub(crate) struct SoftCursor;
 
 impl SoftCursor {
     #[must_use]
-    pub fn block_cell(
+    pub(crate) fn block_cell(
         underlying: Option<&Cell>,
         cursor_color: Option<Color>,
         editor_fg: Option<Color>,
@@ -40,7 +40,7 @@ impl SoftCursor {
 }
 
 /// Animates the software cursor toward its logical target using exponential smoothing.
-pub struct CursorAnimator {
+pub(crate) struct CursorAnimator {
     row: f64,
     col: f64,
     target_row: usize,
@@ -56,7 +56,7 @@ fn coord(v: usize) -> f64 {
 
 impl CursorAnimator {
     #[must_use]
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             row: 0.0,
             col: 0.0,
@@ -67,7 +67,7 @@ impl CursorAnimator {
         }
     }
 
-    pub fn set_target(&mut self, row: usize, col: usize) {
+    pub(crate) fn set_target(&mut self, row: usize, col: usize) {
         if !self.initialized {
             self.row = coord(row);
             self.col = coord(col);
@@ -83,7 +83,7 @@ impl CursorAnimator {
         }
     }
 
-    pub fn snap_to(&mut self, row: usize, col: usize) {
+    pub(crate) fn snap_to(&mut self, row: usize, col: usize) {
         self.row = coord(row);
         self.col = coord(col);
         self.target_row = row;
@@ -92,7 +92,7 @@ impl CursorAnimator {
         self.animating = false;
     }
 
-    pub fn step(&mut self, factor: f64) {
+    pub(crate) fn step(&mut self, factor: f64) {
         if !self.animating {
             return;
         }
@@ -108,7 +108,7 @@ impl CursorAnimator {
     }
 
     #[must_use]
-    pub fn display_pos(&self) -> (usize, usize) {
+    pub(crate) fn display_pos(&self) -> (usize, usize) {
         (
             f64_to_usize(self.row.round()),
             f64_to_usize(self.col.round()),
@@ -116,11 +116,11 @@ impl CursorAnimator {
     }
 
     #[must_use]
-    pub const fn is_animating(&self) -> bool {
+    pub(crate) const fn is_animating(&self) -> bool {
         self.animating
     }
 
-    pub const fn reset(&mut self) {
+    pub(crate) const fn reset(&mut self) {
         self.initialized = false;
         self.animating = false;
     }

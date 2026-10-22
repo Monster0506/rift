@@ -1,28 +1,23 @@
-pub mod interval_tree;
-pub mod loader;
+pub(crate) mod interval_tree;
+pub(crate) mod loader;
 
 #[cfg(feature = "treesitter")]
 mod imp;
 #[cfg(feature = "treesitter")]
-pub use imp::{build_syntax, InjectedLayer, Syntax};
+pub(crate) use imp::{build_syntax, Syntax};
 #[cfg(feature = "treesitter")]
 pub(crate) use imp::{finalize_highlights, scoped_kept_items, scoped_query_ranges};
 
 #[cfg(not(feature = "treesitter"))]
 mod stub;
 #[cfg(not(feature = "treesitter"))]
-pub use stub::Syntax;
-
-#[derive(Clone, Debug)]
-pub enum SyntaxNotification {
-    Loaded { language_name: String },
-    HighlightsUpdated,
-    Error(String),
-}
+pub(crate) use stub::Syntax;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ParseOutcome {
+pub(crate) enum ParseOutcome {
+    #[cfg(feature = "treesitter")]
     Completed,
+    #[cfg(feature = "treesitter")]
     Aborted,
     NoLanguage,
 }

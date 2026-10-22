@@ -2,7 +2,7 @@
 
 use crate::notification::NotificationType;
 use crate::plugin::events::EditorEvent;
-pub use crate::plugin::lua_state::{
+pub(crate) use crate::plugin::lua_state::{
     AnnotationView, BufEntry, BufLinesSource, BufSourceUpdate, HistoryAvailability, StateUpdate,
     WinEntry,
 };
@@ -282,7 +282,7 @@ impl Default for LuaSharedState {
 }
 
 /// Owns the Lua VM and registers the `rift.*` API.
-pub struct LuaHost {
+pub(crate) struct LuaHost {
     lua: Lua,
     shared: Rc<RefCell<LuaSharedState>>,
     /// Absolute deadline for the in-flight Lua call, checked by a VM
@@ -609,11 +609,12 @@ end
 "#;
 
 impl LuaHost {
+    #[cfg(test)]
     /// Create a new Lua VM with a fresh generation and register the full `rift` API table.
     ///
     /// # Errors
     /// Returns an error if the Lua VM or the `rift` API table cannot be set up.
-    pub fn new() -> LuaResult<Self> {
+    pub(crate) fn new() -> LuaResult<Self> {
         let plugin_id = crate::plugin::PluginId::allocate();
         let gen = crate::plugin::PluginGeneration::allocate(plugin_id);
         Self::with_generation(gen)
@@ -623,7 +624,7 @@ impl LuaHost {
     ///
     /// # Errors
     /// Returns an error if the Lua VM or the `rift` API table cannot be set up.
-    pub fn with_generation(generation: crate::plugin::PluginGeneration) -> LuaResult<Self> {
+    pub(crate) fn with_generation(generation: crate::plugin::PluginGeneration) -> LuaResult<Self> {
         // SAFETY: unsafe_new enables C modules and the debug library; rift only runs the user's own local plugin scripts.
         let lua = unsafe { Lua::unsafe_new() };
         let shared_state = LuaSharedState {
@@ -2213,14 +2214,7 @@ impl LuaHost {
                             .collect()
                     })
                     .unwrap_or_default();
-                let extensions: Vec<String> = tbl
-                    .get::<Option<LuaTable>>("extensions")?
-                    .map(|t| {
-                        t.sequence_values::<String>()
-                            .filter_map(std::result::Result::ok)
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                tbl.get::<Option<LuaTable>>("extensions")?;
                 let root_markers: Vec<String> =
                     tbl.get::<Option<LuaTable>>("root_markers")?.map_or_else(
                         || vec![".git".to_string()],
@@ -2250,7 +2244,6 @@ impl LuaHost {
                         config: crate::lsp::config::LspServerConfig {
                             command,
                             args,
-                            extensions,
                             root_markers,
                             capabilities,
                             initialization_options,
@@ -2617,19 +2610,15 @@ impl LuaHost {
         {
             let sh = Rc::clone(shared);
             let map = lua.create_function(
-                move |_, (kind, mode, keys, action): (String, String, String, String)| {
+                move |_, (kind, _, keys, action): (String, String, String, String)| {
                     let mut s = sh.borrow_mut();
                     if !s.is_active {
                         return Err(LuaError::RuntimeError(
                             "cannot map buffer kind: plugin generation is retired".to_string(),
                         ));
                     }
-                    s.mutations.push(PluginMutation::MapKeyKind {
-                        kind,
-                        mode,
-                        keys,
-                        action,
-                    });
+                    s.mutations
+                        .push(PluginMutation::MapKeyKind { kind, keys, action });
                     Ok(())
                 },
             )?;
@@ -2639,7 +2628,7 @@ impl LuaHost {
         {
             let sh = Rc::clone(shared);
             let unmap =
-                lua.create_function(move |_, (kind, mode, keys): (String, String, String)| {
+                lua.create_function(move |_, (kind, _, keys): (String, String, String)| {
                     let mut s = sh.borrow_mut();
                     if !s.is_active {
                         return Err(LuaError::RuntimeError(
@@ -2647,7 +2636,7 @@ impl LuaHost {
                         ));
                     }
                     s.mutations
-                        .push(PluginMutation::UnmapKeyKind { kind, mode, keys });
+                        .push(PluginMutation::UnmapKeyKind { kind, keys });
                     Ok(())
                 })?;
             api.set("unmap_buffer_kind", unmap)?;
@@ -2734,19 +2723,19 @@ impl LuaHost {
 
     /// The owning plugin generation for this Lua VM.
     #[must_use]
-    pub const fn generation(&self) -> crate::plugin::PluginGeneration {
+    pub(crate) const fn generation(&self) -> crate::plugin::PluginGeneration {
         self.generation
     }
 
     /// Mark this Lua host as retiring, rejecting new mutations.
-    pub fn mark_retiring(&self) {
+    pub(crate) fn mark_retiring(&self) {
         let mut s = self.shared.borrow_mut();
         s.is_active = false;
     }
 
     /// Refresh the annotation query snapshot and the id the next `add{}` claims.
     /// Call alongside `update_state` before dispatching.
-    pub fn set_annotations(&self, views: Vec<AnnotationView>, next_id: u64) {
+    pub(crate) fn set_annotations(&self, views: Vec<AnnotationView>, next_id: u64) {
         let mut s = self.shared.borrow_mut();
         s.annotations = Arc::new(views);
         s.next_annotation_id = next_id;
@@ -2754,7 +2743,7 @@ impl LuaHost {
 
     /// Update the buffer snapshot that `rift.get_lines()` and friends read.
     /// Call this before dispatching an event.
-    pub fn update_state(&self, update: StateUpdate<'_>) {
+    pub(crate) fn update_state(&self, update: StateUpdate<'_>) {
         let mut s = self.shared.borrow_mut();
         s.buf_id = update.buf_id;
         s.buf_kind = update.buf_kind;
@@ -2802,7 +2791,7 @@ impl LuaHost {
     /// Dispatch an `EditorEvent` to all registered Lua handlers.
     /// Returns error strings for any handlers that raised a Lua error.
     #[must_use]
-    pub fn dispatch_event(&self, event: &EditorEvent) -> Vec<String> {
+    pub(crate) fn dispatch_event(&self, event: &EditorEvent) -> Vec<String> {
         let handlers: LuaTable = match self.lua.globals().get("_rift_handlers") {
             Ok(t) => t,
             Err(_) => return vec![],
@@ -2914,23 +2903,26 @@ impl LuaHost {
     }
 
     #[must_use]
-    pub fn invoke_buffer_action(&self, buf_id: u64, kind: &str, action: &str) -> bool {
+    pub(crate) fn invoke_buffer_action(&self, buf_id: u64, kind: &str, action: &str) -> bool {
         self.invoke_buffer_callback(buf_id, kind, "on_action", Some(action))
     }
 
     #[must_use]
-    pub fn invoke_buffer_save(&self, buf_id: u64, kind: &str) -> bool {
+    pub(crate) fn invoke_buffer_save(&self, buf_id: u64, kind: &str) -> bool {
         self.invoke_buffer_callback(buf_id, kind, "on_save", None)
     }
 
     #[must_use]
-    pub fn invoke_buffer_close(&self, buf_id: u64, kind: &str) -> bool {
+    pub(crate) fn invoke_buffer_close(&self, buf_id: u64, kind: &str) -> bool {
         self.invoke_buffer_callback(buf_id, kind, "on_close", None)
     }
 
     /// context table. Returns `true` if a handler was found and called.
     #[must_use]
-    pub fn invoke_annotation_action(&self, ctx: &crate::plugin::AnnotationActionCtx) -> bool {
+    pub(crate) fn invoke_annotation_action(
+        &self,
+        ctx: &crate::plugin::AnnotationActionCtx,
+    ) -> bool {
         let handlers: LuaTable = match self.lua.globals().get("_rift_action_handlers") {
             Ok(t) => t,
             Err(_) => return false,
@@ -2960,7 +2952,7 @@ impl LuaHost {
     /// Invoke the Lua cursor enter/leave hook for an annotation kind, if registered.
     /// `enter` selects the handler table; true if a handler ran.
     #[must_use]
-    pub fn invoke_annotation_hook(
+    pub(crate) fn invoke_annotation_hook(
         &self,
         enter: bool,
         ctx: &crate::plugin::AnnotationHoverCtx,
@@ -2994,7 +2986,7 @@ impl LuaHost {
     /// Execute a plugin command registered via `rift.register_command`.
     /// Returns `true` if a handler was found and called.
     #[must_use]
-    pub fn execute_command(&self, name: &str, args: &[String]) -> bool {
+    pub(crate) fn execute_command(&self, name: &str, args: &[String]) -> bool {
         let cmds: LuaTable = match self.lua.globals().get("_rift_commands") {
             Ok(t) => t,
             Err(_) => return false,
@@ -3030,7 +3022,7 @@ impl LuaHost {
 
     /// Returns all Lua-registered command names, descriptions, and arg types.
     #[must_use]
-    pub fn command_list(&self) -> Vec<(String, String, Option<String>)> {
+    pub(crate) fn command_list(&self) -> Vec<(String, String, Option<String>)> {
         let cmds: LuaTable = match self.lua.globals().get("_rift_commands") {
             Ok(t) => t,
             Err(_) => return vec![],
@@ -3047,7 +3039,7 @@ impl LuaHost {
     /// Execute a plugin action registered via `rift.register_action`.
     /// Returns `true` if a handler was found and called.
     #[must_use]
-    pub fn execute_action(&self, id: &str) -> bool {
+    pub(crate) fn execute_action(&self, id: &str) -> bool {
         let actions: LuaTable = match self.lua.globals().get("_rift_actions") {
             Ok(t) => t,
             Err(_) => return false,
@@ -3078,7 +3070,7 @@ impl LuaHost {
     /// Load all top-level `.lua` files in `dir`, in lexicographic order (no recursion,
     /// no `package.path` change). Returns error strings; empty means all loaded OK.
     #[must_use]
-    pub fn load_dir(&self, dir: &std::path::Path) -> Vec<String> {
+    pub(crate) fn load_dir(&self, dir: &std::path::Path) -> Vec<String> {
         let mut errors = Vec::new();
 
         let Ok(rd) = std::fs::read_dir(dir) else {
@@ -3103,7 +3095,7 @@ impl LuaHost {
     }
 
     /// Execute a single `.lua` file. Returns an error string on failure.
-    pub fn load_file(&self, path: &std::path::Path) -> Option<String> {
+    pub(crate) fn load_file(&self, path: &std::path::Path) -> Option<String> {
         let src = match std::fs::read_to_string(path) {
             Ok(s) => s,
             Err(e) => return Some(format!("lua: failed to read {}: {}", path.display(), e)),
@@ -3132,7 +3124,7 @@ impl LuaHost {
     /// Drain all mutations queued by Lua API calls. Fires pending shell-completion
     /// events as Lua `UserEvents` first, so their handlers can queue further mutations.
     #[must_use]
-    pub fn drain_mutations(&self) -> Vec<PluginMutation> {
+    pub(crate) fn drain_mutations(&self) -> Vec<PluginMutation> {
         let pending = {
             let mut s = self.shared.borrow_mut();
             while let Ok(result) = self.shell_result_rx.try_recv() {
@@ -3176,7 +3168,7 @@ impl LuaHost {
 
     /// Execute a string of Lua code. Returns an error string on failure.
     #[must_use]
-    pub fn exec(&self, code: &str) -> Option<String> {
+    pub(crate) fn exec(&self, code: &str) -> Option<String> {
         self.lua
             .load(code)
             .exec()

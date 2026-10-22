@@ -34,11 +34,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             CompletionAction::UpdateDropdown { candidates }
             | CompletionAction::ShowDropdown { candidates } => {
-                let mut session = crate::state::CompletionSession::new(
-                    self.state.command_line.clone(),
-                    candidates,
-                    token_start,
-                );
+                let mut session = crate::state::CompletionSession::new(candidates, token_start);
                 session.dropdown_open = true;
                 session.selected = Some(0);
                 self.state.completion_session = Some(session);
@@ -49,11 +45,7 @@ impl<T: TerminalBackend> Editor<T> {
                 candidates,
             } => {
                 self.apply_completion_text(&text, token_start);
-                let mut session = crate::state::CompletionSession::new(
-                    self.state.command_line.clone(),
-                    candidates,
-                    token_start,
-                );
+                let mut session = crate::state::CompletionSession::new(candidates, token_start);
                 session.dropdown_open = true;
                 self.state.completion_session = Some(session);
             }

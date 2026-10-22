@@ -9,23 +9,23 @@ use streaming_iterator::StreamingIterator;
 use tree_sitter::{InputEdit, Parser, Query, QueryCursor, Tree};
 
 #[derive(Debug)]
-pub struct SyntaxParseResult {
-    pub tree: Option<Tree>,
-    pub highlights: IntervalTree<u32>,
-    pub language_name: String,
-    pub document_id: DocumentId,
+pub(crate) struct SyntaxParseResult {
+    pub(crate) tree: Option<Tree>,
+    pub(crate) highlights: IntervalTree<u32>,
+    pub(crate) language_name: String,
+    pub(crate) document_id: DocumentId,
     /// Buffer revision at spawn time; the caller must discard this result if
     /// the live revision has since moved on, or a stale parse can clobber newer state.
-    pub revision: u64,
+    pub(crate) revision: u64,
     /// Logical bytes this job parsed from, cached by the caller so a future
     /// job can patch it instead of rebuilding from scratch.
-    pub logical_bytes: Vec<u8>,
+    pub(crate) logical_bytes: Vec<u8>,
 }
 
-crate::impl_job_payload!(SyntaxParseResult);
+crate::job_manager::impl_job_payload!(SyntaxParseResult);
 
 // Manual Debug because Parser and TextBuffer might not impl Debug
-pub struct SyntaxParseJob {
+pub(crate) struct SyntaxParseJob {
     buffer: TextBuffer,
     parser: Parser,
     old_tree: Option<Tree>,
@@ -61,7 +61,7 @@ impl std::fmt::Debug for SyntaxParseJob {
 }
 
 impl SyntaxParseJob {
-    pub fn new(
+    pub(crate) fn new(
         buffer: TextBuffer,
         parser: Parser,
         old_tree: Option<Tree>,
@@ -87,7 +87,7 @@ impl SyntaxParseJob {
     }
 
     #[must_use]
-    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+    pub(crate) const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
         self.token = Some(token);
         self
     }
@@ -95,7 +95,7 @@ impl SyntaxParseJob {
     /// Attach the backing library handle for `parser`'s language, if it was
     /// loaded dynamically, so it stays mapped for the lifetime of this job.
     #[must_use]
-    pub fn with_lib(mut self, lib: Option<Arc<RawLib>>) -> Self {
+    pub(crate) fn with_lib(mut self, lib: Option<Arc<RawLib>>) -> Self {
         self.lib_handle = lib;
         self
     }
@@ -103,7 +103,7 @@ impl SyntaxParseJob {
     /// Attach the previous highlights and edits since the last completed parse,
     /// so highlights can be scoped to the changed region (only 1 edit is optimized).
     #[must_use]
-    pub fn with_highlights_context(
+    pub(crate) fn with_highlights_context(
         mut self,
         old_highlights: Arc<IntervalTree<u32>>,
         edits: &[InputEdit],
@@ -118,7 +118,7 @@ impl SyntaxParseJob {
     /// Attach a prior logical-bytes buffer and the edit since it was captured,
     /// so `run()` can patch instead of rebuilding; `None`/`None` forces a full rebuild.
     #[must_use]
-    pub fn with_incremental_bytes(
+    pub(crate) fn with_incremental_bytes(
         mut self,
         cached_logical_bytes: Option<Arc<Vec<u8>>>,
         single_edit: Option<tree_sitter::InputEdit>,

@@ -34,7 +34,7 @@ const NAMED: &[(&str, KeyCode)] = &[
 
 /// Format a key. Round-trips through [`parse_key`].
 #[must_use]
-pub fn format_key(key: Key) -> String {
+pub(crate) fn format_key(key: Key) -> String {
     if let KeyCode::Char(c) = key.code {
         let bare = key.mods.is_empty() && c != ' ' && c != '<' && !c.is_control();
         if bare {
@@ -80,7 +80,7 @@ fn code_name(code: KeyCode) -> String {
 
 /// Parse exactly one key: a bare character or a `<...>` token.
 #[must_use]
-pub fn parse_key(s: &str) -> Option<Key> {
+pub(crate) fn parse_key(s: &str) -> Option<Key> {
     let mut chars = s.chars();
     let first = chars.next()?;
     if chars.next().is_none() {
@@ -92,7 +92,7 @@ pub fn parse_key(s: &str) -> Option<Key> {
 /// Parse key notation into a key sequence. Use `<lt>` for a literal `<`.
 /// Returns None if any token is unrecognised.
 #[must_use]
-pub fn parse_key_sequence(s: &str) -> Option<Vec<Key>> {
+pub(crate) fn parse_key_sequence(s: &str) -> Option<Vec<Key>> {
     let mut keys = Vec::new();
     let mut chars = s.chars();
     while let Some(c) = chars.next() {

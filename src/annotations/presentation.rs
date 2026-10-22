@@ -7,22 +7,22 @@ use serde::{Deserialize, Serialize};
 
 /// A named theme face, resolved against the active theme (e.g. "link", "diag.error").
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FaceRef(pub String);
+pub(crate) struct FaceRef(pub String);
 
 impl FaceRef {
-    pub fn new(name: impl Into<String>) -> Self {
+    pub(crate) fn new(name: impl Into<String>) -> Self {
         Self(name.into())
     }
 
     #[must_use]
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
 }
 
 /// Where a display-only adornment renders relative to its anchor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Placement {
+pub(crate) enum Placement {
     /// Before the anchor.
     Leading,
     /// After the anchor (e.g. an end-of-line diagnostic message).
@@ -46,16 +46,16 @@ pub struct StyleOverride {
 
 /// Display-only virtual text rendered relative to the anchor (not buffer content).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Adornment {
-    pub text: String,
-    pub placement: Placement,
-    pub face: Option<FaceRef>,
+pub(crate) struct Adornment {
+    pub(crate) text: String,
+    pub(crate) placement: Placement,
+    pub(crate) face: Option<FaceRef>,
     /// Inline color override, preferred over `face` and any kind default.
-    pub style: Option<StyleOverride>,
+    pub(crate) style: Option<StyleOverride>,
 }
 
 impl Adornment {
-    pub fn new(text: impl Into<String>, placement: Placement) -> Self {
+    pub(crate) fn new(text: impl Into<String>, placement: Placement) -> Self {
         Self {
             text: text.into(),
             placement,
@@ -65,13 +65,13 @@ impl Adornment {
     }
 
     #[must_use]
-    pub fn with_face(mut self, face: FaceRef) -> Self {
+    pub(crate) fn with_face(mut self, face: FaceRef) -> Self {
         self.face = Some(face);
         self
     }
 
     #[must_use]
-    pub const fn with_style(mut self, style: StyleOverride) -> Self {
+    pub(crate) const fn with_style(mut self, style: StyleOverride) -> Self {
         self.style = Some(style);
         self
     }
@@ -80,16 +80,16 @@ impl Adornment {
 /// Presentation hint composed over base color/syntax. All fields optional.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Presentation {
-    pub face: Option<FaceRef>,
-    pub style: Option<StyleOverride>,
-    pub adornment: Option<Adornment>,
+    pub(crate) face: Option<FaceRef>,
+    pub(crate) style: Option<StyleOverride>,
+    pub(crate) adornment: Option<Adornment>,
     /// Overlap precedence; higher wins when annotations style the same cell.
-    pub priority: i32,
+    pub(crate) priority: i32,
 }
 
 impl Presentation {
     #[must_use]
-    pub fn with_face(face: FaceRef) -> Self {
+    pub(crate) fn with_face(face: FaceRef) -> Self {
         Self {
             face: Some(face),
             ..Default::default()
@@ -105,13 +105,13 @@ impl Presentation {
     }
 
     #[must_use]
-    pub fn with_adornment(mut self, adornment: Adornment) -> Self {
+    pub(crate) fn with_adornment(mut self, adornment: Adornment) -> Self {
         self.adornment = Some(adornment);
         self
     }
 
     #[must_use]
-    pub const fn with_priority(mut self, priority: i32) -> Self {
+    pub(crate) const fn with_priority(mut self, priority: i32) -> Self {
         self.priority = priority;
         self
     }
@@ -120,7 +120,7 @@ impl Presentation {
 /// Resolve a named face to a foreground color against the active syntax colors,
 /// with built-in fallbacks for well-known faces so presentation works untheme-aware.
 #[must_use]
-pub fn resolve_face(
+pub(crate) fn resolve_face(
     face: &FaceRef,
     colors: Option<&crate::color::theme::SyntaxColors>,
 ) -> Option<Color> {

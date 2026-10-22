@@ -6,11 +6,11 @@ use serde::ser::{SerializeMap, SerializeSeq, Serializer};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use crate::num::{i64_to_f64, u64_to_f64};
+use crate::num::u64_to_f64;
 
 /// A recursive, serializable value.
 #[derive(Debug, Clone, PartialEq, Default)]
-pub enum Value {
+pub(crate) enum Value {
     #[default]
     Null,
     Bool(bool),
@@ -25,13 +25,13 @@ pub enum Value {
 impl Value {
     /// Build an empty `Map`.
     #[must_use]
-    pub const fn map() -> Self {
+    pub(crate) const fn map() -> Self {
         Self::Map(Vec::new())
     }
 
     /// Look up a key in a `Map`; `None` for non-maps or missing keys.
     #[must_use]
-    pub fn get(&self, key: &str) -> Option<&Self> {
+    pub(crate) fn get(&self, key: &str) -> Option<&Self> {
         match self {
             Self::Map(pairs) => pairs.iter().find(|(k, _)| k == key).map(|(_, v)| v),
             _ => None,
@@ -40,7 +40,7 @@ impl Value {
 
     /// Insert or overwrite a key in a `Map` (no-op on non-maps). Insertion order
     /// is preserved; an existing key is updated in place.
-    pub fn set(&mut self, key: &str, value: Self) {
+    pub(crate) fn set(&mut self, key: &str, value: Self) {
         if let Self::Map(pairs) = self {
             if let Some(slot) = pairs.iter_mut().find(|(k, _)| k == key) {
                 slot.1 = value;
@@ -51,7 +51,7 @@ impl Value {
     }
 
     #[must_use]
-    pub fn as_str(&self) -> Option<&str> {
+    pub(crate) fn as_str(&self) -> Option<&str> {
         match self {
             Self::Str(s) => Some(s),
             _ => None,
@@ -59,7 +59,7 @@ impl Value {
     }
 
     #[must_use]
-    pub const fn as_bool(&self) -> Option<bool> {
+    pub(crate) const fn as_bool(&self) -> Option<bool> {
         match self {
             Self::Bool(b) => Some(*b),
             _ => None,
@@ -67,26 +67,11 @@ impl Value {
     }
 
     #[must_use]
-    pub const fn as_int(&self) -> Option<i64> {
+    pub(crate) const fn as_int(&self) -> Option<i64> {
         match self {
             Self::Int(i) => Some(*i),
             _ => None,
         }
-    }
-
-    #[must_use]
-    pub fn as_float(&self) -> Option<f64> {
-        match self {
-            Self::Float(f) => Some(*f),
-            // Int-to-float is the intended numeric view; precision loss is accepted.
-            Self::Int(i) => Some(i64_to_f64(*i)),
-            _ => None,
-        }
-    }
-
-    #[must_use]
-    pub const fn is_null(&self) -> bool {
-        matches!(self, Self::Null)
     }
 }
 

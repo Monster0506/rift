@@ -1,24 +1,20 @@
-pub mod paths {
-    pub const GRAMMARS_DIR: &str = "grammars";
+pub(crate) mod paths {
+    pub(crate) const GRAMMARS_DIR: &str = "grammars";
 }
 
-pub mod ui {
-    pub const NO_NAME: &str = "[No Name]";
-
-    pub const SNAPSHOT_MARKER: &str = "*";
-
-    pub mod borders {
+pub(crate) mod ui {
+    pub(crate) mod borders {
         #[derive(Debug, Clone, PartialEq, Eq)]
-        pub struct BorderSet {
-            pub top_left: char,
-            pub top_right: char,
-            pub bottom_left: char,
-            pub bottom_right: char,
-            pub horizontal: char,
-            pub vertical: char,
+        pub(crate) struct BorderSet {
+            pub(crate) top_left: char,
+            pub(crate) top_right: char,
+            pub(crate) bottom_left: char,
+            pub(crate) bottom_right: char,
+            pub(crate) horizontal: char,
+            pub(crate) vertical: char,
         }
 
-        pub const UNICODE: BorderSet = BorderSet {
+        pub(crate) const UNICODE: BorderSet = BorderSet {
             top_left: '╭',
             top_right: '╮',
             bottom_left: '╰',
@@ -26,199 +22,104 @@ pub mod ui {
             horizontal: '─',
             vertical: '│',
         };
-
-        pub const ASCII: BorderSet = BorderSet {
-            top_left: '+',
-            top_right: '+',
-            bottom_left: '+',
-            bottom_right: '+',
-            horizontal: '-',
-            vertical: '|',
-        };
     }
 }
 
-pub mod errors {
-    pub const LOAD_FAILED: &str = "LOAD_FAILED";
-    pub const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
-    pub const UNSAVED_CHANGES: &str = "UNSAVED_CHANGES";
-    pub const NO_PATH: &str = "NO_PATH";
-    pub const NOT_A_FILE: &str = "NOT_A_FILE";
-    pub const NOT_A_DIRECTORY: &str = "NOT_A_DIRECTORY";
-    pub const READ_ONLY: &str = "READ_ONLY";
-    pub const SEARCH_ERROR: &str = "SEARCH_ERROR";
-    pub const UNDO_ERROR: &str = "UNDO_ERROR";
-    pub const REDRAW_FAILED: &str = "REDRAW_FAILED";
-    pub const PLUGIN_LOAD_FAILED: &str = "PLUGIN_LOAD_FAILED";
-    pub const POLL_FAILED: &str = "POLL_FAILED";
-    pub const RENDER_FAILED: &str = "RENDER_FAILED";
-    pub const REGEX_PARSE_ERROR: &str = "REGEX_PARSE_ERROR";
-    pub const REGEX_COMPILE_ERROR: &str = "REGEX_COMPILE_ERROR";
-    pub const UTF8_ERROR: &str = "UTF8_ERROR";
-    pub const PARENT_DIR_MISSING: &str = "PARENT_DIR_MISSING";
-    pub const UNDOFILE_CORRUPT: &str = "UNDOFILE_CORRUPT";
-    pub const RELOAD_UNSUPPORTED: &str = "RELOAD_UNSUPPORTED";
+pub(crate) mod errors {
+    pub(crate) const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
+    pub(crate) const UNSAVED_CHANGES: &str = "UNSAVED_CHANGES";
+    pub(crate) const NO_PATH: &str = "NO_PATH";
+    pub(crate) const NOT_A_FILE: &str = "NOT_A_FILE";
+    pub(crate) const NOT_A_DIRECTORY: &str = "NOT_A_DIRECTORY";
+    pub(crate) const SEARCH_ERROR: &str = "SEARCH_ERROR";
+    pub(crate) const PLUGIN_LOAD_FAILED: &str = "PLUGIN_LOAD_FAILED";
+    pub(crate) const POLL_FAILED: &str = "POLL_FAILED";
+    pub(crate) const RENDER_FAILED: &str = "RENDER_FAILED";
+    pub(crate) const PARENT_DIR_MISSING: &str = "PARENT_DIR_MISSING";
+    pub(crate) const UNDOFILE_CORRUPT: &str = "UNDOFILE_CORRUPT";
+    pub(crate) const RELOAD_UNSUPPORTED: &str = "RELOAD_UNSUPPORTED";
 
-    pub const MSG_UNSAVED_CHANGES: &str = "No write since last change (add ! to override)";
-    pub const MSG_NO_FILE_NAME: &str = "No file name";
-    pub const MSG_NOT_A_FILE: &str = "Cannot edit a directory";
-    pub const MSG_NOT_A_DIRECTORY: &str = "Not a directory; :file expects a directory path";
-    pub const MSG_FILE_NOT_FOUND_WIN: &str = "The system cannot find the file specified";
-    pub const MSG_PARENT_DIR_MISSING: &str = "No such directory; create the parent directory first";
-    pub const MSG_RELOAD_UNSUPPORTED: &str = "This buffer cannot be reloaded";
+    pub(crate) const MSG_UNSAVED_CHANGES: &str = "No write since last change (add ! to override)";
+    pub(crate) const MSG_NO_FILE_NAME: &str = "No file name";
+    pub(crate) const MSG_NOT_A_FILE: &str = "Cannot edit a directory";
+    pub(crate) const MSG_NOT_A_DIRECTORY: &str = "Not a directory; :file expects a directory path";
+    pub(crate) const MSG_PARENT_DIR_MISSING: &str =
+        "No such directory; create the parent directory first";
+    pub(crate) const MSG_RELOAD_UNSUPPORTED: &str = "This buffer cannot be reloaded";
 }
 
-pub mod history {
-    pub const INSERT_LABEL: &str = "Insert";
-    pub const ALREADY_OLDEST: &str = "Already at oldest change";
-    pub const ALREADY_NEWEST: &str = "Already at newest change";
+pub(crate) mod history {
+    pub(crate) const INSERT_LABEL: &str = "Insert";
 }
 
-pub mod modes {
-    pub const NORMAL: &str = "NORMAL";
-    pub const INSERT: &str = "INSERT";
-    pub const COMMAND: &str = "COMMAND";
-    pub const SEARCH: &str = "SEARCH";
-    pub const RENAME: &str = "RENAME";
-    pub const OPERATOR_PENDING: &str = "OPERATOR_PENDING";
-    pub const REPLACE: &str = "REPLACE";
-    pub const VISUAL: &str = "VISUAL";
-    pub const VISUAL_LINE: &str = "VISUAL_LINE";
-    pub const VISUAL_BLOCK: &str = "VISUAL_BLOCK";
-    pub const OVERLAY: &str = "OVERLAY";
+pub(crate) mod modes {
+    pub(crate) const NORMAL: &str = "NORMAL";
+    pub(crate) const INSERT: &str = "INSERT";
+    pub(crate) const COMMAND: &str = "COMMAND";
+    pub(crate) const SEARCH: &str = "SEARCH";
+    pub(crate) const RENAME: &str = "RENAME";
+    pub(crate) const OPERATOR_PENDING: &str = "OPERATOR_PENDING";
+    pub(crate) const REPLACE: &str = "REPLACE";
+    pub(crate) const VISUAL: &str = "VISUAL";
+    pub(crate) const VISUAL_LINE: &str = "VISUAL_LINE";
+    pub(crate) const VISUAL_BLOCK: &str = "VISUAL_BLOCK";
 }
 
-pub mod logging {
-    pub const INFO: &str = "INFO";
-    pub const WARN: &str = "WARN";
-    pub const ERROR: &str = "ERROR";
-    pub const CRITICAL: &str = "CRITICAL";
+pub(crate) mod logging {
+    #[cfg(test)]
+    pub(crate) const INFO: &str = "INFO";
+    pub(crate) const WARN: &str = "WARN";
+    pub(crate) const ERROR: &str = "ERROR";
+    #[cfg(test)]
+    pub(crate) const CRITICAL: &str = "CRITICAL";
 }
 
-pub mod error_types {
-    pub const IO: &str = "IO";
-    pub const INVALID_CURSOR: &str = "InvalidCursor";
-    pub const PARSE: &str = "Parse";
-    pub const SETTINGS: &str = "Settings";
-    pub const EXECUTION: &str = "Execution";
-    pub const RENDERER: &str = "Renderer";
-    pub const INTERNAL: &str = "Internal";
-    pub const OTHER: &str = "Other";
+pub(crate) mod error_types {
+    pub(crate) const IO: &str = "IO";
+    pub(crate) const INVALID_CURSOR: &str = "InvalidCursor";
+    pub(crate) const PARSE: &str = "Parse";
+    pub(crate) const SETTINGS: &str = "Settings";
+    pub(crate) const EXECUTION: &str = "Execution";
+    pub(crate) const RENDERER: &str = "Renderer";
+    pub(crate) const INTERNAL: &str = "Internal";
+    pub(crate) const OTHER: &str = "Other";
 }
 
-pub mod themes {
-    pub const LIGHT: &str = "light";
-    pub const DARK: &str = "dark";
-    pub const GRUVBOX: &str = "gruvbox";
-    pub const NORDIC: &str = "nordic";
+pub(crate) mod themes {
+    pub(crate) const LIGHT: &str = "light";
+    pub(crate) const DARK: &str = "dark";
+    pub(crate) const GRUVBOX: &str = "gruvbox";
+    pub(crate) const NORDIC: &str = "nordic";
 }
 
-pub mod captures {
-    pub const ATTRIBUTE: &str = "attribute";
-    pub const ATTRIBUTE_ITEM: &str = "attribute_item";
-    pub const ANCHOR_NAME: &str = "anchor_name";
-    pub const ALIAS_NAME: &str = "alias_name";
-    pub const BOOLEAN: &str = "boolean";
-    pub const BOOLEAN_LITERAL: &str = "boolean_literal";
-    pub const BOOLEAN_SCALAR: &str = "boolean_scalar";
-    pub const BLOCK_COMMENT: &str = "block_comment";
-    pub const BLOCK_SCALAR: &str = "block_scalar";
-    pub const BUILTIN: &str = "builtin";
-    pub const CHAR_LITERAL: &str = "char_literal";
-    pub const COMMENT: &str = "comment";
-    pub const COMMENT_DOCUMENTATION: &str = "comment.documentation";
-    pub const CONSTANT: &str = "constant";
-    pub const CONSTANT_BUILTIN: &str = "constant.builtin";
-    pub const CONSTRUCTOR: &str = "constructor";
-    pub const CRATE: &str = "crate";
-    pub const DECORATOR: &str = "decorator";
-    pub const DELIMITER: &str = "delimiter";
-    pub const DOUBLE_QUOTE_SCALAR: &str = "double_quote_scalar";
-    pub const EMBEDDED: &str = "embedded";
-    pub const ERROR: &str = "error";
-    pub const ESCAPE: &str = "escape";
-    pub const ESCAPE_SEQUENCE: &str = "escape_sequence";
-    pub const FIELD: &str = "field";
-    pub const FIELD_IDENTIFIER: &str = "field_identifier";
-    pub const FLOAT: &str = "float";
-    pub const FLOAT_LITERAL: &str = "float_literal";
-    pub const FLOAT_SCALAR: &str = "float_scalar";
-    pub const FLOW_MAPPING: &str = "flow_mapping";
-    pub const FLOW_NODE: &str = "flow_node";
-    pub const FUNCTION: &str = "function";
-    pub const FUNCTION_BRACKET: &str = "function.bracket";
-    pub const FUNCTION_BUILTIN: &str = "function.builtin";
-    pub const FUNCTION_CALL: &str = "function.call";
-    pub const FUNCTION_CALL_LUA: &str = "function.call.lua";
-    pub const FUNCTION_MACRO: &str = "function.macro";
-    pub const FUNCTION_METHOD: &str = "function.method";
-    pub const FUNCTION_ITEM: &str = "function_item";
-    pub const FUNCTION_SIGNATURE_ITEM: &str = "function_signature_item";
-    pub const GENERIC_FUNCTION: &str = "generic_function";
-    pub const INNER_ATTRIBUTE_ITEM: &str = "inner_attribute_item";
-    pub const INTEGER: &str = "integer";
-    pub const INTEGER_LITERAL: &str = "integer_literal";
-    pub const INTEGER_SCALAR: &str = "integer_scalar";
-    pub const INTERPOLATION: &str = "interpolation";
-    pub const KEYWORD: &str = "keyword";
-    pub const KEYWORD_CONDITIONAL: &str = "keyword.conditional";
-    pub const KEYWORD_FUNCTION: &str = "keyword.function";
-    pub const KEYWORD_OPERATOR: &str = "keyword.operator";
-    pub const KEYWORD_REPEAT: &str = "keyword.repeat";
-    pub const KEYWORD_RETURN: &str = "keyword.return";
-    pub const LABEL: &str = "label";
-    pub const LIFETIME: &str = "lifetime";
-    pub const LINE_COMMENT: &str = "line_comment";
-    pub const MACRO_INVOCATION: &str = "macro_invocation";
-    pub const MODULE: &str = "module";
-    pub const MUTABLE_SPECIFIER: &str = "mutable_specifier";
-    pub const NAMESPACE: &str = "namespace";
-    pub const NESTING_SELECTOR: &str = "nesting_selector";
-    pub const NONE: &str = "none";
-    pub const NULL_SCALAR: &str = "null_scalar";
-    pub const NUMBER: &str = "number";
-    pub const OPERATOR: &str = "operator";
-    pub const PARAMETER: &str = "parameter";
-    pub const PLAIN_SCALAR: &str = "plain_scalar";
-    pub const PROPERTY: &str = "property";
-    pub const PROPERTY_IDENTIFIER: &str = "property_identifier";
-    pub const PUNCTUATION: &str = "punctuation";
-    pub const PUNCTUATION_BRACKET: &str = "punctuation.bracket";
-    pub const PUNCTUATION_DELIMITER: &str = "punctuation.delimiter";
-    pub const PUNCTUATION_SPECIAL: &str = "punctuation.special";
-    pub const RAW_STRING_LITERAL: &str = "raw_string_literal";
-    pub const RESERVED_DIRECTIVE: &str = "reserved_directive";
-    pub const SCOPED_IDENTIFIER: &str = "scoped_identifier";
-    pub const SCOPED_TYPE_IDENTIFIER: &str = "scoped_type_identifier";
-    pub const SELF: &str = "self";
-    pub const SINGLE_QUOTE_SCALAR: &str = "single_quote_scalar";
-    pub const STRING: &str = "string";
-    pub const STRING_ESCAPE: &str = "string.escape";
-    pub const STRING_SPECIAL: &str = "string.special";
-    pub const STRING_SPECIAL_KEY: &str = "string.special.key";
-    pub const STRING_LITERAL: &str = "string_literal";
-    pub const STRING_SCALAR: &str = "string_scalar";
-    pub const STRUCT_PATTERN: &str = "struct_pattern";
-    pub const TAG: &str = "tag";
-    pub const TAG_ERROR: &str = "tag.error";
-    pub const TAG_DIRECTIVE: &str = "tag_directive";
-    pub const TEXT_LITERAL: &str = "text.literal";
-    pub const TEXT_REFERENCE: &str = "text.reference";
-    pub const TEXT_TITLE: &str = "text.title";
-    pub const TEXT_URI: &str = "text.uri";
-    pub const TYPE: &str = "type";
-    pub const TYPE_BUILTIN: &str = "type.builtin";
-    pub const TYPE_ARGUMENTS: &str = "type_arguments";
-    pub const TYPE_IDENTIFIER: &str = "type_identifier";
-    pub const TYPE_PARAMETERS: &str = "type_parameters";
-    pub const UNIVERSAL_SELECTOR: &str = "universal_selector";
-    pub const VARIABLE: &str = "variable";
-    pub const VARIABLE_BUILTIN: &str = "variable.builtin";
-    pub const VARIABLE_PARAMETER: &str = "variable.parameter";
-    pub const KEYWORD_IMPORT: &str = "import";
-    pub const KEYWORD_DIRECTIVE: &str = "keyword.directive";
-    pub const C_IMPORT: &str = "cImport";
-    pub const CHARACTER: &str = "character";
-    pub const MODULE_BUILTIN: &str = "module.builtin";
-    pub const SPELL: &str = "spell";
+pub(crate) mod captures {
+    pub(crate) const ATTRIBUTE: &str = "attribute";
+    pub(crate) const BOOLEAN: &str = "boolean";
+    pub(crate) const BUILTIN: &str = "builtin";
+    pub(crate) const COMMENT: &str = "comment";
+    pub(crate) const CONSTANT: &str = "constant";
+    pub(crate) const CONSTRUCTOR: &str = "constructor";
+    pub(crate) const ESCAPE: &str = "escape";
+    pub(crate) const FUNCTION: &str = "function";
+    pub(crate) const KEYWORD: &str = "keyword";
+    pub(crate) const LABEL: &str = "label";
+    pub(crate) const MODULE: &str = "module";
+    pub(crate) const NAMESPACE: &str = "namespace";
+    pub(crate) const NUMBER: &str = "number";
+    pub(crate) const OPERATOR: &str = "operator";
+    pub(crate) const PARAMETER: &str = "parameter";
+    pub(crate) const PROPERTY: &str = "property";
+    pub(crate) const PUNCTUATION: &str = "punctuation";
+    pub(crate) const STRING: &str = "string";
+    pub(crate) const TAG: &str = "tag";
+    pub(crate) const TEXT_LITERAL: &str = "text.literal";
+    pub(crate) const TEXT_REFERENCE: &str = "text.reference";
+    pub(crate) const TEXT_TITLE: &str = "text.title";
+    pub(crate) const TEXT_URI: &str = "text.uri";
+    pub(crate) const TYPE: &str = "type";
+    pub(crate) const VARIABLE: &str = "variable";
+    pub(crate) const C_IMPORT: &str = "cImport";
+    pub(crate) const CHARACTER: &str = "character";
+    pub(crate) const MODULE_BUILTIN: &str = "module.builtin";
+    pub(crate) const SPELL: &str = "spell";
 }

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 /// Role of one line inside a [`Hunk`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DiffLineKind {
+pub(crate) enum DiffLineKind {
     Context,
     Addition,
     Deletion,
@@ -13,51 +13,51 @@ pub enum DiffLineKind {
 
 /// One line of hunk content, with its line number on each side it exists on.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DiffLine {
-    pub kind: DiffLineKind,
+pub(crate) struct DiffLine {
+    pub(crate) kind: DiffLineKind,
     /// Line text with the leading `+`/`-`/` ` marker stripped; no trailing newline.
-    pub content: String,
+    pub(crate) content: String,
     /// 1-based line number on the old side. `None` for a pure addition.
-    pub old_lineno: Option<u32>,
+    pub(crate) old_lineno: Option<u32>,
     /// 1-based line number on the new side. `None` for a pure deletion.
-    pub new_lineno: Option<u32>,
+    pub(crate) new_lineno: Option<u32>,
 }
 
 /// One `@@ -old_start,old_lines +new_start,new_lines @@` block.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Hunk {
-    pub old_start: u32,
-    pub old_lines: u32,
-    pub new_start: u32,
-    pub new_lines: u32,
+pub(crate) struct Hunk {
+    pub(crate) old_start: u32,
+    pub(crate) old_lines: u32,
+    pub(crate) new_start: u32,
+    pub(crate) new_lines: u32,
     /// Optional trailing section-heading text after the second `@@`.
-    pub header: String,
-    pub lines: Vec<DiffLine>,
+    pub(crate) header: String,
+    pub(crate) lines: Vec<DiffLine>,
 }
 
 /// One file's worth of a unified diff (the `diff --git ...` block through
 /// its last hunk).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FileDiff {
+pub(crate) struct FileDiff {
     /// `None` when the file doesn't exist on the old side (new file, or the
     /// `--- /dev/null` line was seen).
-    pub old_path: Option<PathBuf>,
+    pub(crate) old_path: Option<PathBuf>,
     /// `None` when the file doesn't exist on the new side (deleted file, or
     /// the `+++ /dev/null` line was seen).
-    pub new_path: Option<PathBuf>,
+    pub(crate) new_path: Option<PathBuf>,
     // Markers can combine (e.g. rename plus binary), so they are flags, not an enum.
-    pub markers: FileMarkers,
-    pub old_mode: Option<String>,
-    pub new_mode: Option<String>,
+    pub(crate) markers: FileMarkers,
+    pub(crate) old_mode: Option<String>,
+    pub(crate) new_mode: Option<String>,
     /// `similarity index NN%` from a rename/copy header, if present.
-    pub similarity: Option<u8>,
-    pub hunks: Vec<Hunk>,
+    pub(crate) similarity: Option<u8>,
+    pub(crate) hunks: Vec<Hunk>,
 }
 
 /// Header markers for one file. Several can hold at once (a rename can also be
 /// binary), so this is a bitset rather than an enum.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FileMarkers(u8);
+pub(crate) struct FileMarkers(u8);
 
 impl FileMarkers {
     const NEW_FILE: Self = Self(1);
@@ -69,34 +69,39 @@ impl FileMarkers {
         self.0 |= flag.0;
     }
 
+    #[cfg(test)]
     const fn contains(self, flag: Self) -> bool {
         (self.0 & flag.0) != 0
     }
 
+    #[cfg(test)]
     #[must_use]
-    pub const fn is_new_file(self) -> bool {
+    pub(crate) const fn is_new_file(self) -> bool {
         self.contains(Self::NEW_FILE)
     }
 
+    #[cfg(test)]
     #[must_use]
-    pub const fn is_deleted_file(self) -> bool {
+    pub(crate) const fn is_deleted_file(self) -> bool {
         self.contains(Self::DELETED_FILE)
     }
 
+    #[cfg(test)]
     #[must_use]
-    pub const fn is_rename(self) -> bool {
+    pub(crate) const fn is_rename(self) -> bool {
         self.contains(Self::RENAME)
     }
 
+    #[cfg(test)]
     #[must_use]
-    pub const fn is_binary(self) -> bool {
+    pub(crate) const fn is_binary(self) -> bool {
         self.contains(Self::BINARY)
     }
 }
 
 /// One gutter-diff sign kind for a changed line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GutterSignKind {
+pub(crate) enum GutterSignKind {
     Add,
     Change,
     Delete,
@@ -104,7 +109,7 @@ pub enum GutterSignKind {
 
 /// Classify each hunk into 0-indexed buffer line(s) plus a sign kind. A pure addition signs every added line `Add`; a pure deletion signs one `Delete` marker at the line immediately before the deletion point (gitsigns.nvim convention; there's no added line to anchor to); a mixed hunk signs every line on the.
 #[must_use]
-pub fn classify_gutter_signs(hunks: &[Hunk]) -> Vec<(usize, GutterSignKind)> {
+pub(crate) fn classify_gutter_signs(hunks: &[Hunk]) -> Vec<(usize, GutterSignKind)> {
     let mut signs = Vec::new();
     for hunk in hunks {
         let is_pure_deletion = hunk.new_lines == 0;
@@ -128,7 +133,7 @@ pub fn classify_gutter_signs(hunks: &[Hunk]) -> Vec<(usize, GutterSignKind)> {
 
 /// Build a sub-hunk containing only the `+`/`-` lines at `selected` (indices into `hunk.lines`), for per-line staging: the same algorithm `git add -p` uses when you deselect part of a hunk. An unselected addition is dropped entirely (as if it were never added); an unselected deletion becomes context (as if it.
 #[must_use]
-pub fn filter_hunk_to_lines<S: std::hash::BuildHasher>(
+pub(crate) fn filter_hunk_to_lines<S: std::hash::BuildHasher>(
     hunk: &Hunk,
     selected: &std::collections::HashSet<usize, S>,
 ) -> Hunk {
@@ -176,7 +181,10 @@ pub fn filter_hunk_to_lines<S: std::hash::BuildHasher>(
 
 /// The contiguous run of non-context lines around `line_index` (inclusive), as indices into `hunk.lines`; the unit a single cursor line expands to for per-line staging. A lone `+`/`-` line stays a unit of one. A run that's purely deletions or purely additions (no opposite-kind neighbor, e.g. a brand-new file's.
 #[must_use]
-pub fn diff_line_change_block(hunk: &Hunk, line_index: usize) -> std::collections::HashSet<usize> {
+pub(crate) fn diff_line_change_block(
+    hunk: &Hunk,
+    line_index: usize,
+) -> std::collections::HashSet<usize> {
     let mut block = std::collections::HashSet::new();
     if hunk
         .lines
@@ -206,7 +214,7 @@ pub fn diff_line_change_block(hunk: &Hunk, line_index: usize) -> std::collection
 
 /// Parse the full stdout of `git diff --no-ext-diff` (any number of files).
 #[must_use]
-pub fn parse_unified_diff(input: &str) -> Vec<FileDiff> {
+pub(crate) fn parse_unified_diff(input: &str) -> Vec<FileDiff> {
     let mut files = Vec::new();
     let mut lines = input.lines().peekable();
 

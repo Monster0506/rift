@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 /// A core builtin behavior, interpreted by the editor when activated.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Builtin {
+pub(crate) enum Builtin {
     /// Follow a link: open `payload.href`.
     FollowLink,
     /// Flip `payload.checked` and request a re-render.
@@ -19,24 +19,22 @@ pub enum Builtin {
 /// What a resolved handler is. The registry resolves to one of these; the editor
 /// executes it. `Lua` means the Lua host holds the function under the same key.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Handler {
+pub(crate) enum Handler {
     Builtin(Builtin),
     Lua,
     /// Run an ex command named by this string.
     Command(String),
-    /// Routed to a remote owner (reserved for IPC).
-    Remote,
 }
 
 /// Maps (kind-or-prefix, verb) to a handler, with namespace-prefix fallback.
 #[derive(Default)]
-pub struct DispatchRegistry {
+pub(crate) struct DispatchRegistry {
     handlers: HashMap<(String, String), Handler>,
 }
 
 impl DispatchRegistry {
     #[must_use]
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             handlers: HashMap::new(),
         }
@@ -44,7 +42,7 @@ impl DispatchRegistry {
 
     /// A registry preloaded with core builtins.
     #[must_use]
-    pub fn with_builtins() -> Self {
+    pub(crate) fn with_builtins() -> Self {
         let mut r = Self::new();
         r.register("ui.link", "activate", Handler::Builtin(Builtin::FollowLink));
         r.register(
@@ -62,25 +60,31 @@ impl DispatchRegistry {
 
     /// Register a handler for a kind (or kind-prefix) and verb. Re-registering the
     /// same key replaces the handler (plugin reload safety, sec 10).
-    pub fn register(&mut self, key: impl Into<String>, verb: impl Into<String>, handler: Handler) {
+    pub(crate) fn register(
+        &mut self,
+        key: impl Into<String>,
+        verb: impl Into<String>,
+        handler: Handler,
+    ) {
         self.handlers.insert((key.into(), verb.into()), handler);
     }
 
+    #[cfg(test)]
     /// Remove every handler registered under an exact key (all its verbs).
-    pub fn remove_key(&mut self, key: &str) {
+    pub(crate) fn remove_key(&mut self, key: &str) {
         self.handlers.retain(|(k, _), _| k != key);
     }
 
     /// Drop all Lua-backed handlers (e.g. before a plugin reload). Builtins,
     /// commands, and remote handlers are kept; Lua handlers re-register on reload.
-    pub fn clear_lua_handlers(&mut self) {
+    pub(crate) fn clear_lua_handlers(&mut self) {
         self.handlers.retain(|_, h| *h != Handler::Lua);
     }
 
     /// Resolve a handler for a kind and verb, falling back from the full kind to
     /// its namespace prefix, then namespace, then the global "*" default.
     #[must_use]
-    pub fn resolve(&self, kind: &Kind, verb: &str) -> Option<&Handler> {
+    pub(crate) fn resolve(&self, kind: &Kind, verb: &str) -> Option<&Handler> {
         let ns = kind.namespace();
         let candidates = [
             kind.as_str().to_string(),
@@ -100,9 +104,9 @@ impl DispatchRegistry {
 /// Per-kind defaults: presentation applied when an annotation sets none, and a
 /// description used as a fallback hover tooltip.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct KindDefaults {
-    pub presentation: Option<super::Presentation>,
-    pub description: Option<String>,
+pub(crate) struct KindDefaults {
+    pub(crate) presentation: Option<super::Presentation>,
+    pub(crate) description: Option<String>,
 }
 
 /// Per-kind (or per-prefix) defaults resolved with namespace-prefix fallback.
@@ -117,7 +121,7 @@ pub struct KindRegistry {
 
 impl KindRegistry {
     #[must_use]
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             defaults: HashMap::new(),
             generation: 0,
@@ -126,13 +130,13 @@ impl KindRegistry {
 
     /// Monotonic count of mutations to this registry's defaults.
     #[must_use]
-    pub const fn generation(&self) -> u64 {
+    pub(crate) const fn generation(&self) -> u64 {
         self.generation
     }
 
     /// A registry preloaded with sensible defaults for core kinds.
     #[must_use]
-    pub fn with_core() -> Self {
+    pub(crate) fn with_core() -> Self {
         use super::presentation::{FaceRef, Presentation, StyleOverride};
         let mut r = Self::new();
         r.set_presentation(
@@ -156,17 +160,20 @@ impl KindRegistry {
         r
     }
 
-    pub fn register(&mut self, key: impl Into<String>, defaults: KindDefaults) {
-        self.defaults.insert(key.into(), defaults);
-        self.generation += 1;
-    }
-
-    pub fn set_presentation(&mut self, key: impl Into<String>, presentation: super::Presentation) {
+    pub(crate) fn set_presentation(
+        &mut self,
+        key: impl Into<String>,
+        presentation: super::Presentation,
+    ) {
         self.defaults.entry(key.into()).or_default().presentation = Some(presentation);
         self.generation += 1;
     }
 
-    pub fn set_description(&mut self, key: impl Into<String>, description: impl Into<String>) {
+    pub(crate) fn set_description(
+        &mut self,
+        key: impl Into<String>,
+        description: impl Into<String>,
+    ) {
         self.defaults.entry(key.into()).or_default().description = Some(description.into());
         self.generation += 1;
     }
@@ -184,19 +191,19 @@ impl KindRegistry {
 
     /// Default presentation for a kind, with prefix fallback.
     #[must_use]
-    pub fn default_presentation(&self, kind: &Kind) -> Option<&super::Presentation> {
+    pub(crate) fn default_presentation(&self, kind: &Kind) -> Option<&super::Presentation> {
         self.resolve(kind).and_then(|d| d.presentation.as_ref())
     }
 
     /// Default description (hover doc) for a kind, with prefix fallback.
     #[must_use]
-    pub fn default_description(&self, kind: &Kind) -> Option<&str> {
+    pub(crate) fn default_description(&self, kind: &Kind) -> Option<&str> {
         self.resolve(kind).and_then(|d| d.description.as_deref())
     }
 }
 
 /// Builtin: flip `payload.checked`, defaulting a missing/non-bool to `true`.
-pub fn toggle_checked(payload: &mut Value) {
+pub(crate) fn toggle_checked(payload: &mut Value) {
     let current = payload
         .get("checked")
         .and_then(Value::as_bool)

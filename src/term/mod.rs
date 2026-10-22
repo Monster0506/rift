@@ -103,43 +103,21 @@ pub trait TerminalBackend {
     fn request_detach(&mut self) {}
 }
 
-/// Extension trait for color support
-/// Backends that support colors should implement this trait
-pub trait ColorTerminal: TerminalBackend {
-    /// Set foreground color
-    ///
-    /// # Errors
-    /// Returns `Err` with a message if the color cannot be set.
-    fn set_foreground_color(&mut self, color: crate::color::Color) -> Result<(), String>;
-
-    /// Set background color
-    ///
-    /// # Errors
-    /// Returns `Err` with a message if the color cannot be set.
-    fn set_background_color(&mut self, color: crate::color::Color) -> Result<(), String>;
-
-    /// Reset colors to default
-    ///
-    /// # Errors
-    /// Returns `Err` with a message if the colors cannot be reset.
-    fn reset_colors(&mut self) -> Result<(), String>;
-}
-
-pub mod crossterm;
+pub(crate) mod crossterm;
 
 #[cfg(feature = "terminal_emulation")]
-pub mod terminal;
+pub(crate) mod terminal;
 #[cfg(not(feature = "terminal_emulation"))]
 #[path = "terminal_stub.rs"]
-pub mod terminal;
+pub(crate) mod terminal;
 
-pub use terminal::Terminal;
+pub(crate) use terminal::Terminal;
 
 /// Events raised by a PTY-backed terminal buffer. Available regardless of the
 /// `terminal_emulation` feature so channel plumbing doesn't need its own gate.
 #[derive(Debug, Clone)]
-pub enum TerminalEvent {
-    Title(String),
+pub(crate) enum TerminalEvent {
+    Title,
     Wakeup,
     ChildExit(i32),
 }

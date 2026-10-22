@@ -7,7 +7,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 static OPTION_REGISTRY_CACHE: LazyLock<Mutex<HashMap<usize, Arc<CommandRegistry>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-pub struct SettingsRegistry<T: 'static> {
+pub(crate) struct SettingsRegistry<T: 'static> {
     settings: &'static [SettingDescriptor<T>],
 }
 
@@ -21,19 +21,19 @@ impl<T> Copy for SettingsRegistry<T> {}
 
 impl<T> SettingsRegistry<T> {
     #[must_use]
-    pub const fn new(descriptors: &'static [SettingDescriptor<T>]) -> Self {
+    pub(crate) const fn new(descriptors: &'static [SettingDescriptor<T>]) -> Self {
         Self {
             settings: descriptors,
         }
     }
 
     #[must_use]
-    pub const fn descriptors(&self) -> &[SettingDescriptor<T>] {
+    pub(crate) const fn descriptors(&self) -> &[SettingDescriptor<T>] {
         self.settings
     }
 
     #[must_use]
-    pub fn build_option_registry(&self) -> CommandRegistry {
+    pub(crate) fn build_option_registry(&self) -> CommandRegistry {
         (*self.cached_option_registry()).clone()
     }
 
@@ -59,7 +59,7 @@ impl<T> SettingsRegistry<T> {
     }
 
     #[must_use]
-    pub fn find_descriptor(&self, name: &str) -> Option<&SettingDescriptor<T>> {
+    pub(crate) fn find_descriptor(&self, name: &str) -> Option<&SettingDescriptor<T>> {
         let matched_name = match self.cached_option_registry().match_command(name) {
             MatchResult::Exact(n) | MatchResult::Prefix(n) => n,
             MatchResult::Ambiguous { .. } | MatchResult::Unknown(_) => return None,
@@ -68,7 +68,7 @@ impl<T> SettingsRegistry<T> {
     }
 
     #[must_use]
-    pub fn get_setting(&self, name: &str, target: &T) -> Option<SettingValue> {
+    pub(crate) fn get_setting(&self, name: &str, target: &T) -> Option<SettingValue> {
         let desc = self.find_descriptor(name)?;
         desc.get.map(|getter| getter(target))
     }
@@ -265,7 +265,7 @@ impl<T> SettingsRegistry<T> {
         Ok(SettingValue::Color(color))
     }
 
-    pub fn execute_setting(
+    pub(crate) fn execute_setting(
         &self,
         name: &str,
         value: Option<&str>,

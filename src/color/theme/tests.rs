@@ -5,11 +5,9 @@ use crate::state::UserSettings;
 fn test_theme_creation() {
     let light = Theme::light();
     assert_eq!(light.name, "light");
-    assert_eq!(light.variant, ThemeVariant::Light);
 
     let dark = Theme::dark();
     assert_eq!(dark.name, "dark");
-    assert_eq!(dark.variant, ThemeVariant::Dark);
 }
 
 #[test]
@@ -147,21 +145,6 @@ fn test_all_themes_have_valid_colors() {
         // Verify background and foreground are different
         assert_ne!(theme.background, theme.foreground);
     }
-}
-
-#[test]
-fn test_theme_variant() {
-    let light = Theme::light();
-    assert_eq!(light.variant, ThemeVariant::Light);
-
-    let dark = Theme::dark();
-    assert_eq!(dark.variant, ThemeVariant::Dark);
-
-    let gruvbox = Theme::gruvbox();
-    assert_eq!(gruvbox.variant, ThemeVariant::Dark);
-
-    let nordic = Theme::nordic();
-    assert_eq!(nordic.variant, ThemeVariant::Dark);
 }
 
 #[test]

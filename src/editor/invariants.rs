@@ -7,7 +7,7 @@ use crate::mode::Mode;
 use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
-    pub fn assert_invariants(&self, tier: InvariantTier) -> Vec<Violation> {
+    pub(crate) fn assert_invariants(&self, tier: InvariantTier) -> Vec<Violation> {
         let mut out = Vec::new();
 
         self.check_pending_input_state(&mut out);

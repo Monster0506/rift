@@ -1,16 +1,16 @@
-pub mod command;
-pub mod persist;
+pub(crate) mod command;
+pub(crate) mod persist;
 
 use crate::character::Character;
 use crate::time::SystemTime;
 use std::collections::BTreeMap;
 
-pub type EditSeq = u64;
+pub(crate) type EditSeq = u64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct Position {
-    pub line: u32,
-    pub col: u32,
+    pub(crate) line: u32,
+    pub(crate) col: u32,
 }
 
 impl Position {
@@ -22,18 +22,19 @@ impl Position {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Range {
-    pub start: Position,
-    pub end: Position,
+    pub(crate) start: Position,
+    pub(crate) end: Position,
 }
 
 impl Range {
     #[must_use]
-    pub const fn new(start: Position, end: Position) -> Self {
+    pub(crate) const fn new(start: Position, end: Position) -> Self {
         Self { start, end }
     }
 
+    #[cfg(test)]
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.start == self.end
     }
 }
@@ -64,29 +65,6 @@ pub enum EditOperation {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ApplyError {
-    PositionOutOfBounds { position: Position },
-    InvalidRange { range: Range },
-    EncodingError(String),
-}
-
-impl std::fmt::Display for ApplyError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::PositionOutOfBounds { position } => {
-                write!(f, "Position out of bounds: {position:?}")
-            }
-            Self::InvalidRange { range } => {
-                write!(f, "Invalid range: {range:?}")
-            }
-            Self::EncodingError(msg) => write!(f, "Encoding error: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for ApplyError {}
-
 /// Positions are `u32`; a count above `u32::MAX` saturates instead of wrapping.
 fn saturating_u32(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
@@ -94,17 +72,7 @@ fn saturating_u32(n: usize) -> u32 {
 
 impl EditOperation {
     #[must_use]
-    pub const fn start_position(&self) -> Position {
-        match self {
-            Self::Insert { position, .. } => *position,
-            Self::Delete { range, .. }
-            | Self::Replace { range, .. }
-            | Self::BlockChange { range, .. } => range.start,
-        }
-    }
-
-    #[must_use]
-    pub fn inverse(&self) -> Self {
+    pub(crate) fn inverse(&self) -> Self {
         match self {
             Self::Insert { position, text, .. } => Self::Delete {
                 range: Range::new(
@@ -189,7 +157,7 @@ impl EditOperation {
     }
 
     #[must_use]
-    pub fn estimated_size(&self) -> usize {
+    pub(crate) fn estimated_size(&self) -> usize {
         match self {
             Self::Insert { text, .. } => text.len() + 32,
             Self::Delete { deleted_text, .. } => deleted_text.len() + 32,
@@ -211,10 +179,10 @@ impl EditOperation {
 
 #[derive(Clone, Debug, Default)]
 pub struct EditTransaction {
-    pub ops: Vec<EditOperation>,
-    pub description: String,
-    pub cursor_before: Option<usize>,
-    pub cursor_after: Option<usize>,
+    pub(crate) ops: Vec<EditOperation>,
+    pub(crate) description: String,
+    pub(crate) cursor_before: Option<usize>,
+    pub(crate) cursor_after: Option<usize>,
 }
 
 impl EditTransaction {
@@ -232,17 +200,17 @@ impl EditTransaction {
     }
 
     #[must_use]
-    pub fn inverse(&self) -> Vec<EditOperation> {
+    pub(crate) fn inverse(&self) -> Vec<EditOperation> {
         self.ops.iter().rev().map(EditOperation::inverse).collect()
     }
 
     #[must_use]
-    pub const fn is_empty(&self) -> bool {
+    pub(crate) const fn is_empty(&self) -> bool {
         self.ops.is_empty()
     }
 
     #[must_use]
-    pub fn estimated_size(&self) -> usize {
+    pub(crate) fn estimated_size(&self) -> usize {
         self.ops
             .iter()
             .map(EditOperation::estimated_size)
@@ -254,41 +222,37 @@ impl EditTransaction {
 
 #[derive(Clone, Debug)]
 pub struct DocumentSnapshot {
-    pub full_text: Vec<Character>,
-    pub byte_count: usize,
-    pub line_count: u32,
-    pub annotations: Vec<crate::annotations::Annotation>,
+    pub(crate) full_text: Vec<Character>,
+    pub(crate) annotations: Vec<crate::annotations::Annotation>,
 }
 
 impl DocumentSnapshot {
     #[must_use]
-    pub fn new(text: Vec<Character>, annotations: Vec<crate::annotations::Annotation>) -> Self {
-        let byte_count = text.len();
-        let line_count =
-            saturating_u32(text.iter().filter(|c| **c == Character::Newline).count()) + 1;
+    pub(crate) fn new(
+        text: Vec<Character>,
+        annotations: Vec<crate::annotations::Annotation>,
+    ) -> Self {
         Self {
             full_text: text,
-            byte_count,
-            line_count,
             annotations,
         }
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct EditNode {
-    pub seq: EditSeq,
-    pub transaction: EditTransaction,
-    pub parent: Option<EditSeq>,
-    pub children: Vec<EditSeq>,
-    pub last_visited_child: Option<usize>,
-    pub snapshot: Option<Box<DocumentSnapshot>>,
-    pub timestamp: SystemTime,
+pub(crate) struct EditNode {
+    pub(crate) seq: EditSeq,
+    pub(crate) transaction: EditTransaction,
+    pub(crate) parent: Option<EditSeq>,
+    pub(crate) children: Vec<EditSeq>,
+    pub(crate) last_visited_child: Option<usize>,
+    pub(crate) snapshot: Option<Box<DocumentSnapshot>>,
+    pub(crate) timestamp: SystemTime,
 }
 
 impl EditNode {
     #[must_use]
-    pub fn new(seq: EditSeq, transaction: EditTransaction, parent: Option<EditSeq>) -> Self {
+    pub(crate) fn new(seq: EditSeq, transaction: EditTransaction, parent: Option<EditSeq>) -> Self {
         Self {
             seq,
             transaction,
@@ -303,11 +267,9 @@ impl EditNode {
 
 #[derive(Debug, Clone)]
 pub struct ReplayPath {
-    pub from_seq: EditSeq,
-    pub to_seq: EditSeq,
-    pub undo_ops: Vec<EditTransaction>,
-    pub redo_ops: Vec<EditTransaction>,
-    pub snapshot_restore: Option<DocumentSnapshot>,
+    pub(crate) undo_ops: Vec<EditTransaction>,
+    pub(crate) redo_ops: Vec<EditTransaction>,
+    pub(crate) snapshot_restore: Option<DocumentSnapshot>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -331,10 +293,10 @@ impl std::error::Error for UndoError {}
 
 #[derive(Clone, Debug)]
 pub struct UndoTree {
-    pub nodes: BTreeMap<EditSeq, EditNode>,
-    pub current: EditSeq,
+    pub(crate) nodes: BTreeMap<EditSeq, EditNode>,
+    pub(crate) current: EditSeq,
     next_seq: EditSeq,
-    pub root_seq: EditSeq,
+    pub(crate) root_seq: EditSeq,
     pub(crate) saved_seq: EditSeq,
 
     checkpoint_interval: u64,
@@ -350,7 +312,7 @@ impl UndoTree {
     }
 
     #[must_use]
-    pub fn with_config(checkpoint_interval: u64, memory_threshold: usize) -> Self {
+    pub(crate) fn with_config(checkpoint_interval: u64, memory_threshold: usize) -> Self {
         let root = EditNode::new(0, EditTransaction::new("Initial state"), None);
         let mut nodes = BTreeMap::new();
         nodes.insert(0, root);
@@ -407,7 +369,7 @@ impl UndoTree {
     }
 
     #[must_use]
-    pub fn current_transaction(&self) -> Option<&EditTransaction> {
+    pub(crate) fn current_transaction(&self) -> Option<&EditTransaction> {
         if self.current == self.root_seq {
             return None;
         }
@@ -452,8 +414,6 @@ impl UndoTree {
 
         if from == to {
             return Ok(ReplayPath {
-                from_seq: from,
-                to_seq: to,
                 undo_ops: Vec::new(),
                 redo_ops: Vec::new(),
                 snapshot_restore: None,
@@ -512,8 +472,6 @@ impl UndoTree {
                     }
                 }
                 return Ok(ReplayPath {
-                    from_seq: from,
-                    to_seq: to,
                     undo_ops: Vec::new(),
                     redo_ops: snap_redo_ops,
                     snapshot_restore: Some(snapshot.clone()),
@@ -522,8 +480,6 @@ impl UndoTree {
         }
 
         Ok(ReplayPath {
-            from_seq: from,
-            to_seq: to,
             undo_ops,
             redo_ops,
             snapshot_restore: None,
@@ -534,7 +490,7 @@ impl UndoTree {
     ///
     /// # Errors
     /// Returns `Err` when `target` is not a node in the tree.
-    pub fn goto_seq(&mut self, target: EditSeq) -> Result<ReplayPath, UndoError> {
+    pub(crate) fn goto_seq(&mut self, target: EditSeq) -> Result<ReplayPath, UndoError> {
         let path = self.compute_replay_path(self.current, target)?;
 
         let current_ancestors = self.get_ancestors(self.current);
@@ -643,33 +599,35 @@ impl UndoTree {
         seq
     }
 
-    pub fn checkpoint(&mut self, snapshot: DocumentSnapshot) {
+    pub(crate) fn checkpoint(&mut self, snapshot: DocumentSnapshot) {
         if let Some(node) = self.nodes.get_mut(&self.current) {
             node.snapshot = Some(Box::new(snapshot));
             self.edits_since_checkpoint = 0;
         }
     }
 
+    #[cfg(test)]
     #[must_use]
-    pub fn branch_count(&self) -> usize {
+    pub(crate) fn branch_count(&self) -> usize {
         self.nodes
             .get(&self.current)
             .map_or(0, |n| n.children.len())
     }
 
     #[must_use]
-    pub const fn can_undo(&self) -> bool {
+    pub(crate) const fn can_undo(&self) -> bool {
         self.current != self.root_seq
     }
 
     #[must_use]
-    pub fn can_redo(&self) -> bool {
+    pub(crate) fn can_redo(&self) -> bool {
         self.nodes
             .get(&self.current)
             .is_some_and(|n| !n.children.is_empty())
     }
 
-    pub fn clear(&mut self) {
+    #[cfg(test)]
+    pub(crate) fn clear(&mut self) {
         self.nodes.retain(|&seq, _| seq == self.root_seq);
         self.current = self.root_seq;
         self.next_seq = 1;
@@ -683,7 +641,7 @@ impl UndoTree {
         }
     }
 
-    pub const fn mark_saved(&mut self) {
+    pub(crate) const fn mark_saved(&mut self) {
         self.saved_seq = self.current;
     }
 
@@ -748,7 +706,7 @@ impl UndoTree {
     }
 
     #[must_use]
-    pub const fn is_at_saved(&self) -> bool {
+    pub(crate) const fn is_at_saved(&self) -> bool {
         self.current == self.saved_seq
     }
 }

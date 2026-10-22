@@ -57,7 +57,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    pub fn refresh_clipboard_buffer_if_open(&mut self) {
+    pub(crate) fn refresh_clipboard_buffer_if_open(&mut self) {
         let Some(layout) = self.panel_layout_of(PanelKind::Clipboard) else {
             return;
         };

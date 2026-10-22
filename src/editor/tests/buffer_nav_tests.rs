@@ -14,7 +14,6 @@ fn test_escape_closes_completion_dropdown_only() {
     editor.state.command_line_cursor = editor.state.command_line.len();
 
     let mut session = CompletionSession::new(
-        editor.state.command_line.clone(),
         vec![CompletionCandidate {
             text: "edit".into(),
             description: "Edit file".into(),

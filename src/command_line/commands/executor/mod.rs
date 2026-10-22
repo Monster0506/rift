@@ -8,7 +8,7 @@ use crate::state::UserSettings;
 
 /// Result of executing a command
 #[derive(PartialEq, Eq)]
-pub enum ExecutionResult {
+pub(crate) enum ExecutionResult {
     /// Command executed successfully
     Success,
     /// Quit command - editor should exit
@@ -169,12 +169,12 @@ impl std::fmt::Debug for ExecutionResult {
 }
 
 /// Command executor
-pub struct CommandExecutor;
+pub(crate) struct CommandExecutor;
 
 impl CommandExecutor {
     /// Execute a parsed command. Write commands do NOT perform file I/O here --
     /// they return Success/WriteAndQuit, and the editor calls `Document::save`[_as]().
-    pub fn execute(
+    pub(crate) fn execute(
         command: ParsedCommand,
         state: &mut State,
         document: &mut Document,

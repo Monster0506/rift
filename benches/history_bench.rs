@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use monster_rift::character::Character;
-use monster_rift::history::{EditOperation, EditTransaction, Position, UndoTree};
+use monster_rift::bench_api::character::Character;
+use monster_rift::bench_api::history::{EditOperation, EditTransaction, Position, UndoTree};
 use std::hint::black_box;
 
 fn history_operations(c: &mut Criterion) {

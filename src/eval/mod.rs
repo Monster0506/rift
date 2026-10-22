@@ -6,7 +6,7 @@
 /// # Errors
 /// Returns an error for an unexpected character, malformed or incomplete
 /// expression, division by zero, or a keyword that `lookup` does not resolve.
-pub fn eval(input: &str, lookup: &dyn Fn(&str) -> Option<usize>) -> Result<usize, String> {
+pub(crate) fn eval(input: &str, lookup: &dyn Fn(&str) -> Option<usize>) -> Result<usize, String> {
     let tokens = tokenize(input)?;
     let mut pos = 0;
     let v = parse_expr(&tokens, &mut pos, lookup)?;

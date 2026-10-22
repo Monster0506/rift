@@ -1,7 +1,7 @@
-pub mod broker;
-pub mod client;
-pub mod config;
-pub mod protocol;
+pub(crate) mod broker;
+pub(crate) mod client;
+pub(crate) mod config;
+pub(crate) mod protocol;
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -20,7 +20,7 @@ use serde_json::Value;
 
 /// A processed LSP message delivered to the editor.
 #[derive(Debug)]
-pub enum LspMessage {
+pub(crate) enum LspMessage {
     Diagnostics {
         uri: String,
         /// Document version the server analyzed, when it reports one.
@@ -89,7 +89,6 @@ pub enum LspMessage {
     /// A $/progress update from the server (begin, report, or end).
     Progress {
         language: String,
-        message: String,
     },
 }
 
@@ -101,7 +100,7 @@ struct DocState {
 }
 
 /// The overall LSP integration layer. Owns one `LspClient` per active language server.
-pub struct LspManager {
+pub(crate) struct LspManager {
     /// language name -> active client
     clients: BTreeMap<String, LspClient>,
     /// normalized document URI -> `DocState`
@@ -145,7 +144,7 @@ impl LspManager {
     /// True while `language`'s server is doing its initial load: requests
     /// would only queue behind it. Never true again once it has been ready.
     #[must_use]
-    pub fn is_indexing(&self, language: &str) -> bool {
+    pub(crate) fn is_indexing(&self, language: &str) -> bool {
         if self.ready_once.contains(language) {
             return false;
         }
@@ -157,7 +156,7 @@ impl LspManager {
 
     /// Returns true if the server for the given file path is still indexing.
     #[must_use]
-    pub fn is_indexing_path(&self, path: &Path) -> bool {
+    pub(crate) fn is_indexing_path(&self, path: &Path) -> bool {
         self.open_docs
             .get(&doc_key(path))
             .is_some_and(|s| self.is_indexing(&s.language))
@@ -166,7 +165,7 @@ impl LspManager {
 
 impl LspManager {
     #[must_use]
-    pub fn new(workspace_root: Option<PathBuf>) -> Self {
+    pub(crate) fn new(workspace_root: Option<PathBuf>) -> Self {
         Self {
             clients: BTreeMap::new(),
             open_docs: HashMap::new(),
@@ -191,7 +190,7 @@ impl LspManager {
     /// Negotiated `Position.character` unit for the server handling `path`
     /// (UTF-16 if unknown/not yet negotiated, per the LSP default).
     #[must_use]
-    pub fn position_encoding_for_path(
+    pub(crate) fn position_encoding_for_path(
         &self,
         path: &Path,
     ) -> crate::lsp::protocol::PositionEncoding {
@@ -212,7 +211,7 @@ impl LspManager {
 
     /// Returns the LSP language name for a given document URI, if the document is open.
     #[must_use]
-    pub fn language_for_uri(&self, uri: &str) -> Option<&str> {
+    pub(crate) fn language_for_uri(&self, uri: &str) -> Option<&str> {
         self.open_docs
             .get(&normalize_uri(uri))
             .map(|s| s.language.as_str())
@@ -221,19 +220,19 @@ impl LspManager {
     /// Our current didChange version for an open document, so stale
     /// server snapshots (e.g. publishDiagnostics.version) can be detected.
     #[must_use]
-    pub fn document_version(&self, uri: &str) -> Option<i64> {
+    pub(crate) fn document_version(&self, uri: &str) -> Option<i64> {
         self.open_docs.get(&normalize_uri(uri)).map(|s| s.version)
     }
 
     /// Returns the human-readable server name for a language, if the server has connected.
     #[must_use]
-    pub fn server_name(&self, lang: &str) -> Option<&str> {
+    pub(crate) fn server_name(&self, lang: &str) -> Option<&str> {
         self.server_names.get(lang).map(std::string::String::as_str)
     }
 
     /// Returns (ended, started) for X/Y progress display, or None if no indexing has started.
     #[must_use]
-    pub fn indexing_progress(&self, lang: &str) -> Option<(usize, usize)> {
+    pub(crate) fn indexing_progress(&self, lang: &str) -> Option<(usize, usize)> {
         let started = self.indexing_started.get(lang).copied().unwrap_or(0);
         if started == 0 {
             return None;
@@ -243,7 +242,7 @@ impl LspManager {
     }
 
     /// Register a language server (called by plugins via `rift.lsp.register()`).
-    pub fn register_server(&mut self, language: String, server: config::LspServerConfig) {
+    pub(crate) fn register_server(&mut self, language: String, server: config::LspServerConfig) {
         self.exits.remove(&language);
         self.registered_servers.insert(language, server);
     }
@@ -311,29 +310,19 @@ impl LspManager {
             // Keepalive: attach to a broker-owned warm server when possible,
             // so a fresh editor session skips the server's cold reindex.
             let keepalive = if server.keep_alive {
-                LspClient::start_keepalive(
-                    language.to_string(),
-                    &server.command,
-                    &server.args,
-                    root_uri.clone(),
-                )
-                .map_err(|e| {
-                    self.pending_logs.push(format!(
-                        "LSP [{language}]: keepalive unavailable ({e}), spawning directly"
-                    ));
-                })
-                .ok()
+                LspClient::start_keepalive(&server.command, &server.args, root_uri.clone())
+                    .map_err(|e| {
+                        self.pending_logs.push(format!(
+                            "LSP [{language}]: keepalive unavailable ({e}), spawning directly"
+                        ));
+                    })
+                    .ok()
             } else {
                 None
             };
             let mut client = match keepalive {
                 Some(c) => c,
-                None => match LspClient::start(
-                    language.to_string(),
-                    &server.command,
-                    &server.args,
-                    root_uri.clone(),
-                ) {
+                None => match LspClient::start(&server.command, &server.args, root_uri.clone()) {
                     Ok(c) => c,
                     Err(e) => {
                         self.pending_logs
@@ -356,7 +345,7 @@ impl LspManager {
 
     /// Notify the server that a document was opened. No-op (and untracked) when
     /// no server is registered, so a later call after registration can attach it.
-    pub fn did_open(&mut self, path: &Path, language: &str, content: &str) {
+    pub(crate) fn did_open(&mut self, path: &Path, language: &str, content: &str) {
         let uri = path_to_uri(path);
         let key = normalize_uri(&uri);
 
@@ -402,10 +391,11 @@ impl LspManager {
         }
     }
 
+    #[cfg(test)]
     /// True when a `did_change` for `path` would actually reach a live client,
     /// so callers can skip materializing the document content otherwise.
     #[must_use]
-    pub fn is_tracking(&self, path: &Path) -> bool {
+    pub(crate) fn is_tracking(&self, path: &Path) -> bool {
         self.is_tracking_uri(&path_to_uri(path))
     }
 
@@ -416,8 +406,9 @@ impl LspManager {
             .is_some_and(|state| self.clients.contains_key(&state.language))
     }
 
+    #[cfg(test)]
     /// Notify the server that a document's content changed.
-    pub fn did_change(&mut self, path: &Path, content: &str) {
+    pub(crate) fn did_change(&mut self, path: &Path, content: &str) {
         self.did_change_uri(&path_to_uri(path), content);
     }
 
@@ -445,12 +436,6 @@ impl LspManager {
         };
 
         client.send_notification_typed("textDocument/didChange", &params);
-    }
-
-    /// Notify the server of incremental changes (applied in order) instead of
-    /// resending the document. Only call when `supports_incremental_sync` is true.
-    pub fn did_change_incremental(&mut self, path: &Path, changes: Vec<(LspRange, String)>) {
-        self.did_change_incremental_uri(&path_to_uri(path), changes);
     }
 
     /// Send ordered incremental changes for a URI.
@@ -488,13 +473,6 @@ impl LspManager {
         client.send_notification_typed("textDocument/didChange", &params);
     }
 
-    /// Whether the server handling `path` negotiated incremental document
-    /// sync (defaults to false -- full-document sync -- until negotiated).
-    #[must_use]
-    pub fn supports_incremental_sync(&self, path: &Path) -> bool {
-        self.supports_incremental_sync_uri(&path_to_uri(path))
-    }
-
     /// Reports whether the URI's server supports incremental synchronization.
     pub(crate) fn supports_incremental_sync_uri(&self, uri: &str) -> bool {
         self.open_docs
@@ -505,7 +483,7 @@ impl LspManager {
     }
 
     /// Notify the server that a document was saved.
-    pub fn did_save(&mut self, path: &Path, content: Option<&str>) {
+    pub(crate) fn did_save(&mut self, path: &Path, content: Option<&str>) {
         let uri = path_to_uri(path);
         let Some(doc) = self.open_docs.get(&normalize_uri(&uri)) else {
             return;
@@ -525,7 +503,7 @@ impl LspManager {
     }
 
     /// Notify the server that a document was closed.
-    pub fn did_close(&mut self, path: &Path) {
+    pub(crate) fn did_close(&mut self, path: &Path) {
         let uri = path_to_uri(path);
         let Some(state) = self.open_docs.remove(&normalize_uri(&uri)) else {
             return;
@@ -573,7 +551,7 @@ impl LspManager {
     }
 
     /// Request goto definition. Returns the request id, or None if not available.
-    pub fn goto_definition(&mut self, path: &Path, line: u32, col: u32) -> Option<u64> {
+    pub(crate) fn goto_definition(&mut self, path: &Path, line: u32, col: u32) -> Option<u64> {
         self.send_position_request(
             path,
             config::LspCapability::GotoDefinition,
@@ -589,7 +567,7 @@ impl LspManager {
     }
 
     /// Request references.
-    pub fn references(&mut self, path: &Path, line: u32, col: u32) -> Option<u64> {
+    pub(crate) fn references(&mut self, path: &Path, line: u32, col: u32) -> Option<u64> {
         self.send_position_request(
             path,
             config::LspCapability::References,
@@ -608,7 +586,7 @@ impl LspManager {
     }
 
     /// Request hover.
-    pub fn hover(&mut self, path: &Path, line: u32, col: u32) -> Option<u64> {
+    pub(crate) fn hover(&mut self, path: &Path, line: u32, col: u32) -> Option<u64> {
         self.send_position_request(
             path,
             config::LspCapability::Hover,
@@ -624,7 +602,13 @@ impl LspManager {
     }
 
     /// Request rename.
-    pub fn rename(&mut self, path: &Path, line: u32, col: u32, new_name: String) -> Option<u64> {
+    pub(crate) fn rename(
+        &mut self,
+        path: &Path,
+        line: u32,
+        col: u32,
+        new_name: String,
+    ) -> Option<u64> {
         self.send_position_request(
             path,
             config::LspCapability::Rename,
@@ -641,7 +625,12 @@ impl LspManager {
     }
 
     /// Request document formatting.
-    pub fn format(&mut self, path: &Path, tab_size: u32, insert_spaces: bool) -> Option<u64> {
+    pub(crate) fn format(
+        &mut self,
+        path: &Path,
+        tab_size: u32,
+        insert_spaces: bool,
+    ) -> Option<u64> {
         self.send_position_request(
             path,
             config::LspCapability::Format,
@@ -657,7 +646,7 @@ impl LspManager {
     }
 
     /// Request code actions at the cursor position, optionally scoped to specific diagnostics.
-    pub fn code_action(
+    pub(crate) fn code_action(
         &mut self,
         path: &Path,
         line: u32,
@@ -690,7 +679,7 @@ impl LspManager {
 
     /// Resolve a code action that was returned without an edit field.
     /// The server fills in the `edit` field and returns the completed action.
-    pub fn resolve_code_action(
+    pub(crate) fn resolve_code_action(
         &mut self,
         language: &str,
         action: serde_json::Value,
@@ -700,7 +689,7 @@ impl LspManager {
     }
 
     /// Poll all clients and return processed LSP messages.
-    pub fn poll(&mut self) -> Vec<LspMessage> {
+    pub(crate) fn poll(&mut self) -> Vec<LspMessage> {
         let mut results = Vec::new();
 
         for msg in self.pending_logs.drain(..) {
@@ -922,9 +911,10 @@ impl LspManager {
         }
     }
 
+    #[cfg(test)]
     /// Returns `true` if there is an active LSP client for the given file path.
     #[must_use]
-    pub fn has_client_for_path(&self, path: &Path) -> bool {
+    pub(crate) fn has_client_for_path(&self, path: &Path) -> bool {
         self.open_docs.contains_key(&doc_key(path))
     }
 
@@ -934,7 +924,6 @@ impl LspManager {
         let val = params.get("value").cloned().unwrap_or(Value::Null);
         let kind = val.get("kind").and_then(|k| k.as_str()).unwrap_or("");
         let title = val.get("title").and_then(|t| t.as_str()).unwrap_or("");
-        let message = val.get("message").and_then(|m| m.as_str()).unwrap_or("");
         let token = params
             .get("token")
             .map(std::string::ToString::to_string)
@@ -954,7 +943,6 @@ impl LspManager {
                 *self.indexing_started.entry(lang.to_string()).or_insert(0) += 1;
                 results.push(LspMessage::Progress {
                     language: lang.to_string(),
-                    message: title.to_string(),
                 });
             }
             "report" => {
@@ -963,7 +951,6 @@ impl LspManager {
                 }
                 results.push(LspMessage::Progress {
                     language: lang.to_string(),
-                    message: message.to_string(),
                 });
             }
             "end" => {
@@ -974,7 +961,6 @@ impl LspManager {
                 *self.indexing_ended.entry(lang.to_string()).or_insert(0) += 1;
                 results.push(LspMessage::Progress {
                     language: lang.to_string(),
-                    message: "end".to_string(),
                 });
                 // Start the idle timer: ServerReady fires after 600ms
                 // of no new begin events, guarding against token bursts.
@@ -1005,7 +991,8 @@ impl LspManager {
         self.ready_once.remove(language);
     }
 
-    pub fn shutdown_all(&mut self) {
+    #[cfg(test)]
+    pub(crate) fn shutdown_all(&mut self) {
         for client in self.clients.values_mut() {
             let _ = client.send_request("shutdown", Value::Null, None);
         }
@@ -1212,11 +1199,10 @@ fn parse_code_actions(result: Value) -> Vec<Value> {
 
 #[cfg(test)]
 #[path = "mod_fns.rs"]
-pub mod mod_fns;
+pub(crate) mod mod_fns;
 
 #[cfg(test)]
 mod annotation_tests;
 #[cfg(test)]
 mod tests;
 // Re-export LspMessage for test access
-pub use protocol::{LspDiagnostic, LspLocation, LspTextEdit};

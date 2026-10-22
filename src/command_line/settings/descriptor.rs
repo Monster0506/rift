@@ -1,5 +1,5 @@
 #[derive(Debug, Clone, PartialEq)]
-pub enum SettingValue {
+pub(crate) enum SettingValue {
     Bool(bool),
     Integer(usize),
     Float(f64),
@@ -10,7 +10,7 @@ pub enum SettingValue {
 
 impl SettingValue {
     #[must_use]
-    pub fn to_display_string(&self) -> String {
+    pub(crate) fn to_display_string(&self) -> String {
         use crate::color::Color;
         match self {
             Self::Bool(b) => b.to_string(),
@@ -41,7 +41,7 @@ impl SettingValue {
 }
 
 #[derive(Debug, Clone)]
-pub enum SettingType {
+pub(crate) enum SettingType {
     Boolean,
     Integer {
         min: Option<usize>,
@@ -64,9 +64,10 @@ pub enum SettingType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SettingError {
+pub(crate) enum SettingError {
     ParseError(String),
     ValidationError(String),
+    #[cfg(test)]
     UnknownOption(String),
 }
 
@@ -75,6 +76,7 @@ impl std::fmt::Display for SettingError {
         match self {
             Self::ParseError(msg) => write!(f, "Parse error: {msg}"),
             Self::ValidationError(msg) => write!(f, "Validation error: {msg}"),
+            #[cfg(test)]
             Self::UnknownOption(name) => write!(f, "Unknown option: {name}"),
         }
     }
@@ -96,6 +98,7 @@ impl From<SettingError> for crate::error::RiftError {
                 code: "SETTING_VALIDATION_ERROR".to_string(),
                 message: msg,
             },
+            #[cfg(test)]
             SettingError::UnknownOption(name) => Self {
                 severity: ErrorSeverity::Error,
                 kind: ErrorType::Settings,
@@ -106,17 +109,17 @@ impl From<SettingError> for crate::error::RiftError {
     }
 }
 
-pub type SettingSetter<T> = fn(&mut T, &SettingValue) -> Result<(), SettingError>;
+pub(crate) type SettingSetter<T> = fn(&mut T, &SettingValue) -> Result<(), SettingError>;
 
-pub type SettingGetter<T> = fn(&T) -> SettingValue;
+pub(crate) type SettingGetter<T> = fn(&T) -> SettingValue;
 
 #[derive(Debug, Clone)]
-pub struct SettingDescriptor<T> {
-    pub name: &'static str,
-    pub aliases: &'static [&'static str],
-    pub description: &'static str,
-    pub ty: SettingType,
-    pub set: SettingSetter<T>,
-    pub get: Option<SettingGetter<T>>,
-    pub needs_full_redraw: bool,
+pub(crate) struct SettingDescriptor<T> {
+    pub(crate) name: &'static str,
+    pub(crate) aliases: &'static [&'static str],
+    pub(crate) description: &'static str,
+    pub(crate) ty: SettingType,
+    pub(crate) set: SettingSetter<T>,
+    pub(crate) get: Option<SettingGetter<T>>,
+    pub(crate) needs_full_redraw: bool,
 }

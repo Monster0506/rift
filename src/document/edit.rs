@@ -65,7 +65,7 @@ impl Document {
 
     /// # Errors
     /// Propagates any error from the text buffer insert.
-    pub fn insert_char(&mut self, ch: char) -> Result<(), RiftError> {
+    pub(crate) fn insert_char(&mut self, ch: char) -> Result<(), RiftError> {
         if self.is_read_only() {
             return Ok(());
         }
@@ -130,7 +130,7 @@ impl Document {
 
     /// # Errors
     /// Propagates any error from the text buffer insert.
-    pub fn insert_str(&mut self, s: &str) -> Result<(), RiftError> {
+    pub(crate) fn insert_str(&mut self, s: &str) -> Result<(), RiftError> {
         let newline_count = s.chars().filter(|&c| c == '\n').count();
         let line_before_insert = if newline_count > 0 {
             Some(self.buffer.get_line())
@@ -196,7 +196,7 @@ impl Document {
 
     /// # Errors
     /// Propagates any error from the text buffer insert.
-    pub fn insert_characters(&mut self, chars: &[Character]) -> Result<(), RiftError> {
+    pub(crate) fn insert_characters(&mut self, chars: &[Character]) -> Result<(), RiftError> {
         if self.is_read_only() {
             return Ok(());
         }
@@ -269,21 +269,21 @@ impl Document {
     }
 
     #[must_use]
-    pub fn char_to_overwrite(&self) -> Option<Character> {
+    pub(crate) fn char_to_overwrite(&self) -> Option<Character> {
         self.buffer
             .char_at(self.buffer.cursor())
             .filter(|c| *c != Character::Newline)
     }
 
     /// # Errors
-    pub fn overwrite_char(&mut self, ch: char) -> Result<(), RiftError> {
+    pub(crate) fn overwrite_char(&mut self, ch: char) -> Result<(), RiftError> {
         if self.char_to_overwrite().is_none() {
             return self.insert_char(ch);
         }
         self.replace_chars(self.buffer.cursor(), 1, &[Character::from(ch)])
     }
 
-    pub fn delete_backward(&mut self) -> bool {
+    pub(crate) fn delete_backward(&mut self) -> bool {
         if self.is_read_only() {
             return false;
         }
@@ -348,7 +348,7 @@ impl Document {
         false
     }
 
-    pub fn delete_forward(&mut self) -> bool {
+    pub(crate) fn delete_forward(&mut self) -> bool {
         if self.is_read_only() {
             return false;
         }
@@ -415,7 +415,7 @@ impl Document {
 
     /// # Errors
     /// Returns an `Internal` error when `pos + count` is past the end of the buffer.
-    pub fn replace_chars(
+    pub(crate) fn replace_chars(
         &mut self,
         pos: usize,
         count: usize,
@@ -479,14 +479,24 @@ impl Document {
 
     /// # Errors
     /// Propagates the error from `replace_chars` when `pos + count` is past the end of the buffer.
-    pub fn replace_repeat(&mut self, pos: usize, count: usize, ch: char) -> Result<(), RiftError> {
+    pub(crate) fn replace_repeat(
+        &mut self,
+        pos: usize,
+        count: usize,
+        ch: char,
+    ) -> Result<(), RiftError> {
         let fill: Vec<Character> = vec![Character::from(ch); count];
         self.replace_chars(pos, count, &fill)
     }
 
     /// # Errors
     /// Propagates errors from `delete_range`, `set_cursor` and `insert_str`.
-    pub fn replace_range(&mut self, start: usize, end: usize, text: &str) -> Result<(), RiftError> {
+    pub(crate) fn replace_range(
+        &mut self,
+        start: usize,
+        end: usize,
+        text: &str,
+    ) -> Result<(), RiftError> {
         self.delete_range(start, end)?;
         self.buffer.set_cursor(start)?;
         self.insert_str(text)
@@ -494,7 +504,7 @@ impl Document {
 
     /// # Errors
     /// Returns an `Internal` error when `end` is past the end of the buffer.
-    pub fn delete_range(&mut self, start: usize, end: usize) -> Result<(), RiftError> {
+    pub(crate) fn delete_range(&mut self, start: usize, end: usize) -> Result<(), RiftError> {
         use crate::buffer::api::BufferView;
         if start >= end {
             return Ok(());

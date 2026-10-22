@@ -172,7 +172,7 @@ fn non_wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
             .ok()
             .and_then(|src| tree_sitter::Query::new(&grammar.language, &src).ok())
             .map(Arc::new);
-        let syntax = build_syntax(grammar, highlights, &loader).expect("build_syntax");
+        let syntax = build_syntax(grammar, highlights, &loader);
         editor.active_document().set_syntax(syntax);
         editor.do_incremental_syntax_parse();
         drain_jobs_until_idle(&mut editor);
@@ -239,7 +239,7 @@ fn load_rust_syntax_and_parse(editor: &mut Editor<MockTerminal>) {
         .ok()
         .and_then(|src| tree_sitter::Query::new(&grammar.language, &src).ok())
         .map(Arc::new);
-    let syntax = build_syntax(grammar, highlights, &loader).expect("build_syntax");
+    let syntax = build_syntax(grammar, highlights, &loader);
     editor.active_document().set_syntax(syntax);
     editor.do_incremental_syntax_parse();
     drain_jobs_until_idle(editor);
@@ -420,7 +420,7 @@ fn scroll_blit_repaints_when_annotations_or_theme_change_mid_scroll() {
             .ok()
             .and_then(|src| tree_sitter::Query::new(&grammar.language, &src).ok())
             .map(Arc::new);
-        let syntax = build_syntax(grammar, highlights, &loader).expect("build_syntax");
+        let syntax = build_syntax(grammar, highlights, &loader);
         editor.active_document().set_syntax(syntax);
         editor.do_incremental_syntax_parse();
         drain_jobs_until_idle(&mut editor);

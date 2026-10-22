@@ -4,7 +4,7 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::hint::black_box;
 
-use monster_rift::annotations::{
+use monster_rift::bench_api::annotations::{
     Action, Anchor, Annotation, AnnotationOwner, AnnotationStore, Kind,
 };
 
@@ -141,7 +141,7 @@ fn query_after_invalidation(c: &mut Criterion) {
 }
 
 fn presentation_flatten(c: &mut Criterion) {
-    use monster_rift::annotations::{Presentation, StyleOverride};
+    use monster_rift::bench_api::annotations::{Presentation, StyleOverride};
     let mut group = c.benchmark_group("annotations_presentation_spans");
     for &n in &[100usize, 1_000, 10_000] {
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
@@ -156,7 +156,7 @@ fn presentation_flatten(c: &mut Criterion) {
                     )
                     .with_presentation(Presentation::with_style(
                         StyleOverride {
-                            attrs: monster_rift::layer::CellAttrs::UNDERLINE,
+                            attrs: monster_rift::bench_api::layer::CellAttrs::UNDERLINE,
                             ..Default::default()
                         },
                     )),
@@ -173,7 +173,7 @@ fn presentation_flatten(c: &mut Criterion) {
 }
 
 fn populated_store_for_render(n: usize) -> AnnotationStore {
-    use monster_rift::annotations::{Presentation, StyleOverride};
+    use monster_rift::bench_api::annotations::{Presentation, StyleOverride};
     let mut store = AnnotationStore::new();
     for i in 0..n {
         let start = i * 10;
@@ -184,7 +184,7 @@ fn populated_store_for_render(n: usize) -> AnnotationStore {
                 AnnotationOwner::User,
             )
             .with_presentation(Presentation::with_style(StyleOverride {
-                attrs: monster_rift::layer::CellAttrs::UNDERLINE,
+                attrs: monster_rift::bench_api::layer::CellAttrs::UNDERLINE,
                 ..Default::default()
             })),
         );

@@ -88,9 +88,9 @@ fn hash_virtual_text(
 }
 
 pub struct RenderSystem {
-    pub compositor: LayerCompositor,
-    pub viewport: Viewport,
-    pub world: World,
+    pub(crate) compositor: LayerCompositor,
+    pub(crate) viewport: Viewport,
+    pub(crate) world: World,
 
     content_entity: Option<crate::render::ecs::EntityId>,
     status_entity: Option<crate::render::ecs::EntityId>,
@@ -153,12 +153,13 @@ impl RenderSystem {
     }
 
     #[must_use]
-    pub const fn needs_animation_frame(&self) -> bool {
+    pub(crate) const fn needs_animation_frame(&self) -> bool {
         self.cursor_animator.is_animating()
     }
 
+    #[cfg(test)]
     #[must_use]
-    pub const fn last_soft_cursor(&self) -> Option<(usize, usize)> {
+    pub(crate) const fn last_soft_cursor(&self) -> Option<(usize, usize)> {
         self.last_soft_cursor
     }
 
@@ -796,17 +797,6 @@ impl RenderSystem {
             .get_layer_mut(LayerPriority::CURSOR)
             .set_cell(anim_row, anim_col, cursor_cell);
         self.last_soft_cursor = Some((anim_row, anim_col));
-    }
-
-    /// # Errors
-    /// Returns `Err` when rendering fails.
-    pub fn force_full_redraw<T: TerminalBackend>(
-        &mut self,
-        term: &mut T,
-        mut state: RenderState,
-    ) -> Result<CursorPosition, RiftError> {
-        state.needs_clear = true;
-        self.render(term, &state)
     }
 }
 

@@ -996,13 +996,12 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Open the diagnostics panel for the current document.
     pub(super) fn open_diagnostics_panel(&mut self) {
-        let info = self.document_manager.active_document().and_then(|doc| {
-            let path = doc.path()?.to_path_buf();
-            let doc_id = doc.id;
-            Some((path, doc_id))
-        });
+        let info = self
+            .document_manager
+            .active_document()
+            .and_then(|doc| doc.path().map(std::path::Path::to_path_buf));
 
-        let Some((path, source_doc_id)) = info else {
+        let Some(path) = info else {
             self.state
                 .notify(NotificationType::Info, "LSP: no file open".to_string());
             return;
@@ -1051,7 +1050,6 @@ impl<T: TerminalBackend> Editor<T> {
             })
             .collect();
 
-        let _ = source_doc_id;
         self.open_location_list_panel(entries, "LSP Diagnostics");
     }
 
@@ -1065,11 +1063,6 @@ impl<T: TerminalBackend> Editor<T> {
         if self.panel_layout.is_some() {
             self.close_split_panel();
         }
-
-        let source_doc_id = self
-            .document_manager
-            .active_document()
-            .map_or(crate::document::DocumentId::new(0), |d| d.id);
 
         // Create the location list document.
         let loc_doc_id = self.document_manager.next_id();
@@ -1087,7 +1080,7 @@ impl<T: TerminalBackend> Editor<T> {
             .join("\n");
         doc.replace_buffer_content(&content);
         let _ = doc.buffer.set_cursor(0);
-        doc.set_location_list(source_doc_id, entries);
+        doc.set_location_list(entries);
         self.document_manager.add_private_document(doc);
 
         let size = self

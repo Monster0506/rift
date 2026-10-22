@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use monster_rift::syntax::interval_tree::IntervalTree;
+use monster_rift::bench_api::syntax::IntervalTree;
 use std::hint::black_box;
 use std::ops::Range;
 

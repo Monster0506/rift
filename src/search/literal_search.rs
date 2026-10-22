@@ -2,7 +2,7 @@ use crate::buffer::api::BufferView;
 use crate::search::SearchMatch;
 
 /// Fast literal scan over the buffer, no regex compilation.
-pub fn find_literal<V>(view: &V, pattern: &str, start_pos: usize) -> Option<SearchMatch>
+pub(crate) fn find_literal<V>(view: &V, pattern: &str, start_pos: usize) -> Option<SearchMatch>
 where
     V: BufferView,
 {

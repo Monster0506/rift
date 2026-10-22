@@ -4,7 +4,7 @@ use crate::document::BufferKindId;
 use crate::key::{Key, Mods};
 use crate::keymap::{KeyContext, KeyMap};
 /// Register default keybindings
-pub fn register_defaults(keymap: &mut KeyMap) {
+pub(crate) fn register_defaults(keymap: &mut KeyMap) {
     register_terminal_defaults(keymap);
     register_explorer_defaults(keymap);
     register_git_status_defaults(keymap);

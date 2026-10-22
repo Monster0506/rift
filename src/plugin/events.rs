@@ -8,7 +8,7 @@ use crate::plugin::lua_value::lua_int;
 /// Every significant editor state change produces one of these.
 /// The plugin host dispatches them to registered handlers.
 #[derive(Debug, Clone)]
-pub enum EditorEvent {
+pub(crate) enum EditorEvent {
     /// A new buffer was opened (or created). Fired after the document is ready.
     BufOpen {
         buf: DocumentId,
@@ -70,6 +70,7 @@ pub enum EditorEvent {
     EditorQuit,
 
     /// The terminal was resized.
+    #[cfg(test)]
     WindowResized { rows: u16, cols: u16 },
 
     /// An LSP server process spawned and connected (before it finishes indexing).
@@ -100,9 +101,6 @@ pub enum EditorEvent {
         warning_count: usize,
     },
 
-    /// A plugin-defined event. Use `rift.emit("MyPlugin:Ready", ...)` in Lua.
-    UserEvent { name: String },
-
     /// A split window gained focus.
     WinEnter {
         win: u64,
@@ -128,7 +126,7 @@ impl EditorEvent {
     /// # Errors
     /// Returns an error if the table cannot be created or a field cannot be set.
     #[cfg(feature = "plugins")]
-    pub fn to_lua_table(&self, lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
+    pub(crate) fn to_lua_table(&self, lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
         let t = lua.create_table()?;
         match self {
             Self::BufOpen {
@@ -169,6 +167,7 @@ impl EditorEvent {
                 t.set("from", format!("{from:?}").to_lowercase())?;
                 t.set("to", format!("{to:?}").to_lowercase())?;
             }
+            #[cfg(test)]
             Self::WindowResized { rows, cols } => {
                 t.set("rows", i64::from(*rows))?;
                 t.set("cols", i64::from(*cols))?;
@@ -197,9 +196,6 @@ impl EditorEvent {
                 t.set("error_count", lua_int(*error_count))?;
                 t.set("warning_count", lua_int(*warning_count))?;
             }
-            Self::UserEvent { name } => {
-                t.set("name", name.as_str())?;
-            }
             Self::EditorStart | Self::EditorQuit => {}
             Self::WinEnter { win, buf } | Self::WinLeave { win, buf } => {
                 t.set("win", lua_int(*win))?;
@@ -218,7 +214,7 @@ impl EditorEvent {
 
     /// Short name used for handler lookup tables.
     #[must_use]
-    pub const fn name(&self) -> &'static str {
+    pub(crate) const fn name(&self) -> &'static str {
         match self {
             Self::BufOpen { .. } => "BufOpen",
             Self::BufClose { .. } => "BufClose",
@@ -233,8 +229,8 @@ impl EditorEvent {
             Self::ModeChanged { .. } => "ModeChanged",
             Self::EditorStart => "EditorStart",
             Self::EditorQuit => "EditorQuit",
+            #[cfg(test)]
             Self::WindowResized { .. } => "WindowResized",
-            Self::UserEvent { .. } => "UserEvent",
             Self::WinEnter { .. } => "WinEnter",
             Self::WinLeave { .. } => "WinLeave",
             Self::WinMoved { .. } => "WinMoved",

@@ -11,44 +11,34 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 /// Number of events kept in the in-memory ring buffer.
-pub const RING_CAPACITY: usize = 16384;
+pub(crate) const RING_CAPACITY: usize = 16384;
 
 /// Optional metadata attached to a [`PerfSpan`]; all fields default to `None`,
 /// filled via struct-update syntax (`PerfFields { bytes: Some(n), ..Default::default() }`).
 #[derive(Debug, Clone, Copy, Default)]
-pub struct PerfFields {
+pub(crate) struct PerfFields {
     /// Number of bytes involved in the operation.
-    pub bytes: Option<u32>,
+    pub(crate) bytes: Option<u32>,
     /// Number of lines involved in the operation.
-    pub lines: Option<u32>,
+    pub(crate) lines: Option<u32>,
     /// A static label for additional context (e.g. `"full"`, `"incremental"`).
-    pub tag: Option<&'static str>,
+    pub(crate) tag: Option<&'static str>,
 }
 
 /// A completed performance measurement.
 #[derive(Debug, Clone, Copy)]
-pub struct PerfEvent {
+pub(crate) struct PerfEvent {
     /// Name identifying the operation (e.g. `"render_frame"`).
-    pub name: &'static str,
+    pub(crate) name: &'static str,
     /// Wall-clock elapsed time.
-    pub duration: Duration,
-    /// Allocations performed between span start and drop.
-    pub allocs: u64,
-    /// Bytes allocated between span start and drop.
-    pub alloc_bytes: u64,
-    /// Deallocations performed between span start and drop.
-    pub deallocs: u64,
-    /// Bytes freed between span start and drop.
-    pub dealloc_bytes: u64,
-    /// `perf_clone!`-instrumented clones performed between span start and drop.
-    pub clones: u64,
+    pub(crate) duration: Duration,
     /// Optional metadata.
-    pub fields: PerfFields,
+    pub(crate) fields: PerfFields,
 }
 
 /// An active timing span.  The event is recorded automatically when this value
 /// is dropped, so early returns, `?`, and panics are all handled correctly.
-pub struct PerfSpan {
+pub(crate) struct PerfSpan {
     name: &'static str,
     start: Instant,
     start_allocs: u64,
@@ -63,7 +53,7 @@ impl PerfSpan {
     /// Start a new span.  Capture [`Instant::now`] and the current
     /// alloc/dealloc/clone counters immediately.
     #[inline]
-    pub fn new(name: &'static str, fields: PerfFields) -> Self {
+    pub(crate) fn new(name: &'static str, fields: PerfFields) -> Self {
         Self {
             name,
             start: Instant::now(),
@@ -108,11 +98,6 @@ impl Drop for PerfSpan {
         record(PerfEvent {
             name: self.name,
             duration,
-            allocs,
-            alloc_bytes,
-            deallocs,
-            dealloc_bytes,
-            clones,
             fields: self.fields,
         });
     }
@@ -145,7 +130,7 @@ fn get_sink() -> &'static Mutex<Option<PerfSink>> {
 /// Record a [`PerfEvent`] into the ring buffer and `rift-perf.log`. Called
 /// automatically by [`PerfSpan::drop`]; rarely needed directly.
 #[inline]
-pub fn record(event: PerfEvent) {
+pub(crate) fn record(event: PerfEvent) {
     if let Ok(mut guard) = get_sink().lock() {
         if let Some(sink) = guard.as_mut() {
             // Maintain the ring buffer.
@@ -172,20 +157,9 @@ pub fn record(event: PerfEvent) {
     }
 }
 
-/// Return a snapshot of the most recent events without removing them.
-#[must_use]
-pub fn recent_events() -> Vec<PerfEvent> {
-    if let Ok(guard) = get_sink().lock() {
-        if let Some(sink) = guard.as_ref() {
-            return sink.ring.iter().copied().collect();
-        }
-    }
-    Vec::new()
-}
-
 /// Drain all buffered events in chronological order, for a future `:perf` view.
 #[must_use]
-pub fn drain_events() -> Vec<PerfEvent> {
+pub(crate) fn drain_events() -> Vec<PerfEvent> {
     if let Ok(mut guard) = get_sink().lock() {
         if let Some(sink) = guard.as_mut() {
             return sink.ring.drain(..).collect();
@@ -201,7 +175,7 @@ static DEALLOC_BYTES: AtomicU64 = AtomicU64::new(0);
 
 /// Thin wrapper around [`System`] that atomically counts every alloc/dealloc.
 /// Installed as `#[global_allocator]` below, so only builds with this feature pay for it.
-pub struct CountingAllocator;
+pub(crate) struct CountingAllocator;
 
 // SAFETY: every method forwards to `System` unchanged, so the caller's
 // GlobalAlloc contract is exactly what `System` requires.
@@ -233,7 +207,7 @@ static CLONE_COUNT: AtomicU64 = AtomicU64::new(0);
 /// Record one clone at an instrumented call site. Called by [`crate::perf_clone!`];
 /// rarely useful to call directly.
 #[inline]
-pub fn count_clone() {
+pub(crate) fn count_clone() {
     CLONE_COUNT.fetch_add(1, Ordering::Relaxed);
 }
 
@@ -244,7 +218,7 @@ static CURSOR_ADVANCE_COUNT: AtomicU64 = AtomicU64::new(0);
 /// Record one fast-forward cursor advance step. Called by
 /// [`crate::perf_cursor_advance!`]; rarely useful to call directly.
 #[inline]
-pub fn count_cursor_advance() {
+pub(crate) fn count_cursor_advance() {
     CURSOR_ADVANCE_COUNT.fetch_add(1, Ordering::Relaxed);
 }
 
@@ -259,12 +233,12 @@ static ROWS_PAINTED: AtomicU64 = AtomicU64::new(0);
 static ROWS_BLIT_SKIPPED: AtomicU64 = AtomicU64::new(0);
 
 #[inline]
-pub fn count_row_painted() {
+pub(crate) fn count_row_painted() {
     ROWS_PAINTED.fetch_add(1, Ordering::Relaxed);
 }
 
 #[inline]
-pub fn count_row_blit_skipped() {
+pub(crate) fn count_row_blit_skipped() {
     ROWS_BLIT_SKIPPED.fetch_add(1, Ordering::Relaxed);
 }
 
@@ -453,7 +427,7 @@ pub struct FrameStats {
 
 /// RAII guard for one `update_and_render` call: folds wall-clock/alloc/dealloc/
 /// clone deltas into the session `AGGREGATE` on drop, so early returns can't skip it.
-pub struct FrameGuard {
+pub(crate) struct FrameGuard {
     start: Instant,
     start_allocs: u64,
     start_alloc_bytes: u64,
@@ -465,7 +439,7 @@ pub struct FrameGuard {
 /// Begin timing one `update_and_render` call. The returned guard finalizes
 /// automatically when dropped at the end of the frame.
 #[inline]
-pub fn begin_frame() -> FrameGuard {
+pub(crate) fn begin_frame() -> FrameGuard {
     FrameGuard {
         start: Instant::now(),
         start_allocs: ALLOC_COUNT.load(Ordering::Relaxed),
@@ -511,11 +485,6 @@ impl Drop for FrameGuard {
         record(PerfEvent {
             name: "update_and_render",
             duration,
-            allocs,
-            alloc_bytes,
-            deallocs,
-            dealloc_bytes,
-            clones,
             fields: PerfFields::default(),
         });
     }

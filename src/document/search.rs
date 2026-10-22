@@ -7,7 +7,11 @@ use crate::search::{SearchDirection, SearchMatch};
 impl Document {
     /// Mirror search matches into `ui.search` annotations so highlighting renders
     /// through the presentation pipeline; `current` (if any) gets a distinct face.
-    pub fn sync_search_annotations(&mut self, matches: &[SearchMatch], current: Option<usize>) {
+    pub(crate) fn sync_search_annotations(
+        &mut self,
+        matches: &[SearchMatch],
+        current: Option<usize>,
+    ) {
         // Cap highlight annotations: every edit clones the store for undo and
         // shifts anchors, so an unbounded match count makes keystrokes O(matches).
         const MAX_HIGHLIGHTED_MATCHES: usize = 10_000;
@@ -52,7 +56,7 @@ impl Document {
     }
 
     /// Remove all search-highlight annotations.
-    pub fn clear_search_annotations(&mut self) {
+    pub(crate) fn clear_search_annotations(&mut self) {
         self.annotations.clear_by_kind_prefix("ui.search");
     }
 
@@ -60,7 +64,7 @@ impl Document {
     ///
     /// # Errors
     /// Returns an error if the underlying search fails.
-    pub fn perform_search(
+    pub(crate) fn perform_search(
         &self,
         query: &str,
         direction: SearchDirection,
@@ -92,7 +96,7 @@ impl Document {
     ///
     /// # Errors
     /// Returns an error if the underlying search fails.
-    pub fn find_all_matches(
+    pub(crate) fn find_all_matches(
         &self,
         query: &str,
     ) -> Result<(Vec<crate::search::SearchMatch>, crate::search::SearchStats), RiftError> {

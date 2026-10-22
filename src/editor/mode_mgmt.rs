@@ -329,7 +329,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
     /// The editor's current mode.
-    pub const fn mode(&self) -> Mode {
+    pub(crate) const fn mode(&self) -> Mode {
         self.current_mode
     }
 

@@ -2,8 +2,7 @@
 //! flows through `Command` execution, so rendering is a pure read of state.
 mod cli;
 
-use monster_rift::editor::Editor;
-use monster_rift::term::crossterm::CrosstermBackend;
+use monster_rift::{CrosstermBackend, Editor};
 
 use std::process::ExitCode;
 
@@ -38,25 +37,25 @@ fn main() -> ExitCode {
     // Internal mode: proxy one language server for editors to reattach to.
     #[cfg(feature = "lsp")]
     if let Some(key) = args.lsp_broker {
-        return monster_rift::lsp::broker::run(&key);
+        return monster_rift::run_lsp_broker(&key);
     }
 
     #[cfg(feature = "ipc")]
     if args.list_sessions {
-        return monster_rift::ipc::session::print_newest();
+        return monster_rift::print_newest_session();
     }
 
     // daemon mode
     #[cfg(feature = "ipc")]
     if args.daemon {
         if args.detach {
-            if let Err(e) = monster_rift::ipc::daemon::detach() {
+            if let Err(e) = monster_rift::detach_daemon() {
                 eprintln!("detach error: {e}");
                 return ExitCode::FAILURE;
             }
             return ExitCode::SUCCESS;
         }
-        if let Err(e) = monster_rift::ipc::daemon::run(args.file.as_deref()) {
+        if let Err(e) = monster_rift::run_daemon(args.file.as_deref()) {
             eprintln!("daemon error: {e}");
             return ExitCode::FAILURE;
         }
@@ -75,9 +74,7 @@ fn main() -> ExitCode {
     // --connect [user@]host: SSH to find or start a session, then attach via tunnel.
     #[cfg(feature = "ipc")]
     if let Some(target) = args.connect {
-        if let Err(e) =
-            monster_rift::ipc::client::connect_remote(&target, args.file.as_deref(), backend)
-        {
+        if let Err(e) = monster_rift::connect_remote(&target, args.file.as_deref(), backend) {
             eprintln!("connect error: {e}");
             return ExitCode::FAILURE;
         }

@@ -2,20 +2,20 @@
 //! editor state via [`crate::editor::Editor::assert_invariants`].
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum InvariantTier {
+pub(crate) enum InvariantTier {
     Fast,
     Standard,
     Deep,
 }
 
 #[derive(Debug, Clone)]
-pub struct Violation {
-    pub area: &'static str,
-    pub detail: String,
+pub(crate) struct Violation {
+    pub(crate) area: &'static str,
+    pub(crate) detail: String,
 }
 
 impl Violation {
-    pub fn new(area: &'static str, detail: impl Into<String>) -> Self {
+    pub(crate) fn new(area: &'static str, detail: impl Into<String>) -> Self {
         Self {
             area,
             detail: detail.into(),
@@ -38,7 +38,7 @@ pub(crate) fn extend(out: &mut Vec<Violation>, area: &'static str, details: Vec<
 }
 
 #[cfg(debug_assertions)]
-pub fn log_violations(violations: &[Violation]) {
+pub(crate) fn log_violations(violations: &[Violation]) {
     if violations.is_empty() {
         return;
     }

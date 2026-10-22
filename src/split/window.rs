@@ -2,16 +2,16 @@ use crate::document::DocumentId;
 use crate::viewport::Viewport;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct WindowId(u64);
+pub(crate) struct WindowId(u64);
 
 impl WindowId {
     #[must_use]
-    pub const fn new(id: u64) -> Self {
+    pub(crate) const fn new(id: u64) -> Self {
         Self(id)
     }
 
     #[must_use]
-    pub const fn get(self) -> u64 {
+    pub(crate) const fn get(self) -> u64 {
         self.0
     }
 
@@ -26,18 +26,16 @@ impl std::fmt::Display for WindowId {
     }
 }
 
-pub struct Window {
-    pub id: WindowId,
-    pub document_id: DocumentId,
-    pub viewport: Viewport,
-    pub cursor_position: usize,
+pub(crate) struct Window {
+    pub(crate) document_id: DocumentId,
+    pub(crate) viewport: Viewport,
+    pub(crate) cursor_position: usize,
 }
 
 impl Window {
     #[must_use]
-    pub const fn new(id: WindowId, document_id: DocumentId, rows: usize, cols: usize) -> Self {
+    pub(crate) const fn new(document_id: DocumentId, rows: usize, cols: usize) -> Self {
         Self {
-            id,
             document_id,
             viewport: Viewport::new(rows, cols),
             cursor_position: 0,

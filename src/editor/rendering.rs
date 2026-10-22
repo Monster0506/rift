@@ -2,6 +2,7 @@ use super::git_gutter;
 use super::Editor;
 use crate::error::{ErrorType, RiftError};
 use crate::render;
+#[cfg(test)]
 use crate::screen_buffer::FrameStats;
 use crate::split::layout::WindowLayout;
 use crate::term::TerminalBackend;
@@ -224,7 +225,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// # Errors
     /// Returns an error if the frame fails to render or the terminal cannot be written.
-    pub fn update_and_render(&mut self) -> Result<(), RiftError> {
+    pub(crate) fn update_and_render(&mut self) -> Result<(), RiftError> {
         self.begin_ghost_paint();
         let result = self.update_and_render_painted();
         self.end_ghost_paint();
@@ -449,9 +450,13 @@ impl<T: TerminalBackend> Editor<T> {
         );
     }
 
+    #[cfg(test)]
     /// # Errors
     /// Returns an error if the cursor or output cannot be written, or the compositor fails.
-    pub fn render_to_terminal(&mut self, needs_clear: bool) -> Result<FrameStats, RiftError> {
+    pub(crate) fn render_to_terminal(
+        &mut self,
+        needs_clear: bool,
+    ) -> Result<FrameStats, RiftError> {
         self.term.hide_cursor()?;
         let stats = self
             .render_system
@@ -819,7 +824,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some((new_rows, new_cols)) = terminal_resize {
             if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
                 if let Some(terminal) = doc.terminal_mut() {
-                    let _ = terminal.resize(new_rows, new_cols);
+                    terminal.resize(new_rows, new_cols);
                 }
                 doc.handle_terminal_data(&[]);
             }
@@ -1518,7 +1523,9 @@ impl<T: TerminalBackend> Editor<T> {
     }
 }
 
-pub fn combine_char_edits(edits: &[crate::buffer::CharEdit]) -> Option<crate::buffer::CharEdit> {
+pub(crate) fn combine_char_edits(
+    edits: &[crate::buffer::CharEdit],
+) -> Option<crate::buffer::CharEdit> {
     let first = *edits.first()?;
     if edits.len() == 1 {
         return Some(first);

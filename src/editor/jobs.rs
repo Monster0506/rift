@@ -33,10 +33,9 @@ fn attach_syntax(
         .ok()
         .and_then(|source| tree_sitter::Query::new(&lang.language, &source).ok())
         .map(Arc::new);
-    if let Ok(syntax) = crate::syntax::build_syntax(lang, highlights, loader) {
-        if let Some(doc) = docs.get_document_mut(doc_id) {
-            doc.set_syntax(syntax);
-        }
+    let syntax = crate::syntax::build_syntax(lang, highlights, loader);
+    if let Some(doc) = docs.get_document_mut(doc_id) {
+        doc.set_syntax(syntax);
     }
 }
 
@@ -532,28 +531,10 @@ impl<T: TerminalBackend> Editor<T> {
             Err(p) => p,
         };
 
-        let any_payload = match any_payload
-            .downcast::<crate::job_manager::jobs::completion::CompletionPayload>()
+        if let Ok(payload) =
+            any_payload.downcast::<crate::job_manager::jobs::completion::CompletionPayload>()
         {
-            Ok(payload) => {
-                self.handle_completion_result(*payload);
-                return;
-            }
-            Err(p) => p,
-        };
-
-        if let Ok(map) = any_payload.downcast::<crate::buffer::byte_map::ByteLineMap>() {
-            if let Some(doc) = self.document_manager.active_document_mut() {
-                if doc.buffer.revision == map.revision {
-                    *doc.buffer.byte_map_cache.borrow_mut() = Some(*map);
-                    if self.state.debug_mode {
-                        self.state.notify(
-                            crate::notification::NotificationType::Info,
-                            "Search cache warmed".to_string(),
-                        );
-                    }
-                }
-            }
+            self.handle_completion_result(*payload);
         }
     }
 
@@ -1000,10 +981,7 @@ impl<T: TerminalBackend> Editor<T> {
             .ok()
             .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
             .map(Arc::new);
-        let Ok(syntax) = crate::syntax::build_syntax(loaded, highlights, &self.language_loader)
-        else {
-            return;
-        };
+        let syntax = crate::syntax::build_syntax(loaded, highlights, &self.language_loader);
         if let Some(doc) = self
             .document_manager
             .get_document_by_handle_mut(token.handle)
@@ -1107,8 +1085,6 @@ impl<T: TerminalBackend> Editor<T> {
         if res.is_reload {
             doc.mark_lsp_full_sync();
         }
-        let table = doc.buffer.line_index.table.clone();
-        let revision = doc.buffer.revision;
         let path = doc.path().map(std::path::Path::to_path_buf);
         let filetype = doc.syntax.as_ref().map(|s| s.language_name.clone());
         self.restore_persisted_undo(res.document_id, res.content_hash);
@@ -1116,9 +1092,6 @@ impl<T: TerminalBackend> Editor<T> {
         #[cfg(feature = "treesitter")]
         self.attach_syntax_for_document(res.document_id);
         self.spawn_syntax_parse_job(res.document_id);
-        let warm_job =
-            crate::job_manager::jobs::cache_warming::CacheWarmingJob::new(table, revision);
-        self.job_manager.spawn(warm_job);
 
         self.update_lua_state();
         if res.is_reload {

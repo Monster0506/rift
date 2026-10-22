@@ -11,22 +11,22 @@ impl Kind {
     }
 
     #[must_use]
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
 
     #[must_use]
-    pub fn as_arc(&self) -> Arc<str> {
+    pub(crate) fn as_arc(&self) -> Arc<str> {
         self.0.clone()
     }
 
     #[must_use]
-    pub fn namespace(&self) -> &str {
+    pub(crate) fn namespace(&self) -> &str {
         self.0.split('.').next().unwrap_or(&self.0)
     }
 
     #[must_use]
-    pub fn matches_prefix(&self, prefix: &str) -> bool {
+    pub(crate) fn matches_prefix(&self, prefix: &str) -> bool {
         &*self.0 == prefix || self.0.starts_with(prefix)
     }
 }
@@ -49,24 +49,19 @@ impl std::fmt::Display for Kind {
     }
 }
 
-pub mod well_known {
-    pub const FS_ENTRY: &str = "fs.entry";
-    pub const LSP_DIAGNOSTIC: &str = "lsp.diagnostic";
-    pub const LSP_HINT: &str = "lsp.hint";
-    pub const GIT_BLAME: &str = "git.blame";
-    pub const GIT_STATUS_ENTRY: &str = "git.status_entry";
-    pub const GIT_STATUS_HEAD: &str = "git.status_head";
-    pub const GIT_HUNK: &str = "git.hunk";
-    pub const GIT_HUNK_LINE: &str = "git.hunk_line";
-    pub const GIT_LOG_COMMIT: &str = "git.log_commit";
-    pub const GIT_REBASE_STEP: &str = "git.rebase_step";
-    pub const GIT_GUTTER: &str = "git.gutter";
-    pub const MARK_USER: &str = "mark.user";
-    pub const UI_LINK: &str = "ui.link";
-    pub const UI_BUTTON: &str = "ui.button";
-    pub const UI_CHECKBOX: &str = "ui.checkbox";
-    pub const BUFFER_ENTRY: &str = "buffer.entry";
-    pub const PLUGIN_HIGHLIGHT: &str = "plugin.highlight";
+pub(crate) mod well_known {
+    pub(crate) const FS_ENTRY: &str = "fs.entry";
+    pub(crate) const LSP_DIAGNOSTIC: &str = "lsp.diagnostic";
+    pub(crate) const GIT_BLAME: &str = "git.blame";
+    pub(crate) const GIT_STATUS_ENTRY: &str = "git.status_entry";
+    pub(crate) const GIT_STATUS_HEAD: &str = "git.status_head";
+    pub(crate) const GIT_HUNK: &str = "git.hunk";
+    pub(crate) const GIT_HUNK_LINE: &str = "git.hunk_line";
+    pub(crate) const GIT_LOG_COMMIT: &str = "git.log_commit";
+    pub(crate) const GIT_REBASE_STEP: &str = "git.rebase_step";
+    pub(crate) const GIT_GUTTER: &str = "git.gutter";
+    pub(crate) const BUFFER_ENTRY: &str = "buffer.entry";
+    pub(crate) const PLUGIN_HIGHLIGHT: &str = "plugin.highlight";
 }
 
 #[cfg(test)]

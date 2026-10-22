@@ -4,11 +4,10 @@ use alacritty_terminal::event_loop::{EventLoop, Notifier};
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::{Config, Term};
 use alacritty_terminal::tty::{self, Options, Shell};
-use std::io;
 use std::sync::{mpsc, Arc};
 
 #[derive(Clone)]
-pub struct TerminalListener(mpsc::Sender<TerminalEvent>);
+pub(crate) struct TerminalListener(mpsc::Sender<TerminalEvent>);
 
 impl EventListener for TerminalListener {
     fn send_event(&self, event: Event) {
@@ -16,8 +15,8 @@ impl EventListener for TerminalListener {
             Event::Wakeup => {
                 let _ = self.0.send(TerminalEvent::Wakeup);
             }
-            Event::Title(t) => {
-                let _ = self.0.send(TerminalEvent::Title(t));
+            Event::Title(_) => {
+                let _ = self.0.send(TerminalEvent::Title);
             }
             Event::ChildExit(status) => {
                 let _ = self
@@ -47,11 +46,11 @@ impl alacritty_terminal::grid::Dimensions for TermDims {
     }
 }
 
-pub struct Terminal {
-    pub term: Arc<FairMutex<Term<TerminalListener>>>,
-    pub notifier: Notifier,
-    pub size: (u16, u16),
-    pub name: String,
+pub(crate) struct Terminal {
+    pub(crate) term: Arc<FairMutex<Term<TerminalListener>>>,
+    pub(crate) notifier: Notifier,
+    pub(crate) size: (u16, u16),
+    pub(crate) name: String,
 }
 
 impl std::fmt::Debug for Terminal {
@@ -68,7 +67,7 @@ impl Terminal {
     ///
     /// # Errors
     /// Returns `Err` if the PTY cannot be created or the shell cannot be spawned.
-    pub fn new(
+    pub(crate) fn new(
         rows: u16,
         cols: u16,
         shell_cmd: Option<String>,
@@ -136,10 +135,7 @@ impl Terminal {
     }
 
     /// Resize the PTY and the terminal grid.
-    ///
-    /// # Errors
-    /// Always returns `Ok` today; the `Result` keeps the signature stable.
-    pub fn resize(&mut self, rows: u16, cols: u16) -> io::Result<()> {
+    pub(crate) fn resize(&mut self, rows: u16, cols: u16) {
         use alacritty_terminal::event::OnResize;
         self.size = (rows, cols);
         let new_dims = TermDims {
@@ -158,20 +154,15 @@ impl Terminal {
             cell_height: 20,
         };
         self.notifier.on_resize(size);
-        Ok(())
     }
 
     /// Write raw bytes to the PTY.
-    ///
-    /// # Errors
-    /// Always returns `Ok` today; the `Result` keeps the signature stable.
-    pub fn write(&mut self, data: &[u8]) -> io::Result<()> {
+    pub(crate) fn write(&mut self, data: &[u8]) {
         use alacritty_terminal::event::Notify;
         self.notifier.notify(data.to_vec());
-        Ok(())
     }
 
-    pub fn scroll_display(&self, delta: i32) {
+    pub(crate) fn scroll_display(&self, delta: i32) {
         use alacritty_terminal::grid::Scroll;
         self.term
             .lock()
@@ -179,13 +170,13 @@ impl Terminal {
             .scroll_display(Scroll::Delta(delta));
     }
 
-    pub fn scroll_to_bottom(&self) {
+    pub(crate) fn scroll_to_bottom(&self) {
         use alacritty_terminal::grid::Scroll;
         self.term.lock().grid_mut().scroll_display(Scroll::Bottom);
     }
 
     #[must_use]
-    pub fn read_screen(&self) -> (String, usize, usize, crate::color::CellColorSpans) {
+    pub(crate) fn read_screen(&self) -> (String, usize, usize, crate::color::CellColorSpans) {
         read_term_screen(&self.term)
     }
 }

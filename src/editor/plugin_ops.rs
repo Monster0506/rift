@@ -133,7 +133,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let line_ending = match doc.options.line_ending {
             crate::document::LineEnding::LF => "lf",
-            crate::document::LineEnding::CRLF => "crlf",
+            crate::document::LineEnding::Crlf => "crlf",
         };
         LuaBufState {
             buf_id,
@@ -518,7 +518,7 @@ impl<T: TerminalBackend> Editor<T> {
             PluginMutation::SetLineEnding(ending) => {
                 if let Some(doc) = self.document_manager.active_document_mut() {
                     doc.options.line_ending = match ending.to_lowercase().as_str() {
-                        "crlf" => crate::document::LineEnding::CRLF,
+                        "crlf" => crate::document::LineEnding::Crlf,
                         _ => crate::document::LineEnding::LF,
                     };
                 }
@@ -891,12 +891,7 @@ impl<T: TerminalBackend> Editor<T> {
                     self.keymap.unregister_sequence(ctx, &key_seq);
                 }
             }
-            PluginMutation::MapKeyKind {
-                kind,
-                mode: _,
-                keys,
-                action,
-            } => {
+            PluginMutation::MapKeyKind { kind, keys, action } => {
                 let Some(kind_id) = self.buffer_kinds.id_by_name(&kind) else {
                     return;
                 };
@@ -917,11 +912,7 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
             }
-            PluginMutation::UnmapKeyKind {
-                kind,
-                mode: _,
-                keys,
-            } => {
+            PluginMutation::UnmapKeyKind { kind, keys } => {
                 let Some(kind_id) = self.buffer_kinds.id_by_name(&kind) else {
                     return;
                 };
@@ -1075,7 +1066,7 @@ impl<T: TerminalBackend> Editor<T> {
                         .map(|(verb, default)| {
                             let a = Action::new(verb);
                             if default {
-                                a.as_default()
+                                a.with_default()
                             } else {
                                 a
                             }

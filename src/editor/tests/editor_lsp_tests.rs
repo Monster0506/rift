@@ -16,7 +16,6 @@ fn closing_a_document_sends_lsp_did_close() {
         crate::lsp::config::LspServerConfig {
             command: "ping".to_string(),
             args: vec!["-n".to_string(), "30".to_string(), "127.0.0.1".to_string()],
-            extensions: vec![],
             root_markers: vec![],
             capabilities: vec![],
             initialization_options: None,

@@ -1,10 +1,10 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use monster_rift::buffer::TextBuffer;
-use monster_rift::error::RiftError;
-use monster_rift::mode::Mode;
-use monster_rift::render::{RenderState, RenderSystem};
-use monster_rift::state::State;
-use monster_rift::term::TerminalBackend;
+use monster_rift::bench_api::buffer::TextBuffer;
+use monster_rift::bench_api::error::RiftError;
+use monster_rift::bench_api::mode::Mode;
+use monster_rift::bench_api::render::{RenderState, RenderSystem};
+use monster_rift::bench_api::state::State;
+use monster_rift::bench_api::term::TerminalBackend;
 use std::hint::black_box;
 
 // Mock Terminal to avoid I/O overhead
@@ -30,7 +30,9 @@ impl TerminalBackend for MockTerminal {
         Ok(false)
     }
 
-    fn read_event(&mut self) -> Result<Option<monster_rift::key::InputEvent>, RiftError> {
+    fn read_event(
+        &mut self,
+    ) -> Result<Option<monster_rift::bench_api::key::InputEvent>, RiftError> {
         Ok(None)
     }
 
@@ -42,8 +44,8 @@ impl TerminalBackend for MockTerminal {
         Ok(())
     }
 
-    fn get_size(&self) -> Result<monster_rift::term::Size, RiftError> {
-        Ok(monster_rift::term::Size {
+    fn get_size(&self) -> Result<monster_rift::bench_api::term::Size, RiftError> {
+        Ok(monster_rift::bench_api::term::Size {
             rows: self.rows,
             cols: self.cols,
         })
@@ -71,7 +73,7 @@ impl TerminalBackend for MockTerminal {
 
     fn set_cursor_shape(
         &mut self,
-        _shape: monster_rift::term::CursorShape,
+        _shape: monster_rift::bench_api::term::CursorShape,
     ) -> Result<(), RiftError> {
         Ok(())
     }

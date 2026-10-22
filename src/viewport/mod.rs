@@ -32,7 +32,7 @@ pub struct Viewport {
 
 impl Viewport {
     #[must_use]
-    pub const fn new(rows: usize, cols: usize) -> Self {
+    pub(crate) const fn new(rows: usize, cols: usize) -> Self {
         Self {
             top_line: 0,
             prev_top_line: 0,
@@ -49,7 +49,7 @@ impl Viewport {
 
     /// Update viewport based on cursor position and total lines, keeping the cursor vertically
     /// centered. Returns true if a full redraw is required; plain scrolls diff through the double-buffer.
-    pub fn update(
+    pub(crate) fn update(
         &mut self,
         cursor_line: usize,
         cursor_col: usize,
@@ -83,7 +83,7 @@ impl Viewport {
     }
 
     /// Soft-wrap variant of [`Self::update`]; same full-redraw return contract.
-    pub fn update_visual(
+    pub(crate) fn update_visual(
         &mut self,
         cursor_visual_row: usize,
         _cursor_visual_col: usize,
@@ -109,55 +109,55 @@ impl Viewport {
 
     /// Get the previous top line (before last update)
     #[must_use]
-    pub const fn prev_top_line(&self) -> usize {
+    pub(crate) const fn prev_top_line(&self) -> usize {
         self.prev_top_line
     }
 
     /// Get the previous top visual row (before last update)
     #[must_use]
-    pub const fn prev_top_visual_row(&self) -> usize {
+    pub(crate) const fn prev_top_visual_row(&self) -> usize {
         self.prev_top_visual_row
     }
 
     /// Get the previous leftmost visible column (before last update)
     #[must_use]
-    pub const fn prev_left_col(&self) -> usize {
+    pub(crate) const fn prev_left_col(&self) -> usize {
         self.prev_left_col
     }
 
     #[must_use]
-    pub const fn top_line(&self) -> usize {
+    pub(crate) const fn top_line(&self) -> usize {
         self.top_line
     }
 
     #[must_use]
-    pub const fn top_visual_row(&self) -> usize {
+    pub(crate) const fn top_visual_row(&self) -> usize {
         self.top_visual_row
     }
 
     /// Get the leftmost visible column
     #[must_use]
-    pub const fn left_col(&self) -> usize {
+    pub(crate) const fn left_col(&self) -> usize {
         self.left_col
     }
 
     #[must_use]
-    pub const fn visible_rows(&self) -> usize {
+    pub(crate) const fn visible_rows(&self) -> usize {
         self.visible_rows
     }
 
     #[must_use]
-    pub const fn visible_cols(&self) -> usize {
+    pub(crate) const fn visible_cols(&self) -> usize {
         self.visible_cols
     }
 
-    pub const fn set_size(&mut self, rows: usize, cols: usize) {
+    pub(crate) const fn set_size(&mut self, rows: usize, cols: usize) {
         self.visible_rows = rows;
         self.visible_cols = cols;
     }
 
     /// Set the scroll position (used when restoring view state)
-    pub const fn set_scroll(&mut self, top_line: usize, left_col: usize) {
+    pub(crate) const fn set_scroll(&mut self, top_line: usize, left_col: usize) {
         self.top_line = top_line;
         self.left_col = left_col;
         self.sub_line_offset = 0.0;
@@ -167,7 +167,7 @@ impl Viewport {
 
     /// Set the logical and visual scroll positions together for synchronized
     /// split panes.
-    pub const fn set_scroll_with_visual(
+    pub(crate) const fn set_scroll_with_visual(
         &mut self,
         top_line: usize,
         top_visual_row: usize,
@@ -182,7 +182,7 @@ impl Viewport {
 
     /// Scroll so that `line` (0-indexed) is vertically centered in the viewport.
     /// Clamps correctly so no blank space appears below the buffer.
-    pub fn center_on(&mut self, line: usize, total_lines: usize) {
+    pub(crate) fn center_on(&mut self, line: usize, total_lines: usize) {
         let content_rows = self.visible_rows.saturating_sub(1);
         let half = content_rows / 2;
         let ideal_top = line.saturating_sub(half);
@@ -194,24 +194,26 @@ impl Viewport {
 
     /// Get current scroll position as (`top_line`, `left_col`)
     #[must_use]
-    pub const fn get_scroll(&self) -> (usize, usize) {
+    pub(crate) const fn get_scroll(&self) -> (usize, usize) {
         (self.top_line, self.left_col)
     }
 
+    #[cfg(test)]
     /// Fractional scroll offset in [0.0, 1.0] below `top_line`. Always 0.0
     /// until a future renderer calls `set_sub_line_offset`.
     #[must_use]
-    pub const fn sub_line_offset(&self) -> f64 {
+    pub(crate) const fn sub_line_offset(&self) -> f64 {
         self.sub_line_offset
     }
 
+    #[cfg(test)]
     /// Set the fractional scroll offset below `top_line`, clamped to
     /// [0.0, 1.0]. Does not itself move `top_line`.
-    pub const fn set_sub_line_offset(&mut self, offset: f64) {
+    pub(crate) const fn set_sub_line_offset(&mut self, offset: f64) {
         self.sub_line_offset = offset.clamp(0.0, 1.0);
     }
 
-    pub const fn mark_needs_full_redraw(&mut self) {
+    pub(crate) const fn mark_needs_full_redraw(&mut self) {
         self.first_update = true;
         self.prev_top_visual_row = self.top_visual_row;
     }

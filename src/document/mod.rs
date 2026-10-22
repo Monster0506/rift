@@ -1,13 +1,13 @@
-pub mod definitions;
+pub(crate) mod definitions;
 mod edit;
 mod factories;
 mod ghost;
 mod history;
 mod kind;
-pub mod manager;
+pub(crate) mod manager;
 mod persistence;
 mod populate;
-pub mod runtime;
+pub(crate) mod runtime;
 mod search;
 mod selection_render;
 mod syntax_sync;
@@ -21,43 +21,39 @@ use crate::syntax::Syntax;
 use crate::term::Terminal;
 use definitions::DocumentOptions;
 pub(crate) use factories::{decode_file_bytes, UTF8_BOM};
-pub use kind::BufferKind;
-pub use manager::{
-    CreationReservation, DocumentDraft, DocumentManager, DraftCommitTarget, PreparedRemoval,
-    RemovalIntent,
-};
-pub use runtime::{
-    builtin_descriptor, ActionDispatch, BufferKindId, BufferKindRegistry, BufferListState,
-    BufferPolicies, ClipboardEntryState, ClipboardState, CloseHandler, ClosePolicy,
-    DescriptorOwner, DirectoryState, DisplayNameStrategy, DocumentHandle, FileState,
-    GhostCutPolicy, GitBlameState, GitCommitMessageState, GitLogState, GitRebaseTodoState,
-    GitStatusState, InputPolicy, KeyFallback, KeyFallbackPolicy, KindDescriptor,
-    LanguageServicesPolicy, LocationListState, MessagesState, NativeActionHandler,
-    NativeCloseHandler, NativeReloadHandler, NativeSaveHandler, NavigationPolicy,
-    PluginBufferState, ReadOnlyPolicy, RegionsState, RegistryError, ReloadDispatch, ReloadOutcome,
-    SaveDispatch, SaveResult, ScratchState, StateKey, StateKeyId, StateSlot, StructuralEditPolicy,
-    TerminalState, TextProjection, TextProjectionPolicy, TombstoneMetadata, UndoFileViewState,
-    UndoTreeState, BUFFER_LIST_STATE_KEY, CLIPBOARD_ENTRY_STATE_KEY, CLIPBOARD_STATE_KEY,
-    DIRECTORY_STATE_KEY, EMPTY_STATE_KEY, FILE_STATE_KEY, GIT_BLAME_STATE_KEY,
-    GIT_COMMIT_MESSAGE_STATE_KEY, GIT_LOG_STATE_KEY, GIT_REBASE_TODO_STATE_KEY,
-    GIT_STATUS_STATE_KEY, LOCATION_LIST_STATE_KEY, MESSAGES_STATE_KEY, PLUGIN_BUFFER_STATE_KEY,
-    REGIONS_STATE_KEY, SCRATCH_STATE_KEY, TERMINAL_STATE_KEY, UNDO_FILE_VIEW_STATE_KEY,
-    UNDO_TREE_STATE_KEY,
+pub(crate) use kind::BufferKind;
+pub(crate) use manager::{DocumentDraft, DocumentManager, RemovalIntent};
+#[cfg(test)]
+pub(crate) use runtime::builtin_descriptor;
+pub(crate) use runtime::{
+    ActionDispatch, BufferKindId, BufferKindRegistry, BufferListState, BufferPolicies,
+    ClipboardEntryState, ClipboardState, CloseHandler, ClosePolicy, DescriptorOwner,
+    DirectoryState, DisplayNameStrategy, DocumentHandle, FileState, GhostCutPolicy, GitBlameState,
+    GitCommitMessageState, GitLogState, GitRebaseTodoState, GitStatusState, KeyFallback,
+    KindDescriptor, LanguageServicesPolicy, LocationListState, MessagesState, NavigationPolicy,
+    PluginBufferState, ReadOnlyPolicy, RegionsState, ReloadDispatch, SaveDispatch, SaveResult,
+    ScratchState, StateSlot, StructuralEditPolicy, TerminalState, TextProjection,
+    TextProjectionPolicy, UndoFileViewState, UndoTreeState, BUFFER_LIST_STATE_KEY,
+    CLIPBOARD_ENTRY_STATE_KEY, CLIPBOARD_STATE_KEY, DIRECTORY_STATE_KEY, FILE_STATE_KEY,
+    GIT_BLAME_STATE_KEY, GIT_COMMIT_MESSAGE_STATE_KEY, GIT_LOG_STATE_KEY,
+    GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY, LOCATION_LIST_STATE_KEY, MESSAGES_STATE_KEY,
+    PLUGIN_BUFFER_STATE_KEY, REGIONS_STATE_KEY, SCRATCH_STATE_KEY, TERMINAL_STATE_KEY,
+    UNDO_FILE_VIEW_STATE_KEY, UNDO_TREE_STATE_KEY,
 };
 use std::path::{Path, PathBuf};
-pub use syntax_sync::SyntaxSync;
+pub(crate) use syntax_sync::SyntaxSync;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct DocumentId(u64);
 
 impl DocumentId {
     #[must_use]
-    pub const fn new(id: u64) -> Self {
+    pub(crate) const fn new(id: u64) -> Self {
         Self(id)
     }
 
     #[must_use]
-    pub const fn get(self) -> u64 {
+    pub(crate) const fn get(self) -> u64 {
         self.0
     }
 
@@ -91,21 +87,21 @@ pub(crate) enum AnnotationUndoHint {
 }
 
 #[derive(Debug, Clone)]
-pub struct DirEntry {
-    pub path: PathBuf,
-    pub is_dir: bool,
-    pub id: u16,
+pub(crate) struct DirEntry {
+    pub(crate) path: PathBuf,
+    pub(crate) is_dir: bool,
+    pub(crate) id: u16,
 }
 
 #[derive(Debug, Default)]
-pub struct DirectoryDiff {
-    pub renames: Vec<(PathBuf, String)>,
-    pub deletes: Vec<PathBuf>,
-    pub creates: Vec<String>,
+pub(crate) struct DirectoryDiff {
+    pub(crate) renames: Vec<(PathBuf, String)>,
+    pub(crate) deletes: Vec<PathBuf>,
+    pub(crate) creates: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum GitStatusAction {
+pub(crate) enum GitStatusAction {
     Stage(PathBuf),
     Unstage(PathBuf),
     Discard {
@@ -129,24 +125,25 @@ pub enum GitStatusAction {
     },
 }
 
-pub struct GhostCut {
+pub(crate) struct GhostCut {
     pub(super) at: usize,
     pub(super) text: Vec<crate::character::Character>,
     pub(super) painted: Option<(usize, crate::annotations::AnnotationId)>,
 }
 
 #[derive(Debug, Clone)]
-pub struct LocationEntry {
-    pub uri: String,
-    pub line: u32,
-    pub col: u32,
-    pub display: String,
+pub(crate) struct LocationEntry {
+    pub(crate) uri: String,
+    pub(crate) line: u32,
+    pub(crate) col: u32,
+    pub(crate) display: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum GitCommitTarget {
+pub(crate) enum GitCommitTarget {
     New,
     Amend,
+    #[cfg(test)]
     RebaseReword {
         rebase_doc_id: DocumentId,
     },
@@ -157,45 +154,45 @@ pub enum GitCommitTarget {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LineEnding {
+pub(crate) enum LineEnding {
     LF,
-    CRLF,
+    Crlf,
 }
 
 impl LineEnding {
     #[must_use]
-    pub const fn as_bytes(&self) -> &'static [u8] {
+    pub(crate) const fn as_bytes(self) -> &'static [u8] {
         match self {
             Self::LF => b"\n",
-            Self::CRLF => b"\r\n",
+            Self::Crlf => b"\r\n",
         }
     }
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct ViewState {
-    pub top_line: usize,
-    pub left_col: usize,
+pub(crate) struct ViewState {
+    pub(crate) top_line: usize,
+    pub(crate) left_col: usize,
 }
 
-pub struct Document {
-    pub id: DocumentId,
-    pub buffer: TextBuffer,
-    pub options: DocumentOptions,
+pub(crate) struct Document {
+    pub(crate) id: DocumentId,
+    pub(crate) buffer: TextBuffer,
+    pub(crate) options: DocumentOptions,
     file_path: Option<PathBuf>,
     readonly_override: bool,
-    pub syntax: Option<Syntax>,
-    pub history: UndoTree,
+    pub(crate) syntax: Option<Syntax>,
+    pub(crate) history: UndoTree,
     current_transaction: Option<EditTransaction>,
     transaction_depth: usize,
-    pub handle: DocumentHandle,
-    pub view_state: ViewState,
-    pub kind: BufferKind,
-    pub state: StateSlot,
-    pub vars: std::collections::HashMap<String, crate::annotations::Value>,
-    pub custom_highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
-    pub annotations: AnnotationStore,
-    pub selection_set: crate::selection::SelectionSet,
+    pub(crate) handle: DocumentHandle,
+    pub(crate) view_state: ViewState,
+    pub(crate) kind: BufferKind,
+    pub(crate) state: StateSlot,
+    pub(crate) vars: std::collections::HashMap<String, crate::annotations::Value>,
+    pub(crate) custom_highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
+    pub(crate) annotations: AnnotationStore,
+    pub(crate) selection_set: crate::selection::SelectionSet,
     pending_annotation_snapshot: Option<Vec<crate::annotations::Annotation>>,
     annotation_undo_stack: Vec<AnnotationUndo>,
     annotation_redo_stack: Vec<AnnotationUndo>,
@@ -203,7 +200,7 @@ pub struct Document {
     pending_lsp_edits: Vec<crate::history::EditOperation>,
     lsp_synced_revision: u64,
     lsp_full_sync_needed: bool,
-    pub pending_ghost: Vec<GhostCut>,
+    pub(crate) pending_ghost: Vec<GhostCut>,
     pub(super) ghost_paint_active: bool,
     pub(super) ghost_paint_cursor: Option<usize>,
 }
@@ -235,15 +232,17 @@ macro_rules! state_set {
 }
 
 impl Document {
-    pub const fn version(&self) -> u64 {
+    #[cfg(test)]
+    pub(crate) const fn version(&self) -> u64 {
         self.content_version
     }
 
-    pub fn set_syntax(&mut self, syntax: Syntax) {
+    #[cfg(feature = "treesitter")]
+    pub(crate) fn set_syntax(&mut self, syntax: Syntax) {
         self.syntax = Some(syntax);
     }
 
-    pub fn bank_region(&mut self, region: crate::selection::Region) {
+    pub(crate) fn bank_region(&mut self, region: crate::selection::Region) {
         self.selection_set.bank(region, &self.buffer);
     }
 
@@ -301,7 +300,7 @@ impl Document {
     }
 
     #[cfg(feature = "lsp")]
-    pub fn lsp_char_offset_in_line(
+    pub(crate) fn lsp_char_offset_in_line(
         &self,
         line: usize,
         character: u32,
@@ -312,7 +311,7 @@ impl Document {
     }
 
     #[cfg(feature = "lsp")]
-    pub fn lsp_position_units_in_line(
+    pub(crate) fn lsp_position_units_in_line(
         &self,
         line: usize,
         char_offset: usize,
@@ -323,7 +322,7 @@ impl Document {
     }
 
     #[cfg(feature = "lsp")]
-    pub fn take_incremental_lsp_changes(
+    pub(crate) fn take_incremental_lsp_changes(
         &mut self,
         encoding: crate::lsp::protocol::PositionEncoding,
     ) -> Option<(crate::lsp::protocol::LspRange, String)> {
@@ -453,17 +452,17 @@ impl Document {
         )
     }
 
-    pub fn discard_pending_lsp_changes(&mut self) {
+    pub(crate) fn discard_pending_lsp_changes(&mut self) {
         self.pending_lsp_edits.clear();
         self.lsp_synced_revision = self.buffer.revision;
         self.lsp_full_sync_needed = false;
     }
 
-    pub const fn mark_lsp_full_sync(&mut self) {
+    pub(crate) const fn mark_lsp_full_sync(&mut self) {
         self.lsp_full_sync_needed = true;
     }
 
-    pub const fn has_pending_lsp_edits(&self) -> bool {
+    pub(crate) const fn has_pending_lsp_edits(&self) -> bool {
         self.lsp_full_sync_needed
             || !self.pending_lsp_edits.is_empty()
             || self.buffer.revision != self.lsp_synced_revision
@@ -487,162 +486,131 @@ impl Document {
         self.buffer.chars(start..end)
     }
 
-    pub const fn handle(&self) -> DocumentHandle {
+    pub(crate) const fn handle(&self) -> DocumentHandle {
         self.handle
     }
 
-    pub const fn set_handle(&mut self, handle: DocumentHandle) {
+    pub(crate) const fn set_handle(&mut self, handle: DocumentHandle) {
         self.handle = handle;
     }
 
-    pub fn descriptor(&self) -> &KindDescriptor {
+    pub(crate) fn descriptor(&self) -> &KindDescriptor {
         self.kind.descriptor()
     }
 
-    pub const fn buffer_kind_id(&self) -> BufferKindId {
+    pub(crate) const fn buffer_kind_id(&self) -> BufferKindId {
         self.kind.id()
     }
 
-    pub fn policies(&self) -> &BufferPolicies {
+    pub(crate) fn policies(&self) -> &BufferPolicies {
         self.kind.policies()
     }
 
-    pub fn key_fallback(&self) -> KeyFallback {
+    pub(crate) fn key_fallback(&self) -> KeyFallback {
         self.policies().key_fallback
     }
 
-    pub fn projection(&self) -> TextProjection {
+    pub(crate) fn projection(&self) -> TextProjection {
         self.policies().projection
     }
 
-    pub fn matches_handle(&self, handle: DocumentHandle) -> bool {
-        self.handle == handle
-    }
-
-    pub fn matches_kind(&self, id: BufferKindId) -> bool {
+    pub(crate) fn matches_kind(&self, id: BufferKindId) -> bool {
         self.buffer_kind_id() == id
     }
 
-    pub fn is_tombstone(&self) -> bool {
-        self.descriptor().is_tombstone()
-    }
-
-    pub fn help_lines(&self) -> Option<&[String]> {
+    pub(crate) fn help_lines(&self) -> Option<&[String]> {
         self.descriptor().help_lines()
     }
 
-    pub fn terminal(&self) -> Option<&Terminal> {
+    pub(crate) fn terminal(&self) -> Option<&Terminal> {
         self.state
             .try_get(TERMINAL_STATE_KEY)
             .and_then(|s| s.terminal.as_ref())
     }
 
-    pub fn terminal_mut(&mut self) -> Option<&mut Terminal> {
+    pub(crate) fn terminal_mut(&mut self) -> Option<&mut Terminal> {
         self.state
             .try_get_mut(TERMINAL_STATE_KEY)
             .and_then(|s| s.terminal.as_mut())
     }
 
-    pub fn terminal_cursor(&self) -> Option<(usize, usize)> {
+    pub(crate) fn terminal_cursor(&self) -> Option<(usize, usize)> {
         self.state
             .try_get(TERMINAL_STATE_KEY)
             .and_then(|s| s.terminal_cursor)
     }
 
-    pub fn set_terminal_cursor(&mut self, cursor: Option<(usize, usize)>) {
-        if let Some(s) = self.state.try_get_mut(TERMINAL_STATE_KEY) {
-            s.terminal_cursor = cursor;
-        }
-    }
-
-    pub fn terminal_cell_colors(&self) -> Option<&[crate::color::CellColorSpan]> {
+    pub(crate) fn terminal_cell_colors(&self) -> Option<&[crate::color::CellColorSpan]> {
         self.state
             .try_get(TERMINAL_STATE_KEY)
             .map(|state| state.terminal_cell_colors.as_slice())
     }
 
-    pub fn is_file(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_file(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::FILE
     }
 
-    pub fn is_terminal(&self) -> bool {
+    pub(crate) fn is_terminal(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::TERMINAL
     }
 
-    pub fn is_directory(&self) -> bool {
+    pub(crate) fn is_directory(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::DIRECTORY
     }
 
-    pub fn is_undotree(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_undotree(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::UNDO_TREE
     }
 
-    pub fn is_messages(&self) -> bool {
+    pub(crate) fn is_messages(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::MESSAGES
     }
 
-    pub fn is_clipboard(&self) -> bool {
-        self.buffer_kind_id() == BufferKindId::CLIPBOARD
-    }
-
-    pub fn is_clipboard_entry(&self) -> bool {
+    pub(crate) fn is_clipboard_entry(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::CLIPBOARD_ENTRY
     }
 
-    pub fn is_any_clipboard(&self) -> bool {
+    pub(crate) fn is_any_clipboard(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::CLIPBOARD
             || self.buffer_kind_id() == BufferKindId::CLIPBOARD_ENTRY
     }
 
-    pub fn is_location_list(&self) -> bool {
-        self.buffer_kind_id() == BufferKindId::LOCATION_LIST
-    }
-
-    pub fn is_regions(&self) -> bool {
-        self.buffer_kind_id() == BufferKindId::REGIONS
-    }
-
-    pub fn is_scratch(&self) -> bool {
-        self.buffer_kind_id() == BufferKindId::SCRATCH
-    }
-
-    pub fn is_git_status(&self) -> bool {
+    pub(crate) fn is_git_status(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::GIT_STATUS
     }
 
-    pub fn is_git_commit_message(&self) -> bool {
+    pub(crate) fn is_git_commit_message(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::GIT_COMMIT_MESSAGE
     }
 
-    pub fn is_git_blame(&self) -> bool {
+    pub(crate) fn is_git_blame(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::GIT_BLAME
     }
 
-    pub fn is_git_log(&self) -> bool {
+    pub(crate) fn is_git_log(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::GIT_LOG
     }
 
-    pub fn is_git_rebase_todo(&self) -> bool {
+    pub(crate) fn is_git_rebase_todo(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::GIT_REBASE_TODO
     }
 
-    pub fn is_buffer_list(&self) -> bool {
-        self.buffer_kind_id() == BufferKindId::BUFFER_LIST
-    }
-
-    pub fn is_special(&self) -> bool {
+    pub(crate) fn is_special(&self) -> bool {
         self.buffer_kind_id() != BufferKindId::FILE
     }
 
-    pub fn ghost_cut_allowed(&self) -> bool {
+    pub(crate) fn ghost_cut_allowed(&self) -> bool {
         self.policies().ghost_cut == GhostCutPolicy::Allow
     }
 
-    pub fn is_interface_mode(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_interface_mode(&self) -> bool {
         self.policies().navigation == NavigationPolicy::ActionRows
     }
 
-    pub fn is_read_only(&self) -> bool {
+    pub(crate) fn is_read_only(&self) -> bool {
         match self.policies().read_only {
             ReadOnlyPolicy::FixedReadOnly => true,
             ReadOnlyPolicy::FixedWritable => false,
@@ -650,21 +618,21 @@ impl Document {
         }
     }
 
-    pub const fn set_read_only(&mut self, on: bool) {
+    pub(crate) const fn set_read_only(&mut self, on: bool) {
         self.readonly_override = on;
     }
 
-    state_get!(pub fn directory_path(&self) -> &PathBuf = DIRECTORY_STATE_KEY, |s| &s.path);
-    state_get!(pub fn directory_entries(&self) -> &[DirEntry] = DIRECTORY_STATE_KEY, |s| s.entries.as_slice());
-    state_get!(pub fn directory_show_hidden(&self) -> bool = DIRECTORY_STATE_KEY, |s| s.show_hidden);
-    state_set!(pub fn set_directory_show_hidden(&mut self, show_hidden: bool) = DIRECTORY_STATE_KEY, |s| s.show_hidden = show_hidden);
+    state_get!(pub(crate) fn directory_path(&self) -> &PathBuf = DIRECTORY_STATE_KEY, |s| &s.path);
+    state_get!(pub(crate) fn directory_entries(&self) -> &[DirEntry] = DIRECTORY_STATE_KEY, |s| s.entries.as_slice());
+    state_get!(pub(crate) fn directory_show_hidden(&self) -> bool = DIRECTORY_STATE_KEY, |s| s.show_hidden);
+    state_set!(pub(crate) fn set_directory_show_hidden(&mut self, show_hidden: bool) = DIRECTORY_STATE_KEY, |s| s.show_hidden = show_hidden);
 
-    pub fn convert_to_file(&mut self) {
+    pub(crate) fn convert_to_file(&mut self) {
         self.kind = BufferKind::for_builtin(BufferKindId::FILE);
         self.state = StateSlot::new(FILE_STATE_KEY, FileState);
     }
 
-    pub fn convert_to_directory(&mut self, path: PathBuf) {
+    pub(crate) fn convert_to_directory(&mut self, path: PathBuf) {
         self.kind = BufferKind::for_builtin(BufferKindId::DIRECTORY);
         self.state = StateSlot::new(
             DIRECTORY_STATE_KEY,
@@ -676,27 +644,24 @@ impl Document {
         );
     }
 
-    pub fn convert_to_undo_file_view(&mut self) {
+    pub(crate) fn convert_to_undo_file_view(&mut self) {
         self.kind = BufferKind::for_builtin(BufferKindId::UNDO_FILE_VIEW);
         self.state = StateSlot::new(UNDO_FILE_VIEW_STATE_KEY, UndoFileViewState::default());
     }
 
-    state_get!(pub fn undotree_linked_doc_id(&self) -> DocumentId = UNDO_TREE_STATE_KEY, |s| s.linked_doc_id);
-    state_get!(pub fn undotree_sequences(&self) -> &[crate::history::EditSeq] = UNDO_TREE_STATE_KEY, |s| s.sequences.as_slice());
-    state_get!(pub fn messages_show_all(&self) -> bool = MESSAGES_STATE_KEY, |s| s.show_all);
-    state_set!(pub fn set_messages_show_all(&mut self, show_all: bool) = MESSAGES_STATE_KEY, |s| s.show_all = show_all);
-    state_get!(pub fn clipboard_entries(&self) -> &[Vec<crate::character::Character>] = CLIPBOARD_STATE_KEY, |s| s.entries.as_slice());
+    state_get!(pub(crate) fn undotree_linked_doc_id(&self) -> DocumentId = UNDO_TREE_STATE_KEY, |s| s.linked_doc_id);
+    state_get!(pub(crate) fn undotree_sequences(&self) -> &[crate::history::EditSeq] = UNDO_TREE_STATE_KEY, |s| s.sequences.as_slice());
+    state_get!(pub(crate) fn clipboard_entries(&self) -> &[Vec<crate::character::Character>] = CLIPBOARD_STATE_KEY, |s| s.entries.as_slice());
 
-    pub fn clipboard_entry(&self, idx: usize) -> Option<&[crate::character::Character]> {
+    pub(crate) fn clipboard_entry(&self, idx: usize) -> Option<&[crate::character::Character]> {
         self.state
             .try_get(CLIPBOARD_STATE_KEY)
             .and_then(|s| s.entries.get(idx).map(std::vec::Vec::as_slice))
     }
 
-    state_get!(pub fn clipboard_entry_index(&self) -> Option<usize> = CLIPBOARD_ENTRY_STATE_KEY, |s| s.entry_index);
-    state_set!(pub fn set_clipboard_entry_index(&mut self, entry_index: Option<usize>) = CLIPBOARD_ENTRY_STATE_KEY, |s| s.entry_index = entry_index);
+    state_get!(pub(crate) fn clipboard_entry_index(&self) -> Option<usize> = CLIPBOARD_ENTRY_STATE_KEY, |s| s.entry_index);
 
-    pub fn convert_to_clipboard_entry(&mut self, entry_index: Option<usize>) {
+    pub(crate) fn convert_to_clipboard_entry(&mut self, entry_index: Option<usize>) {
         self.kind = BufferKind::for_builtin(BufferKindId::CLIPBOARD_ENTRY);
         self.state = StateSlot::new(
             CLIPBOARD_ENTRY_STATE_KEY,
@@ -704,45 +669,35 @@ impl Document {
         );
     }
 
-    state_get!(pub fn location_list_source_doc_id(&self) -> DocumentId = LOCATION_LIST_STATE_KEY, |s| s.source_doc_id);
-    state_get!(pub fn location_list_entries(&self) -> &[LocationEntry] = LOCATION_LIST_STATE_KEY, |s| s.entries.as_slice());
-
-    pub fn location_list_entry_at(&self, line: usize) -> Option<LocationEntry> {
+    pub(crate) fn location_list_entry_at(&self, line: usize) -> Option<LocationEntry> {
         self.state
             .try_get(LOCATION_LIST_STATE_KEY)
             .and_then(|s| s.entries.get(line).cloned())
     }
 
-    pub fn set_location_list(&mut self, source_doc_id: DocumentId, entries: Vec<LocationEntry>) {
+    pub(crate) fn set_location_list(&mut self, entries: Vec<LocationEntry>) {
         self.kind = BufferKind::for_builtin(BufferKindId::LOCATION_LIST);
-        self.state = StateSlot::new(
-            LOCATION_LIST_STATE_KEY,
-            LocationListState {
-                source_doc_id,
-                entries,
-            },
-        );
+        self.state = StateSlot::new(LOCATION_LIST_STATE_KEY, LocationListState { entries });
     }
 
-    state_get!(pub fn regions_source_doc_id(&self) -> DocumentId = REGIONS_STATE_KEY, |s| s.source_doc_id);
+    state_get!(pub(crate) fn regions_source_doc_id(&self) -> DocumentId = REGIONS_STATE_KEY, |s| s.source_doc_id);
 
-    pub fn set_regions(&mut self, source_doc_id: DocumentId) {
+    pub(crate) fn set_regions(&mut self, source_doc_id: DocumentId) {
         self.kind = BufferKind::for_builtin(BufferKindId::REGIONS);
         self.state = StateSlot::new(REGIONS_STATE_KEY, RegionsState { source_doc_id });
     }
 
-    state_get!(pub fn scratch_title(&self) -> &str = SCRATCH_STATE_KEY, |s| s.title.as_str());
+    state_get!(pub(crate) fn scratch_title(&self) -> &str = SCRATCH_STATE_KEY, |s| s.title.as_str());
 
-    pub fn convert_to_scratch(&mut self, title: String) {
+    pub(crate) fn convert_to_scratch(&mut self, title: String) {
         self.kind = BufferKind::for_builtin(BufferKindId::SCRATCH);
         self.state = StateSlot::new(SCRATCH_STATE_KEY, ScratchState { title });
     }
 
-    state_get!(pub fn buffer_list_entries(&self) -> &[DocumentId] = BUFFER_LIST_STATE_KEY, |s| s.entries.as_slice());
-    state_get!(pub fn git_status_snapshot(&self) -> &crate::git::status::StatusSnapshot = GIT_STATUS_STATE_KEY, |s| &s.snapshot);
-    state_get!(pub fn git_status_expanded_diffs(&self) -> &std::collections::HashMap<(PathBuf, bool), Vec<crate::git::diff::Hunk>> = GIT_STATUS_STATE_KEY, |s| &s.expanded_diffs);
+    state_get!(pub(crate) fn buffer_list_entries(&self) -> &[DocumentId] = BUFFER_LIST_STATE_KEY, |s| s.entries.as_slice());
+    state_get!(pub(crate) fn git_status_snapshot(&self) -> &crate::git::status::StatusSnapshot = GIT_STATUS_STATE_KEY, |s| &s.snapshot);
 
-    pub fn git_status_hunk(
+    pub(crate) fn git_status_hunk(
         &self,
         path: &Path,
         staged_side: bool,
@@ -755,51 +710,48 @@ impl Document {
         })
     }
 
-    state_get_opt!(pub fn git_status_head_subject(&self) -> &str = GIT_STATUS_STATE_KEY, |s| s.head_subject.as_deref());
-    state_get!(pub fn git_commit_target(&self) -> &GitCommitTarget = GIT_COMMIT_MESSAGE_STATE_KEY, |s| &s.target);
-    state_get!(pub fn git_blame_path(&self) -> &Path = GIT_BLAME_STATE_KEY, |s| s.path.as_path());
-    state_get!(pub fn git_blame_linked_doc_id(&self) -> DocumentId = GIT_BLAME_STATE_KEY, |s| s.linked_doc_id);
-    state_get!(pub fn git_blame_linked_window_id(&self) -> crate::split::window::WindowId = GIT_BLAME_STATE_KEY, |s| s.linked_window_id);
-    state_set!(pub fn set_git_blame_linked_window_id(&mut self, window_id: crate::split::window::WindowId) = GIT_BLAME_STATE_KEY, |s| s.linked_window_id = window_id);
-    state_get_opt!(pub fn git_blame_at_commit(&self) -> &str = GIT_BLAME_STATE_KEY, |s| s.at_commit.as_deref());
-    state_set!(pub fn set_git_blame_at_commit(&mut self, at_commit: Option<String>) = GIT_BLAME_STATE_KEY, |s| s.at_commit = at_commit);
-    state_get!(pub fn git_blame_history(&self) -> &[Option<String>] = GIT_BLAME_STATE_KEY, |s| s.history.as_slice());
+    state_get!(pub(crate) fn git_commit_target(&self) -> &GitCommitTarget = GIT_COMMIT_MESSAGE_STATE_KEY, |s| &s.target);
+    state_get!(pub(crate) fn git_blame_path(&self) -> &Path = GIT_BLAME_STATE_KEY, |s| s.path.as_path());
+    state_get!(pub(crate) fn git_blame_linked_doc_id(&self) -> DocumentId = GIT_BLAME_STATE_KEY, |s| s.linked_doc_id);
+    state_get!(pub(crate) fn git_blame_linked_window_id(&self) -> crate::split::window::WindowId = GIT_BLAME_STATE_KEY, |s| s.linked_window_id);
+    state_set!(pub(crate) fn set_git_blame_linked_window_id(&mut self, window_id: crate::split::window::WindowId) = GIT_BLAME_STATE_KEY, |s| s.linked_window_id = window_id);
+    state_get_opt!(pub(crate) fn git_blame_at_commit(&self) -> &str = GIT_BLAME_STATE_KEY, |s| s.at_commit.as_deref());
+    state_set!(pub(crate) fn set_git_blame_at_commit(&mut self, at_commit: Option<String>) = GIT_BLAME_STATE_KEY, |s| s.at_commit = at_commit);
+    state_get!(pub(crate) fn git_blame_history(&self) -> &[Option<String>] = GIT_BLAME_STATE_KEY, |s| s.history.as_slice());
 
-    pub fn push_git_blame_history(&mut self, commit: Option<String>) {
+    pub(crate) fn push_git_blame_history(&mut self, commit: Option<String>) {
         if let Some(s) = self.state.try_get_mut(GIT_BLAME_STATE_KEY) {
             s.history.push(commit);
         }
     }
 
-    pub fn pop_git_blame_history(&mut self) -> Option<Option<String>> {
+    #[allow(clippy::option_option)]
+    pub(crate) fn pop_git_blame_history(&mut self) -> Option<Option<String>> {
         self.state
             .try_get_mut(GIT_BLAME_STATE_KEY)
             .and_then(|s| s.history.pop())
     }
 
-    state_get!(pub fn git_blame_lines(&self) -> &[crate::git::blame::BlameLine] = GIT_BLAME_STATE_KEY, |s| s.lines.as_slice());
-
-    pub fn git_blame_lines_len(&self) -> usize {
+    pub(crate) fn git_blame_lines_len(&self) -> usize {
         self.state
             .try_get(GIT_BLAME_STATE_KEY)
             .map_or(0, |s| s.lines.len())
     }
 
-    state_get_opt!(pub fn git_blame_wrap_key(&self) -> (DocumentId, usize, usize, u64) = GIT_BLAME_STATE_KEY, |s| s.wrap_key);
-    state_get!(pub fn git_blame_wrap_rows(&self) -> &[usize] = GIT_BLAME_STATE_KEY, |s| s.wrap_rows.as_slice());
-    state_get!(pub fn git_log_path(&self) -> Option<&Path> = GIT_LOG_STATE_KEY, |s| s.path.as_deref());
-    state_get!(pub fn git_log_commits(&self) -> &[crate::git::log::CommitSummary] = GIT_LOG_STATE_KEY, |s| s.commits.as_slice());
-    state_get_opt!(pub fn git_log_expanded(&self) -> &str = GIT_LOG_STATE_KEY, |s| s.expanded.as_deref());
-    state_get_opt!(pub fn git_log_expanded_body(&self) -> &str = GIT_LOG_STATE_KEY, |s| s.expanded_body.as_deref());
-    state_get!(pub fn git_rebase_base(&self) -> &str = GIT_REBASE_TODO_STATE_KEY, |s| s.base.as_str());
-    state_get!(pub fn git_rebase_saved_head(&self) -> &str = GIT_REBASE_TODO_STATE_KEY, |s| s.saved_head.as_str());
-    state_get!(pub fn git_rebase_branch(&self) -> &str = GIT_REBASE_TODO_STATE_KEY, |s| s.branch.as_str());
-    state_get_opt!(pub fn git_rebase_pause(&self) -> &crate::git::rebase::RebasePause = GIT_REBASE_TODO_STATE_KEY, |s| s.pause.as_ref());
-    state_set!(pub fn set_git_rebase_pause(&mut self, pause: Option<crate::git::rebase::RebasePause>) = GIT_REBASE_TODO_STATE_KEY, |s| s.pause = pause);
-    state_get!(pub fn git_rebase_steps(&self) -> &[crate::git::rebase::RebaseStep] = GIT_REBASE_TODO_STATE_KEY, |s| s.steps.as_slice());
-    state_get!(pub fn git_rebase_message_overrides(&self) -> &std::collections::HashMap<String, String> = GIT_REBASE_TODO_STATE_KEY, |s| &s.message_overrides);
+    state_get_opt!(pub(crate) fn git_blame_wrap_key(&self) -> (DocumentId, usize, usize, u64) = GIT_BLAME_STATE_KEY, |s| s.wrap_key);
+    state_get!(pub(crate) fn git_log_path(&self) -> Option<&Path> = GIT_LOG_STATE_KEY, |s| s.path.as_deref());
+    state_get!(pub(crate) fn git_log_commits(&self) -> &[crate::git::log::CommitSummary] = GIT_LOG_STATE_KEY, |s| s.commits.as_slice());
+    state_get_opt!(pub(crate) fn git_log_expanded(&self) -> &str = GIT_LOG_STATE_KEY, |s| s.expanded.as_deref());
+    #[cfg(test)]
+    state_get_opt!(pub(crate) fn git_log_expanded_body(&self) -> &str = GIT_LOG_STATE_KEY, |s| s.expanded_body.as_deref());
+    state_get!(pub(crate) fn git_rebase_base(&self) -> &str = GIT_REBASE_TODO_STATE_KEY, |s| s.base.as_str());
+    state_get!(pub(crate) fn git_rebase_branch(&self) -> &str = GIT_REBASE_TODO_STATE_KEY, |s| s.branch.as_str());
+    state_get_opt!(pub(crate) fn git_rebase_pause(&self) -> &crate::git::rebase::RebasePause = GIT_REBASE_TODO_STATE_KEY, |s| s.pause.as_ref());
+    state_set!(pub(crate) fn set_git_rebase_pause(&mut self, pause: Option<crate::git::rebase::RebasePause>) = GIT_REBASE_TODO_STATE_KEY, |s| s.pause = pause);
+    state_get!(pub(crate) fn git_rebase_steps(&self) -> &[crate::git::rebase::RebaseStep] = GIT_REBASE_TODO_STATE_KEY, |s| s.steps.as_slice());
+    state_get!(pub(crate) fn git_rebase_message_overrides(&self) -> &std::collections::HashMap<String, String> = GIT_REBASE_TODO_STATE_KEY, |s| &s.message_overrides);
 
-    pub fn git_repo_root(&self) -> Option<&Path> {
+    pub(crate) fn git_repo_root(&self) -> Option<&Path> {
         if let Some(s) = self.state.try_get(GIT_STATUS_STATE_KEY) {
             return Some(&s.repo_root);
         }

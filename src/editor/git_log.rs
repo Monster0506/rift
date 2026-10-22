@@ -7,7 +7,7 @@ use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
     /// Open a git log browser, repo-wide (`path: None`) or scoped to one file's history (`path: Some`). `repo_root` is caller-supplied, never re-derived from "whatever's currently active".
-    pub fn open_git_log(
+    pub(crate) fn open_git_log(
         &mut self,
         repo_root: std::path::PathBuf,
         path: Option<std::path::PathBuf>,

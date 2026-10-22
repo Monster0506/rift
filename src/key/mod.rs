@@ -3,32 +3,32 @@
 mod notation;
 mod vt100;
 
-pub use notation::{format_key, parse_key, parse_key_sequence};
+pub(crate) use notation::{format_key, parse_key, parse_key_sequence};
 
 use std::ops::BitOr;
 
 /// Modifier bitset carried by a [`Key`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Mods(u8);
+pub(crate) struct Mods(u8);
 
 impl Mods {
-    pub const NONE: Self = Self(0);
-    pub const SHIFT: Self = Self(1);
-    pub const CTRL: Self = Self(2);
-    pub const ALT: Self = Self(4);
+    pub(crate) const NONE: Self = Self(0);
+    pub(crate) const SHIFT: Self = Self(1);
+    pub(crate) const CTRL: Self = Self(2);
+    pub(crate) const ALT: Self = Self(4);
 
     #[must_use]
-    pub const fn contains(self, other: Self) -> bool {
+    pub(crate) const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
     }
 
     #[must_use]
-    pub const fn is_empty(self) -> bool {
+    pub(crate) const fn is_empty(self) -> bool {
         self.0 == 0
     }
 
     #[must_use]
-    pub const fn without(self, other: Self) -> Self {
+    pub(crate) const fn without(self, other: Self) -> Self {
         Self(self.0 & !other.0)
     }
 }
@@ -43,7 +43,7 @@ impl BitOr for Mods {
 
 /// The key itself, independent of modifiers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum KeyCode {
+pub(crate) enum KeyCode {
     Char(char),
     F(u8),
     Insert,
@@ -67,31 +67,33 @@ pub enum KeyCode {
 /// Built through [`Key::new`] (or the helpers) so the canonical form holds: `Char` carries SHIFT only for Space or alongside CTRL/ALT, CTRL/ALT letters are lowercase, and Ctrl+I/M/[ are Tab/Enter/Esc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Key {
-    pub code: KeyCode,
-    pub mods: Mods,
+    pub(crate) code: KeyCode,
+    pub(crate) mods: Mods,
 }
 
 impl Key {
-    pub const ENTER: Self = Self::plain(KeyCode::Enter);
-    pub const ESC: Self = Self::plain(KeyCode::Esc);
-    pub const TAB: Self = Self::plain(KeyCode::Tab);
-    pub const BACKSPACE: Self = Self::plain(KeyCode::Backspace);
-    pub const DELETE: Self = Self::plain(KeyCode::Delete);
-    pub const INSERT: Self = Self::plain(KeyCode::Insert);
-    pub const HOME: Self = Self::plain(KeyCode::Home);
-    pub const END: Self = Self::plain(KeyCode::End);
-    pub const PAGE_UP: Self = Self::plain(KeyCode::PageUp);
-    pub const PAGE_DOWN: Self = Self::plain(KeyCode::PageDown);
-    pub const UP: Self = Self::plain(KeyCode::Up);
-    pub const DOWN: Self = Self::plain(KeyCode::Down);
-    pub const LEFT: Self = Self::plain(KeyCode::Left);
-    pub const RIGHT: Self = Self::plain(KeyCode::Right);
-    pub const SPACE: Self = Self::char(' ');
-    pub const SHIFT_TAB: Self = Self {
+    pub(crate) const ENTER: Self = Self::plain(KeyCode::Enter);
+    pub(crate) const ESC: Self = Self::plain(KeyCode::Esc);
+    pub(crate) const TAB: Self = Self::plain(KeyCode::Tab);
+    pub(crate) const BACKSPACE: Self = Self::plain(KeyCode::Backspace);
+    pub(crate) const DELETE: Self = Self::plain(KeyCode::Delete);
+    #[cfg(test)]
+    pub(crate) const INSERT: Self = Self::plain(KeyCode::Insert);
+    pub(crate) const HOME: Self = Self::plain(KeyCode::Home);
+    pub(crate) const END: Self = Self::plain(KeyCode::End);
+    pub(crate) const PAGE_UP: Self = Self::plain(KeyCode::PageUp);
+    pub(crate) const PAGE_DOWN: Self = Self::plain(KeyCode::PageDown);
+    pub(crate) const UP: Self = Self::plain(KeyCode::Up);
+    pub(crate) const DOWN: Self = Self::plain(KeyCode::Down);
+    pub(crate) const LEFT: Self = Self::plain(KeyCode::Left);
+    pub(crate) const RIGHT: Self = Self::plain(KeyCode::Right);
+    #[cfg(test)]
+    pub(crate) const SPACE: Self = Self::char(' ');
+    pub(crate) const SHIFT_TAB: Self = Self {
         code: KeyCode::Tab,
         mods: Mods::SHIFT,
     };
-    pub const SHIFT_SPACE: Self = Self {
+    pub(crate) const SHIFT_SPACE: Self = Self {
         code: KeyCode::Char(' '),
         mods: Mods::SHIFT,
     };
@@ -110,23 +112,25 @@ impl Key {
     }
 
     #[must_use]
-    pub fn ctrl(c: char) -> Self {
+    pub(crate) fn ctrl(c: char) -> Self {
         Self::new(KeyCode::Char(c), Mods::CTRL)
     }
 
+    #[cfg(test)]
     #[must_use]
-    pub fn alt(c: char) -> Self {
+    pub(crate) fn alt(c: char) -> Self {
         Self::new(KeyCode::Char(c), Mods::ALT)
     }
 
+    #[cfg(test)]
     #[must_use]
-    pub const fn f(n: u8) -> Self {
+    pub(crate) const fn f(n: u8) -> Self {
         Self::plain(KeyCode::F(n))
     }
 
     /// Build a key in canonical form.
     #[must_use]
-    pub fn new(code: KeyCode, mods: Mods) -> Self {
+    pub(crate) fn new(code: KeyCode, mods: Mods) -> Self {
         let KeyCode::Char(c) = code else {
             return Self { code, mods };
         };
@@ -157,13 +161,13 @@ impl Key {
 
     /// The same key with extra modifiers, re-canonicalized.
     #[must_use]
-    pub fn with(self, mods: Mods) -> Self {
+    pub(crate) fn with(self, mods: Mods) -> Self {
         Self::new(self.code, self.mods | mods)
     }
 
     /// The character this key types, if it types one.
     #[must_use]
-    pub fn text(&self) -> Option<char> {
+    pub(crate) fn text(&self) -> Option<char> {
         match self.code {
             KeyCode::Char(c) if self.mods.without(Mods::SHIFT).is_empty() && !c.is_control() => {
                 Some(c)
@@ -176,7 +180,7 @@ impl Key {
     /// characters, every modifier on non-character keys). `None` when
     /// nothing would change.
     #[must_use]
-    pub fn fallback(&self) -> Option<Self> {
+    pub(crate) fn fallback(&self) -> Option<Self> {
         let stripped = match self.code {
             KeyCode::Char(_) => Self {
                 code: self.code,
@@ -190,13 +194,14 @@ impl Key {
     /// Whether this key is `base`, or `base` plus modifiers that carry no
     /// text meaning (the same equivalence keymap lookup falls back on).
     #[must_use]
-    pub fn is(&self, base: Self) -> bool {
+    pub(crate) fn is(&self, base: Self) -> bool {
         *self == base || self.fallback() == Some(base)
     }
 
     /// Convert key to xterm byte sequence for PTY input.
     #[must_use]
-    pub fn to_vt100_bytes(&self) -> Vec<u8> {
+    #[allow(clippy::wrong_self_convention)]
+    pub(crate) fn to_vt100_bytes(&self) -> Vec<u8> {
         vt100::encode(*self)
     }
 }

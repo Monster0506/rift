@@ -12,7 +12,7 @@ const MESSAGE_LOG_CAPACITY: usize = 500;
 
 /// Types of notifications
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NotificationType {
+pub(crate) enum NotificationType {
     /// Informational message
     Info,
     /// Warning message
@@ -26,16 +26,19 @@ pub enum NotificationType {
 impl From<ErrorSeverity> for NotificationType {
     fn from(severity: ErrorSeverity) -> Self {
         match severity {
-            ErrorSeverity::Info => Self::Info,
             ErrorSeverity::Warning => Self::Warning,
-            ErrorSeverity::Error | ErrorSeverity::Critical => Self::Error,
+            ErrorSeverity::Error => Self::Error,
+            #[cfg(test)]
+            ErrorSeverity::Info => Self::Info,
+            #[cfg(test)]
+            ErrorSeverity::Critical => Self::Error,
         }
     }
 }
 
 /// The kind of a job lifecycle event recorded in the message log
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JobEventKind {
+pub(crate) enum JobEventKind {
     Started,
     Progress(u32),
     Finished,
@@ -45,7 +48,7 @@ pub enum JobEventKind {
 
 /// A single entry in the persistent message log
 #[derive(Debug, Clone)]
-pub enum MessageEntry {
+pub(crate) enum MessageEntry {
     /// A user-facing notification
     Notification {
         time: SystemTime,
@@ -65,7 +68,7 @@ pub enum MessageEntry {
 
 impl MessageEntry {
     #[must_use]
-    pub const fn time(&self) -> SystemTime {
+    pub(crate) const fn time(&self) -> SystemTime {
         match self {
             Self::Notification { time, .. } | Self::JobEvent { time, .. } => *time,
         }
@@ -74,28 +77,32 @@ impl MessageEntry {
 
 /// A single notification
 #[derive(Debug, Clone)]
-pub struct Notification {
+pub(crate) struct Notification {
     /// Unique identifier
-    pub id: u64,
+    #[cfg(test)]
+    pub(crate) id: u64,
     /// The message content
-    pub message: String,
+    pub(crate) message: String,
     /// The type/severity of the notification
-    pub kind: NotificationType,
+    pub(crate) kind: NotificationType,
     /// When the notification was created
-    pub timestamp: Instant,
+    pub(crate) timestamp: Instant,
     /// Optional time-to-live. If None, it persists until manually dismissed.
-    pub ttl: Option<Duration>,
+    pub(crate) ttl: Option<Duration>,
 }
 
 impl Notification {
     /// Create a new notification
-    pub fn new(
+    pub(crate) fn new(
         id: u64,
         kind: NotificationType,
         message: impl Into<String>,
         ttl: Option<Duration>,
     ) -> Self {
+        #[cfg(not(test))]
+        let _ = id;
         Self {
+            #[cfg(test)]
             id,
             message: message.into(),
             kind,
@@ -106,20 +113,20 @@ impl Notification {
 
     /// Check if the notification has expired
     #[must_use]
-    pub fn is_expired(&self, now: Instant) -> bool {
+    pub(crate) fn is_expired(&self, now: Instant) -> bool {
         self.ttl
             .is_some_and(|ttl| now.duration_since(self.timestamp) > ttl)
     }
 }
 
 /// Manages active notifications
-pub struct NotificationManager {
+pub(crate) struct NotificationManager {
     /// Active notifications
     notifications: Vec<Notification>,
     /// Counter for generating unique IDs
     next_id: u64,
     /// Monotonic generation counter for change detection
-    pub generation: u64,
+    pub(crate) generation: u64,
     /// Ring buffer log of recent messages and job events, capped at
     /// `MESSAGE_LOG_CAPACITY` entries.
     message_log: VecDeque<MessageEntry>,
@@ -129,7 +136,7 @@ pub struct NotificationManager {
 impl NotificationManager {
     /// Create a new notification manager
     #[must_use]
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             notifications: Vec::new(),
             next_id: 0,
@@ -140,7 +147,7 @@ impl NotificationManager {
     }
 
     /// Add a notification
-    pub fn add(
+    pub(crate) fn add(
         &mut self,
         kind: NotificationType,
         message: impl Into<String>,
@@ -160,7 +167,7 @@ impl NotificationManager {
         id
     }
 
-    pub fn log_job_event(
+    pub(crate) fn log_job_event(
         &mut self,
         job_id: usize,
         kind: JobEventKind,
@@ -202,12 +209,13 @@ impl NotificationManager {
     }
 
     #[must_use]
-    pub fn message_log(&self) -> Vec<MessageEntry> {
+    pub(crate) fn message_log(&self) -> Vec<MessageEntry> {
         self.message_log.iter().cloned().collect()
     }
 
     /// Add an info notification (convenience)
-    pub fn info(&mut self, message: impl Into<String>) -> u64 {
+    #[cfg(test)]
+    pub(crate) fn info(&mut self, message: impl Into<String>) -> u64 {
         self.add(
             NotificationType::Info,
             message,
@@ -216,7 +224,7 @@ impl NotificationManager {
     }
 
     /// Add a warning notification (convenience)
-    pub fn warn(&mut self, message: impl Into<String>) -> u64 {
+    pub(crate) fn warn(&mut self, message: impl Into<String>) -> u64 {
         self.add(
             NotificationType::Warning,
             message,
@@ -225,7 +233,7 @@ impl NotificationManager {
     }
 
     /// Add an error notification (convenience)
-    pub fn error(&mut self, message: impl Into<String>) -> u64 {
+    pub(crate) fn error(&mut self, message: impl Into<String>) -> u64 {
         self.add(
             NotificationType::Error,
             message,
@@ -233,8 +241,9 @@ impl NotificationManager {
         )
     }
 
+    #[cfg(test)]
     /// Add a success notification (convenience)
-    pub fn success(&mut self, message: impl Into<String>) -> u64 {
+    pub(crate) fn success(&mut self, message: impl Into<String>) -> u64 {
         self.add(
             NotificationType::Success,
             message,
@@ -244,17 +253,17 @@ impl NotificationManager {
 
     /// Check if there are any notifications
     #[must_use]
-    pub const fn is_empty(&self) -> bool {
+    pub(crate) const fn is_empty(&self) -> bool {
         self.notifications.is_empty()
     }
 
-    pub fn iter_active(&self) -> std::slice::Iter<'_, Notification> {
+    pub(crate) fn iter_active(&self) -> std::slice::Iter<'_, Notification> {
         self.notifications.iter()
     }
 
     /// Returns true if the display needs a re-render due to time passing.
     #[must_use]
-    pub fn tick(&self, poll_timeout: Duration) -> bool {
+    pub(crate) fn tick(&self, poll_timeout: Duration) -> bool {
         if self.notifications.is_empty() {
             return false;
         }
@@ -277,12 +286,12 @@ impl NotificationManager {
     }
 
     /// Record that a render has completed.
-    pub fn mark_rendered(&mut self) {
+    pub(crate) fn mark_rendered(&mut self) {
         self.last_render_time = Some(Instant::now());
     }
 
     /// Prune expired notifications
-    pub fn prune_expired(&mut self) {
+    pub(crate) fn prune_expired(&mut self) {
         let now = Instant::now();
         let old_len = self.notifications.len();
         self.notifications.retain(|n| !n.is_expired(now));
@@ -292,7 +301,8 @@ impl NotificationManager {
     }
 
     /// Remove a notification by ID
-    pub fn remove(&mut self, id: u64) {
+    #[cfg(test)]
+    pub(crate) fn remove(&mut self, id: u64) {
         if let Some(pos) = self.notifications.iter().position(|n| n.id == id) {
             self.notifications.remove(pos);
             self.generation += 1;
@@ -300,14 +310,14 @@ impl NotificationManager {
     }
 
     /// Clear the last notification
-    pub fn clear_last(&mut self) {
+    pub(crate) fn clear_last(&mut self) {
         if self.notifications.pop().is_some() {
             self.generation += 1;
         }
     }
 
     /// Clear all notifications
-    pub fn clear_all(&mut self) {
+    pub(crate) fn clear_all(&mut self) {
         if !self.notifications.is_empty() {
             self.notifications.clear();
             self.generation += 1;

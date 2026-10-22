@@ -29,7 +29,7 @@ struct InsertRecording {
 
 /// Owns all dot-repeat state: the saved register, any in-progress
 /// insert recording, and the replaying flag.
-pub struct DotRepeat {
+pub(crate) struct DotRepeat {
     register: Option<DotRegister>,
     recording: Option<InsertRecording>,
     replaying: bool,
@@ -43,7 +43,7 @@ impl Default for DotRepeat {
 
 impl DotRepeat {
     #[must_use]
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             register: None,
             recording: None,
@@ -53,7 +53,7 @@ impl DotRepeat {
 
     /// Whether we are currently replaying a dot-repeat sequence.
     #[must_use]
-    pub const fn is_replaying(&self) -> bool {
+    pub(crate) const fn is_replaying(&self) -> bool {
         self.replaying
     }
 
@@ -63,11 +63,11 @@ impl DotRepeat {
     }
 
     /// Store a single normal-mode command in the register.
-    pub fn record_single(&mut self, cmd: Command) {
+    pub(crate) fn record_single(&mut self, cmd: Command) {
         self.register = Some(DotRegister::Single(cmd));
     }
 
-    pub fn record_region_build_session(
+    pub(crate) fn record_region_build_session(
         &mut self,
         actions: Vec<crate::action::Action>,
         follow_up: Option<crate::action::Action>,
@@ -75,26 +75,26 @@ impl DotRepeat {
         self.register = Some(DotRegister::RegionBuildSession { actions, follow_up });
     }
 
-    pub fn start_insert_recording(&mut self, entry: Command) {
+    pub(crate) fn start_insert_recording(&mut self, entry: Command) {
         self.recording = Some(InsertRecording {
             entry,
             commands: Vec::new(),
         });
     }
 
-    pub fn record_insert_command(&mut self, cmd: Command) {
+    pub(crate) fn record_insert_command(&mut self, cmd: Command) {
         if let Some(ref mut rec) = self.recording {
             rec.commands.push(cmd);
         }
     }
 
-    pub fn pop_insert_command(&mut self) {
+    pub(crate) fn pop_insert_command(&mut self) {
         if let Some(rec) = &mut self.recording {
             rec.commands.pop();
         }
     }
 
-    pub fn finish_insert_recording(&mut self) {
+    pub(crate) fn finish_insert_recording(&mut self) {
         if let Some(rec) = self.recording.take() {
             if !rec.commands.is_empty() {
                 self.register = Some(DotRegister::InsertSession {
@@ -106,7 +106,7 @@ impl DotRepeat {
     }
 
     /// Toggle the replaying flag.
-    pub const fn set_replaying(&mut self, replaying: bool) {
+    pub(crate) const fn set_replaying(&mut self, replaying: bool) {
         self.replaying = replaying;
     }
 }

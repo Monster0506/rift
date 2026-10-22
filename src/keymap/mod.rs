@@ -1,14 +1,14 @@
-pub mod defaults;
-pub mod trie;
+pub(crate) mod defaults;
+pub(crate) mod trie;
 
-pub use self::trie::{MatchResult, Strictness, TrieNode};
+pub(crate) use self::trie::{MatchResult, Strictness, TrieNode};
 use crate::action::Action;
 use crate::document::BufferKindId;
 use crate::key::Key;
 use std::collections::{BTreeMap, HashMap};
 
 /// Trait for resolving the parent context of a given key context.
-pub trait ParentResolver {
+pub(crate) trait ParentResolver {
     fn resolve_parent(&mut self, context: KeyContext) -> Option<KeyContext>;
 }
 
@@ -51,20 +51,15 @@ pub struct KeyBindingToken(pub u64);
 impl KeyBindingToken {
     /// Create a new token from a raw identifier.
     #[must_use]
-    pub const fn new(raw: u64) -> Self {
+    pub(crate) const fn new(raw: u64) -> Self {
         Self(raw)
-    }
-
-    /// Return the raw numeric value.
-    #[must_use]
-    pub const fn get(self) -> u64 {
-        self.0
     }
 }
 
 /// A single registration layer entry for a sequence.
 #[derive(Debug, Clone)]
 struct LayerEntry {
+    #[cfg(test)]
     token: KeyBindingToken,
     owner: Option<KeyBindingToken>,
     action: Action,
@@ -92,7 +87,7 @@ impl KeyMap {
     }
 
     /// Allocate a fresh unique registration token.
-    pub const fn allocate_token(&mut self) -> KeyBindingToken {
+    pub(crate) const fn allocate_token(&mut self) -> KeyBindingToken {
         self.next_token += 1;
         KeyBindingToken(self.next_token)
     }
@@ -103,7 +98,7 @@ impl KeyMap {
     }
 
     /// Register a sequence binding with an auto-generated registration token.
-    pub fn register_sequence(
+    pub(crate) fn register_sequence(
         &mut self,
         context: KeyContext,
         keys: Vec<Key>,
@@ -114,8 +109,9 @@ impl KeyMap {
         token
     }
 
+    #[cfg(test)]
     /// Register a sequence binding with an explicit registration token.
-    pub fn register_with_token(
+    pub(crate) fn register_with_token(
         &mut self,
         context: KeyContext,
         keys: Vec<Key>,
@@ -126,7 +122,7 @@ impl KeyMap {
     }
 
     /// Register a sequence binding with an explicit owner token.
-    pub fn register_with_owner(
+    pub(crate) fn register_with_owner(
         &mut self,
         context: KeyContext,
         keys: Vec<Key>,
@@ -139,7 +135,7 @@ impl KeyMap {
     }
 
     /// Register a layered sequence binding with an explicit token and optional owner token.
-    pub fn register_layered(
+    pub(crate) fn register_layered(
         &mut self,
         context: KeyContext,
         keys: Vec<Key>,
@@ -148,10 +144,13 @@ impl KeyMap {
         owner: Option<KeyBindingToken>,
     ) {
         let entry = LayerEntry {
+            #[cfg(test)]
             token,
             owner,
             action: action.clone(),
         };
+        #[cfg(not(test))]
+        let _ = token;
         self.mappings
             .entry(context)
             .or_default()
@@ -181,7 +180,7 @@ impl KeyMap {
 
     /// Remove the top registration layer for a sequence, restoring any lower layer.
     /// Returns `true` if a layer or binding was removed.
-    pub fn unregister_sequence(&mut self, context: KeyContext, keys: &[Key]) -> bool {
+    pub(crate) fn unregister_sequence(&mut self, context: KeyContext, keys: &[Key]) -> bool {
         let key_tuple = (context, keys.to_vec());
         let mut removed = false;
         if let Some(stack) = self.layers.get_mut(&key_tuple) {
@@ -199,19 +198,9 @@ impl KeyMap {
         }
     }
 
-    /// Remove all registration layers for a sequence.
-    pub fn unregister_sequence_all(&mut self, context: KeyContext, keys: &[Key]) -> bool {
-        let key_tuple = (context, keys.to_vec());
-        let had_layers = self.layers.remove(&key_tuple).is_some();
-        let had_trie = self
-            .mappings
-            .get_mut(&context)
-            .is_some_and(|trie| trie.remove(keys));
-        had_layers || had_trie
-    }
-
+    #[cfg(test)]
     /// Remove a registration layer by its registration token, restoring any lower layer.
-    pub fn unregister_token(&mut self, token: KeyBindingToken) -> bool {
+    pub(crate) fn unregister_token(&mut self, token: KeyBindingToken) -> bool {
         let mut removed = false;
         let mut to_cleanup = Vec::new();
 
@@ -238,7 +227,7 @@ impl KeyMap {
     }
 
     /// Remove all registration layers belonging to an owner token, restoring any lower layers.
-    pub fn unregister_owner(&mut self, owner: KeyBindingToken) -> usize {
+    pub(crate) fn unregister_owner(&mut self, owner: KeyBindingToken) -> usize {
         let mut count = 0;
         let mut to_cleanup = Vec::new();
 
@@ -264,9 +253,10 @@ impl KeyMap {
         count
     }
 
+    #[cfg(test)]
     /// Return the active registration layer count for a sequence.
     #[must_use]
-    pub fn layer_count(&self, context: KeyContext, keys: &[Key]) -> usize {
+    pub(crate) fn layer_count(&self, context: KeyContext, keys: &[Key]) -> usize {
         self.layers
             .get(&(context, keys.to_vec()))
             .map_or(0, std::vec::Vec::len)
@@ -275,7 +265,7 @@ impl KeyMap {
     /// Static fallback chain for built-in contexts; `Buffer` kinds have no
     /// built-in fallback and must be resolved by the caller.
     #[must_use]
-    pub const fn parent_context(context: KeyContext) -> Option<KeyContext> {
+    pub(crate) const fn parent_context(context: KeyContext) -> Option<KeyContext> {
         match context {
             KeyContext::OperatorPending | KeyContext::Visual | KeyContext::TerminalNormal => {
                 Some(KeyContext::Normal)
@@ -293,7 +283,7 @@ impl KeyMap {
     ///
     /// Exact keys win across the whole chain; only then are modifiers with
     /// no text meaning stripped (`Key::fallback`) and the chain retried.
-    pub fn lookup_with_parent<'a, R: ParentResolver>(
+    pub(crate) fn lookup_with_parent<'a, R: ParentResolver>(
         &'a self,
         context: KeyContext,
         keys: &[Key],
@@ -350,23 +340,14 @@ impl KeyMap {
         }
     }
 
-    /// Alias for `lookup_with_parent`.
-    pub fn lookup_with_resolver<'a, R: ParentResolver>(
-        &'a self,
-        context: KeyContext,
-        keys: &[Key],
-        resolve_parent: R,
-    ) -> MatchResult<'a> {
-        self.lookup_with_parent(context, keys, resolve_parent)
-    }
-
+    #[cfg(test)]
     /// Look up a key sequence, walking the default static fallback chain.
-    pub fn lookup<'a>(&'a self, context: KeyContext, keys: &[Key]) -> MatchResult<'a> {
+    pub(crate) fn lookup<'a>(&'a self, context: KeyContext, keys: &[Key]) -> MatchResult<'a> {
         self.lookup_with_parent(context, keys, Self::parent_context)
     }
 
     /// Single-key compatibility lookup with caller-supplied parent resolution.
-    pub fn get_action_with_parent<R: ParentResolver>(
+    pub(crate) fn get_action_with_parent<R: ParentResolver>(
         &self,
         context: KeyContext,
         key: Key,
@@ -376,16 +357,6 @@ impl KeyMap {
             MatchResult::Exact(action) | MatchResult::Ambiguous(action) => Some(action),
             _ => None,
         }
-    }
-
-    /// Alias for `get_action_with_parent`.
-    pub fn get_action_with_resolver<R: ParentResolver>(
-        &self,
-        context: KeyContext,
-        key: Key,
-        resolve_parent: R,
-    ) -> Option<&Action> {
-        self.get_action_with_parent(context, key, resolve_parent)
     }
 
     /// Legacy single-key compatibility using default static fallback.

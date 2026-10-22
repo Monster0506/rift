@@ -11,7 +11,11 @@ impl<T: TerminalBackend> Editor<T> {
     ///
     /// # Panics
     /// Panics if the focused window is not a leaf of the split tree.
-    pub fn open_git_blame(&mut self, path: std::path::PathBuf, repo_root: std::path::PathBuf) {
+    pub(crate) fn open_git_blame(
+        &mut self,
+        path: std::path::PathBuf,
+        repo_root: std::path::PathBuf,
+    ) {
         let linked_doc_id = self
             .document_manager
             .documents_iter()

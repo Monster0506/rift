@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use monster_rift::action::{Action, EditorAction, Motion};
-use monster_rift::key::Key;
-use monster_rift::keymap::{KeyContext, KeyMap};
+use monster_rift::bench_api::action::{Action, EditorAction, Motion};
+use monster_rift::bench_api::key::Key;
+use monster_rift::bench_api::keymap::{KeyContext, KeyMap};
 use std::hint::black_box;
 
 fn keymap_lookup(c: &mut Criterion) {

@@ -12,7 +12,11 @@ pub enum Direction {
 
 impl SplitTree {
     #[must_use]
-    pub fn navigate(&self, direction: Direction, layouts: &[WindowLayout]) -> Option<WindowId> {
+    pub(crate) fn navigate(
+        &self,
+        direction: Direction,
+        layouts: &[WindowLayout],
+    ) -> Option<WindowId> {
         let focused = layouts
             .iter()
             .find(|l| l.window_id == self.focused_window)?;

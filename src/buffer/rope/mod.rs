@@ -25,16 +25,16 @@ fn utf8_len(c: Character) -> u32 {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BufferSource {
+pub(crate) enum BufferSource {
     Original,
     Add,
 }
 
 #[derive(Clone, Debug)]
-pub struct Piece {
-    pub source: BufferSource,
-    pub start: usize,
-    pub len: usize, // Length in Characters
+pub(crate) struct Piece {
+    pub(crate) source: BufferSource,
+    pub(crate) start: usize,
+    pub(crate) len: usize, // Length in Characters
 }
 
 #[derive(Clone, Debug)]
@@ -60,6 +60,7 @@ pub struct PieceTable {
     root: Option<Arc<Node>>,
     original_byte_prefix: Arc<Vec<u32>>,
     add_byte_prefix: Arc<Vec<u32>>,
+    #[cfg(test)]
     original_newline_prefix: Arc<Vec<u32>>,
     add_newline_prefix: Arc<Vec<u32>>,
 }
@@ -68,8 +69,9 @@ impl PieceTable {
     #[must_use]
     pub fn new(original: Vec<Character>) -> Self {
         let len = original.len();
-        let (newlines, byte_len, original_byte_prefix, original_newline_prefix) =
-            count_stats_with_prefixes(&original);
+        let (newlines, byte_len, original_byte_prefix) = count_stats_with_prefixes(&original);
+        #[cfg(test)]
+        let original_newline_prefix = Arc::new(newline_prefix_sums(&original));
         let piece = Piece {
             source: BufferSource::Original,
             start: 0,
@@ -98,7 +100,8 @@ impl PieceTable {
             root,
             original_byte_prefix: Arc::new(original_byte_prefix),
             add_byte_prefix: Arc::new(vec![0]),
-            original_newline_prefix: Arc::new(original_newline_prefix),
+            #[cfg(test)]
+            original_newline_prefix,
             add_newline_prefix: Arc::new(vec![0]),
         }
     }
@@ -127,17 +130,17 @@ impl PieceTable {
     }
 
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.root.as_ref().map_or(0, |n| n.len)
     }
 
     #[must_use]
-    pub fn byte_len(&self) -> usize {
+    pub(crate) fn byte_len(&self) -> usize {
         self.root.as_ref().map_or(0, |n| n.byte_len)
     }
 
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
@@ -148,11 +151,11 @@ impl PieceTable {
     }
 
     #[must_use]
-    pub fn chunks(&self) -> PieceTableChunkIterator<'_> {
+    pub(crate) fn chunks(&self) -> PieceTableChunkIterator<'_> {
         PieceTableChunkIterator::new(self.root.as_deref(), &self.original, &self.add)
     }
 
-    pub fn insert(&mut self, pos: usize, text: &[Character]) {
+    pub(crate) fn insert(&mut self, pos: usize, text: &[Character]) {
         if text.is_empty() {
             return;
         }
@@ -205,7 +208,7 @@ impl PieceTable {
     }
 
     /// Replace `count` characters starting at `pos` with `text` in one pass.
-    pub fn replace(&mut self, pos: usize, count: usize, text: &[Character]) {
+    pub(crate) fn replace(&mut self, pos: usize, count: usize, text: &[Character]) {
         if count == 0 {
             self.insert(pos, text);
             return;
@@ -243,7 +246,7 @@ impl PieceTable {
         assert_tree_metadata(self.root.as_deref());
     }
 
-    pub fn delete(&mut self, range: std::ops::Range<usize>) {
+    pub(crate) fn delete(&mut self, range: std::ops::Range<usize>) {
         let start = range.start;
         let end = range.end;
         if start >= end {
@@ -271,30 +274,20 @@ impl PieceTable {
     }
 
     #[must_use]
-    pub fn get_line_count(&self) -> usize {
+    pub(crate) fn get_line_count(&self) -> usize {
         self.root.as_ref().map_or(0, |n| n.newlines) + 1
     }
 
     #[must_use]
     /// # Panics
     /// Panics if `pos` is not less than the buffer length.
-    pub fn char_at(&self, pos: usize) -> Character {
+    pub(crate) fn char_at(&self, pos: usize) -> Character {
         assert!(pos < self.len(), "Index out of bounds");
         get_char_recursive(self.root.as_deref(), pos, &self.original, &self.add)
     }
 
-    /// Get the Character at the given index.
     #[must_use]
-    pub fn get(&self, index: usize) -> Option<Character> {
-        if index >= self.len() {
-            None
-        } else {
-            Some(self.char_at(index))
-        }
-    }
-
-    #[must_use]
-    pub fn bytes_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
+    pub(crate) fn bytes_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
         let mut result = Vec::new();
         collect_bytes_range(
             self.root.as_deref(),
@@ -306,29 +299,9 @@ impl PieceTable {
         result
     }
 
-    /// Collect Characters in a range
+    #[cfg(test)]
     #[must_use]
-    pub fn chars_on_line(&self, line_idx: usize) -> Vec<Character> {
-        let start = self.line_start_offset(line_idx);
-        let end = if line_idx + 1 >= self.get_line_count() {
-            self.len()
-        } else {
-            self.line_start_offset(line_idx + 1)
-        };
-
-        let mut result = Vec::with_capacity(end - start);
-        collect_chars_range(
-            self.root.as_deref(),
-            start..end,
-            &self.original,
-            &self.add,
-            &mut result,
-        );
-        result
-    }
-
-    #[must_use]
-    pub fn line_start_offset(&self, line_idx: usize) -> usize {
+    pub(crate) fn line_start_offset(&self, line_idx: usize) -> usize {
         if line_idx == 0 {
             return 0;
         }
@@ -343,8 +316,9 @@ impl PieceTable {
         )
     }
 
+    #[cfg(test)]
     #[must_use]
-    pub fn line_at_char(&self, pos: usize) -> usize {
+    pub(crate) fn line_at_char(&self, pos: usize) -> usize {
         if pos >= self.len() {
             return self.get_line_count().saturating_sub(1);
         }
@@ -359,7 +333,7 @@ impl PieceTable {
     /// Convert character index to byte offset. O(log n) to the target
     /// piece, then O(1) within it via `original_byte_prefix`/`add_byte_prefix`.
     #[must_use]
-    pub fn char_to_byte(&self, char_index: usize) -> usize {
+    pub(crate) fn char_to_byte(&self, char_index: usize) -> usize {
         if char_index >= self.len() {
             return self.byte_len();
         }
@@ -374,7 +348,7 @@ impl PieceTable {
     /// Convert byte offset to character index (the char containing the byte, or starting at
     /// it). O(log n) to the target piece, then a binary search within it instead of a scan.
     #[must_use]
-    pub fn byte_to_char(&self, byte_offset: usize) -> usize {
+    pub(crate) fn byte_to_char(&self, byte_offset: usize) -> usize {
         if byte_offset >= self.byte_len() {
             return self.len();
         }
@@ -388,13 +362,13 @@ impl PieceTable {
 
     /// Get an O(N) iterator over the characters
     #[must_use]
-    pub fn iter(&self) -> PieceTableIterator<'_> {
+    pub(crate) fn iter(&self) -> PieceTableIterator<'_> {
         PieceTableIterator::new(self.root.as_deref(), &self.original, &self.add)
     }
 
     /// Collect all logical bytes (UTF-8) from the buffer
     #[must_use]
-    pub fn to_logical_bytes(&self) -> Vec<u8> {
+    pub(crate) fn to_logical_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(self.byte_len());
         for c in self {
             c.encode_utf8(&mut buf);
@@ -404,13 +378,13 @@ impl PieceTable {
 
     /// Get an iterator starting at a specific character index
     #[must_use]
-    pub fn iter_at(&self, start_pos: usize) -> PieceTableIterator<'_> {
+    pub(crate) fn iter_at(&self, start_pos: usize) -> PieceTableIterator<'_> {
         PieceTableIterator::new_at(self.root.as_deref(), start_pos, &self.original, &self.add)
     }
 
     /// Get a chunk iterator starting at a specific character index
     #[must_use]
-    pub fn iter_chunks_at(&self, start_pos: usize) -> PieceTableChunkIterator<'_> {
+    pub(crate) fn iter_chunks_at(&self, start_pos: usize) -> PieceTableChunkIterator<'_> {
         PieceTableChunkIterator::new_at(self.root.as_deref(), start_pos, &self.original, &self.add)
     }
 }
@@ -1026,14 +1000,12 @@ fn count_stats(chars: &[Character]) -> (usize, usize) {
     (newlines, byte_len)
 }
 
-/// Returns cumulative UTF-8 byte-length and newline prefix sums.
-fn count_stats_with_prefixes(chars: &[Character]) -> (usize, usize, Vec<u32>, Vec<u32>) {
+/// Returns cumulative UTF-8 byte-length prefix sums.
+fn count_stats_with_prefixes(chars: &[Character]) -> (usize, usize, Vec<u32>) {
     let mut newlines: u32 = 0;
     let mut byte_len: u32 = 0;
     let mut byte_prefix = Vec::with_capacity(chars.len() + 1);
-    let mut newline_prefix = Vec::with_capacity(chars.len() + 1);
     byte_prefix.push(0);
-    newline_prefix.push(0);
     for c in chars {
         let char_bytes = utf8_len(*c);
         byte_len += char_bytes;
@@ -1041,14 +1013,22 @@ fn count_stats_with_prefixes(chars: &[Character]) -> (usize, usize, Vec<u32>, Ve
         if *c == Character::Newline {
             newlines += 1;
         }
+    }
+    (newlines as usize, byte_len as usize, byte_prefix)
+}
+
+#[cfg(test)]
+fn newline_prefix_sums(chars: &[Character]) -> Vec<u32> {
+    let mut newlines: u32 = 0;
+    let mut newline_prefix = Vec::with_capacity(chars.len() + 1);
+    newline_prefix.push(0);
+    for c in chars {
+        if *c == Character::Newline {
+            newlines += 1;
+        }
         newline_prefix.push(newlines);
     }
-    (
-        newlines as usize,
-        byte_len as usize,
-        byte_prefix,
-        newline_prefix,
-    )
+    newline_prefix
 }
 
 fn get_piece_slice<'a>(
@@ -1177,43 +1157,7 @@ fn collect_bytes_range(
     }
 }
 
-fn collect_chars_range(
-    node: Option<&Node>,
-    range: std::ops::Range<usize>,
-    original: &[Character],
-    add: &[Character],
-    out: &mut Vec<Character>,
-) {
-    if let Some(n) = node {
-        let left_len = n.left.as_ref().map_or(0, |n| n.len);
-        let piece_len = n.piece.len;
-        let current_len = left_len + piece_len;
-
-        // Check intersection with left child
-        if range.start < left_len {
-            let l_start = range.start;
-            let l_end = std::cmp::min(range.end, left_len);
-            collect_chars_range(n.left.as_deref(), l_start..l_end, original, add, out);
-        }
-
-        // Check intersection with current piece
-        if range.end > left_len && range.start < current_len {
-            let p_start = std::cmp::max(range.start, left_len) - left_len;
-            let p_end = std::cmp::min(range.end, current_len) - left_len;
-
-            let slice = get_piece_slice(&n.piece, original, add);
-            out.extend_from_slice(&slice[p_start..p_end]);
-        }
-
-        // Check intersection with right child
-        if range.end > current_len {
-            let r_start = std::cmp::max(range.start, current_len) - current_len;
-            let r_end = range.end - current_len;
-            collect_chars_range(n.right.as_deref(), r_start..r_end, original, add, out);
-        }
-    }
-}
-
+#[cfg(test)]
 fn find_nth_newline_end(
     node: Option<&Node>,
     target: usize,
@@ -1263,6 +1207,7 @@ fn find_nth_newline_end(
     }
 }
 
+#[cfg(test)]
 /// O(log n) to the target piece, then O(1) within it via
 /// `original_newline_prefix`/`add_newline_prefix`.
 fn get_line_at_pos(

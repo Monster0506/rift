@@ -4,18 +4,18 @@ use crate::command_line::commands::ExecutionResult;
 use crate::error::RiftError;
 
 #[derive(Clone, Copy)]
-pub struct SettingsResolver<L: 'static, G: 'static> {
+pub(crate) struct SettingsResolver<L: 'static, G: 'static> {
     local: SettingsRegistry<L>,
     global: SettingsRegistry<G>,
 }
 
 impl<L, G> SettingsResolver<L, G> {
     #[must_use]
-    pub const fn new(local: SettingsRegistry<L>, global: SettingsRegistry<G>) -> Self {
+    pub(crate) const fn new(local: SettingsRegistry<L>, global: SettingsRegistry<G>) -> Self {
         Self { local, global }
     }
 
-    pub fn set(
+    pub(crate) fn set(
         &self,
         name: &str,
         value: Option<&str>,
@@ -33,7 +33,12 @@ impl<L, G> SettingsResolver<L, G> {
     }
 
     #[must_use]
-    pub fn get(&self, name: &str, local_target: &L, global_target: &G) -> Option<SettingValue> {
+    pub(crate) fn get(
+        &self,
+        name: &str,
+        local_target: &L,
+        global_target: &G,
+    ) -> Option<SettingValue> {
         self.local
             .get_setting(name, local_target)
             .or_else(|| self.global.get_setting(name, global_target))

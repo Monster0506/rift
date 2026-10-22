@@ -5,19 +5,18 @@ use std::fmt::{self, Display};
 
 use std::cell::RefCell;
 
-pub mod api;
-pub mod byte_map;
-pub mod line_cache;
-pub mod line_index;
-pub mod rope;
+pub(crate) mod api;
+pub(crate) mod line_cache;
+pub(crate) mod line_index;
+pub(crate) mod rope;
 use line_cache::LineCache;
 use line_index::LineIndex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CharEdit {
-    pub pos: usize,
-    pub del: usize,
-    pub ins: usize,
+pub(crate) struct CharEdit {
+    pub(crate) pos: usize,
+    pub(crate) del: usize,
+    pub(crate) ins: usize,
 }
 
 const CHAR_EDIT_LOG_CAP: usize = 64;
@@ -26,9 +25,8 @@ pub struct TextBuffer {
     pub line_index: LineIndex,
     cursor: usize,
     desired_col: Option<usize>,
-    pub revision: u64,
-    pub line_cache: RefCell<LineCache>,
-    pub byte_map_cache: RefCell<Option<crate::buffer::byte_map::ByteLineMap>>,
+    pub(crate) revision: u64,
+    pub(crate) line_cache: RefCell<LineCache>,
     char_edit_log: Vec<CharEdit>,
 }
 
@@ -40,7 +38,6 @@ impl Clone for TextBuffer {
             desired_col: self.desired_col,
             revision: self.revision,
             line_cache: self.line_cache.clone(),
-            byte_map_cache: self.byte_map_cache.clone(),
             char_edit_log: Vec::new(),
         }
     }
@@ -56,7 +53,6 @@ impl TextBuffer {
             desired_col: None,
             revision: 0,
             line_cache: RefCell::new(LineCache::new()),
-            byte_map_cache: RefCell::new(None),
             char_edit_log: Vec::new(),
         })
     }
@@ -67,12 +63,12 @@ impl TextBuffer {
         }
     }
 
-    pub fn take_char_edits(&mut self) -> Vec<CharEdit> {
+    pub(crate) fn take_char_edits(&mut self) -> Vec<CharEdit> {
         std::mem::take(&mut self.char_edit_log)
     }
 
     #[must_use]
-    pub const fn cursor(&self) -> usize {
+    pub(crate) const fn cursor(&self) -> usize {
         self.cursor
     }
 
@@ -98,7 +94,7 @@ impl TextBuffer {
     }
 
     #[must_use]
-    pub fn byte_len(&self) -> usize {
+    pub(crate) fn byte_len(&self) -> usize {
         self.line_index.table.byte_len()
     }
 
@@ -112,19 +108,20 @@ impl TextBuffer {
         self.cursor.saturating_sub(line_start)
     }
 
-    pub fn get_col(&self) -> usize {
+    pub(crate) fn get_col(&self) -> usize {
         self.col_on_line(self.get_line())
     }
 
-    pub const fn desired_col(&self) -> Option<usize> {
+    #[cfg(test)]
+    pub(crate) const fn desired_col(&self) -> Option<usize> {
         self.desired_col
     }
 
-    pub fn latch_desired_col(&mut self, col: usize) -> usize {
+    pub(crate) fn latch_desired_col(&mut self, col: usize) -> usize {
         *self.desired_col.get_or_insert(col)
     }
 
-    pub const fn clear_desired_col(&mut self) {
+    pub(crate) const fn clear_desired_col(&mut self) {
         self.desired_col = None;
     }
 
@@ -139,7 +136,7 @@ impl TextBuffer {
         line_start + clamped
     }
 
-    pub const fn move_left(&mut self) -> bool {
+    pub(crate) const fn move_left(&mut self) -> bool {
         self.desired_col = None;
         if self.cursor > 0 {
             self.cursor -= 1;
@@ -149,7 +146,7 @@ impl TextBuffer {
         }
     }
 
-    pub fn move_right(&mut self) -> bool {
+    pub(crate) fn move_right(&mut self) -> bool {
         self.desired_col = None;
         let len = self.len();
         if self.cursor < len {
@@ -162,13 +159,6 @@ impl TextBuffer {
 
     /// # Errors
     /// Never returns `Err`.
-    pub fn insert(&mut self, byte: u8) -> Result<(), RiftError> {
-        let ch = Character::from(byte);
-        self.insert_chars(&[ch])
-    }
-
-    /// # Errors
-    /// Never returns `Err`.
     pub fn insert_char(&mut self, ch: char) -> Result<(), RiftError> {
         let character = Character::from(ch);
         self.insert_chars(&[character])
@@ -176,13 +166,14 @@ impl TextBuffer {
 
     /// # Errors
     /// Never returns `Err`.
-    pub fn insert_character(&mut self, ch: Character) -> Result<(), RiftError> {
+    pub(crate) fn insert_character(&mut self, ch: Character) -> Result<(), RiftError> {
         self.insert_chars(&[ch])
     }
 
+    #[cfg(test)]
     /// # Errors
     /// Never returns `Err`.
-    pub fn insert_bytes(&mut self, bytes: &[u8]) -> Result<(), RiftError> {
+    pub(crate) fn insert_bytes(&mut self, bytes: &[u8]) -> Result<(), RiftError> {
         let mut chars = Vec::with_capacity(bytes.len());
         let mut remaining = bytes;
         loop {
@@ -220,7 +211,8 @@ impl TextBuffer {
 
     /// # Errors
     /// Never returns `Err`.
-    pub fn insert_chars(&mut self, chars: &[Character]) -> Result<(), RiftError> {
+    #[allow(clippy::unnecessary_wraps)]
+    pub(crate) fn insert_chars(&mut self, chars: &[Character]) -> Result<(), RiftError> {
         crate::perf_span!(
             "buffer_mutate",
             crate::perf::PerfFields {
@@ -271,7 +263,12 @@ impl TextBuffer {
         true
     }
 
-    pub fn replace_range(&mut self, start: usize, count: usize, chars: &[Character]) -> bool {
+    pub(crate) fn replace_range(
+        &mut self,
+        start: usize,
+        count: usize,
+        chars: &[Character],
+    ) -> bool {
         let Some(end) = start.checked_add(count) else {
             return false;
         };
@@ -310,7 +307,7 @@ impl TextBuffer {
         true
     }
 
-    pub fn delete_forward(&mut self) -> bool {
+    pub(crate) fn delete_forward(&mut self) -> bool {
         if self.cursor >= self.len() {
             return false;
         }
@@ -321,7 +318,7 @@ impl TextBuffer {
     }
 
     #[must_use]
-    pub fn get_line(&self) -> usize {
+    pub(crate) fn get_line(&self) -> usize {
         self.line_index.get_line_at(self.cursor)
     }
 
@@ -330,11 +327,11 @@ impl TextBuffer {
         self.line_index.line_count()
     }
 
-    pub fn byte_to_char(&self, byte_offset: usize) -> usize {
+    pub(crate) fn byte_to_char(&self, byte_offset: usize) -> usize {
         self.line_index.byte_to_char(byte_offset)
     }
 
-    pub fn char_to_byte(&self, char_index: usize) -> usize {
+    pub(crate) fn char_to_byte(&self, char_index: usize) -> usize {
         self.line_index.char_to_byte(char_index)
     }
 
@@ -354,15 +351,12 @@ impl TextBuffer {
         self.line_index.bytes_range(start..end)
     }
 
-    pub const fn get_chunk_at_byte(&self, _pos: usize) -> &[u8] {
-        &[]
-    }
-
-    pub fn to_logical_bytes(&self) -> Vec<u8> {
+    pub(crate) fn to_logical_bytes(&self) -> Vec<u8> {
         self.line_index.table.to_logical_bytes()
     }
 
-    pub fn patch_logical_bytes(
+    #[cfg(any(test, feature = "treesitter"))]
+    pub(crate) fn patch_logical_bytes(
         &self,
         cached: &[u8],
         start_byte: usize,
@@ -403,15 +397,15 @@ impl TextBuffer {
         Some(patched)
     }
 
-    pub fn iter(&self) -> crate::buffer::rope::PieceTableIterator<'_> {
+    pub(crate) fn iter(&self) -> crate::buffer::rope::PieceTableIterator<'_> {
         self.line_index.table.iter()
     }
 
-    pub fn iter_at(&self, pos: usize) -> crate::buffer::rope::PieceTableIterator<'_> {
+    pub(crate) fn iter_at(&self, pos: usize) -> crate::buffer::rope::PieceTableIterator<'_> {
         self.line_index.table.iter_at(pos)
     }
 
-    pub fn char_at(&self, pos: usize) -> Option<Character> {
+    pub(crate) fn char_at(&self, pos: usize) -> Option<Character> {
         if pos >= self.len() {
             None
         } else {
@@ -462,7 +456,7 @@ impl TextBuffer {
         out
     }
 
-    pub fn move_up(&mut self) -> bool {
+    pub(crate) fn move_up(&mut self) -> bool {
         let current_line = self.get_line();
         if current_line == 0 {
             return false;
@@ -483,17 +477,17 @@ impl TextBuffer {
         true
     }
 
-    pub const fn move_to_start(&mut self) {
+    pub(crate) const fn move_to_start(&mut self) {
         self.desired_col = None;
         self.cursor = 0;
     }
 
-    pub fn move_to_end(&mut self) {
+    pub(crate) fn move_to_end(&mut self) {
         self.desired_col = None;
         self.cursor = self.len();
     }
 
-    pub fn move_to_line_start(&mut self) {
+    pub(crate) fn move_to_line_start(&mut self) {
         self.desired_col = None;
         let line = self.get_line();
         if let Some(start) = self.line_index.get_start(line) {
@@ -501,7 +495,7 @@ impl TextBuffer {
         }
     }
 
-    pub fn move_to_line_end(&mut self) {
+    pub(crate) fn move_to_line_end(&mut self) {
         self.desired_col = Some(usize::MAX);
         let line = self.get_line();
         if let Some(end) = self.line_index.get_end(line, self.len()) {
@@ -514,22 +508,22 @@ impl TextBuffer {
         crate::movement::buffer::move_word_right(self)
     }
 
-    pub fn move_word_end(&mut self) -> bool {
+    pub(crate) fn move_word_end(&mut self) -> bool {
         self.desired_col = None;
         crate::movement::buffer::move_word_end(self)
     }
 
-    pub fn move_word_left(&mut self) -> bool {
+    pub(crate) fn move_word_left(&mut self) -> bool {
         self.desired_col = None;
         crate::movement::buffer::move_word_left(self)
     }
 
-    pub fn move_big_word_right(&mut self) -> bool {
+    pub(crate) fn move_big_word_right(&mut self) -> bool {
         self.desired_col = None;
         crate::movement::buffer::move_big_word_right(self)
     }
 
-    pub fn move_big_word_left(&mut self) -> bool {
+    pub(crate) fn move_big_word_left(&mut self) -> bool {
         self.desired_col = None;
         crate::movement::buffer::move_big_word_left(self)
     }
@@ -539,17 +533,17 @@ impl TextBuffer {
         crate::movement::buffer::move_paragraph_forward(self)
     }
 
-    pub fn move_paragraph_backward(&mut self) -> bool {
+    pub(crate) fn move_paragraph_backward(&mut self) -> bool {
         self.desired_col = None;
         crate::movement::buffer::move_paragraph_backward(self)
     }
 
-    pub fn move_sentence_forward(&mut self) -> bool {
+    pub(crate) fn move_sentence_forward(&mut self) -> bool {
         self.desired_col = None;
         crate::movement::buffer::move_sentence_forward(self)
     }
 
-    pub fn move_sentence_backward(&mut self) -> bool {
+    pub(crate) fn move_sentence_backward(&mut self) -> bool {
         self.desired_col = None;
         crate::movement::buffer::move_sentence_backward(self)
     }
@@ -601,12 +595,6 @@ impl BufferView for TextBuffer {
 
     fn line_cache(&self) -> Option<&std::cell::RefCell<crate::buffer::line_cache::LineCache>> {
         Some(&self.line_cache)
-    }
-
-    fn byte_line_map(
-        &self,
-    ) -> Option<&std::cell::RefCell<Option<crate::buffer::byte_map::ByteLineMap>>> {
-        Some(&self.byte_map_cache)
     }
 
     fn char_to_byte(&self, char_index: usize) -> usize {

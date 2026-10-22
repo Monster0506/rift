@@ -433,18 +433,6 @@ fn test_undo_tree_clear() {
     assert!(!tree.can_redo());
 }
 
-// DocumentSnapshot Tests
-
-#[test]
-fn test_document_snapshot() {
-    let snap = DocumentSnapshot::new(
-        "Hello\nWorld\n".chars().map(Character::from).collect(),
-        Vec::new(),
-    );
-    assert_eq!(snap.byte_count, 12);
-    assert_eq!(snap.line_count, 3); // "Hello", "World", ""
-}
-
 // Additional UndoTree Tests
 
 #[test]
@@ -910,8 +898,6 @@ fn test_compute_replay_path() {
     // Should undo seq=3 (to seq=1) and redo seq=2.
     let replay = tree.compute_replay_path(3, 2).unwrap();
 
-    assert_eq!(replay.from_seq, 3);
-    assert_eq!(replay.to_seq, 2);
     assert_eq!(replay.undo_ops.len(), 1);
     assert_eq!(replay.undo_ops[0].description, "Edit 3");
     assert_eq!(replay.redo_ops.len(), 1);

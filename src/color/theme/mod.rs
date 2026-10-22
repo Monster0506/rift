@@ -12,7 +12,7 @@ use crate::state::UserSettings;
 
 /// Theme handler trait, allowing themes to be extended to apply more than
 /// just background/foreground colors (status bar, selection, cursor, etc.)
-pub trait ThemeHandler {
+pub(crate) trait ThemeHandler {
     /// Apply a theme to the given settings; called whenever a theme is
     /// changed via `:set theme <name>`.
     fn apply_theme(&self, theme: &Theme, settings: &mut UserSettings);
@@ -20,7 +20,7 @@ pub trait ThemeHandler {
 
 /// Default theme handler; applies background and foreground colors, and can
 /// be extended to handle additional theme properties as they're added.
-pub struct DefaultThemeHandler;
+pub(crate) struct DefaultThemeHandler;
 
 impl ThemeHandler for DefaultThemeHandler {
     fn apply_theme(&self, theme: &Theme, settings: &mut UserSettings) {
@@ -41,20 +41,20 @@ use std::collections::HashMap;
 /// Syntax highlighting colors for a theme
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntaxColors {
-    pub colors: HashMap<String, Color>,
+    pub(crate) colors: HashMap<String, Color>,
 }
 
 impl SyntaxColors {
     /// Create syntax colors from a list of base colors
     #[must_use]
-    pub fn from_base_colors(base: &[(&str, Color)]) -> Self {
+    pub(crate) fn from_base_colors(base: &[(&str, Color)]) -> Self {
         Self {
             colors: base.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
         }
     }
 
     #[must_use]
-    pub fn get_color(&self, capture: &str) -> Option<Color> {
+    pub(crate) fn get_color(&self, capture: &str) -> Option<Color> {
         // 1. Normalize (remove leading @ and trim)
         let clean_capture = capture.trim_start_matches('@').trim();
 
@@ -79,35 +79,24 @@ impl SyntaxColors {
 
 /// Editor theme definition
 #[derive(Debug, Clone)]
-pub struct Theme {
+pub(crate) struct Theme {
     /// Theme name
-    pub name: &'static str,
-    /// Light/dark classification, exposed for consumers that adapt to it;
-    /// the built-in renderer keys off explicit colors, not this field.
-    pub variant: ThemeVariant,
+    pub(crate) name: &'static str,
     /// Background color
-    pub background: Color,
+    pub(crate) background: Color,
     /// Foreground (text) color
-    pub foreground: Color,
+    pub(crate) foreground: Color,
     /// Cursor accent color (block fill in Normal mode, bar color in Insert mode)
-    pub cursor_color: Color,
+    pub(crate) cursor_color: Color,
     /// Optional syntax highlighting colors
-    pub syntax: Option<SyntaxColors>,
-}
-
-/// Theme variant
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ThemeVariant {
-    Light,
-    Dark,
+    pub(crate) syntax: Option<SyntaxColors>,
 }
 
 impl Theme {
     /// Create a new theme
     #[must_use]
-    pub const fn new(
+    pub(crate) const fn new(
         name: &'static str,
-        variant: ThemeVariant,
         background: Color,
         foreground: Color,
         cursor_color: Color,
@@ -115,7 +104,6 @@ impl Theme {
     ) -> Self {
         Self {
             name,
-            variant,
             background,
             foreground,
             cursor_color,
@@ -125,11 +113,10 @@ impl Theme {
 
     /// Get the light theme
     #[must_use]
-    pub fn light() -> Self {
+    pub(crate) fn light() -> Self {
         let syntax = Self::light_syntax();
         Self::new(
             crate::constants::themes::LIGHT,
-            ThemeVariant::Light,
             Color::Rgb {
                 r: 255,
                 g: 255,
@@ -235,11 +222,10 @@ impl Theme {
 
     /// Get the dark theme
     #[must_use]
-    pub fn dark() -> Self {
+    pub(crate) fn dark() -> Self {
         let syntax = Self::dark_syntax();
         Self::new(
             crate::constants::themes::DARK,
-            ThemeVariant::Dark,
             Color::Rgb {
                 r: 30,
                 g: 30,
@@ -346,7 +332,7 @@ impl Theme {
 
     /// Get the gruvbox theme (dark variant)
     #[must_use]
-    pub fn gruvbox() -> Self {
+    pub(crate) fn gruvbox() -> Self {
         let fg = Color::Rgb {
             r: 235,
             g: 219,
@@ -355,7 +341,6 @@ impl Theme {
         let syntax = Self::gruvbox_syntax(fg);
         Self::new(
             crate::constants::themes::GRUVBOX,
-            ThemeVariant::Dark,
             Color::Rgb {
                 r: 40,
                 g: 40,
@@ -474,7 +459,7 @@ impl Theme {
 
     /// Get the nordic theme
     #[must_use]
-    pub fn nordic() -> Self {
+    pub(crate) fn nordic() -> Self {
         let fg = Color::Rgb {
             r: 187,
             g: 195,
@@ -483,7 +468,6 @@ impl Theme {
         let syntax = Self::nordic_syntax(fg);
         Self::new(
             crate::constants::themes::NORDIC,
-            ThemeVariant::Dark,
             Color::Rgb {
                 r: 46,
                 g: 52,
@@ -601,7 +585,7 @@ impl Theme {
 
     /// Get theme by name
     #[must_use]
-    pub fn by_name(name: &str) -> Option<Self> {
+    pub(crate) fn by_name(name: &str) -> Option<Self> {
         match name.to_lowercase().as_str() {
             crate::constants::themes::LIGHT => Some(Self::light()),
             crate::constants::themes::DARK => Some(Self::dark()),
@@ -613,7 +597,7 @@ impl Theme {
 
     /// Get all available theme names
     #[must_use]
-    pub fn available_themes() -> Vec<&'static str> {
+    pub(crate) fn available_themes() -> Vec<&'static str> {
         vec![
             crate::constants::themes::LIGHT,
             crate::constants::themes::DARK,
@@ -624,7 +608,7 @@ impl Theme {
 
     /// Apply this theme using the default theme handler
     /// This is the main entry point for applying themes
-    pub fn apply_to_settings(&self, settings: &mut UserSettings) {
+    pub(crate) fn apply_to_settings(&self, settings: &mut UserSettings) {
         THEME_HANDLER.apply_theme(self, settings);
     }
 }

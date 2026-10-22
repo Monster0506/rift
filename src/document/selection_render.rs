@@ -15,7 +15,7 @@ const SELECTION_FG: crate::color::Color = crate::color::Color::Black;
 impl Document {
     /// Mirror the active + banked selection regions into `ui.selection.*`
     /// annotations so they render through the presentation pipeline, like search highlights.
-    pub fn sync_selection_annotations(&mut self, active: Option<Region>, banked: &[Region]) {
+    pub(crate) fn sync_selection_annotations(&mut self, active: Option<Region>, banked: &[Region]) {
         use crate::annotations::{
             Anchor, Annotation, AnnotationOwner, Kind, Presentation, StyleOverride,
         };
@@ -64,10 +64,5 @@ impl Document {
                 );
             }
         }
-    }
-
-    /// Remove all selection-highlight annotations.
-    pub fn clear_selection_annotations(&mut self) {
-        self.annotations.clear_by_kind_prefix("ui.selection");
     }
 }

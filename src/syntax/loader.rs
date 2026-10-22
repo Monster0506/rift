@@ -1,29 +1,30 @@
+#[cfg(feature = "treesitter")]
 use crate::error::{ErrorType, RiftError};
 use std::collections::HashMap;
 #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
+#[cfg(any(feature = "treesitter", test))]
+use std::sync::Arc;
 #[cfg(feature = "treesitter")]
 use std::sync::Mutex;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 
 #[cfg(feature = "treesitter")]
-pub type Language = tree_sitter::Language;
-#[cfg(not(feature = "treesitter"))]
-#[derive(Clone)]
-pub struct Language;
+pub(crate) type Language = tree_sitter::Language;
 
+#[cfg(feature = "treesitter")]
 #[derive(Clone)]
-pub struct LoadedLanguage {
-    pub language: Language,
-    pub name: String,
-    pub lib: Option<Arc<RawLib>>,
+pub(crate) struct LoadedLanguage {
+    pub(crate) language: Language,
+    pub(crate) name: String,
+    pub(crate) lib: Option<Arc<RawLib>>,
 }
 
+#[cfg(feature = "treesitter")]
 impl LoadedLanguage {
-    #[cfg(feature = "treesitter")]
     #[must_use]
-    pub fn bundled(language: Language, name: &str) -> Self {
+    pub(crate) fn bundled(language: Language, name: &str) -> Self {
         Self {
             language,
             name: name.to_string(),
@@ -34,39 +35,41 @@ impl LoadedLanguage {
 
 /// Runtime-registered language customisations from plugins.
 #[derive(Default)]
-pub struct DynamicRegistry {
+pub(crate) struct DynamicRegistry {
     /// File extension -> language name overrides (e.g. "svelte" -> "svelte").
-    pub filetype_map: HashMap<String, String>,
+    pub(crate) filetype_map: HashMap<String, String>,
     /// Language name -> highlights query source override.
-    pub highlights_overrides: HashMap<String, String>,
+    pub(crate) highlights_overrides: HashMap<String, String>,
     /// Language name -> injections query source.
-    pub injections_queries: HashMap<String, String>,
+    pub(crate) injections_queries: HashMap<String, String>,
 }
 
-pub struct LanguageLoader {
+pub(crate) struct LanguageLoader {
     _grammar_dir: PathBuf,
-    pub dynamic: RwLock<DynamicRegistry>,
+    pub(crate) dynamic: RwLock<DynamicRegistry>,
     #[cfg(feature = "treesitter")]
     loaded_libs: Mutex<Vec<Arc<RawLib>>>,
     /// Grammars registered via `register_grammar()`, keyed by language name.
+    #[cfg(feature = "treesitter")]
     dynamic_languages: RwLock<HashMap<String, LoadedLanguage>>,
 }
 
 impl LanguageLoader {
     #[must_use]
-    pub fn new(grammar_dir: PathBuf) -> Self {
+    pub(crate) fn new(grammar_dir: PathBuf) -> Self {
         Self {
             _grammar_dir: grammar_dir,
             dynamic: RwLock::new(DynamicRegistry::default()),
             #[cfg(feature = "treesitter")]
             loaded_libs: Mutex::new(Vec::new()),
+            #[cfg(feature = "treesitter")]
             dynamic_languages: RwLock::new(HashMap::new()),
         }
     }
 
     // Dynamic registration (called from plugin mutations)
 
-    pub fn register_filetype(&self, ext: &str, lang_name: &str) {
+    pub(crate) fn register_filetype(&self, ext: &str, lang_name: &str) {
         let mut reg = self
             .dynamic
             .write()
@@ -75,7 +78,7 @@ impl LanguageLoader {
             .insert(ext.to_string(), lang_name.to_string());
     }
 
-    pub fn language_name_for_file(&self, path: &Path) -> Option<String> {
+    pub(crate) fn language_name_for_file(&self, path: &Path) -> Option<String> {
         let ext = path.extension()?.to_str()?;
         // Dynamic registry (from plugins) takes priority.
         {
@@ -116,7 +119,7 @@ impl LanguageLoader {
         Some(name.to_string())
     }
 
-    pub fn register_language_query(&self, lang_name: &str, query_src: &str) {
+    pub(crate) fn register_language_query(&self, lang_name: &str, query_src: &str) {
         let mut reg = self
             .dynamic
             .write()
@@ -125,7 +128,7 @@ impl LanguageLoader {
             .insert(lang_name.to_string(), query_src.to_string());
     }
 
-    pub fn register_injections_query(&self, lang_name: &str, query_src: &str) {
+    pub(crate) fn register_injections_query(&self, lang_name: &str, query_src: &str) {
         let mut reg = self
             .dynamic
             .write()
@@ -139,7 +142,7 @@ impl LanguageLoader {
     /// # Errors
     /// Returns `Err` when the library or its language symbol cannot be loaded.
     #[cfg(feature = "treesitter")]
-    pub fn register_grammar(
+    pub(crate) fn register_grammar(
         &self,
         lang_name: &str,
         so_path: &str,
@@ -200,7 +203,8 @@ impl LanguageLoader {
     /// # Errors
     /// Always returns `Err`.
     #[cfg(not(feature = "treesitter"))]
-    pub fn register_grammar(
+    #[allow(clippy::unused_self)]
+    pub(crate) fn register_grammar(
         &self,
         _lang_name: &str,
         _so_path: &str,
@@ -215,7 +219,8 @@ impl LanguageLoader {
     ///
     /// # Errors
     /// Returns `Err` when the path has no extension or its language cannot be loaded.
-    pub fn load_language_for_file(&self, path: &Path) -> Result<LoadedLanguage, RiftError> {
+    #[cfg(feature = "treesitter")]
+    pub(crate) fn load_language_for_file(&self, path: &Path) -> Result<LoadedLanguage, RiftError> {
         let extension = path.extension().and_then(|e| e.to_str()).ok_or_else(|| {
             RiftError::new(ErrorType::Internal, "NO_EXTENSION", "File has no extension")
         })?;
@@ -272,7 +277,8 @@ impl LanguageLoader {
     ///
     /// # Errors
     /// Returns `Err` when neither a dynamic nor a bundled grammar exists for `lang_name`.
-    pub fn load_language(&self, lang_name: &str) -> Result<LoadedLanguage, RiftError> {
+    #[cfg(feature = "treesitter")]
+    pub(crate) fn load_language(&self, lang_name: &str) -> Result<LoadedLanguage, RiftError> {
         {
             let langs = self
                 .dynamic_languages
@@ -301,7 +307,12 @@ impl LanguageLoader {
     ///
     /// # Errors
     /// Returns `Err` when no highlights override or bundled query exists for the language.
-    pub fn load_query(&self, lang_name: &str, query_name: &str) -> Result<String, RiftError> {
+    #[cfg(feature = "treesitter")]
+    pub(crate) fn load_query(
+        &self,
+        lang_name: &str,
+        query_name: &str,
+    ) -> Result<String, RiftError> {
         // Check highlights overrides from plugins.
         if query_name == "highlights" {
             let reg = self
@@ -375,7 +386,8 @@ impl LanguageLoader {
 
     /// Load an injections query for a language.
     /// Checks the dynamic plugin registry first, then bundled queries.
-    pub fn load_injections_query(&self, lang_name: &str) -> Option<String> {
+    #[cfg(feature = "treesitter")]
+    pub(crate) fn load_injections_query(&self, lang_name: &str) -> Option<String> {
         // Plugin-registered injections take priority.
         {
             let reg = self
@@ -491,6 +503,7 @@ fn get_bundled_language(lang_name: &str) -> Option<(Language, &'static str)> {
 
 /// Built-in injections queries for bundled grammars. The capture name is the
 /// target language, avoiding the need to parse `#set! injection.language`.
+#[cfg(feature = "treesitter")]
 fn get_bundled_injections_query(lang_name: &str) -> Option<&'static str> {
     match lang_name {
         "svelte" => Some(
@@ -508,13 +521,17 @@ fn get_bundled_injections_query(lang_name: &str) -> Option<&'static str> {
     }
 }
 
-pub struct RawLib(*mut std::ffi::c_void);
+#[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
+pub(crate) struct RawLib(*mut std::ffi::c_void);
 
 // SAFETY: dlopen/LoadLibrary handles are process-wide; dlsym/dlclose are thread-safe.
+#[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
 unsafe impl Send for RawLib {}
 // SAFETY: RawLib is never mutated after open, so shared &self access is sound.
+#[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
 unsafe impl Sync for RawLib {}
 
+#[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
 impl RawLib {
     #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
     unsafe fn open(path: &str) -> Result<Self, String> {
@@ -539,6 +556,7 @@ impl RawLib {
     }
 }
 
+#[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
 impl Drop for RawLib {
     fn drop(&mut self) {
         // SAFETY: self.0 came from a successful open, and Drop runs exactly once.
@@ -553,17 +571,19 @@ mod sys {
         fn dlopen(path: *const i8, flags: i32) -> *mut std::ffi::c_void;
         #[cfg(feature = "treesitter")]
         fn dlsym(h: *mut std::ffi::c_void, sym: *const i8) -> *mut std::ffi::c_void;
+        #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
         fn dlclose(h: *mut std::ffi::c_void) -> i32;
     }
     #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-    pub unsafe fn open(path: *const i8) -> *mut std::ffi::c_void {
+    pub(crate) unsafe fn open(path: *const i8) -> *mut std::ffi::c_void {
         dlopen(path, 2)
     } // RTLD_NOW
     #[cfg(feature = "treesitter")]
-    pub unsafe fn sym(h: *mut std::ffi::c_void, s: *const i8) -> *mut std::ffi::c_void {
+    pub(crate) unsafe fn sym(h: *mut std::ffi::c_void, s: *const i8) -> *mut std::ffi::c_void {
         dlsym(h, s)
     }
-    pub unsafe fn close(h: *mut std::ffi::c_void) {
+    #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
+    pub(crate) unsafe fn close(h: *mut std::ffi::c_void) {
         dlclose(h);
     }
 }
@@ -575,17 +595,19 @@ mod sys {
         fn LoadLibraryA(path: *const i8) -> *mut std::ffi::c_void;
         #[cfg(feature = "treesitter")]
         fn GetProcAddress(h: *mut std::ffi::c_void, sym: *const i8) -> *mut std::ffi::c_void;
+        #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
         fn FreeLibrary(h: *mut std::ffi::c_void) -> i32;
     }
     #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-    pub unsafe fn open(path: *const i8) -> *mut std::ffi::c_void {
+    pub(crate) unsafe fn open(path: *const i8) -> *mut std::ffi::c_void {
         LoadLibraryA(path)
     }
     #[cfg(feature = "treesitter")]
-    pub unsafe fn sym(h: *mut std::ffi::c_void, s: *const i8) -> *mut std::ffi::c_void {
+    pub(crate) unsafe fn sym(h: *mut std::ffi::c_void, s: *const i8) -> *mut std::ffi::c_void {
         GetProcAddress(h, s)
     }
-    pub unsafe fn close(h: *mut std::ffi::c_void) {
+    #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
+    pub(crate) unsafe fn close(h: *mut std::ffi::c_void) {
         FreeLibrary(h);
     }
 }
@@ -593,14 +615,15 @@ mod sys {
 #[cfg(not(any(unix, windows)))]
 mod sys {
     #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-    pub unsafe fn open(_: *const i8) -> *mut std::ffi::c_void {
+    pub(crate) unsafe fn open(_: *const i8) -> *mut std::ffi::c_void {
         std::ptr::null_mut()
     }
     #[cfg(feature = "treesitter")]
-    pub unsafe fn sym(_: *mut std::ffi::c_void, _: *const i8) -> *mut std::ffi::c_void {
+    pub(crate) unsafe fn sym(_: *mut std::ffi::c_void, _: *const i8) -> *mut std::ffi::c_void {
         std::ptr::null_mut()
     }
-    pub unsafe fn close(_: *mut std::ffi::c_void) {}
+    #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
+    pub(crate) unsafe fn close(_: *mut std::ffi::c_void) {}
 }
 
 #[cfg(test)]

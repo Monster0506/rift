@@ -1,14 +1,16 @@
-pub mod buffer;
-pub mod styled;
-pub mod theme;
+#[cfg(test)]
+pub(crate) mod buffer;
+#[cfg(test)]
+pub(crate) mod styled;
+pub(crate) mod theme;
 
-pub use theme::{Theme, ThemeVariant};
+pub(crate) use theme::Theme;
 
-pub type ColorPair = (Option<Color>, Option<Color>);
+pub(crate) type ColorPair = (Option<Color>, Option<Color>);
 
-pub type CellColorSpan = (std::ops::Range<usize>, ColorPair);
+pub(crate) type CellColorSpan = (std::ops::Range<usize>, ColorPair);
 
-pub type CellColorSpans = Vec<CellColorSpan>;
+pub(crate) type CellColorSpans = Vec<CellColorSpan>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Color {
@@ -35,7 +37,7 @@ pub enum Color {
 
 impl Color {
     #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
+    pub(crate) fn parse(s: &str) -> Option<Self> {
         Some(match s.to_lowercase().as_str() {
             "red" => Self::Red,
             "darkred" => Self::DarkRed,
@@ -65,7 +67,7 @@ impl Color {
 }
 
 #[must_use]
-pub fn contrasting_color(bg: Color) -> Color {
+pub(crate) fn contrasting_color(bg: Color) -> Color {
     match bg {
         Color::Black
         | Color::DarkGrey
@@ -113,20 +115,22 @@ pub fn contrasting_color(bg: Color) -> Color {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ColorStyle {
-    pub fg: Option<Color>,
-    pub bg: Option<Color>,
+pub(crate) struct ColorStyle {
+    pub(crate) fg: Option<Color>,
+    pub(crate) bg: Option<Color>,
 }
 
+#[cfg(test)]
 impl ColorStyle {
     #[must_use]
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self { fg: None, bg: None }
     }
 
     #[must_use]
-    pub const fn fg(fg: Color) -> Self {
+    pub(crate) const fn fg(fg: Color) -> Self {
         Self {
             fg: Some(fg),
             bg: None,
@@ -134,7 +138,7 @@ impl ColorStyle {
     }
 
     #[must_use]
-    pub const fn bg(bg: Color) -> Self {
+    pub(crate) const fn bg(bg: Color) -> Self {
         Self {
             fg: None,
             bg: Some(bg),
@@ -142,7 +146,7 @@ impl ColorStyle {
     }
 
     #[must_use]
-    pub const fn new_colors(fg: Color, bg: Color) -> Self {
+    pub(crate) const fn new_colors(fg: Color, bg: Color) -> Self {
         Self {
             fg: Some(fg),
             bg: Some(bg),
@@ -150,55 +154,15 @@ impl ColorStyle {
     }
 
     #[must_use]
-    pub const fn with_fg(mut self, fg: Color) -> Self {
-        self.fg = Some(fg);
-        self
-    }
-
-    #[must_use]
-    pub const fn with_bg(mut self, bg: Color) -> Self {
-        self.bg = Some(bg);
-        self
-    }
-
-    #[must_use]
-    pub const fn is_empty(&self) -> bool {
+    pub(crate) const fn is_empty(self) -> bool {
         self.fg.is_none() && self.bg.is_none()
     }
 }
 
+#[cfg(test)]
 impl Default for ColorStyle {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-pub trait SyntaxHighlighter {
-    fn get_style(&self, line: usize, column: usize) -> Option<ColorStyle>;
-
-    fn get_line_spans(&self, line: usize, line_length: usize) -> Vec<(usize, usize, ColorStyle)> {
-        let mut spans = Vec::new();
-        let mut current_start = 0;
-        let mut current_style = None;
-
-        for col in 0..line_length {
-            let style = self.get_style(line, col);
-
-            if style != current_style {
-                if let Some(style) = current_style {
-                    spans.push((current_start, col, style));
-                }
-
-                current_start = col;
-                current_style = style;
-            }
-        }
-
-        if let Some(style) = current_style {
-            spans.push((current_start, line_length, style));
-        }
-
-        spans
     }
 }
 

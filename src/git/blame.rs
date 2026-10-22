@@ -5,32 +5,32 @@ use std::sync::Arc;
 
 /// Metadata for one commit as reported by blame. Shared by every [`BlameLine`] attributed to it; behind an `Arc` so a file with a few authors and thousands of lines doesn't pay for thousands of copies of each author's name/email/summary.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BlameCommit {
-    pub sha: String,
-    pub author: String,
-    pub author_mail: String,
-    pub author_time: i64,
-    pub author_tz: String,
-    pub committer: String,
-    pub committer_mail: String,
-    pub committer_time: i64,
-    pub committer_tz: String,
-    pub summary: String,
+pub(crate) struct BlameCommit {
+    pub(crate) sha: String,
+    pub(crate) author: String,
+    pub(crate) author_mail: String,
+    pub(crate) author_time: i64,
+    pub(crate) author_tz: String,
+    pub(crate) committer: String,
+    pub(crate) committer_mail: String,
+    pub(crate) committer_time: i64,
+    pub(crate) committer_tz: String,
+    pub(crate) summary: String,
     /// `previous <sha> <filename>`: the commit/path this content was last changed from, absent for a commit that introduced the line (or for a `--boundary` root shown without one).
-    pub previous: Option<(String, String)>,
+    pub(crate) previous: Option<(String, String)>,
     /// Set when git printed a bare `boundary` marker line for this commit
     /// (a `--boundary`-limited ancestor at the edge of the walked range).
-    pub boundary: bool,
+    pub(crate) boundary: bool,
 }
 
 /// One final-file line of a blame listing, attributed to the commit that
 /// last touched it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BlameLine {
-    pub commit: Arc<BlameCommit>,
-    pub orig_line: u32,
-    pub final_line: u32,
-    pub content: String,
+pub(crate) struct BlameLine {
+    pub(crate) commit: Arc<BlameCommit>,
+    pub(crate) orig_line: u32,
+    pub(crate) final_line: u32,
+    pub(crate) content: String,
 }
 
 /// Mutable accumulator for a commit's metadata lines while a new group is being read. Every field defaults to empty/zero/false so truncated input (a commit whose metadata block was cut short) still produces a usable, non-panicking [`BlameCommit`] rather than failing the whole parse.
@@ -111,7 +111,7 @@ fn parse_header(line: &str) -> Option<(String, u32, u32)> {
 
 /// Parse the full stdout of `git blame --porcelain`. Malformed or truncated input degrades gracefully (missing fields default to empty/zero) rather than panicking; blame is advisory display data, not something worth failing the whole request over.
 #[must_use]
-pub fn parse_blame(input: &str) -> Vec<BlameLine> {
+pub(crate) fn parse_blame(input: &str) -> Vec<BlameLine> {
     let lines: Vec<&str> = input.lines().collect();
     let mut seen: HashMap<String, Arc<BlameCommit>> = HashMap::new();
     let mut result = Vec::new();

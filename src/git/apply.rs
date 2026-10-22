@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 
 /// Render `hunk` as a standalone unified-diff patch for `path`, suitable for `git apply`. A hunk never changes a file's path (renames are a whole-file operation elsewhere), so `path` is used verbatim on both sides. `is_new_file` selects the header `git apply --cached` needs to create a brand-new index entry for.
 #[must_use]
-pub fn render_patch(path: &str, hunk: &Hunk, is_new_file: bool) -> String {
+pub(crate) fn render_patch(path: &str, hunk: &Hunk, is_new_file: bool) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "diff --git a/{path} b/{path}");
     if is_new_file {
@@ -101,7 +101,7 @@ fn apply_patch(repo_root: &Path, patch: &str, extra_args: &[&str]) -> Result<(),
 ///
 /// # Errors
 /// Returns `Err` when `git apply --cached` cannot be spawned or rejects the patch.
-pub fn stage_hunk(
+pub(crate) fn stage_hunk(
     repo_root: &Path,
     path: &str,
     hunk: &Hunk,
@@ -118,7 +118,7 @@ pub fn stage_hunk(
 ///
 /// # Errors
 /// Returns `Err` when `git apply --cached -R` cannot be spawned or rejects the patch.
-pub fn unstage_hunk(repo_root: &Path, path: &str, hunk: &Hunk) -> Result<(), RiftError> {
+pub(crate) fn unstage_hunk(repo_root: &Path, path: &str, hunk: &Hunk) -> Result<(), RiftError> {
     apply_patch(
         repo_root,
         &render_patch(path, hunk, false),
@@ -131,7 +131,11 @@ pub fn unstage_hunk(repo_root: &Path, path: &str, hunk: &Hunk) -> Result<(), Rif
 ///
 /// # Errors
 /// Returns `Err` when `git apply -R` cannot be spawned or rejects the patch.
-pub fn discard_hunk_worktree(repo_root: &Path, path: &str, hunk: &Hunk) -> Result<(), RiftError> {
+pub(crate) fn discard_hunk_worktree(
+    repo_root: &Path,
+    path: &str,
+    hunk: &Hunk,
+) -> Result<(), RiftError> {
     apply_patch(repo_root, &render_patch(path, hunk, false), &["-R"])
 }
 

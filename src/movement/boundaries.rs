@@ -5,7 +5,7 @@ use super::classify::{classify_char, CharClass};
 /// Find the next word boundary position going forward from `start`
 /// (a character index into `text`).
 #[must_use]
-pub fn next_word(text: &str, start: usize) -> usize {
+pub(crate) fn next_word(text: &str, start: usize) -> usize {
     let chars: Vec<char> = text.chars().collect();
     let len = chars.len();
 
@@ -34,7 +34,7 @@ pub fn next_word(text: &str, start: usize) -> usize {
 /// Find the previous word boundary position going backward from `start`
 /// (a character index into `text`).
 #[must_use]
-pub fn prev_word(text: &str, start: usize) -> usize {
+pub(crate) fn prev_word(text: &str, start: usize) -> usize {
     if start == 0 {
         return 0;
     }

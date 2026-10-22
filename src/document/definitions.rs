@@ -4,14 +4,14 @@ use crate::command_line::settings::{
 use crate::document::LineEnding;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WrapMode {
+pub(crate) enum WrapMode {
     Off,
     Expr(String),
 }
 
 impl WrapMode {
     #[must_use]
-    pub fn resolve(&self, terminal_width: usize) -> usize {
+    pub(crate) fn resolve(&self, terminal_width: usize) -> usize {
         match self {
             Self::Off => 0,
             Self::Expr(s) => crate::eval::eval(s, &|kw| {
@@ -29,21 +29,21 @@ impl WrapMode {
 
 /// Document-specific options
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DocumentOptions {
+pub(crate) struct DocumentOptions {
     /// Line ending character(s) to use for this document
-    pub line_ending: LineEnding,
+    pub(crate) line_ending: LineEnding,
 
     /// Whether the file started with a UTF-8 BOM, written back on save
-    pub has_bom: bool,
+    pub(crate) has_bom: bool,
 
     /// Tab width in spaces (for display and expansion)
-    pub tab_width: usize,
+    pub(crate) tab_width: usize,
     /// Whether to expand tabs to spaces when inserting
-    pub expand_tabs: bool,
+    pub(crate) expand_tabs: bool,
     /// Whether to show line numbers for this document
-    pub show_line_numbers: bool,
+    pub(crate) show_line_numbers: bool,
     /// Per-document wrap setting: None = inherit global, Some(mode) = override
-    pub wrap: Option<WrapMode>,
+    pub(crate) wrap: Option<WrapMode>,
 }
 
 impl Default for DocumentOptions {
@@ -122,7 +122,7 @@ fn set_line_ending(
                 Ok(())
             }
             "crlf" | "windows" | "dos" => {
-                options.line_ending = LineEnding::CRLF;
+                options.line_ending = LineEnding::Crlf;
                 Ok(())
             }
             _ => Err(SettingError::ValidationError(format!(
@@ -223,6 +223,6 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
 ];
 
 #[must_use]
-pub const fn create_document_settings_registry() -> SettingsRegistry<DocumentOptions> {
+pub(crate) const fn create_document_settings_registry() -> SettingsRegistry<DocumentOptions> {
     SettingsRegistry::new(DOCUMENT_SETTINGS)
 }

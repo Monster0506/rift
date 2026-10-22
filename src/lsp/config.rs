@@ -1,6 +1,6 @@
 /// A capability declared by a language server plugin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LspCapability {
+pub(crate) enum LspCapability {
     GotoDefinition,
     References,
     Hover,
@@ -12,7 +12,7 @@ pub enum LspCapability {
 
 impl LspCapability {
     #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
+    pub(crate) fn parse(s: &str) -> Option<Self> {
         match s {
             "definition" => Some(Self::GotoDefinition),
             "references" => Some(Self::References),
@@ -28,32 +28,30 @@ impl LspCapability {
 
 /// Configuration for a language server registered by a plugin.
 #[derive(Debug, Clone)]
-pub struct LspServerConfig {
-    pub command: String,
-    pub args: Vec<String>,
-    /// File extensions this server handles, e.g. `[".rs"]`
-    pub extensions: Vec<String>,
+pub(crate) struct LspServerConfig {
+    pub(crate) command: String,
+    pub(crate) args: Vec<String>,
     /// Project root markers, e.g. `["Cargo.toml", ".git"]`
-    pub root_markers: Vec<String>,
+    pub(crate) root_markers: Vec<String>,
     /// Capabilities declared by this server.
-    pub capabilities: Vec<LspCapability>,
+    pub(crate) capabilities: Vec<LspCapability>,
     /// Passed verbatim as `initializationOptions` in the LSP initialize request.
-    pub initialization_options: Option<serde_json::Value>,
+    pub(crate) initialization_options: Option<serde_json::Value>,
     /// Keep the server alive in a broker across editor sessions, so restarts
     /// reattach to its warm index instead of paying a full reindex.
-    pub keep_alive: bool,
+    pub(crate) keep_alive: bool,
 }
 
 impl LspServerConfig {
     #[must_use]
-    pub fn has_capability(&self, cap: LspCapability) -> bool {
+    pub(crate) fn has_capability(&self, cap: LspCapability) -> bool {
         self.capabilities.is_empty() || self.capabilities.contains(&cap)
     }
 }
 
 /// Derive the LSP languageId from a filetype/language name.
 #[must_use]
-pub fn language_id(lang: &str) -> &'static str {
+pub(crate) fn language_id(lang: &str) -> &'static str {
     match lang {
         "rust" => "rust",
         "python" => "python",

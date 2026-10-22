@@ -17,7 +17,7 @@ fn stale_syntax_job_result_does_not_clobber_newer_state() {
         .ok()
         .and_then(|src| tree_sitter::Query::new(&grammar.language, &src).ok())
         .map(Arc::new);
-    let syntax = build_syntax(grammar, highlights, &loader).expect("build_syntax");
+    let syntax = build_syntax(grammar, highlights, &loader);
     editor.active_document().set_syntax(syntax);
     editor.do_incremental_syntax_parse();
 
@@ -80,7 +80,7 @@ fn undo_keeps_syntax_tree_for_incremental_reuse() {
         .ok()
         .and_then(|src| tree_sitter::Query::new(&grammar.language, &src).ok())
         .map(Arc::new);
-    let syntax = build_syntax(grammar, highlights, &loader).expect("build_syntax");
+    let syntax = build_syntax(grammar, highlights, &loader);
     editor.active_document().set_syntax(syntax);
     editor.do_incremental_syntax_parse();
 
@@ -127,7 +127,7 @@ fn set_aware_delete_keeps_syntax_highlights_in_sync() {
         .ok()
         .and_then(|src| tree_sitter::Query::new(&grammar.language, &src).ok())
         .map(Arc::new);
-    let syntax = build_syntax(grammar, highlights_query, &loader).expect("build_syntax");
+    let syntax = build_syntax(grammar, highlights_query, &loader);
     editor.active_document().set_syntax(syntax);
     editor.do_incremental_syntax_parse();
 
@@ -186,7 +186,7 @@ fn ghost_paint_keeps_syntax_highlights_in_sync_while_painted() {
         .ok()
         .and_then(|src| tree_sitter::Query::new(&grammar.language, &src).ok())
         .map(Arc::new);
-    let syntax = build_syntax(grammar, highlights_query, &loader).expect("build_syntax");
+    let syntax = build_syntax(grammar, highlights_query, &loader);
     editor.active_document().set_syntax(syntax);
     editor.do_incremental_syntax_parse();
 

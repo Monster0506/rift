@@ -10,29 +10,29 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 #[derive(Debug)]
-pub struct FileSaveResult {
-    pub document_id: DocumentId,
-    pub saved_seq: EditSeq,
-    pub path: PathBuf,
-    pub content_hash: crate::history::persist::Sha256Digest,
+pub(crate) struct FileSaveResult {
+    pub(crate) document_id: DocumentId,
+    pub(crate) saved_seq: EditSeq,
+    pub(crate) path: PathBuf,
+    pub(crate) content_hash: crate::history::persist::Sha256Digest,
 }
 
-crate::impl_job_payload!(FileSaveResult);
+crate::job_manager::impl_job_payload!(FileSaveResult);
 
 #[derive(Debug)]
-pub struct FileSaveJob {
-    pub document_id: DocumentId,
-    pub piece_table: PieceTable,
-    pub path: PathBuf,
-    pub line_ending: LineEnding,
-    pub has_bom: bool,
-    pub saved_seq: EditSeq,
-    pub token: Option<crate::job_manager::AsyncToken>,
+pub(crate) struct FileSaveJob {
+    pub(crate) document_id: DocumentId,
+    pub(crate) piece_table: PieceTable,
+    pub(crate) path: PathBuf,
+    pub(crate) line_ending: LineEnding,
+    pub(crate) has_bom: bool,
+    pub(crate) saved_seq: EditSeq,
+    pub(crate) token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl FileSaveJob {
     #[must_use]
-    pub const fn new(
+    pub(crate) const fn new(
         document_id: DocumentId,
         piece_table: PieceTable,
         path: PathBuf,
@@ -49,12 +49,6 @@ impl FileSaveJob {
             saved_seq,
             token: None,
         }
-    }
-
-    #[must_use]
-    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
-        self.token = Some(token);
-        self
     }
 }
 
@@ -168,29 +162,28 @@ impl Job for FileSaveJob {
 }
 
 #[derive(Debug)]
-pub struct FileLoadResult {
-    pub document_id: DocumentId,
-    pub line_index: LineIndex,
-    pub line_ending: LineEnding,
-    pub has_bom: bool,
-    pub path: PathBuf,
-    pub is_reload: bool,
-    pub content_hash: crate::history::persist::Sha256Digest,
+pub(crate) struct FileLoadResult {
+    pub(crate) document_id: DocumentId,
+    pub(crate) line_index: LineIndex,
+    pub(crate) line_ending: LineEnding,
+    pub(crate) has_bom: bool,
+    pub(crate) is_reload: bool,
+    pub(crate) content_hash: crate::history::persist::Sha256Digest,
 }
 
-crate::impl_job_payload!(FileLoadResult);
+crate::job_manager::impl_job_payload!(FileLoadResult);
 
 #[derive(Debug)]
-pub struct FileLoadJob {
-    pub document_id: DocumentId,
-    pub path: PathBuf,
-    pub is_reload: bool,
-    pub token: Option<crate::job_manager::AsyncToken>,
+pub(crate) struct FileLoadJob {
+    pub(crate) document_id: DocumentId,
+    pub(crate) path: PathBuf,
+    pub(crate) is_reload: bool,
+    pub(crate) token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl FileLoadJob {
     #[must_use]
-    pub const fn new(document_id: DocumentId, path: PathBuf) -> Self {
+    pub(crate) const fn new(document_id: DocumentId, path: PathBuf) -> Self {
         Self {
             document_id,
             path,
@@ -200,19 +193,13 @@ impl FileLoadJob {
     }
 
     #[must_use]
-    pub const fn new_reload(document_id: DocumentId, path: PathBuf) -> Self {
+    pub(crate) const fn new_reload(document_id: DocumentId, path: PathBuf) -> Self {
         Self {
             document_id,
             path,
             is_reload: true,
             token: None,
         }
-    }
-
-    #[must_use]
-    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
-        self.token = Some(token);
-        self
     }
 }
 
@@ -254,7 +241,6 @@ impl Job for FileLoadJob {
                 line_index,
                 line_ending: decoded.line_ending,
                 has_bom: decoded.has_bom,
-                path: self.path.clone(),
                 is_reload: self.is_reload,
                 content_hash,
             })

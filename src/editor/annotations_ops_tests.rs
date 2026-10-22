@@ -207,7 +207,7 @@ fn add_button_annotation(e: &mut Editor<MockTerminal>, content: &str) {
             fg: Some(Color::Cyan),
             ..Default::default()
         }))
-        .with_actions(vec![Action::new("run").as_default()]),
+        .with_actions(vec![Action::new("run").with_default()]),
     );
 }
 
@@ -233,7 +233,7 @@ fn add_checkbox_annotations(
             .with_presentation(
                 Presentation::default().with_adornment(Adornment::new("[ ]", Placement::Overlay)),
             )
-            .with_actions(vec![Action::new("toggle").as_default()]),
+            .with_actions(vec![Action::new("toggle").with_default()]),
         );
         checkbox_ids.push(id);
     }
@@ -736,7 +736,7 @@ fn checkbox_activation_toggles_payload() {
             AnnotationOwner::User,
         )
         .with_payload(payload)
-        .with_actions(vec![Action::new("toggle").as_default()]),
+        .with_actions(vec![Action::new("toggle").with_default()]),
     );
     e.active_document().buffer.set_cursor(2).ok();
 
@@ -773,7 +773,7 @@ fn checkbox_toggle_edits_literal_box_in_buffer() {
             AnnotationOwner::User,
         )
         .with_payload(payload)
-        .with_actions(vec![Action::new("toggle").as_default()]),
+        .with_actions(vec![Action::new("toggle").with_default()]),
     );
     e.active_document().buffer.set_cursor(lb).ok();
 
@@ -807,7 +807,7 @@ fn affordances_render_when_cursor_on_interactive_annotation() {
             AnnotationOwner::User,
         )
         .with_actions(vec![
-            Action::new("stage").as_default(),
+            Action::new("stage").with_default(),
             Action::new("discard").with_key_hint(KeyHint::new("d")),
         ]),
     );
@@ -840,7 +840,10 @@ fn separate_verbs_dispatch_to_separate_handlers() {
             Anchor::range(0, 5),
             AnnotationOwner::User,
         )
-        .with_actions(vec![Action::new("open").as_default(), Action::new("stage")]),
+        .with_actions(vec![
+            Action::new("open").with_default(),
+            Action::new("stage"),
+        ]),
     );
     e.active_document().buffer.set_cursor(2).ok();
 

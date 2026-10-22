@@ -1,16 +1,20 @@
-pub mod action;
-pub mod kind;
-pub mod marker;
-pub mod payload;
-pub mod presentation;
-pub mod registry;
-pub mod value;
+pub(crate) mod action;
+pub(crate) mod kind;
+pub(crate) mod marker;
+pub(crate) mod payload;
+pub(crate) mod presentation;
+pub(crate) mod registry;
+pub(crate) mod value;
 
-pub use action::{Action, ActivationEvent, KeyHint};
-pub use kind::{well_known, Kind};
-pub use marker::{Gravity, Marker};
-pub use presentation::{Adornment, FaceRef, Placement, Presentation, StyleOverride};
-pub use value::Value;
+pub use action::Action;
+#[cfg(test)]
+pub(crate) use action::KeyHint;
+pub(crate) use kind::well_known;
+pub use kind::Kind;
+pub(crate) use marker::Marker;
+pub(crate) use presentation::{Adornment, FaceRef, Placement};
+pub use presentation::{Presentation, StyleOverride};
+pub(crate) use value::Value;
 
 use serde::{Deserialize, Serialize};
 
@@ -47,12 +51,12 @@ pub struct AnnotationId(u64);
 
 impl AnnotationId {
     #[must_use]
-    pub const fn new(id: u64) -> Self {
+    pub(crate) const fn new(id: u64) -> Self {
         Self(id)
     }
 
     #[must_use]
-    pub const fn get(self) -> u64 {
+    pub(crate) const fn get(self) -> u64 {
         self.0
     }
 
@@ -78,7 +82,7 @@ pub enum AnnotationOwner {
 
 impl AnnotationOwner {
     #[must_use]
-    pub const fn rank(&self) -> u8 {
+    pub(crate) const fn rank(&self) -> u8 {
         match self {
             Self::System => 0,
             Self::Lsp => 1,
@@ -89,7 +93,7 @@ impl AnnotationOwner {
     }
 
     #[must_use]
-    pub const fn as_str(&self) -> &'static str {
+    pub(crate) const fn as_str(&self) -> &'static str {
         match self {
             Self::System => "system",
             Self::Lsp => "lsp",
@@ -109,7 +113,7 @@ pub enum Anchor {
 
 impl Anchor {
     #[must_use]
-    pub const fn point(offset: usize) -> Self {
+    pub(crate) const fn point(offset: usize) -> Self {
         Self::Point(Marker::left(offset))
     }
 
@@ -119,26 +123,26 @@ impl Anchor {
     }
 }
 
-pub type LspDiagnosticSpec<'a> = (usize, Option<std::ops::Range<usize>>, i64, &'a str);
+pub(crate) type LspDiagnosticSpec<'a> = (usize, Option<std::ops::Range<usize>>, i64, &'a str);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Stickiness {
+pub(crate) enum Stickiness {
     Delete,
     Persist,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Annotation {
-    pub id: AnnotationId,
+    pub(crate) id: AnnotationId,
     pub anchor: Anchor,
-    pub kind: Kind,
-    pub owner: AnnotationOwner,
-    pub payload: Value,
-    pub presentation: Option<Presentation>,
-    pub actions: Vec<Action>,
-    pub stickiness: Stickiness,
-    pub visible: bool,
-    pub read_only: bool,
+    pub(crate) kind: Kind,
+    pub(crate) owner: AnnotationOwner,
+    pub(crate) payload: Value,
+    pub(crate) presentation: Option<Presentation>,
+    pub(crate) actions: Vec<Action>,
+    pub(crate) stickiness: Stickiness,
+    pub(crate) visible: bool,
+    pub(crate) read_only: bool,
 }
 
 impl Annotation {
@@ -159,25 +163,25 @@ impl Annotation {
     }
 
     #[must_use]
-    pub fn with_payload(mut self, payload: Value) -> Self {
+    pub(crate) fn with_payload(mut self, payload: Value) -> Self {
         self.payload = payload;
         self
     }
 
     #[must_use]
-    pub const fn with_stickiness(mut self, stickiness: Stickiness) -> Self {
+    pub(crate) const fn with_stickiness(mut self, stickiness: Stickiness) -> Self {
         self.stickiness = stickiness;
         self
     }
 
     #[must_use]
-    pub const fn with_visible(mut self, visible: bool) -> Self {
+    pub(crate) const fn with_visible(mut self, visible: bool) -> Self {
         self.visible = visible;
         self
     }
 
     #[must_use]
-    pub const fn with_read_only(mut self, read_only: bool) -> Self {
+    pub(crate) const fn with_read_only(mut self, read_only: bool) -> Self {
         self.read_only = read_only;
         self
     }
@@ -195,12 +199,12 @@ impl Annotation {
     }
 
     #[must_use]
-    pub const fn is_interactive(&self) -> bool {
+    pub(crate) const fn is_interactive(&self) -> bool {
         !self.actions.is_empty()
     }
 
     #[must_use]
-    pub fn default_action(&self) -> Option<&Action> {
+    pub(crate) fn default_action(&self) -> Option<&Action> {
         self.actions.iter().find(|a| a.default).or_else(|| {
             if self.actions.len() == 1 {
                 self.actions.first()
@@ -211,12 +215,12 @@ impl Annotation {
     }
 
     #[must_use]
-    pub fn action_for_verb(&self, verb: &str) -> Option<&Action> {
+    pub(crate) fn action_for_verb(&self, verb: &str) -> Option<&Action> {
         self.actions.iter().find(|a| a.verb == verb)
     }
 
     #[must_use]
-    pub fn affordance_line(&self, activate_key: &str) -> Option<String> {
+    pub(crate) fn affordance_line(&self, activate_key: &str) -> Option<String> {
         if self.actions.is_empty() {
             return None;
         }
@@ -276,7 +280,7 @@ impl AnnotationStore {
         self.revision += 1;
     }
 
-    pub const fn revision(&self) -> u64 {
+    pub(crate) const fn revision(&self) -> u64 {
         self.revision
     }
 
@@ -354,11 +358,15 @@ impl AnnotationStore {
         id
     }
 
-    pub const fn peek_next_id(&self) -> AnnotationId {
+    pub(crate) const fn peek_next_id(&self) -> AnnotationId {
         self.next_id
     }
 
-    pub fn add_with_id(&mut self, id: AnnotationId, mut annotation: Annotation) -> AnnotationId {
+    pub(crate) fn add_with_id(
+        &mut self,
+        id: AnnotationId,
+        mut annotation: Annotation,
+    ) -> AnnotationId {
         annotation.id = id;
         self.annotations.push(annotation);
         self.next_id = self.next_id.max(id.next());
@@ -366,7 +374,7 @@ impl AnnotationStore {
         id
     }
 
-    pub fn update(&mut self, id: AnnotationId, f: impl FnOnce(&mut Annotation)) -> bool {
+    pub(crate) fn update(&mut self, id: AnnotationId, f: impl FnOnce(&mut Annotation)) -> bool {
         if let Some(a) = self.annotations.iter_mut().find(|a| a.id == id) {
             let before = (a.anchor, a.is_interactive());
             f(a);
@@ -381,37 +389,40 @@ impl AnnotationStore {
         }
     }
 
-    pub fn remove(&mut self, id: AnnotationId) -> bool {
+    pub(crate) fn remove(&mut self, id: AnnotationId) -> bool {
         let before = self.annotations.len();
         self.annotations.retain(|a| a.id != id);
         self.invalidate_index();
         self.annotations.len() != before
     }
 
-    pub fn get(&self, id: AnnotationId) -> Option<&Annotation> {
+    pub(crate) fn get(&self, id: AnnotationId) -> Option<&Annotation> {
         self.annotations.iter().find(|a| a.id == id)
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.annotations.clear();
         self.invalidate_index();
     }
 
-    pub fn clear_by_owner(&mut self, owner: &AnnotationOwner) {
+    pub(crate) fn clear_by_owner(&mut self, owner: &AnnotationOwner) {
         self.annotations.retain(|a| &a.owner != owner);
         self.invalidate_index();
     }
 
-    pub fn clear_by_kind_prefix(&mut self, prefix: &str) {
+    pub(crate) fn clear_by_kind_prefix(&mut self, prefix: &str) {
         self.annotations.retain(|a| !a.kind.matches_prefix(prefix));
         self.invalidate_index();
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Annotation> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &Annotation> {
         self.annotations.iter()
     }
 
-    pub fn query_kind<'a>(&'a self, prefix: &'a str) -> impl Iterator<Item = &'a Annotation> {
+    pub(crate) fn query_kind<'a>(
+        &'a self,
+        prefix: &'a str,
+    ) -> impl Iterator<Item = &'a Annotation> {
         self.annotations
             .iter()
             .filter(move |a| a.kind.matches_prefix(prefix))
@@ -521,7 +532,7 @@ impl AnnotationStore {
             .collect()
     }
 
-    pub fn leading_width_in(&self, start: usize, end: usize) -> usize {
+    pub(crate) fn leading_width_in(&self, start: usize, end: usize) -> usize {
         self.index_query(start..end)
             .into_iter()
             .filter(|a| a.visible)
@@ -562,7 +573,7 @@ impl AnnotationStore {
         out
     }
 
-    pub fn tooltip_at<'a>(
+    pub(crate) fn tooltip_at<'a>(
         &'a self,
         offset: usize,
         defaults: Option<&'a registry::KindRegistry>,
@@ -576,7 +587,7 @@ impl AnnotationStore {
             })
     }
 
-    pub fn tooltip_at_line<'a>(
+    pub(crate) fn tooltip_at_line<'a>(
         &'a self,
         line: usize,
         defaults: Option<&'a registry::KindRegistry>,
@@ -600,17 +611,17 @@ impl AnnotationStore {
             .map(|(_, tip)| tip)
     }
 
-    pub fn interactive_at(&self, offset: usize) -> Option<&Annotation> {
+    pub(crate) fn interactive_at(&self, offset: usize) -> Option<&Annotation> {
         self.query_at(offset).find(|a| a.is_interactive())
     }
 
-    pub fn interactive_at_line(&self, line: usize) -> Option<&Annotation> {
+    pub(crate) fn interactive_at_line(&self, line: usize) -> Option<&Annotation> {
         self.annotations
             .iter()
             .find(|a| a.is_interactive() && a.anchor == Anchor::Line(line))
     }
 
-    pub fn trailing_adornment_lines(
+    pub(crate) fn trailing_adornment_lines(
         &self,
         include_lsp: bool,
         line_of: impl Fn(usize) -> usize,
@@ -636,7 +647,7 @@ impl AnnotationStore {
         lines
     }
 
-    pub fn interactive_lines(&self, line_of: impl Fn(usize) -> usize) -> Vec<usize> {
+    pub(crate) fn interactive_lines(&self, line_of: impl Fn(usize) -> usize) -> Vec<usize> {
         let mut lines: Vec<usize> = self
             .annotations
             .iter()
@@ -660,7 +671,7 @@ impl AnnotationStore {
         self.by_id.borrow().get(&id).map(|&i| &self.annotations[i])
     }
 
-    pub fn prev_interactive(&self, offset: usize) -> Option<&Annotation> {
+    pub(crate) fn prev_interactive(&self, offset: usize) -> Option<&Annotation> {
         self.ensure_index();
         let starts = self.interactive_starts.borrow();
         let i = starts.partition_point(|(s, _)| *s < offset);
@@ -746,7 +757,8 @@ impl AnnotationStore {
         self.invalidate_index();
     }
 
-    pub fn create_lsp_diagnostic(&mut self, line: usize, tooltip: String) -> AnnotationId {
+    #[cfg(test)]
+    pub(crate) fn create_lsp_diagnostic(&mut self, line: usize, tooltip: String) -> AnnotationId {
         let mut payload = Value::map();
         payload.set("tooltip", Value::Str(tooltip));
         self.add(
@@ -843,7 +855,8 @@ impl AnnotationStore {
         self.invalidate_index();
     }
 
-    pub fn lsp_diagnostics(&self) -> impl Iterator<Item = &Annotation> {
+    #[cfg(test)]
+    pub(crate) fn lsp_diagnostics(&self) -> impl Iterator<Item = &Annotation> {
         self.annotations.iter().filter(|a| {
             a.kind.matches_prefix(well_known::LSP_DIAGNOSTIC) && a.owner == AnnotationOwner::Lsp
         })
@@ -851,7 +864,7 @@ impl AnnotationStore {
 
     const PLUGIN_HIGHLIGHT_PRIORITY: i32 = -1;
 
-    pub fn add_plugin_highlight(
+    pub(crate) fn add_plugin_highlight(
         &mut self,
         slot: u32,
         start: usize,
@@ -875,14 +888,15 @@ impl AnnotationStore {
         )
     }
 
-    pub fn clear_plugin_highlights(&mut self, slot: Option<u32>) {
+    pub(crate) fn clear_plugin_highlights(&mut self, slot: Option<u32>) {
         match slot {
             Some(slot) => self.clear_by_owner(&AnnotationOwner::Plugin(slot.to_string())),
             None => self.clear_by_kind_prefix(well_known::PLUGIN_HIGHLIGHT),
         }
     }
 
-    pub fn create_directory_entry(&mut self, line: usize, entry_id: u16) -> AnnotationId {
+    #[cfg(test)]
+    pub(crate) fn create_directory_entry(&mut self, line: usize, entry_id: u16) -> AnnotationId {
         let mut payload = Value::map();
         payload.set("entry_id", Value::Int(i64::from(entry_id)));
         self.add(
@@ -898,7 +912,7 @@ impl AnnotationStore {
         )
     }
 
-    pub fn create_fs_entry(
+    pub(crate) fn create_fs_entry(
         &mut self,
         line: usize,
         entry_id: u16,
@@ -923,7 +937,7 @@ impl AnnotationStore {
         )
     }
 
-    pub fn create_buffer_entry(
+    pub(crate) fn create_buffer_entry(
         &mut self,
         line: usize,
         doc_id: crate::document::DocumentId,
@@ -944,7 +958,7 @@ impl AnnotationStore {
         )
     }
 
-    pub fn directory_entry_info_at_line(&self, line: usize) -> Option<(String, bool)> {
+    pub(crate) fn directory_entry_info_at_line(&self, line: usize) -> Option<(String, bool)> {
         let a = self
             .annotations
             .iter()
@@ -954,14 +968,14 @@ impl AnnotationStore {
         Some((name.to_string(), is_dir))
     }
 
-    pub fn directory_entry_id_at_line(&self, line: usize) -> Option<u16> {
+    pub(crate) fn directory_entry_id_at_line(&self, line: usize) -> Option<u16> {
         self.annotations
             .iter()
             .find(|a| a.kind.as_str() == well_known::FS_ENTRY && a.anchor == Anchor::Line(line))
             .and_then(|a| payload::fs::entry_id(&a.payload))
     }
 
-    pub fn directory_entries_by_line(&self) -> Vec<(usize, u16)> {
+    pub(crate) fn directory_entries_by_line(&self) -> Vec<(usize, u16)> {
         let mut entries: Vec<(usize, u16)> = self
             .annotations
             .iter()
@@ -978,7 +992,7 @@ impl AnnotationStore {
         entries
     }
 
-    pub fn create_git_status_head(&mut self, line: usize) -> AnnotationId {
+    pub(crate) fn create_git_status_head(&mut self, line: usize) -> AnnotationId {
         self.add(
             Annotation::new(
                 Kind::new(well_known::GIT_STATUS_HEAD),
@@ -992,13 +1006,13 @@ impl AnnotationStore {
         )
     }
 
-    pub fn is_git_status_head_at_line(&self, line: usize) -> bool {
+    pub(crate) fn is_git_status_head_at_line(&self, line: usize) -> bool {
         self.annotations.iter().any(|a| {
             a.kind.as_str() == well_known::GIT_STATUS_HEAD && a.anchor == Anchor::Line(line)
         })
     }
 
-    pub fn create_git_status_entry(
+    pub(crate) fn create_git_status_entry(
         &mut self,
         line: usize,
         path: &str,
@@ -1025,7 +1039,7 @@ impl AnnotationStore {
         )
     }
 
-    pub fn git_status_entry_at_line(
+    pub(crate) fn git_status_entry_at_line(
         &self,
         line: usize,
     ) -> Option<(String, String, Option<String>)> {
@@ -1038,7 +1052,7 @@ impl AnnotationStore {
         Some((path, section, orig_path))
     }
 
-    pub fn create_git_hunk(
+    pub(crate) fn create_git_hunk(
         &mut self,
         line: usize,
         path: &str,
@@ -1065,7 +1079,7 @@ impl AnnotationStore {
         )
     }
 
-    pub fn git_hunk_at_line(&self, line: usize) -> Option<(String, bool, usize)> {
+    pub(crate) fn git_hunk_at_line(&self, line: usize) -> Option<(String, bool, usize)> {
         let a = self
             .annotations
             .iter()
@@ -1076,7 +1090,7 @@ impl AnnotationStore {
         Some((path, staged_side, hunk_index))
     }
 
-    pub fn create_git_hunk_line(
+    pub(crate) fn create_git_hunk_line(
         &mut self,
         line: usize,
         path: &str,
@@ -1108,7 +1122,10 @@ impl AnnotationStore {
         )
     }
 
-    pub fn git_hunk_line_at_line(&self, line: usize) -> Option<(String, bool, usize, usize)> {
+    pub(crate) fn git_hunk_line_at_line(
+        &self,
+        line: usize,
+    ) -> Option<(String, bool, usize, usize)> {
         let a = self.annotations.iter().find(|a| {
             a.kind.as_str() == well_known::GIT_HUNK_LINE && a.anchor == Anchor::Line(line)
         })?;
@@ -1119,7 +1136,7 @@ impl AnnotationStore {
         Some((path, staged_side, hunk_index, line_index))
     }
 
-    pub fn git_hunks_by_line(&self) -> Vec<(usize, String, bool, usize)> {
+    pub(crate) fn git_hunks_by_line(&self) -> Vec<(usize, String, bool, usize)> {
         let mut hunks: Vec<(usize, String, bool, usize)> = self
             .annotations
             .iter()
@@ -1138,7 +1155,7 @@ impl AnnotationStore {
         hunks
     }
 
-    pub fn create_git_blame_line(
+    pub(crate) fn create_git_blame_line(
         &mut self,
         line: usize,
         source_line: usize,
@@ -1164,7 +1181,7 @@ impl AnnotationStore {
         )
     }
 
-    pub fn git_blame_sha_at_line(&self, line: usize) -> Option<String> {
+    pub(crate) fn git_blame_sha_at_line(&self, line: usize) -> Option<String> {
         let a = self
             .annotations
             .iter()
@@ -1172,7 +1189,7 @@ impl AnnotationStore {
         payload::git::sha(&a.payload).map(std::string::ToString::to_string)
     }
 
-    pub fn git_blame_source_line_at_line(&self, line: usize) -> Option<usize> {
+    pub(crate) fn git_blame_source_line_at_line(&self, line: usize) -> Option<usize> {
         self.annotations
             .iter()
             .find(|a| a.kind.as_str() == well_known::GIT_BLAME && a.anchor == Anchor::Line(line))
@@ -1183,7 +1200,7 @@ impl AnnotationStore {
             })
     }
 
-    pub fn git_blame_line_for_source_line(&self, source_line: usize) -> Option<usize> {
+    pub(crate) fn git_blame_line_for_source_line(&self, source_line: usize) -> Option<usize> {
         self.annotations.iter().find_map(|annotation| {
             if annotation.kind.as_str() != well_known::GIT_BLAME {
                 return None;
@@ -1200,7 +1217,7 @@ impl AnnotationStore {
         })
     }
 
-    pub fn create_git_log_commit(&mut self, line: usize, sha: &str) -> AnnotationId {
+    pub(crate) fn create_git_log_commit(&mut self, line: usize, sha: &str) -> AnnotationId {
         let mut payload = Value::map();
         payload.set("sha", Value::Str(sha.to_string()));
         self.add(
@@ -1217,14 +1234,14 @@ impl AnnotationStore {
         )
     }
 
-    pub fn git_log_commit_sha_at_line(&self, line: usize) -> Option<String> {
+    pub(crate) fn git_log_commit_sha_at_line(&self, line: usize) -> Option<String> {
         let a = self.annotations.iter().find(|a| {
             a.kind.as_str() == well_known::GIT_LOG_COMMIT && a.anchor == Anchor::Line(line)
         })?;
         payload::git::sha(&a.payload).map(std::string::ToString::to_string)
     }
 
-    pub fn create_git_rebase_step(&mut self, line: usize, sha: &str) -> AnnotationId {
+    pub(crate) fn create_git_rebase_step(&mut self, line: usize, sha: &str) -> AnnotationId {
         let mut payload = Value::map();
         payload.set("sha", Value::Str(sha.to_string()));
         self.add(
@@ -1241,30 +1258,14 @@ impl AnnotationStore {
         )
     }
 
-    pub fn git_rebase_step_at_line(&self, line: usize) -> Option<String> {
+    pub(crate) fn git_rebase_step_at_line(&self, line: usize) -> Option<String> {
         let a = self.annotations.iter().find(|a| {
             a.kind.as_str() == well_known::GIT_REBASE_STEP && a.anchor == Anchor::Line(line)
         })?;
         payload::git::sha(&a.payload).map(std::string::ToString::to_string)
     }
 
-    pub fn git_rebase_steps_by_line(&self) -> Vec<(usize, String)> {
-        let mut steps: Vec<(usize, String)> = self
-            .annotations
-            .iter()
-            .filter(|a| a.kind.as_str() == well_known::GIT_REBASE_STEP)
-            .filter_map(|a| {
-                let Anchor::Line(line) = a.anchor else {
-                    return None;
-                };
-                payload::git::sha(&a.payload).map(|s| (line, s.to_string()))
-            })
-            .collect();
-        steps.sort_by_key(|&(line, _)| line);
-        steps
-    }
-
-    pub fn replace_git_gutter_signs(
+    pub(crate) fn replace_git_gutter_signs(
         &mut self,
         signs: &[(usize, crate::git::diff::GutterSignKind)],
     ) {
@@ -1293,7 +1294,7 @@ impl AnnotationStore {
         }
     }
 
-    pub fn git_gutter_signs(&self) -> Vec<(usize, crate::git::diff::GutterSignKind)> {
+    pub(crate) fn git_gutter_signs(&self) -> Vec<(usize, crate::git::diff::GutterSignKind)> {
         let mut signs: Vec<(usize, crate::git::diff::GutterSignKind)> = self
             .annotations
             .iter()
@@ -1315,10 +1316,6 @@ impl AnnotationStore {
         signs
     }
 
-    pub const fn is_empty(&self) -> bool {
-        self.annotations.is_empty()
-    }
-
     pub fn snapshot(&self) -> Vec<Annotation> {
         self.annotations
             .iter()
@@ -1327,7 +1324,7 @@ impl AnnotationStore {
             .collect()
     }
 
-    pub fn restore(&mut self, mut snapshot: Vec<Annotation>) {
+    pub(crate) fn restore(&mut self, mut snapshot: Vec<Annotation>) {
         snapshot.retain(|a| a.owner != AnnotationOwner::Lsp);
         snapshot.extend(
             self.annotations
@@ -1437,7 +1434,7 @@ impl AnnotationStore {
         }
     }
 
-    pub fn undo_line_inserted(&mut self, at_line: usize) {
+    pub(crate) fn undo_line_inserted(&mut self, at_line: usize) {
         self.ensure_aux();
 
         let affected: Vec<(usize, AnnotationId)> = self

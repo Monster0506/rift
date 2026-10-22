@@ -5,23 +5,27 @@ use std::fmt;
 
 /// Severity level of an error
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ErrorSeverity {
+pub(crate) enum ErrorSeverity {
     /// Informational message (not really an error)
+    #[cfg(test)]
     Info,
     /// Warning - something might be wrong but operation can continue
     Warning,
     /// Standard error - operation failed but editor can continue
     Error,
     /// Critical error - may lead to data loss or require restart
+    #[cfg(test)]
     Critical,
 }
 
 impl fmt::Display for ErrorSeverity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            #[cfg(test)]
             Self::Info => write!(f, "{}", crate::constants::logging::INFO),
             Self::Warning => write!(f, "{}", crate::constants::logging::WARN),
             Self::Error => write!(f, "{}", crate::constants::logging::ERROR),
+            #[cfg(test)]
             Self::Critical => write!(f, "{}", crate::constants::logging::CRITICAL),
         }
     }
@@ -29,7 +33,7 @@ impl fmt::Display for ErrorSeverity {
 
 /// Category of the error
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ErrorType {
+pub(crate) enum ErrorType {
     /// File system or I/O errors
     Io,
     /// Command line parsing errors
@@ -64,9 +68,9 @@ impl fmt::Display for ErrorType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RiftError {
     /// How serious the error is
-    pub severity: ErrorSeverity,
+    pub(crate) severity: ErrorSeverity,
     /// What kind of error occurred
-    pub kind: ErrorType,
+    pub(crate) kind: ErrorType,
     /// Machine-readable error code (e.g., "E001", "`FILE_NOT_FOUND`")
     pub code: String,
     /// Human-readable description
@@ -75,7 +79,11 @@ pub struct RiftError {
 
 impl RiftError {
     /// Create a new standard error (Severity: Error)
-    pub fn new(kind: ErrorType, code: impl Into<String>, message: impl Into<String>) -> Self {
+    pub(crate) fn new(
+        kind: ErrorType,
+        code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
             severity: ErrorSeverity::Error,
             kind,
@@ -84,8 +92,13 @@ impl RiftError {
         }
     }
 
+    #[cfg(test)]
     /// Create a new critical error (Severity: Critical)
-    pub fn critical(kind: ErrorType, code: impl Into<String>, message: impl Into<String>) -> Self {
+    pub(crate) fn critical(
+        kind: ErrorType,
+        code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
             severity: ErrorSeverity::Critical,
             kind,
@@ -95,7 +108,11 @@ impl RiftError {
     }
 
     /// Create a new warning (Severity: Warning)
-    pub fn warning(kind: ErrorType, code: impl Into<String>, message: impl Into<String>) -> Self {
+    pub(crate) fn warning(
+        kind: ErrorType,
+        code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
             severity: ErrorSeverity::Warning,
             kind,
@@ -104,9 +121,10 @@ impl RiftError {
         }
     }
 
+    #[cfg(test)]
     /// Check if the message contains a substring (useful for tests)
     #[must_use]
-    pub fn contains_msg(&self, sub: &str) -> bool {
+    pub(crate) fn contains_msg(&self, sub: &str) -> bool {
         self.message.contains(sub)
     }
 }
@@ -141,27 +159,11 @@ impl From<std::io::Error> for RiftError {
     }
 }
 
+#[cfg(test)]
 /// Result alias for Rift operations
-pub type Result<T> = std::result::Result<T, RiftError>;
+pub(crate) type Result<T> = std::result::Result<T, RiftError>;
 
-/// Helper trait to convert various error types into `RiftError`
-pub trait ToRiftError {
-    fn to_rift_error(self) -> RiftError;
-}
-
-impl ToRiftError for std::io::Error {
-    fn to_rift_error(self) -> RiftError {
-        RiftError::new(ErrorType::Io, "IO_ERROR", self.to_string())
-    }
-}
-
-impl ToRiftError for String {
-    fn to_rift_error(self) -> RiftError {
-        RiftError::new(ErrorType::Other, "GENERIC_ERROR", self)
-    }
-}
-
-pub mod manager;
+pub(crate) mod manager;
 
 #[cfg(test)]
 #[path = "tests.rs"]

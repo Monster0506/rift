@@ -336,7 +336,7 @@ fn test_affordance_line_formats_keys_and_verbs() {
         AnnotationOwner::User,
     )
     .with_actions(vec![
-        Action::new("stage").as_default(),
+        Action::new("stage").with_default(),
         Action::new("discard").with_key_hint(KeyHint::new("d")),
     ]);
     assert_eq!(
@@ -362,7 +362,7 @@ fn test_default_action_selection() {
     );
 
     let multi = Annotation::new(Kind::new("ui.x"), Anchor::point(0), AnnotationOwner::User)
-        .with_actions(vec![Action::new("a"), Action::new("b").as_default()]);
+        .with_actions(vec![Action::new("a"), Action::new("b").with_default()]);
     assert_eq!(multi.default_action().map(|a| a.verb.as_str()), Some("b"));
 }
 

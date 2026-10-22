@@ -1,5 +1,5 @@
-pub mod channel_backend;
-pub mod client;
-pub mod daemon;
-pub mod protocol;
-pub mod session;
+pub(crate) mod channel_backend;
+pub(crate) mod client;
+pub(crate) mod daemon;
+pub(crate) mod protocol;
+pub(crate) mod session;

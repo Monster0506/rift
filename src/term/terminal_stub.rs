@@ -5,15 +5,15 @@ use super::TerminalEvent;
 use std::sync::mpsc;
 
 #[derive(Debug)]
-pub struct Terminal {
-    pub size: (u16, u16),
-    pub name: String,
+pub(crate) struct Terminal {
+    pub(crate) size: (u16, u16),
+    pub(crate) name: String,
 }
 
 impl Terminal {
     /// # Errors
     /// Always returns `Err`.
-    pub fn new(
+    pub(crate) fn new(
         _rows: u16,
         _cols: u16,
         _shell_cmd: Option<String>,
@@ -23,25 +23,18 @@ impl Terminal {
         ))
     }
 
-    /// # Errors
-    /// Never fails; the stub only records the size.
-    pub const fn resize(&mut self, rows: u16, cols: u16) -> std::io::Result<()> {
+    pub(crate) const fn resize(&mut self, rows: u16, cols: u16) {
         self.size = (rows, cols);
-        Ok(())
     }
 
-    /// # Errors
-    /// Never fails; the stub discards the data.
-    pub const fn write(&mut self, _data: &[u8]) -> std::io::Result<()> {
-        Ok(())
-    }
+    pub(crate) const fn write(&mut self, _data: &[u8]) {}
 
-    pub const fn scroll_display(&self, _delta: i32) {}
+    pub(crate) const fn scroll_display(&self, _delta: i32) {}
 
-    pub const fn scroll_to_bottom(&self) {}
+    pub(crate) const fn scroll_to_bottom(&self) {}
 
     #[must_use]
-    pub fn read_screen(&self) -> (String, usize, usize, crate::color::CellColorSpans) {
+    pub(crate) fn read_screen(&self) -> (String, usize, usize, crate::color::CellColorSpans) {
         (String::new(), 0, 0, crate::color::CellColorSpans::default())
     }
 }

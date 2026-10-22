@@ -8,14 +8,14 @@ use crate::term::{CursorShape, Size, TerminalBackend};
 use std::collections::VecDeque;
 use std::io::Write;
 
-pub struct ReplayBackend<W: Write> {
+pub(crate) struct ReplayBackend<W: Write> {
     output: CrosstermBackend<W>,
     size: Size,
     pending: VecDeque<InputEvent>,
 }
 
 impl<W: Write> ReplayBackend<W> {
-    pub fn new(writer: W, rows: u16, cols: u16) -> Self {
+    pub(crate) fn new(writer: W, rows: u16, cols: u16) -> Self {
         Self {
             output: CrosstermBackend::with_writer(writer),
             size: Size { rows, cols },
@@ -24,12 +24,13 @@ impl<W: Write> ReplayBackend<W> {
     }
 
     /// Queue keys for future `read_event()` calls, oldest first.
-    pub fn push_keys(&mut self, keys: impl IntoIterator<Item = Key>) {
+    pub(crate) fn push_keys(&mut self, keys: impl IntoIterator<Item = Key>) {
         self.pending.extend(keys.into_iter().map(InputEvent::Key));
     }
 
+    #[cfg(test)]
     /// Queue non-key events (resize, paste), oldest first.
-    pub fn push_events(&mut self, events: impl IntoIterator<Item = InputEvent>) {
+    pub(crate) fn push_events(&mut self, events: impl IntoIterator<Item = InputEvent>) {
         self.pending.extend(events);
     }
 }

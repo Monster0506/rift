@@ -8,13 +8,13 @@ use crate::term::TerminalBackend;
 impl<T: TerminalBackend> Editor<T> {
     /// Activate the interactive annotation under the cursor in the active document,
     /// using its default action. Returns true if an action was dispatched.
-    pub fn activate_annotation_at_cursor(&mut self) -> bool {
+    pub(crate) fn activate_annotation_at_cursor(&mut self) -> bool {
         self.activate_annotation_verb(None)
     }
 
     /// Activate a specific verb on the annotation under the cursor (`None` = the
     /// default action), letting separate keybinds drive verbs. True if dispatched.
-    pub fn activate_annotation_verb(&mut self, verb: Option<&str>) -> bool {
+    pub(crate) fn activate_annotation_verb(&mut self, verb: Option<&str>) -> bool {
         let resolved = {
             let Some(doc) = self.document_manager.active_document_mut() else {
                 return false;
@@ -178,7 +178,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Detect cursor enter/leave transitions over annotations and fire the
     /// matching Lua hooks once per change. Called each frame.
-    pub fn update_annotation_hover(&mut self) {
+    pub(crate) fn update_annotation_hover(&mut self) {
         // The annotation under the cursor (offset first, then line-anchored).
         let current = {
             let Some(doc) = self.document_manager.active_document() else {
@@ -236,18 +236,18 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Move the cursor to the start of the next interactive annotation.
-    pub fn goto_next_interactive_annotation(&mut self) -> bool {
+    pub(crate) fn goto_next_interactive_annotation(&mut self) -> bool {
         self.jump_to_interactive(true)
     }
 
     /// Move the cursor to the start of the previous interactive annotation.
-    pub fn goto_prev_interactive_annotation(&mut self) -> bool {
+    pub(crate) fn goto_prev_interactive_annotation(&mut self) -> bool {
         self.jump_to_interactive(false)
     }
 
     /// In interface mode, snap the cursor to the next/prev actionable line, skipping
     /// inert ones. False (caller falls back to line motion) if there is none.
-    pub fn snap_to_actionable_line(&mut self, forward: bool) -> bool {
+    pub(crate) fn snap_to_actionable_line(&mut self, forward: bool) -> bool {
         let Some(doc) = self.document_manager.active_document_mut() else {
             return false;
         };

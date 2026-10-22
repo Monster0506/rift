@@ -12,25 +12,25 @@ use crate::num::{f64_to_usize, usize_to_f64};
 use crate::state::CommandLineWindowSettings;
 use crate::viewport::Viewport;
 
-pub mod commands;
-pub mod settings;
+pub(crate) mod commands;
+pub(crate) mod settings;
 
 /// Options for rendering the command line
-pub struct RenderOptions<'a> {
-    pub default_border_chars: Option<BorderChars>,
-    pub window_settings: &'a CommandLineWindowSettings,
-    pub fg: Option<Color>,
-    pub bg: Option<Color>,
-    pub prompt: char,
+pub(crate) struct RenderOptions<'a> {
+    pub(crate) default_border_chars: Option<BorderChars>,
+    pub(crate) window_settings: &'a CommandLineWindowSettings,
+    pub(crate) fg: Option<Color>,
+    pub(crate) bg: Option<Color>,
+    pub(crate) prompt: char,
 }
 
 /// Command line renderer
-pub struct CommandLine;
+pub(crate) struct CommandLine;
 
 impl CommandLine {
     /// Render the command line window to a layer; returns
     /// `(window_row, window_col, cmd_width)` for cursor positioning.
-    pub fn render_to_layer(
+    pub(crate) fn render_to_layer(
         layer: &mut Layer,
         viewport: &Viewport,
         command_line: &str,
@@ -118,7 +118,7 @@ impl CommandLine {
     /// Calculate the cursor position within the command line window
     /// Returns (row, col) for cursor positioning
     #[must_use]
-    pub fn calculate_cursor_position(
+    pub(crate) fn calculate_cursor_position(
         window_pos: (u16, u16),
         cursor_pos: usize,
         offset: usize,

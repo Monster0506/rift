@@ -3,9 +3,6 @@ use crate::command::Command;
 use crate::search::{find_next, SearchDirection};
 use crate::text_objects::TextObjectSpec;
 
-/// Represents a count for a command or motion
-pub type Count = usize;
-
 /// Represents a motion in the editor
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Motion {
@@ -70,7 +67,7 @@ pub enum Motion {
 }
 
 impl Motion {
-    pub fn apply(
+    pub(crate) fn apply(
         self,
         buf: &mut crate::buffer::TextBuffer,
         display_map: Option<&mut crate::wrap::DisplayMap>,

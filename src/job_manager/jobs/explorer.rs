@@ -4,24 +4,23 @@ use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 
 #[derive(Debug, Clone)]
-pub struct FileEntry {
-    pub path: PathBuf,
-    pub name: String,
-    pub is_dir: bool,
-    pub size: u64,
+pub(crate) struct FileEntry {
+    pub(crate) path: PathBuf,
+    pub(crate) name: String,
+    pub(crate) is_dir: bool,
 }
 
 #[derive(Debug)]
-pub struct DirectoryListing {
-    pub doc_id: DocumentId,
-    pub path: PathBuf,
-    pub entries: Vec<FileEntry>,
+pub(crate) struct DirectoryListing {
+    pub(crate) doc_id: DocumentId,
+    pub(crate) path: PathBuf,
+    pub(crate) entries: Vec<FileEntry>,
 }
 
-crate::impl_job_payload!(DirectoryListing);
+crate::job_manager::impl_job_payload!(DirectoryListing);
 
 #[derive(Debug)]
-pub struct DirectoryListJob {
+pub(crate) struct DirectoryListJob {
     doc_id: DocumentId,
     path: PathBuf,
     show_hidden: bool,
@@ -30,19 +29,13 @@ pub struct DirectoryListJob {
 
 impl DirectoryListJob {
     #[must_use]
-    pub const fn new(doc_id: DocumentId, path: PathBuf, show_hidden: bool) -> Self {
+    pub(crate) const fn new(doc_id: DocumentId, path: PathBuf, show_hidden: bool) -> Self {
         Self {
             doc_id,
             path,
             show_hidden,
             token: None,
         }
-    }
-
-    #[must_use]
-    pub const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
-        self.token = Some(token);
-        self
     }
 }
 
@@ -77,7 +70,6 @@ impl Job for DirectoryListJob {
                         path: self.path.join(&c.name),
                         name: c.name,
                         is_dir: c.is_dir,
-                        size: 0,
                     })
                     .collect();
                 // Directories first, then alphabetical (case-insensitive),

@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use monster_rift::buffer::TextBuffer;
+use monster_rift::bench_api::buffer::TextBuffer;
 use std::hint::black_box;
 
 fn movement_semantic(c: &mut Criterion) {

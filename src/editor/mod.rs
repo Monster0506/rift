@@ -1,4 +1,4 @@
-pub mod actions;
+pub(crate) mod actions;
 mod annotations_ops;
 
 #[cfg(all(test, feature = "terminal_emulation"))]
@@ -230,7 +230,7 @@ pub(super) enum PendingOperator {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PanelKind {
+pub(crate) enum PanelKind {
     FileExplorer,
     UndoTree,
     Clipboard,
@@ -240,13 +240,13 @@ pub enum PanelKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct PanelLayout {
-    pub kind: PanelKind,
-    pub dir_win_id: crate::split::window::WindowId,
-    pub preview_win_id: crate::split::window::WindowId,
-    pub dir_doc_id: DocumentId,
-    pub preview_doc_id: DocumentId,
-    pub original_doc_id: DocumentId,
+pub(crate) struct PanelLayout {
+    pub(crate) kind: PanelKind,
+    pub(crate) dir_win_id: crate::split::window::WindowId,
+    pub(crate) preview_win_id: crate::split::window::WindowId,
+    pub(crate) dir_doc_id: DocumentId,
+    pub(crate) preview_doc_id: DocumentId,
+    pub(crate) original_doc_id: DocumentId,
 }
 
 impl<T: TerminalBackend> Drop for Editor<T> {

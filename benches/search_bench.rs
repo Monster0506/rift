@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use monster_rift::buffer::TextBuffer;
-use monster_rift::search::{compile_regex, find_all};
+use monster_rift::bench_api::buffer::TextBuffer;
+use monster_rift::bench_api::search::{compile_regex, find_all};
 use std::hint::black_box;
 
 fn search_compilation(c: &mut Criterion) {

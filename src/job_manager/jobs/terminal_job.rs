@@ -4,15 +4,15 @@ use crate::term::TerminalEvent;
 use std::fmt;
 use std::sync::mpsc::{Receiver, Sender};
 
-pub struct TerminalInputJob {
-    pub document_id: DocumentId,
-    pub rx: Receiver<TerminalEvent>,
-    pub token: AsyncToken,
+pub(crate) struct TerminalInputJob {
+    pub(crate) document_id: DocumentId,
+    pub(crate) rx: Receiver<TerminalEvent>,
+    pub(crate) token: AsyncToken,
 }
 
 impl TerminalInputJob {
     #[must_use]
-    pub const fn new(token: AsyncToken, rx: Receiver<TerminalEvent>) -> Self {
+    pub(crate) const fn new(token: AsyncToken, rx: Receiver<TerminalEvent>) -> Self {
         Self {
             document_id: token.doc_id(),
             rx,
@@ -60,7 +60,7 @@ impl Job for TerminalInputJob {
                         let _ = tx.send(JobMessage::TerminalExit(self.token));
                         break;
                     }
-                    TerminalEvent::Title(_) => {}
+                    TerminalEvent::Title => {}
                 },
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {

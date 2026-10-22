@@ -33,8 +33,8 @@ pub enum ScriptOp {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
-    pub line: usize,
-    pub message: String,
+    pub(crate) line: usize,
+    pub(crate) message: String,
 }
 
 impl std::fmt::Display for ParseError {

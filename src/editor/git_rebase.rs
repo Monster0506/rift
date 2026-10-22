@@ -82,6 +82,7 @@ enum RebaseAdvance {
     PausedForEdit {
         remaining: Vec<RebaseStep>,
     },
+    #[cfg(test)]
     PausedForReword {
         message: String,
         remaining: Vec<RebaseStep>,
@@ -107,6 +108,7 @@ fn advance_rebase(
         let step = steps.remove(0);
         let override_message = overrides.get(&step.sha).cloned();
         match step.verb {
+            #[cfg(test)]
             RebaseVerb::Drop => {}
             RebaseVerb::Pick => match cherry_pick(repo_root, &step.sha, false) {
                 CherryPickOutcome::Ok => {
@@ -131,6 +133,7 @@ fn advance_rebase(
                 CherryPickOutcome::Conflict => return RebaseAdvance::Conflict { remaining: steps },
                 CherryPickOutcome::Err(e) => return RebaseAdvance::Error(e),
             },
+            #[cfg(test)]
             RebaseVerb::Reword => match cherry_pick(repo_root, &step.sha, false) {
                 CherryPickOutcome::Ok => {
                     if let Some(msg) = override_message {
@@ -178,7 +181,7 @@ fn advance_rebase(
 
 impl<T: TerminalBackend> Editor<T> {
     /// `r` in the Status buffer: start a rebase of the current branch onto its configured upstream. No interactive base picker; configure an upstream first (`git branch --set-upstream-to=<ref>`), or use `r` on a commit in the Log buffer to rebase from a specific point in history instead. `repo_root` is.
-    pub fn open_git_rebase(&mut self, repo_root: PathBuf) {
+    pub(crate) fn open_git_rebase(&mut self, repo_root: PathBuf) {
         let Some(branch) = self.current_branch_or_notify(&repo_root) else {
             return;
         };
@@ -260,7 +263,6 @@ impl<T: TerminalBackend> Editor<T> {
     /// Build and open the todo for `base..HEAD` on `branch`. `base` is any
     /// revision expression git accepts (an upstream ref, or `<sha>^`).
     fn start_rebase_from_base(&mut self, repo_root: PathBuf, branch: String, base: String) {
-        let saved_head = head_sha(&repo_root);
         let log_out = match crate::git::run_checked(
             &repo_root,
             &[
@@ -287,7 +289,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let id = self.document_manager.next_id();
         let doc = match crate::document::Document::new_git_rebase_todo(
-            id, repo_root, base, saved_head, branch, &steps,
+            id, repo_root, base, branch, &steps,
         ) {
             Ok(d) => d,
             Err(e) => {
@@ -377,6 +379,7 @@ impl<T: TerminalBackend> Editor<T> {
                     Err(e) => self.state.handle_error(e),
                 }
             }
+            #[cfg(test)]
             Some(RebasePause::AwaitingReword { .. }) => {
                 self.state.notify(
                     NotificationType::Info,
@@ -388,6 +391,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Called once the reword commit-message buffer for `rebase_doc_id` has
     /// been amended successfully: resumes that rebase's remaining steps.
+    #[cfg(test)]
     pub(super) fn resume_rebase_after_reword(
         &mut self,
         rebase_doc_id: DocumentId,
@@ -512,6 +516,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state
                     .notify(NotificationType::Info, "Rebase paused for edit".to_string());
             }
+            #[cfg(test)]
             RebaseAdvance::PausedForReword { message, remaining } => {
                 self.render_rebase_pause(
                     doc_id,
@@ -546,9 +551,11 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn render_rebase_pause(&mut self, doc_id: DocumentId, pause: RebasePause, status: &str) {
         let remaining = match &pause {
-            RebasePause::Edit { remaining }
-            | RebasePause::Conflict { remaining }
-            | RebasePause::AwaitingReword { remaining } => remaining.clone(),
+            RebasePause::Edit { remaining } | RebasePause::Conflict { remaining } => {
+                remaining.clone()
+            }
+            #[cfg(test)]
+            RebasePause::AwaitingReword { remaining } => remaining.clone(),
         };
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             doc.set_git_rebase_pause(Some(pause));
@@ -557,7 +564,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// `<Space>gR`/abort key: discard the in-progress rebase and return to the original branch (a no-op detached-HEAD walk, since the branch ref itself is only moved on successful completion).
-    pub fn abort_git_rebase(&mut self) {
+    pub(crate) fn abort_git_rebase(&mut self) {
         let (doc_id, repo_root, branch) = {
             let doc = self.active_document();
             if !doc.is_git_rebase_todo() {

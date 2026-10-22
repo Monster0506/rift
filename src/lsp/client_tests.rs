@@ -10,7 +10,6 @@ impl LspClient {
         let writer_thread = spawn_writer_thread(writer, writer_rx);
 
         Self {
-            language: "test".to_string(),
             process: None,
             writer_tx,
             _writer_thread: writer_thread,
@@ -259,7 +258,6 @@ fn many_queued_writes_never_block_the_caller() {
 fn drop_kills_and_reaps_the_child_process() {
     // A long-running, stdio-redirect-safe placeholder "server".
     let client = LspClient::start(
-        "test".to_string(),
         "ping",
         &["-n".to_string(), "30".to_string(), "127.0.0.1".to_string()],
         None,

@@ -10,7 +10,7 @@ use super::protocol::{self, JsonRpcMessage};
 
 /// A raw message coming back from the language server subprocess reader thread.
 #[derive(Debug)]
-pub enum RawLspMessage {
+pub(crate) enum RawLspMessage {
     /// A response to a request we sent (has id).
     Response { id: u64, result: Value },
     /// A response error.
@@ -29,16 +29,15 @@ pub enum RawLspMessage {
 
 /// Metadata for an in-flight request, keyed by this client's request id.
 #[derive(Debug)]
-pub struct PendingRequest {
-    pub method: String,
+pub(crate) struct PendingRequest {
+    pub(crate) method: String,
     /// Normalized URI of the document the request was issued for, if any.
-    pub uri: Option<String>,
+    pub(crate) uri: Option<String>,
 }
 
 /// One live connection to a language server, either a spawned child process
 /// (stdio) or a keepalive broker socket that outlives this editor session.
-pub struct LspClient {
-    pub language: String,
+pub(crate) struct LspClient {
     process: Option<Child>,
     /// Pre-framed message bytes queued for the writer thread; the blocking
     /// I/O to a possibly-slow peer happens off this thread entirely.
@@ -47,11 +46,11 @@ pub struct LspClient {
     next_id: u64,
     /// Request ids are per client, so routing must consult this map rather
     /// than a shared one (two servers both start numbering at 1).
-    pub pending: HashMap<u64, PendingRequest>,
+    pub(crate) pending: HashMap<u64, PendingRequest>,
     receiver: Receiver<RawLspMessage>,
     _reader_thread: thread::JoinHandle<()>,
-    pub initialized: bool,
-    pub root_uri: Option<String>,
+    pub(crate) initialized: bool,
+    pub(crate) root_uri: Option<String>,
 }
 
 impl Drop for LspClient {
@@ -72,8 +71,7 @@ impl LspClient {
     /// Returns an error if the server process cannot be spawned.
     /// # Panics
     /// Panics if the spawned child lacks the piped stdin or stdout set up below.
-    pub fn start(
-        language: String,
+    pub(crate) fn start(
         command: &str,
         args: &[String],
         root_uri: Option<String>,
@@ -94,7 +92,6 @@ impl LspClient {
         let writer_thread = spawn_writer_thread(Box::new(stdin), writer_rx);
 
         Ok(Self {
-            language,
             process: Some(process),
             writer_tx,
             _writer_thread: writer_thread,
@@ -112,8 +109,7 @@ impl LspClient {
     ///
     /// # Errors
     /// Returns an error if attaching to or spawning the broker fails.
-    pub fn start_keepalive(
-        language: String,
+    pub(crate) fn start_keepalive(
         command: &str,
         args: &[String],
         root_uri: Option<String>,
@@ -126,7 +122,6 @@ impl LspClient {
         let writer_thread = spawn_writer_thread(Box::new(writer), writer_rx);
 
         Ok(Self {
-            language,
             process: None,
             writer_tx,
             _writer_thread: writer_thread,
@@ -141,7 +136,7 @@ impl LspClient {
 
     /// Send a JSON-RPC request and return its id. `uri` is remembered so the
     /// response can be attributed to the document it was issued for.
-    pub fn send_request(
+    pub(crate) fn send_request(
         &mut self,
         method: impl Into<String>,
         params: Value,
@@ -168,7 +163,7 @@ impl LspClient {
     }
 
     /// Send a JSON-RPC response to a server-initiated request.
-    pub fn send_response(&mut self, id: protocol::RequestId, result: Value) {
+    pub(crate) fn send_response(&mut self, id: protocol::RequestId, result: Value) {
         #[derive(serde::Serialize)]
         struct Response {
             jsonrpc: &'static str,
@@ -183,7 +178,7 @@ impl LspClient {
     }
 
     /// Send a JSON-RPC notification (no id, no response expected).
-    pub fn send_notification(&mut self, method: impl Into<String>, params: Value) {
+    pub(crate) fn send_notification(&mut self, method: impl Into<String>, params: Value) {
         let notif = protocol::JsonRpcNotification {
             jsonrpc: "2.0",
             method: method.into(),
@@ -194,7 +189,7 @@ impl LspClient {
 
     /// Like `send_notification`, but serializes `params` straight into the
     /// outer envelope, skipping the intermediate `serde_json::Value`.
-    pub fn send_notification_typed<P: serde::Serialize>(
+    pub(crate) fn send_notification_typed<P: serde::Serialize>(
         &mut self,
         method: impl Into<String>,
         params: &P,
@@ -220,7 +215,7 @@ impl LspClient {
 
     /// Drain all pending raw messages from the reader thread. The flag is
     /// true once the reader has hung up (server exited or pipe closed).
-    pub fn poll_raw(&mut self) -> (Vec<RawLspMessage>, bool) {
+    pub(crate) fn poll_raw(&mut self) -> (Vec<RawLspMessage>, bool) {
         let mut msgs = Vec::new();
         loop {
             match self.receiver.try_recv() {

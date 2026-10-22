@@ -128,7 +128,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub fn open_explorer(&mut self, dir: std::path::PathBuf) {
+    pub(crate) fn open_explorer(&mut self, dir: std::path::PathBuf) {
         if let Some(ref layout) = self.panel_layout.clone() {
             self.split_tree.set_focus(layout.dir_win_id);
             let _ = self.document_manager.switch_to_document(layout.dir_doc_id);
@@ -199,7 +199,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    pub fn close_split_panel(&mut self) {
+    pub(crate) fn close_split_panel(&mut self) {
         let Some(layout) = self.panel_layout.take() else {
             return;
         };
@@ -250,7 +250,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    pub fn open_messages(&mut self, show_all: bool) {
+    pub(crate) fn open_messages(&mut self, show_all: bool) {
         let id = self.document_manager.next_id();
         let mut doc = match crate::document::Document::new_messages(id, show_all) {
             Ok(d) => d,
@@ -278,7 +278,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    pub fn open_clipboard(&mut self) {
+    pub(crate) fn open_clipboard(&mut self) {
         if let Some(ref layout) = self.panel_layout.clone() {
             if layout.kind == PanelKind::Clipboard {
                 self.split_tree.set_focus(layout.dir_win_id);
@@ -352,7 +352,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    pub fn open_buffer_list_panel(&mut self) {
+    pub(crate) fn open_buffer_list_panel(&mut self) {
         if let Some(layout) = self.panel_layout.clone() {
             if layout.kind == PanelKind::BufferList {
                 self.split_tree.set_focus(layout.dir_win_id);
@@ -594,7 +594,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    pub fn open_undotree_split(&mut self) {
+    pub(crate) fn open_undotree_split(&mut self) {
         if let Some(ref layout) = self.panel_layout.clone() {
             if layout.kind == PanelKind::UndoTree {
                 self.split_tree.set_focus(layout.dir_win_id);
@@ -620,13 +620,7 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(linked) = self.document_manager.get_document(linked_id) else {
                 return;
             };
-            match crate::document::Document::new_undotree_preview(preview_id, linked) {
-                Ok(d) => d,
-                Err(e) => {
-                    self.state.handle_error(e);
-                    return;
-                }
-            }
+            crate::document::Document::new_undotree_preview(preview_id, linked)
         };
         self.document_manager.add_private_document(preview_doc);
 

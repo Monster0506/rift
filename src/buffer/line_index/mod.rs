@@ -7,7 +7,7 @@ use std::cell::RefCell;
 
 #[derive(Clone)]
 pub struct LineIndex {
-    pub table: PieceTable,
+    pub(crate) table: PieceTable,
     /// Char offset of the start of each line; built lazily, then maintained
     /// incrementally on insert/delete. `None` means "not built".
     line_starts: RefCell<Option<Vec<usize>>>,
@@ -15,7 +15,7 @@ pub struct LineIndex {
 
 impl LineIndex {
     #[must_use]
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             table: PieceTable::new(Vec::new()),
             line_starts: RefCell::new(None),
@@ -35,7 +35,7 @@ impl LineIndex {
     /// Wrap a piece table with a precomputed line-start vector (one entry per
     /// line, `starts[0] == 0`), e.g. collected while decoding file bytes.
     #[must_use]
-    pub fn from_table_with_starts(table: PieceTable, starts: Vec<usize>) -> Self {
+    pub(crate) fn from_table_with_starts(table: PieceTable, starts: Vec<usize>) -> Self {
         debug_assert_eq!(
             starts.len(),
             table.get_line_count(),
@@ -110,7 +110,7 @@ impl LineIndex {
         }
     }
 
-    pub fn line_count(&self) -> usize {
+    pub(crate) fn line_count(&self) -> usize {
         self.table.get_line_count()
     }
 
@@ -125,7 +125,7 @@ impl LineIndex {
 
     /// # Panics
     /// Never panics; the line-start index is built on demand before indexing.
-    pub fn get_line_start(&self, line_idx: usize) -> usize {
+    pub(crate) fn get_line_start(&self, line_idx: usize) -> usize {
         self.with_starts(|starts| {
             starts
                 .get(line_idx)
@@ -134,7 +134,7 @@ impl LineIndex {
         })
     }
 
-    pub fn get_end(&self, line_idx: usize, total_len: usize) -> Option<usize> {
+    pub(crate) fn get_end(&self, line_idx: usize, total_len: usize) -> Option<usize> {
         if line_idx >= self.table.get_line_count() {
             return None;
         }
@@ -156,7 +156,7 @@ impl LineIndex {
         self.with_starts(|starts| starts.partition_point(|&s| s <= pos).saturating_sub(1))
     }
 
-    pub fn insert(&mut self, pos: usize, chars: &[Character]) {
+    pub(crate) fn insert(&mut self, pos: usize, chars: &[Character]) {
         self.table.insert(pos, chars);
         if let Some(starts) = self.line_starts.get_mut().as_mut() {
             Self::apply_insert(starts, pos, chars);
@@ -168,7 +168,7 @@ impl LineIndex {
         }
     }
 
-    pub fn delete(&mut self, pos: usize, len: usize) {
+    pub(crate) fn delete(&mut self, pos: usize, len: usize) {
         self.table.delete(pos..pos + len);
         if let Some(starts) = self.line_starts.get_mut().as_mut() {
             Self::apply_delete(starts, pos, len);
@@ -180,7 +180,7 @@ impl LineIndex {
         }
     }
 
-    pub fn replace(&mut self, pos: usize, count: usize, chars: &[Character]) {
+    pub(crate) fn replace(&mut self, pos: usize, count: usize, chars: &[Character]) {
         self.table.replace(pos, count, chars);
         if let Some(starts) = self.line_starts.get_mut().as_mut() {
             Self::apply_delete(starts, pos, count);
@@ -193,29 +193,29 @@ impl LineIndex {
         }
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.table.len()
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.table.is_empty()
     }
 
-    pub fn char_at(&self, pos: usize) -> Character {
+    pub(crate) fn char_at(&self, pos: usize) -> Character {
         self.table.char_at(pos)
     }
 
     /// Convert byte offset to character index
-    pub fn byte_to_char(&self, byte_offset: usize) -> usize {
+    pub(crate) fn byte_to_char(&self, byte_offset: usize) -> usize {
         self.table.byte_to_char(byte_offset)
     }
 
     /// Convert character index to byte offset
-    pub fn char_to_byte(&self, char_index: usize) -> usize {
+    pub(crate) fn char_to_byte(&self, char_index: usize) -> usize {
         self.table.char_to_byte(char_index)
     }
 
-    pub fn bytes_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
+    pub(crate) fn bytes_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
         self.table.bytes_range(range)
     }
 

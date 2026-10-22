@@ -2,14 +2,14 @@
 //!
 //! Invariant: the host never mutates editor state directly; mutations are queued as [`PluginMutation`] and applied via `execute_command`, preserving undo/dot-repeat.
 
-pub mod events;
-pub mod lua_state;
+pub(crate) mod events;
+pub(crate) mod lua_state;
 
 #[cfg(feature = "plugins")]
-pub mod lua_host;
+pub(crate) mod lua_host;
 #[cfg(not(feature = "plugins"))]
 #[path = "lua_host_stub.rs"]
-pub mod lua_host;
+pub(crate) mod lua_host;
 
 #[cfg(feature = "plugins")]
 mod lua_value;
@@ -17,7 +17,7 @@ mod lua_value;
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-pub use events::EditorEvent;
+pub(crate) use events::EditorEvent;
 
 use crate::document::DocumentId;
 use crate::notification::NotificationType;
@@ -39,30 +39,31 @@ fn allocate_next_generation_id() -> NonZeroU32 {
 /// Process-local plugin identity: nonzero u32, monotonic, never reused
 /// across reloads of the same plugin (each reload gets a fresh generation).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PluginId(NonZeroU32);
+pub(crate) struct PluginId(NonZeroU32);
 
 impl PluginId {
-    /// Create a new `PluginId` wrapping a nonzero u32.
+    #[cfg(not(feature = "plugins"))]
     #[must_use]
-    pub const fn new(id: NonZeroU32) -> Self {
+    pub(crate) const fn new(id: NonZeroU32) -> Self {
         Self(id)
     }
 
+    #[cfg(test)]
     /// Allocate a fresh, process-unique `PluginId`.
     #[must_use]
-    pub fn allocate() -> Self {
+    pub(crate) fn allocate() -> Self {
         allocate_next_plugin_id()
     }
 
     /// Return the raw `u32` value.
     #[must_use]
-    pub const fn get(self) -> u32 {
+    pub(crate) const fn get(self) -> u32 {
         self.0.get()
     }
 
     /// Return the underlying `NonZeroU32`.
     #[must_use]
-    pub const fn as_nonzero(self) -> NonZeroU32 {
+    pub(crate) const fn as_nonzero(self) -> NonZeroU32 {
         self.0
     }
 }
@@ -76,7 +77,7 @@ impl std::fmt::Display for PluginId {
 /// One load incarnation of a plugin: identity plus a monotonic generation
 /// counter, so a reload's resources never leak into the old generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PluginGeneration {
+pub(crate) struct PluginGeneration {
     plugin_id: PluginId,
     generation: NonZeroU32,
 }
@@ -84,7 +85,7 @@ pub struct PluginGeneration {
 impl PluginGeneration {
     /// Create a new `PluginGeneration` from a plugin id and a load generation counter.
     #[must_use]
-    pub const fn new(plugin_id: PluginId, generation: NonZeroU32) -> Self {
+    pub(crate) const fn new(plugin_id: PluginId, generation: NonZeroU32) -> Self {
         Self {
             plugin_id,
             generation,
@@ -93,37 +94,31 @@ impl PluginGeneration {
 
     /// Allocate a fresh, globally monotonic generation for the given plugin.
     #[must_use]
-    pub fn allocate(plugin_id: PluginId) -> Self {
+    pub(crate) fn allocate(plugin_id: PluginId) -> Self {
         Self::new(plugin_id, allocate_next_generation_id())
     }
 
     /// The owning plugin identity.
     #[must_use]
-    pub const fn plugin_id(self) -> PluginId {
+    pub(crate) const fn plugin_id(self) -> PluginId {
         self.plugin_id
     }
 
     /// The monotonic load generation number for this plugin incarnation.
     #[must_use]
-    pub const fn generation(self) -> NonZeroU32 {
+    pub(crate) const fn generation(self) -> NonZeroU32 {
         self.generation
     }
 
     /// Return the raw pair `(plugin_id, generation)` as u32 primitives.
     #[must_use]
-    pub const fn raw(self) -> (u32, u32) {
+    pub(crate) const fn raw(self) -> (u32, u32) {
         (self.plugin_id.get(), self.generation.get())
-    }
-
-    /// Return the raw pair `(plugin_id, generation)` as `NonZeroU32` values.
-    #[must_use]
-    pub const fn as_nonzeros(self) -> (NonZeroU32, NonZeroU32) {
-        (self.plugin_id.as_nonzero(), self.generation)
     }
 
     /// Converts this `PluginGeneration` into an owner token for keymap layers.
     #[must_use]
-    pub fn keymap_owner_token(self) -> crate::keymap::KeyBindingToken {
+    pub(crate) fn keymap_owner_token(self) -> crate::keymap::KeyBindingToken {
         let (pid, gen) = self.raw();
         crate::keymap::KeyBindingToken::new((u64::from(pid) << 32) | u64::from(gen))
     }
@@ -147,7 +142,7 @@ impl From<(PluginId, NonZeroU32)> for PluginGeneration {
 
 /// Lifecycle status of a [`PluginGeneration`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum GenerationStatus {
+pub(crate) enum GenerationStatus {
     /// Active generation. Permitted to queue mutations and handle events.
     Active,
     /// Generation is in the process of retiring. New mutations are rejected;
@@ -157,35 +152,20 @@ pub enum GenerationStatus {
     Retired,
 }
 
-impl GenerationStatus {
-    #[must_use]
-    pub const fn is_active(self) -> bool {
-        matches!(self, Self::Active)
-    }
-
-    #[must_use]
-    pub const fn is_retiring(self) -> bool {
-        matches!(self, Self::Retiring)
-    }
-
-    #[must_use]
-    pub const fn is_retired(self) -> bool {
-        matches!(self, Self::Retired)
-    }
-}
+impl GenerationStatus {}
 
 /// A `PluginMutation` with optional origin generation; native mutations
 /// carry `None` and are always active, plugin ones are origin-validated.
 #[derive(Debug)]
-pub struct PluginMutationEnvelope {
-    pub mutation: PluginMutation,
-    pub origin: Option<PluginGeneration>,
+pub(crate) struct PluginMutationEnvelope {
+    pub(crate) mutation: PluginMutation,
+    pub(crate) origin: Option<PluginGeneration>,
 }
 
 impl PluginMutationEnvelope {
     /// Create a native mutation envelope without plugin origin tracking.
     #[must_use]
-    pub const fn native(mutation: PluginMutation) -> Self {
+    pub(crate) const fn native(mutation: PluginMutation) -> Self {
         Self {
             mutation,
             origin: None,
@@ -194,7 +174,7 @@ impl PluginMutationEnvelope {
 
     /// Create a plugin-originated mutation envelope tagged with the owning generation.
     #[must_use]
-    pub const fn plugin(mutation: PluginMutation, origin: PluginGeneration) -> Self {
+    pub(crate) const fn plugin(mutation: PluginMutation, origin: PluginGeneration) -> Self {
         Self {
             mutation,
             origin: Some(origin),
@@ -203,31 +183,8 @@ impl PluginMutationEnvelope {
 
     /// Create a mutation envelope with optional origin generation.
     #[must_use]
-    pub const fn new(mutation: PluginMutation, origin: Option<PluginGeneration>) -> Self {
+    pub(crate) const fn new(mutation: PluginMutation, origin: Option<PluginGeneration>) -> Self {
         Self { mutation, origin }
-    }
-
-    /// Extract the inner [`PluginMutation`].
-    #[must_use]
-    pub fn into_mutation(self) -> PluginMutation {
-        self.mutation
-    }
-
-    /// Reference the inner [`PluginMutation`].
-    #[must_use]
-    pub const fn mutation(&self) -> &PluginMutation {
-        &self.mutation
-    }
-
-    /// Mutably reference the inner [`PluginMutation`].
-    pub const fn mutation_mut(&mut self) -> &mut PluginMutation {
-        &mut self.mutation
-    }
-
-    /// The origin plugin generation, if plugin-originated.
-    #[must_use]
-    pub const fn origin(&self) -> Option<PluginGeneration> {
-        self.origin
     }
 }
 
@@ -250,7 +207,7 @@ type ActionHandler = Box<dyn Fn() -> Vec<PluginMutation> + Send + 'static>;
 /// applied by the main loop after dispatch returns.
 #[derive(Debug)]
 #[non_exhaustive]
-pub enum PluginMutation {
+pub(crate) enum PluginMutation {
     /// Display a notification through Rift's notification system.
     Notify {
         message: String,
@@ -435,16 +392,11 @@ pub enum PluginMutation {
     /// Map a key binding scoped to a specific buffer kind.
     MapKeyKind {
         kind: String,
-        mode: String,
         keys: String,
         action: String,
     },
     /// Unmap a key binding scoped to a specific buffer kind.
-    UnmapKeyKind {
-        kind: String,
-        mode: String,
-        keys: String,
-    },
+    UnmapKeyKind { kind: String, keys: String },
     /// Set a buffer-local variable. `buf_id == None` targets the active document.
     SetBufferVar {
         buf_id: Option<DocumentId>,
@@ -455,7 +407,7 @@ pub enum PluginMutation {
 
 /// Where a plugin-authored annotation is anchored.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AnnotationAnchorSpec {
+pub(crate) enum AnnotationAnchorSpec {
     Line(usize),
     Point(usize),
     Range(usize, usize),
@@ -463,43 +415,43 @@ pub enum AnnotationAnchorSpec {
 
 /// Context passed to a Lua annotation action handler on activation.
 #[derive(Debug, Clone)]
-pub struct AnnotationActionCtx {
-    pub annotation_id: u64,
-    pub kind: String,
-    pub verb: String,
-    pub payload: crate::annotations::Value,
+pub(crate) struct AnnotationActionCtx {
+    pub(crate) annotation_id: u64,
+    pub(crate) kind: String,
+    pub(crate) verb: String,
+    pub(crate) payload: crate::annotations::Value,
     /// The activated action's serializable args.
-    pub params: crate::annotations::Value,
-    pub position: usize,
-    pub buffer: u64,
+    pub(crate) params: crate::annotations::Value,
+    pub(crate) position: usize,
+    pub(crate) buffer: u64,
 }
 
 /// Context passed to a Lua cursor enter/leave hook.
 #[derive(Debug, Clone)]
-pub struct AnnotationHoverCtx {
-    pub annotation_id: u64,
-    pub kind: String,
-    pub payload: crate::annotations::Value,
-    pub position: usize,
-    pub buffer: u64,
+pub(crate) struct AnnotationHoverCtx {
+    pub(crate) annotation_id: u64,
+    pub(crate) kind: String,
+    pub(crate) payload: crate::annotations::Value,
+    pub(crate) position: usize,
+    pub(crate) buffer: u64,
 }
 
 /// A floating window owned by a plugin. Stored in `PluginHost` and rendered
 /// on each frame until `CloseFloat` is queued.
 #[derive(Debug, Clone)]
-pub struct PluginFloat {
-    pub title: String,
-    pub lines: Vec<String>,
+pub(crate) struct PluginFloat {
+    pub(crate) title: String,
+    pub(crate) lines: Vec<String>,
     /// Screen row to keep uncovered: the float sits below it, else above.
-    pub anchor_row: Option<usize>,
+    pub(crate) anchor_row: Option<usize>,
     /// First visible line of `lines`.
-    pub scroll: usize,
+    pub(crate) scroll: usize,
     /// Content rows shown at the last render; bounds `scroll_float`.
-    pub visible_lines: usize,
+    pub(crate) visible_lines: usize,
 }
 
 impl PluginFloat {
-    pub fn new(title: impl Into<String>, lines: Vec<String>) -> Self {
+    pub(crate) fn new(title: impl Into<String>, lines: Vec<String>) -> Self {
         Self {
             title: title.into(),
             lines,
@@ -511,7 +463,7 @@ impl PluginFloat {
 
     /// Anchor the float to a screen row (the cursor's) instead of centering.
     #[must_use]
-    pub const fn with_anchor_row(mut self, row: usize) -> Self {
+    pub(crate) const fn with_anchor_row(mut self, row: usize) -> Self {
         self.anchor_row = Some(row);
         self
     }
@@ -568,7 +520,7 @@ impl CursorHoldState {
 
 /// Central plugin coordinator, owned by the `Editor`: dispatches [`EditorEvent`]s to handlers,
 /// queues [`PluginMutation`]s, tracks cursor-hold idle state, and holds registered commands/actions.
-pub struct PluginHost {
+pub(crate) struct PluginHost {
     /// Handlers indexed by event name; a `BTreeMap` keeps iteration order deterministic.
     handlers: std::collections::BTreeMap<&'static str, Vec<(Handler, Option<PluginGeneration>)>>,
     /// Registered `:command` handlers with optional origin generation. Key is lowercase command name.
@@ -597,8 +549,10 @@ pub struct PluginHost {
     /// annotation set isn't re-snapshotted every sync.
     last_synced_annotations: std::cell::Cell<Option<(u64, u64)>>,
     /// Registered plugin names mapped to stable `PluginId`.
+    #[cfg(test)]
     plugin_names: std::collections::HashMap<String, PluginId>,
     /// Reverse mapping of `PluginId` to plugin name.
+    #[cfg(test)]
     plugin_ids: std::collections::HashMap<PluginId, String>,
     /// Tracked generation lifecycles.
     generations: std::collections::BTreeMap<PluginGeneration, GenerationStatus>,
@@ -612,7 +566,7 @@ impl PluginHost {
     /// Create a new plugin host. `cursor_hold_polls` is the number of idle main-loop polls
     /// before `CursorHold` fires (at the default 16ms poll rate, 25 polls = ~400ms).
     #[must_use]
-    pub fn new(cursor_hold_polls: u32) -> Self {
+    pub(crate) fn new(cursor_hold_polls: u32) -> Self {
         Self {
             handlers: std::collections::BTreeMap::new(),
             commands: std::collections::HashMap::new(),
@@ -626,7 +580,9 @@ impl PluginHost {
             lua_used: std::cell::Cell::new(false),
             last_synced_buf: std::cell::Cell::new(None),
             last_synced_annotations: std::cell::Cell::new(None),
+            #[cfg(test)]
             plugin_names: std::collections::HashMap::new(),
+            #[cfg(test)]
             plugin_ids: std::collections::HashMap::new(),
             generations: std::collections::BTreeMap::new(),
             lua_plugin_id: allocate_next_plugin_id(),
@@ -635,50 +591,51 @@ impl PluginHost {
     }
 
     /// Whether any Lua code has run and can therefore observe editor state.
-    pub const fn lua_state_wanted(&self) -> bool {
+    pub(crate) const fn lua_state_wanted(&self) -> bool {
         self.lua_used.get()
     }
 
     /// Record that Lua code is about to run for the first time.
-    pub fn mark_lua_used(&self) {
+    pub(crate) fn mark_lua_used(&self) {
         self.lua_used.set(true);
     }
 
     /// Whether `doc_id` at `revision` is the same buffer state last synced to
     /// Lua, so the caller can skip re-cloning it into a fresh snapshot.
-    pub fn synced_buf_matches(&self, doc_id: u64, revision: u64) -> bool {
+    pub(crate) fn synced_buf_matches(&self, doc_id: u64, revision: u64) -> bool {
         self.last_synced_buf.get() == Some((doc_id, revision))
     }
 
     /// Record `doc_id` at `revision` as the buffer state just synced to Lua.
-    pub fn set_synced_buf(&self, doc_id: u64, revision: u64) {
+    pub(crate) fn set_synced_buf(&self, doc_id: u64, revision: u64) {
         self.last_synced_buf.set(Some((doc_id, revision)));
     }
 
     /// Forget the last-synced buffer, e.g. when there's no active document.
-    pub fn clear_synced_buf(&self) {
+    pub(crate) fn clear_synced_buf(&self) {
         self.last_synced_buf.set(None);
     }
 
     /// Whether `doc_id` at annotation-store `revision` is the same state
     /// last synced to Lua, so the caller can skip rebuilding the snapshot.
-    pub fn synced_annotations_match(&self, doc_id: u64, revision: u64) -> bool {
+    pub(crate) fn synced_annotations_match(&self, doc_id: u64, revision: u64) -> bool {
         self.last_synced_annotations.get() == Some((doc_id, revision))
     }
 
     /// Record `doc_id` at annotation-store `revision` as just synced to Lua.
-    pub fn set_synced_annotations(&self, doc_id: u64, revision: u64) {
+    pub(crate) fn set_synced_annotations(&self, doc_id: u64, revision: u64) {
         self.last_synced_annotations.set(Some((doc_id, revision)));
     }
 
     /// Forget the last-synced annotations, e.g. when there's no active document.
-    pub fn clear_synced_annotations(&self) {
+    pub(crate) fn clear_synced_annotations(&self) {
         self.last_synced_annotations.set(None);
     }
 
+    #[cfg(test)]
     /// Register a handler for a named event. `event_name` must match one of the strings
     /// returned by [`EditorEvent::name`], e.g. `"BufSavePost"`.
-    pub fn on<F>(&mut self, event_name: &'static str, handler: F)
+    pub(crate) fn on<F>(&mut self, event_name: &'static str, handler: F)
     where
         F: Fn(&EditorEvent) + Send + 'static,
     {
@@ -688,34 +645,9 @@ impl PluginHost {
             .push((Box::new(handler), None));
     }
 
-    /// Register a handler for a named event owned by a specific plugin generation.
-    pub fn on_with_generation<F>(
-        &mut self,
-        event_name: &'static str,
-        origin: PluginGeneration,
-        handler: F,
-    ) where
-        F: Fn(&EditorEvent) + Send + 'static,
-    {
-        self.handlers
-            .entry(event_name)
-            .or_default()
-            .push((Box::new(handler), Some(origin)));
-    }
-
-    /// Register a handler for a `:CommandName [args...]` ex-command.
-    /// `name` is case-insensitive. Returns the registered name in lowercase.
-    pub fn register_command<F>(&mut self, name: &str, handler: F) -> String
-    where
-        F: Fn(&[String]) -> Vec<PluginMutation> + Send + 'static,
-    {
-        let key = name.to_lowercase();
-        self.commands.insert(key.clone(), (Box::new(handler), None));
-        key
-    }
-
+    #[cfg(test)]
     /// Register a command handler owned by a specific plugin generation.
-    pub fn register_command_with_generation<F>(
+    pub(crate) fn register_command_with_generation<F>(
         &mut self,
         name: &str,
         origin: PluginGeneration,
@@ -730,20 +662,15 @@ impl PluginHost {
         key
     }
 
-    /// Set an optional one-line description for a command name.
-    pub fn set_command_description(&mut self, name: &str, description: impl Into<String>) {
-        self.command_descriptions
-            .insert(name.to_lowercase(), description.into());
-    }
-
+    #[cfg(test)]
     /// Returns `true` if a plugin command with this name is registered.
-    pub fn has_command(&self, name: &str) -> bool {
+    pub(crate) fn has_command(&self, name: &str) -> bool {
         self.commands.contains_key(&name.to_lowercase())
     }
 
     /// Returns all registered plugin command names, descriptions, and arg types.
     /// Includes both Rust-registered commands and Lua-registered commands.
-    pub fn command_list(&self) -> Vec<(String, String, Option<String>)> {
+    pub(crate) fn command_list(&self) -> Vec<(String, String, Option<String>)> {
         let mut list: Vec<(String, String, Option<String>)> = self
             .commands
             .keys()
@@ -764,7 +691,7 @@ impl PluginHost {
 
     /// Execute a registered plugin command, queuing any returned mutations.
     /// Returns `true` if a handler was found (Rust or Lua).
-    pub fn execute_command(&mut self, name: &str, args: &[String]) -> bool {
+    pub(crate) fn execute_command(&mut self, name: &str, args: &[String]) -> bool {
         let key = name.to_lowercase();
         let (mutations, origin) = if let Some((handler, origin)) = self.commands.get(&key) {
             let origin = *origin;
@@ -797,18 +724,9 @@ impl PluginHost {
         false
     }
 
-    /// Register a handler for `Action::Editor(EditorAction::PluginAction(id))`.
-    /// Call with the same `id` string you pass to `EditorAction::PluginAction`.
-    pub fn register_action<F>(&mut self, id: &str, handler: F)
-    where
-        F: Fn() -> Vec<PluginMutation> + Send + 'static,
-    {
-        self.actions
-            .insert(id.to_string(), (Box::new(handler), None));
-    }
-
+    #[cfg(test)]
     /// Register a keymap action handler owned by a specific plugin generation.
-    pub fn register_action_with_generation<F>(
+    pub(crate) fn register_action_with_generation<F>(
         &mut self,
         id: &str,
         origin: PluginGeneration,
@@ -822,7 +740,7 @@ impl PluginHost {
 
     /// Execute a registered plugin action, queuing any returned mutations.
     /// Returns `true` if a handler was found (Rust or Lua).
-    pub fn execute_action(&mut self, id: &str) -> bool {
+    pub(crate) fn execute_action(&mut self, id: &str) -> bool {
         let (mutations, origin) = if let Some((handler, origin)) = self.actions.get(id) {
             let origin = *origin;
             if let Some(gen) = origin {
@@ -855,12 +773,12 @@ impl PluginHost {
     }
 
     /// Returns `true` if a plugin float is currently open.
-    pub const fn has_open_float(&self) -> bool {
+    pub(crate) const fn has_open_float(&self) -> bool {
         self.open_float.is_some()
     }
 
     /// Close the open float immediately (e.g. when Escape is pressed).
-    pub fn close_float(&mut self) {
+    pub(crate) fn close_float(&mut self) {
         if self.open_float.is_some() {
             self.open_float = None;
             self.float_just_closed = true;
@@ -869,14 +787,14 @@ impl PluginHost {
 
     /// Returns `true` once after a float was closed, so the render layer
     /// can be cleared. Resets the flag on read.
-    pub const fn take_float_closed(&mut self) -> bool {
+    pub(crate) const fn take_float_closed(&mut self) -> bool {
         let val = self.float_just_closed;
         self.float_just_closed = false;
         val
     }
 
     /// Scroll the open float's visible lines by `delta`, clamped to its content.
-    pub fn scroll_float(&mut self, delta: isize) {
+    pub(crate) fn scroll_float(&mut self, delta: isize) {
         if let Some(float) = &mut self.open_float {
             let max = float.lines.len().saturating_sub(float.visible_lines.max(1));
             float.scroll = float.scroll.saturating_add_signed(delta).min(max);
@@ -885,7 +803,7 @@ impl PluginHost {
 
     /// Render the open float (if any) into the given layer. `fg`/`bg` should be the editor's
     /// current theme colors so the float blends with the UI instead of using reverse-video defaults.
-    pub fn render_float_into_layer(
+    pub(crate) fn render_float_into_layer(
         &mut self,
         layer: &mut crate::layer::Layer,
         fg: Option<crate::color::Color>,
@@ -1006,7 +924,7 @@ impl PluginHost {
 
     /// Initialize the Lua VM. Must be called once at startup or reload.
     /// Returns any error string if Lua initialization fails.
-    pub fn init_lua(&mut self) -> Option<String> {
+    pub(crate) fn init_lua(&mut self) -> Option<String> {
         if let Some(old_gen) = self.current_lua_generation.take() {
             self.retire_generation(old_gen);
         }
@@ -1027,20 +945,15 @@ impl PluginHost {
         }
     }
 
-    /// Return the currently active Lua generation, if any.
-    pub const fn current_lua_generation(&self) -> Option<PluginGeneration> {
-        self.current_lua_generation
-    }
-
     /// Update the Lua VM's buffer snapshot before dispatching events.
-    pub fn lua_update_state(&self, update: lua_host::StateUpdate<'_>) {
+    pub(crate) fn lua_update_state(&self, update: lua_host::StateUpdate<'_>) {
         if let Some(lua) = &self.lua {
             lua.update_state(update);
         }
     }
 
     /// Refresh the `rift.annotations` query snapshot and the next `add{}` id.
-    pub fn lua_set_annotations(
+    pub(crate) fn lua_set_annotations(
         &self,
         views: Vec<crate::plugin::lua_host::AnnotationView>,
         next_id: u64,
@@ -1051,7 +964,7 @@ impl PluginHost {
     }
 
     /// Load all top-level `.lua` files in `dir`, sorted lexicographically. Returns error strings.
-    pub fn lua_load_dir(&self, dir: &std::path::Path) -> Vec<String> {
+    pub(crate) fn lua_load_dir(&self, dir: &std::path::Path) -> Vec<String> {
         self.lua.as_ref().map_or_else(Vec::new, |lua| {
             let has_lua_files = std::fs::read_dir(dir)
                 .map(|rd| {
@@ -1069,35 +982,40 @@ impl PluginHost {
     }
 
     /// Execute a single `.lua` file. Returns an error string on failure.
-    pub fn lua_load_file(&self, path: &std::path::Path) -> Option<String> {
+    pub(crate) fn lua_load_file(&self, path: &std::path::Path) -> Option<String> {
         let lua = self.lua.as_ref()?;
         self.lua_used.set(true);
         lua.load_file(path)
     }
 
     /// Execute a Lua snippet directly (for `:lua` command).
-    pub fn lua_exec(&self, code: &str) -> Option<String> {
+    pub(crate) fn lua_exec(&self, code: &str) -> Option<String> {
         let lua = self.lua.as_ref()?;
         self.lua_used.set(true);
         lua.exec(code)
     }
 
     /// Invoke a Lua annotation action handler. Returns `true` if one ran.
-    pub fn invoke_annotation_action(&self, ctx: &AnnotationActionCtx) -> bool {
+    pub(crate) fn invoke_annotation_action(&self, ctx: &AnnotationActionCtx) -> bool {
         self.lua
             .as_ref()
             .is_some_and(|lua| lua.invoke_annotation_action(ctx))
     }
 
     /// Invoke a Lua cursor enter/leave hook. Returns `true` if one ran.
-    pub fn invoke_annotation_hook(&self, enter: bool, ctx: &AnnotationHoverCtx) -> bool {
+    pub(crate) fn invoke_annotation_hook(&self, enter: bool, ctx: &AnnotationHoverCtx) -> bool {
         self.lua
             .as_ref()
             .is_some_and(|lua| lua.invoke_annotation_hook(enter, ctx))
     }
 
     /// Invoke a Lua buffer-kind action callback. Returns `true` if handled.
-    pub fn invoke_buffer_action(&self, buf_id: DocumentId, kind: &str, action: &str) -> bool {
+    pub(crate) fn invoke_buffer_action(
+        &self,
+        buf_id: DocumentId,
+        kind: &str,
+        action: &str,
+    ) -> bool {
         match &self.lua {
             Some(lua) => {
                 if !self.is_generation_active(lua.generation()) {
@@ -1110,7 +1028,7 @@ impl PluginHost {
     }
 
     /// Invoke a Lua buffer-kind save callback. Returns `true` if handled.
-    pub fn invoke_buffer_save(&self, buf_id: DocumentId, kind: &str) -> bool {
+    pub(crate) fn invoke_buffer_save(&self, buf_id: DocumentId, kind: &str) -> bool {
         match &self.lua {
             Some(lua) => {
                 if !self.is_generation_active(lua.generation()) {
@@ -1123,7 +1041,7 @@ impl PluginHost {
     }
 
     /// Invoke a Lua buffer-kind close callback. Returns `true` if handled.
-    pub fn invoke_buffer_close(&self, buf_id: DocumentId, kind: &str) -> bool {
+    pub(crate) fn invoke_buffer_close(&self, buf_id: DocumentId, kind: &str) -> bool {
         match &self.lua {
             Some(lua) => {
                 if !self.is_generation_active(lua.generation()) {
@@ -1137,7 +1055,7 @@ impl PluginHost {
 
     /// Dispatch an event to all registered handlers, applying any returned mutations via
     /// [`Self::apply_mutation`].
-    pub fn dispatch(&mut self, event: &EditorEvent) {
+    pub(crate) fn dispatch(&mut self, event: &EditorEvent) {
         if let EditorEvent::CursorMoved { buf, row, col } = event {
             self.cursor_hold.on_cursor_move(*buf, *row, *col);
         }
@@ -1173,7 +1091,7 @@ impl PluginHost {
 
     /// Called on every idle frame (no input); fires `CursorHold` if the cursor has been stationary
     /// long enough. Returns the event to dispatch, if any, so the caller avoids a double-borrow.
-    pub fn tick_idle(&mut self) -> Option<EditorEvent> {
+    pub(crate) fn tick_idle(&mut self) -> Option<EditorEvent> {
         self.cursor_hold
             .tick()
             .map(|(buf, row, col)| EditorEvent::CursorHold { buf, row, col })
@@ -1181,13 +1099,14 @@ impl PluginHost {
 
     /// Update the `CursorHold` threshold from a millisecond value.
     /// `poll_ms` is the main-loop poll interval (typically 16).
-    pub fn set_cursor_hold_delay_ms(&mut self, delay_ms: u32, poll_ms: u32) {
+    pub(crate) fn set_cursor_hold_delay_ms(&mut self, delay_ms: u32, poll_ms: u32) {
         let polls = (delay_ms / poll_ms.max(1)).max(1);
         self.cursor_hold.threshold_polls = polls;
     }
 
+    #[cfg(test)]
     /// Register or retrieve a process-local `PluginId` for a plugin by name.
-    pub fn register_plugin(&mut self, name: &str) -> PluginId {
+    pub(crate) fn register_plugin(&mut self, name: &str) -> PluginId {
         if let Some(&id) = self.plugin_names.get(name) {
             return id;
         }
@@ -1197,47 +1116,55 @@ impl PluginHost {
         id
     }
 
+    #[cfg(test)]
     /// Look up the `PluginId` for a given plugin name, if registered.
-    pub fn plugin_id_for_name(&self, name: &str) -> Option<PluginId> {
+    pub(crate) fn plugin_id_for_name(&self, name: &str) -> Option<PluginId> {
         self.plugin_names.get(name).copied()
     }
 
+    #[cfg(test)]
     /// Look up the plugin name for a given `PluginId`, if known.
-    pub fn plugin_name(&self, id: PluginId) -> Option<&str> {
+    pub(crate) fn plugin_name(&self, id: PluginId) -> Option<&str> {
         self.plugin_ids.get(&id).map(std::string::String::as_str)
     }
 
     /// Spawn a new active generation for a plugin. Generation numbers are
     /// monotonic and never reused across the process lifetime.
-    pub fn new_generation(&mut self, plugin_id: PluginId) -> PluginGeneration {
+    pub(crate) fn new_generation(&mut self, plugin_id: PluginId) -> PluginGeneration {
         let gen = PluginGeneration::allocate(plugin_id);
         self.generations.insert(gen, GenerationStatus::Active);
         gen
     }
 
     /// Check whether a generation is currently active.
-    pub fn is_generation_active(&self, generation: PluginGeneration) -> bool {
+    pub(crate) fn is_generation_active(&self, generation: PluginGeneration) -> bool {
         self.generations.get(&generation).copied() == Some(GenerationStatus::Active)
     }
 
+    #[cfg(test)]
     /// Check whether a generation is retiring.
-    pub fn is_generation_retiring(&self, generation: PluginGeneration) -> bool {
+    pub(crate) fn is_generation_retiring(&self, generation: PluginGeneration) -> bool {
         self.generations.get(&generation).copied() == Some(GenerationStatus::Retiring)
     }
 
+    #[cfg(test)]
     /// Check whether a generation is retired.
-    pub fn is_generation_retired(&self, generation: PluginGeneration) -> bool {
+    pub(crate) fn is_generation_retired(&self, generation: PluginGeneration) -> bool {
         self.generations.get(&generation).copied() == Some(GenerationStatus::Retired)
     }
 
+    #[cfg(test)]
     /// Get the current lifecycle status of a generation.
-    pub fn generation_status(&self, generation: PluginGeneration) -> Option<GenerationStatus> {
+    pub(crate) fn generation_status(
+        &self,
+        generation: PluginGeneration,
+    ) -> Option<GenerationStatus> {
         self.generations.get(&generation).copied()
     }
 
     /// Mark a generation as retiring. New mutations carrying this generation will be rejected.
     /// Returns true if the generation was previously active.
-    pub fn mark_generation_retiring(&mut self, generation: PluginGeneration) -> bool {
+    pub(crate) fn mark_generation_retiring(&mut self, generation: PluginGeneration) -> bool {
         if let Some(status) = self.generations.get_mut(&generation) {
             if *status == GenerationStatus::Active {
                 *status = GenerationStatus::Retiring;
@@ -1249,7 +1176,7 @@ impl PluginHost {
 
     /// Mark a generation as retired and unregister its handlers.
     /// Returns true if the generation was known and not already retired.
-    pub fn mark_generation_retired(&mut self, generation: PluginGeneration) -> bool {
+    pub(crate) fn mark_generation_retired(&mut self, generation: PluginGeneration) -> bool {
         let mut changed = false;
         if let Some(status) = self.generations.get_mut(&generation) {
             if *status != GenerationStatus::Retired {
@@ -1265,7 +1192,10 @@ impl PluginHost {
 
     /// Discard all queued mutations originating from the given generation.
     /// Returns the number of mutations discarded.
-    pub fn discard_mutations_for_generation(&mut self, generation: PluginGeneration) -> usize {
+    pub(crate) fn discard_mutations_for_generation(
+        &mut self,
+        generation: PluginGeneration,
+    ) -> usize {
         let initial_len = self.mutation_queue.len();
         self.mutation_queue
             .retain(|env| env.origin != Some(generation));
@@ -1273,7 +1203,7 @@ impl PluginHost {
     }
 
     /// Unregister all commands, actions, and event handlers owned by the given generation.
-    pub fn unregister_generation_handlers(&mut self, generation: PluginGeneration) {
+    pub(crate) fn unregister_generation_handlers(&mut self, generation: PluginGeneration) {
         self.commands
             .retain(|_, (_, origin)| *origin != Some(generation));
         self.command_descriptions
@@ -1287,47 +1217,15 @@ impl PluginHost {
 
     /// Fully retire a generation on the host: mark retiring, discard queued mutations,
     /// unregister handlers, and mark retired. Returns number of discarded mutations.
-    pub fn retire_generation(&mut self, generation: PluginGeneration) -> usize {
+    pub(crate) fn retire_generation(&mut self, generation: PluginGeneration) -> usize {
         self.mark_generation_retiring(generation);
         let discarded = self.discard_mutations_for_generation(generation);
         self.mark_generation_retired(generation);
         discarded
     }
 
-    /// Mark all active generations as retiring, discard their queued mutations,
-    /// and unregister their handlers. Returns the total number of discarded mutations.
-    pub fn retire_all_generations(&mut self) -> usize {
-        for status in self.generations.values_mut() {
-            if *status == GenerationStatus::Active {
-                *status = GenerationStatus::Retiring;
-            }
-        }
-        let initial_len = self.mutation_queue.len();
-        let generations = &self.generations;
-        self.mutation_queue.retain(|env| {
-            env.origin
-                .is_none_or(|gen| generations.get(&gen).copied() == Some(GenerationStatus::Active))
-        });
-        let discarded = initial_len.saturating_sub(self.mutation_queue.len());
-        let to_retire: Vec<PluginGeneration> = self
-            .generations
-            .iter()
-            .filter_map(|(&gen, &status)| {
-                if status == GenerationStatus::Retiring {
-                    Some(gen)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        for gen in to_retire {
-            self.mark_generation_retired(gen);
-        }
-        discarded
-    }
-
     /// Return a snapshot of all currently active generations.
-    pub fn active_generations(&self) -> Vec<PluginGeneration> {
+    pub(crate) fn active_generations(&self) -> Vec<PluginGeneration> {
         self.generations
             .iter()
             .filter_map(|(&gen, &status)| {
@@ -1340,25 +1238,23 @@ impl PluginHost {
             .collect()
     }
 
+    #[cfg(test)]
     /// Number of mutations currently queued.
-    pub const fn queued_mutation_count(&self) -> usize {
+    pub(crate) const fn queued_mutation_count(&self) -> usize {
         self.mutation_queue.len()
     }
 
-    /// Inspect the currently queued mutation envelopes.
-    pub fn queued_mutations(&self) -> &[PluginMutationEnvelope] {
-        &self.mutation_queue
-    }
-
+    #[cfg(test)]
     /// Queue a mutation to be applied by the main loop after dispatch returns.
-    pub fn queue_mutation(&mut self, mutation: PluginMutation) {
+    pub(crate) fn queue_mutation(&mut self, mutation: PluginMutation) {
         self.mutation_queue
             .push(PluginMutationEnvelope::native(mutation));
     }
 
+    #[cfg(test)]
     /// Queue a mutation tagged with its originating plugin generation.
     /// Returns false if the generation is not active (discarding the mutation).
-    pub fn queue_mutation_with_origin(
+    pub(crate) fn queue_mutation_with_origin(
         &mut self,
         mutation: PluginMutation,
         origin: PluginGeneration,
@@ -1371,27 +1267,15 @@ impl PluginHost {
         true
     }
 
-    /// Queue a mutation envelope.
-    /// Returns false if the envelope carries a generation that is not active.
-    pub fn queue_mutation_envelope(&mut self, envelope: PluginMutationEnvelope) -> bool {
-        if let Some(origin) = envelope.origin {
-            if !self.is_generation_active(origin) {
-                return false;
-            }
-        }
-        self.mutation_queue.push(envelope);
-        true
-    }
-
     /// Apply a mutation immediately (used internally by command/action handlers). Float open/close
     /// mutations are applied directly to `open_float`; all others are queued for the main loop.
-    pub fn apply_mutation(&mut self, mutation: PluginMutation) {
+    pub(crate) fn apply_mutation(&mut self, mutation: PluginMutation) {
         self.apply_mutation_envelope(PluginMutationEnvelope::native(mutation));
     }
 
     /// Apply a mutation tagged with its originating plugin generation.
     /// Returns false if the generation is not active.
-    pub fn apply_mutation_with_origin(
+    pub(crate) fn apply_mutation_with_origin(
         &mut self,
         mutation: PluginMutation,
         origin: PluginGeneration,
@@ -1404,7 +1288,7 @@ impl PluginHost {
 
     /// Apply a mutation envelope. Float open/close mutations are applied directly
     /// to `open_float`; all others are queued for the main loop.
-    pub fn apply_mutation_envelope(&mut self, envelope: PluginMutationEnvelope) -> bool {
+    pub(crate) fn apply_mutation_envelope(&mut self, envelope: PluginMutationEnvelope) -> bool {
         if let Some(origin) = envelope.origin {
             if !self.is_generation_active(origin) {
                 return false;
@@ -1429,9 +1313,10 @@ impl PluginHost {
         true
     }
 
+    #[cfg(test)]
     /// Drain all queued mutations, discarding any whose origin generation is no longer active.
     /// Called by the main loop after every `dispatch` call.
-    pub fn drain_mutations(&mut self) -> impl Iterator<Item = PluginMutation> + '_ {
+    pub(crate) fn drain_mutations(&mut self) -> impl Iterator<Item = PluginMutation> + '_ {
         if let Some(lua) = &self.lua {
             let gen = lua.generation();
             for m in lua.drain_mutations() {
@@ -1448,7 +1333,7 @@ impl PluginHost {
     }
 
     /// Drain all queued mutation envelopes, discarding any whose origin generation is no longer active.
-    pub fn drain_mutation_envelopes(
+    pub(crate) fn drain_mutation_envelopes(
         &mut self,
     ) -> impl Iterator<Item = PluginMutationEnvelope> + '_ {
         if let Some(lua) = &self.lua {

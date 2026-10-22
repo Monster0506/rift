@@ -10,7 +10,7 @@ const CROSS_DEVICE_OS_CODE: i32 = 18;
 const CROSS_DEVICE_OS_CODE: i32 = 17;
 
 #[must_use]
-pub fn is_cross_device(err: &std::io::Error) -> bool {
+pub(crate) fn is_cross_device(err: &std::io::Error) -> bool {
     if err.kind() == std::io::ErrorKind::CrossesDevices {
         return true;
     }
@@ -47,14 +47,15 @@ fn recreate_symlink(entry_path: &Path, dest: &Path) -> std::io::Result<()> {
 
 /// Job to copy a file or directory (recursively)
 #[derive(Debug)]
-pub struct FsCopyJob {
+pub(crate) struct FsCopyJob {
     source: PathBuf,
     destination: PathBuf,
 }
 
 impl FsCopyJob {
+    #[cfg(test)]
     #[must_use]
-    pub const fn new(source: PathBuf, destination: PathBuf) -> Self {
+    pub(crate) const fn new(source: PathBuf, destination: PathBuf) -> Self {
         Self {
             source,
             destination,
@@ -65,7 +66,7 @@ impl FsCopyJob {
     ///
     /// # Errors
     /// Returns `Err` if `destination` is inside `source` or any file operation fails.
-    pub fn copy_recursive_pub(source: &Path, destination: &Path) -> std::io::Result<()> {
+    pub(crate) fn copy_recursive_pub(source: &Path, destination: &Path) -> std::io::Result<()> {
         let signal = CancellationSignal::new_uncancelled();
         let mut visited = HashSet::new();
         Self::copy_recursive(source, destination, &signal, &mut visited)
@@ -163,16 +164,18 @@ impl Job for FsCopyJob {
 #[path = "fs_tests.rs"]
 mod fs_tests;
 
+#[cfg(test)]
 /// Job to move/rename a file or directory
 #[derive(Debug)]
-pub struct FsMoveJob {
+pub(crate) struct FsMoveJob {
     source: PathBuf,
     destination: PathBuf,
 }
 
+#[cfg(test)]
 impl FsMoveJob {
     #[must_use]
-    pub const fn new(source: PathBuf, destination: PathBuf) -> Self {
+    pub(crate) const fn new(source: PathBuf, destination: PathBuf) -> Self {
         Self {
             source,
             destination,
@@ -180,6 +183,7 @@ impl FsMoveJob {
     }
 }
 
+#[cfg(test)]
 impl Job for FsMoveJob {
     fn name(&self) -> &'static str {
         "fs-move"
@@ -237,19 +241,22 @@ impl Job for FsMoveJob {
     }
 }
 
+#[cfg(test)]
 /// Job to delete a file or directory
 #[derive(Debug)]
-pub struct FsDeleteJob {
+pub(crate) struct FsDeleteJob {
     path: PathBuf,
 }
 
+#[cfg(test)]
 impl FsDeleteJob {
     #[must_use]
-    pub const fn new(path: PathBuf) -> Self {
+    pub(crate) const fn new(path: PathBuf) -> Self {
         Self { path }
     }
 }
 
+#[cfg(test)]
 impl Job for FsDeleteJob {
     fn name(&self) -> &'static str {
         "fs-delete"
@@ -282,20 +289,23 @@ impl Job for FsDeleteJob {
     }
 }
 
+#[cfg(test)]
 /// Job to create a file or directory
 #[derive(Debug)]
-pub struct FsCreateJob {
+pub(crate) struct FsCreateJob {
     path: PathBuf,
     is_dir: bool,
 }
 
+#[cfg(test)]
 impl FsCreateJob {
     #[must_use]
-    pub const fn new(path: PathBuf, is_dir: bool) -> Self {
+    pub(crate) const fn new(path: PathBuf, is_dir: bool) -> Self {
         Self { path, is_dir }
     }
 }
 
+#[cfg(test)]
 impl Job for FsCreateJob {
     fn name(&self) -> &'static str {
         "fs-create"
@@ -333,19 +343,22 @@ impl Job for FsCreateJob {
     }
 }
 
+#[cfg(test)]
 /// Job to delete multiple files or directories
 #[derive(Debug)]
-pub struct FsBatchDeleteJob {
+pub(crate) struct FsBatchDeleteJob {
     paths: Vec<PathBuf>,
 }
 
+#[cfg(test)]
 impl FsBatchDeleteJob {
     #[must_use]
-    pub const fn new(paths: Vec<PathBuf>) -> Self {
+    pub(crate) const fn new(paths: Vec<PathBuf>) -> Self {
         Self { paths }
     }
 }
 
+#[cfg(test)]
 impl Job for FsBatchDeleteJob {
     fn name(&self) -> &'static str {
         "fs-batch-delete"

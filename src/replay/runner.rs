@@ -5,7 +5,6 @@ use super::backend::ReplayBackend;
 use super::ops::ScriptOp;
 use crate::editor::Editor;
 use crate::error::{ErrorType, RiftError};
-use crate::key::Key;
 use std::io::Write;
 use std::time::{Duration, Instant};
 
@@ -17,14 +16,13 @@ pub struct Mark {
     /// Perf spans recorded since the previous mark (or session start).
     /// Only populated when built with the `perf_instrumentation` feature.
     #[cfg(feature = "perf_instrumentation")]
-    pub perf_events: Vec<crate::perf::PerfEvent>,
+    pub(crate) perf_events: Vec<crate::perf::PerfEvent>,
 }
 
 /// Wall-clock cost of a single `tick()` spent processing one scripted key.
 #[derive(Debug, Clone)]
 pub struct TickTiming {
-    pub key: Key,
-    pub duration: Duration,
+    pub(crate) duration: Duration,
 }
 
 /// avg/p50/p95/max over a set of durations.
@@ -160,11 +158,10 @@ pub fn run<W: Write>(ops: &[ScriptOp], writer: W) -> Result<RunReport, RiftError
             }
             ScriptOp::Keys(keys) => {
                 ed.term.push_keys(keys.iter().copied());
-                for key in keys {
+                for _ in keys {
                     let started = Instant::now();
                     ed.tick()?;
                     report.ticks.push(TickTiming {
-                        key: *key,
                         duration: started.elapsed(),
                     });
                 }

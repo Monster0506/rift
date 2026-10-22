@@ -5,12 +5,13 @@ use crate::character::{Character, C1_CONTROL_MIN};
 use crate::color::Color;
 use crate::error::RiftError;
 use crate::layer::{Cell, Rect};
+#[cfg(test)]
 use crate::num::usize_to_f64;
 use std::fmt::Write as _;
 
 /// A single text attribute toggled by a `StyleOp::SetAttr`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AttrKind {
+pub(crate) enum AttrKind {
     Bold,
     Italic,
     Underline,
@@ -21,7 +22,7 @@ pub enum AttrKind {
 /// A terminal-agnostic style change, emitted by the diff serializer below
 /// and turned into escape codes by whichever backend consumes it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StyleOp {
+pub(crate) enum StyleOp {
     ResetColor,
     SetForeground(Color),
     SetBackground(Color),
@@ -41,17 +42,20 @@ const fn cell_visual_width(cell: &Cell) -> usize {
 #[derive(Debug, Clone, Default)]
 pub struct FrameStats {
     /// Total cells in the buffer
-    pub total_cells: usize,
+    #[cfg(test)]
+    pub(crate) total_cells: usize,
     /// Cells that changed this frame
-    pub changed_cells: usize,
+    pub(crate) changed_cells: usize,
     /// Whether this was a full redraw
-    pub full_redraw: bool,
+    #[cfg(test)]
+    pub(crate) full_redraw: bool,
 }
 
 impl FrameStats {
+    #[cfg(test)]
     /// Calculate the percentage of cells that changed
     #[must_use]
-    pub fn change_percentage(&self) -> f64 {
+    pub(crate) fn change_percentage(&self) -> f64 {
         if self.total_cells == 0 {
             0.0
         } else {
@@ -69,32 +73,34 @@ struct TermTrack {
     cursor: Option<(usize, usize)>,
 }
 
+#[cfg(test)]
 /// A change to a single cell that needs to be rendered
 #[derive(Debug, Clone)]
-pub struct CellChange<'a> {
+pub(crate) struct CellChange<'a> {
     /// Row position (0-indexed)
-    pub row: usize,
+    pub(crate) row: usize,
     /// Column position (0-indexed)
-    pub col: usize,
+    pub(crate) col: usize,
     /// The cell content to render
-    pub cell: &'a Cell,
+    pub(crate) cell: &'a Cell,
 }
 
 /// A batch of consecutive cell changes on the same row
 #[derive(Debug, Clone)]
 pub struct CellBatch {
     /// Row position (0-indexed)
-    pub row: usize,
+    pub(crate) row: usize,
     /// Starting column position (0-indexed)
-    pub start_col: usize,
+    pub(crate) start_col: usize,
     /// Owns the cells so buffers can be reused across frames.
-    pub cells: Vec<Cell>,
+    pub(crate) cells: Vec<Cell>,
 }
 
 impl CellBatch {
+    #[cfg(test)]
     /// Get the ending column (exclusive)
     #[must_use]
-    pub const fn end_col(&self) -> usize {
+    pub(crate) const fn end_col(&self) -> usize {
         self.start_col + self.cells.len()
     }
 }
@@ -147,13 +153,13 @@ impl DoubleBuffer {
 
     /// Get the number of rows
     #[must_use]
-    pub const fn rows(&self) -> usize {
+    pub(crate) const fn rows(&self) -> usize {
         self.rows
     }
 
     /// Get the number of columns
     #[must_use]
-    pub const fn cols(&self) -> usize {
+    pub(crate) const fn cols(&self) -> usize {
         self.cols
     }
 
@@ -163,15 +169,9 @@ impl DoubleBuffer {
         row * self.cols + col
     }
 
-    /// Mutable access to the flat current buffer, for callers (e.g.
-    /// `LayerCompositor::composite`) that need direct slice access.
-    pub fn current_slice_mut(&mut self) -> &mut [Cell] {
-        &mut self.current
-    }
-
     /// Get read-only access to the current buffer
     #[must_use]
-    pub fn current_slice(&self) -> &[Cell] {
+    pub(crate) fn current_slice(&self) -> &[Cell] {
         &self.current
     }
 
@@ -196,7 +196,7 @@ impl DoubleBuffer {
 
     /// Get a cell from the current buffer
     #[must_use]
-    pub fn get_cell(&self, row: usize, col: usize) -> Option<&Cell> {
+    pub(crate) fn get_cell(&self, row: usize, col: usize) -> Option<&Cell> {
         if row < self.rows && col < self.cols {
             let idx = self.idx(row, col);
             Some(&self.current[idx])
@@ -205,8 +205,9 @@ impl DoubleBuffer {
         }
     }
 
+    #[cfg(test)]
     /// Copy a 2D buffer into the current frame
-    pub fn copy_from(&mut self, source: &[Vec<Cell>]) {
+    pub(crate) fn copy_from(&mut self, source: &[Vec<Cell>]) {
         for (row_idx, row) in source.iter().enumerate() {
             if row_idx >= self.rows {
                 break;
@@ -230,7 +231,7 @@ impl DoubleBuffer {
 
     /// Resize the buffer to new dimensions
     /// Forces a full redraw on next diff
-    pub fn resize(&mut self, new_rows: usize, new_cols: usize) {
+    pub(crate) fn resize(&mut self, new_rows: usize, new_cols: usize) {
         let new_size = new_rows * new_cols;
         let mut new_current = vec![Cell::empty(); new_size];
         let new_previous = vec![Cell::empty(); new_size];
@@ -253,7 +254,7 @@ impl DoubleBuffer {
     }
 
     /// Force a full redraw on the next diff
-    pub const fn invalidate(&mut self) {
+    pub(crate) const fn invalidate(&mut self) {
         self.force_full_redraw = true;
     }
 
@@ -289,15 +290,17 @@ impl DoubleBuffer {
         out
     }
 
+    #[cfg(test)]
     /// Check if a full redraw is pending
     #[must_use]
-    pub const fn needs_full_redraw(&self) -> bool {
+    pub(crate) const fn needs_full_redraw(&self) -> bool {
         self.force_full_redraw
     }
 
+    #[cfg(test)]
     /// Check if a specific cell has changed
     #[must_use]
-    pub fn cell_changed(&self, row: usize, col: usize) -> bool {
+    pub(crate) fn cell_changed(&self, row: usize, col: usize) -> bool {
         if self.force_full_redraw {
             return true;
         }
@@ -308,9 +311,10 @@ impl DoubleBuffer {
         self.current[idx] != self.previous[idx]
     }
 
+    #[cfg(test)]
     /// Iterate over all changed cells
     /// Returns individual cell changes (not batched)
-    pub fn iter_changes(&self) -> impl Iterator<Item = CellChange<'_>> {
+    pub(crate) fn iter_changes(&self) -> impl Iterator<Item = CellChange<'_>> {
         let force = self.force_full_redraw;
         let cols = self.cols;
         self.current
@@ -339,8 +343,10 @@ impl DoubleBuffer {
     pub fn get_batched_changes(&mut self) -> (Vec<CellBatch>, FrameStats) {
         let mut batches = Vec::new();
         let mut stats = FrameStats {
+            #[cfg(test)]
             total_cells: self.rows * self.cols,
             changed_cells: 0,
+            #[cfg(test)]
             full_redraw: self.force_full_redraw,
         };
 
@@ -429,7 +435,7 @@ impl DoubleBuffer {
     /// the terminal's scroll region; false means fall back to the plain diff.
     /// # Errors
     /// Returns `Err` when writing the scroll sequence to the terminal fails.
-    pub fn apply_scroll<T: crate::term::TerminalBackend>(
+    pub(crate) fn apply_scroll<T: crate::term::TerminalBackend>(
         &mut self,
         term: &mut T,
         top: usize,
@@ -513,15 +519,9 @@ impl DoubleBuffer {
         self.frame_dirty_rect = None;
     }
 
-    /// Clear the current buffer (fill with empty cells)
-    /// # Errors
-    /// Always returns `Err`; callers must use `clear_cell` or `clear_content`.
-    pub fn clear(&mut self) -> Result<(), RiftError> {
-        Err("Use clear_cell or specialized method. clear() ambiguous on buffering strategy".into())
-    }
-
+    #[cfg(test)]
     /// Clear content (fill with empty)
-    pub fn clear_content(&mut self) {
+    pub(crate) fn clear_content(&mut self) {
         for cell in &mut self.current {
             *cell = Cell::empty();
         }
@@ -533,9 +533,10 @@ impl DoubleBuffer {
         ));
     }
 
+    #[cfg(test)]
     /// Get frame statistics for the current diff
     #[must_use]
-    pub fn get_stats(&self) -> FrameStats {
+    pub(crate) fn get_stats(&self) -> FrameStats {
         let mut stats = FrameStats {
             total_cells: self.rows * self.cols,
             changed_cells: 0,
@@ -559,7 +560,7 @@ impl DoubleBuffer {
     /// Only cells that changed since the last frame are rendered
     /// # Errors
     /// Returns `Err` when the terminal write, flush, or style encoding fails.
-    pub fn render_to_terminal<T: crate::term::TerminalBackend>(
+    pub(crate) fn render_to_terminal<T: crate::term::TerminalBackend>(
         &mut self,
         term: &mut T,
     ) -> Result<FrameStats, RiftError> {

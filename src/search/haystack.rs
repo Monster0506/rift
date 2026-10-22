@@ -4,74 +4,14 @@ use monster_regex::{Haystack, HaystackCursor};
 
 /// Context that holds the necessary indices for the haystack.
 /// This struct owns the "Shadow Byte Index".
-pub struct BufferHaystackContext<'a, B: BufferView + ?Sized> {
+pub(crate) struct BufferHaystackContext<'a, B: BufferView + ?Sized> {
     buffer: &'a B,
     line_byte_starts: Vec<usize>,
     line_char_starts: Vec<usize>,
 }
 
 impl<'a, B: BufferView + ?Sized> BufferHaystackContext<'a, B> {
-    pub fn new(buffer: &'a B) -> Self {
-        // Try to use cached byte map
-        if let Some(cell) = buffer.byte_line_map() {
-            let mut cache = cell.borrow_mut();
-            let current_rev = buffer.revision();
-
-            // Check cache validity (revision match)
-            if let Some(map) = cache.as_ref() {
-                if map.revision == current_rev {
-                    // Cache hit!
-                    return Self {
-                        buffer,
-                        line_byte_starts: map.line_starts.clone(),
-                        line_char_starts: map.line_char_starts.clone(),
-                    };
-                }
-            }
-
-            // Cache miss or stale: rebuild
-            let line_count = buffer.line_count();
-            let mut line_byte_starts = Vec::with_capacity(line_count + 1);
-            let mut line_char_starts = Vec::with_capacity(line_count + 1);
-            let mut current_offset = 0;
-            let mut current_char_offset = 0; // Track char offset
-            line_byte_starts.push(0);
-            line_char_starts.push(0);
-
-            for i in 0..line_count {
-                let start = buffer.line_start(i);
-                let end = if i + 1 < line_count {
-                    buffer.line_start(i + 1)
-                } else {
-                    buffer.len()
-                };
-                let mut line_len = 0;
-                let mut line_char_len = 0;
-                for c in buffer.chars(start..end) {
-                    line_len += c.len_utf8();
-                    line_char_len += 1;
-                }
-                current_offset += line_len;
-                current_char_offset += line_char_len;
-                line_byte_starts.push(current_offset);
-                line_char_starts.push(current_char_offset);
-            }
-
-            // Update cache
-            *cache = Some(crate::buffer::byte_map::ByteLineMap::new(
-                line_byte_starts.clone(),
-                line_char_starts.clone(),
-                current_rev,
-            ));
-
-            return Self {
-                buffer,
-                line_byte_starts,
-                line_char_starts,
-            };
-        }
-
-        // No cache available fallback (unlikely in Editor but possible in tests)
+    pub(crate) fn new(buffer: &'a B) -> Self {
         let line_count = buffer.line_count();
         let mut line_byte_starts = Vec::with_capacity(line_count + 1);
         let mut line_char_starts = Vec::with_capacity(line_count + 1);
@@ -99,7 +39,7 @@ impl<'a, B: BufferView + ?Sized> BufferHaystackContext<'a, B> {
         }
     }
 
-    pub fn make_haystack(&'a self) -> BufferHaystack<'a, B> {
+    pub(crate) fn make_haystack(&'a self) -> BufferHaystack<'a, B> {
         BufferHaystack {
             buffer: self.buffer,
             line_byte_starts: &self.line_byte_starts,
@@ -115,14 +55,14 @@ impl<B: BufferView + ?Sized> Clone for BufferHaystack<'_, B> {
 }
 impl<B: BufferView + ?Sized> Copy for BufferHaystack<'_, B> {}
 
-pub struct BufferHaystack<'a, B: BufferView + ?Sized> {
+pub(crate) struct BufferHaystack<'a, B: BufferView + ?Sized> {
     buffer: &'a B,
     line_byte_starts: &'a [usize],
     line_char_starts: &'a [usize],
 }
 
 impl<B: BufferView + ?Sized> BufferHaystack<'_, B> {
-    pub fn byte_offset_to_char_abs(&self, byte_pos: usize) -> usize {
+    pub(crate) fn byte_offset_to_char_abs(&self, byte_pos: usize) -> usize {
         let Some((line_idx, offset_in_line)) = self.find_line_for_byte(byte_pos) else {
             return self.buffer.len();
         };
@@ -172,7 +112,7 @@ impl<B: BufferView + ?Sized> BufferHaystack<'_, B> {
 }
 
 #[derive(Clone)]
-pub struct BufferCursor<I: Iterator<Item = Character> + Clone> {
+pub(crate) struct BufferCursor<I: Iterator<Item = Character> + Clone> {
     iter: I,
     peeked: Option<char>, // Cache for peek
 }

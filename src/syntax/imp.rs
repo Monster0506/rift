@@ -1,5 +1,4 @@
 use super::ParseOutcome;
-use crate::error::RiftError;
 use crate::job_manager::jobs::syntax::SyntaxParseResult;
 use crate::syntax::interval_tree::IntervalTree;
 use crate::syntax::loader::LoadedLanguage;
@@ -11,27 +10,25 @@ use tree_sitter::{InputEdit, Parser, Query, QueryCursor, Tree};
 // Injection layer
 
 /// A single embedded-language layer (e.g. TypeScript inside a Svelte `<script>`).
-pub struct InjectedLayer {
-    pub language: tree_sitter::Language,
-    pub language_name: String,
-    pub highlights_query: Option<Arc<Query>>,
-    pub tree: Option<Tree>,
-    pub cached_highlights: Arc<IntervalTree<u32>>,
+pub(crate) struct InjectedLayer {
+    pub(crate) language: tree_sitter::Language,
+    pub(crate) language_name: String,
+    pub(crate) highlights_query: Option<Arc<Query>>,
+    pub(crate) tree: Option<Tree>,
+    pub(crate) cached_highlights: Arc<IntervalTree<u32>>,
     /// Byte ranges in the host document covered by this layer.
-    pub byte_ranges: Vec<std::ops::Range<usize>>,
-    /// Keeps a dynamic language library loaded while the layer uses it.
-    pub lib: Option<Arc<super::loader::RawLib>>,
+    pub(crate) byte_ranges: Vec<std::ops::Range<usize>>,
 }
 
 // Syntax
 
 /// Per-document syntax state: the host grammar plus injection layers
 /// (sub-regions re-parsed with a different grammar, e.g. TS inside `<script>`).
-pub struct Syntax {
-    pub language: tree_sitter::Language,
-    pub tree: Option<Tree>,
-    pub highlights_query: Option<Arc<Query>>,
-    pub language_name: String,
+pub(crate) struct Syntax {
+    pub(crate) language: tree_sitter::Language,
+    pub(crate) tree: Option<Tree>,
+    pub(crate) highlights_query: Option<Arc<Query>>,
+    pub(crate) language_name: String,
     /// Arc-wrapped: always replaced wholesale, never mutated in place, so
     /// `highlights_snapshot()` (cloned on every reparse job spawn) stays O(1).
     cached_highlights: Arc<IntervalTree<u32>>,
@@ -43,9 +40,9 @@ pub struct Syntax {
     lib: Option<Arc<super::loader::RawLib>>,
 
     // --- Static injection support (Svelte, HTML: capture name = language name) ---
-    pub injections_query: Option<Arc<Query>>,
-    pub injection_capture_langs: Vec<(u32, String)>,
-    pub injection_layers: Vec<InjectedLayer>,
+    pub(crate) injections_query: Option<Arc<Query>>,
+    pub(crate) injection_capture_langs: Vec<(u32, String)>,
+    pub(crate) injection_layers: Vec<InjectedLayer>,
     /// Content ranges discovered by the last static-injection scan, keyed by
     /// index into `injection_layers`, so a single-edit reparse can reuse them.
     static_injection_ranges: IntervalTree<usize>,
@@ -76,14 +73,8 @@ pub struct Syntax {
 
 impl Syntax {
     /// Create a new Syntax instance (no injections).
-    ///
-    /// # Errors
-    /// Never returns `Err`; the `Result` is kept for callers that propagate construction errors.
-    pub fn new(
-        loaded: LoadedLanguage,
-        highlights_query: Option<Arc<Query>>,
-    ) -> Result<Self, RiftError> {
-        Ok(Self {
+    pub(crate) fn new(loaded: LoadedLanguage, highlights_query: Option<Arc<Query>>) -> Self {
+        Self {
             language: loaded.language,
             tree: None,
             highlights_query,
@@ -102,20 +93,20 @@ impl Syntax {
             logical_bytes_pending_edits: Vec::new(),
             highlights_generation: 0,
             injection_generation: 0,
-        })
+        }
     }
 
     /// Monotonic count of `cached_highlights` (host grammar) replacements,
     /// for external staleness gates that must not react to mere queries.
     #[must_use]
-    pub const fn highlights_generation(&self) -> u64 {
+    pub(crate) const fn highlights_generation(&self) -> u64 {
         self.highlights_generation
     }
 
     /// Monotonic count of injection-layer highlight replacements (static or
     /// dynamic), same reasoning as `highlights_generation`.
     #[must_use]
-    pub const fn injection_generation(&self) -> u64 {
+    pub(crate) const fn injection_generation(&self) -> u64 {
         self.injection_generation
     }
 
@@ -137,7 +128,7 @@ impl Syntax {
     /// Cached logical bytes plus the edit since capture, for a job to patch;
     /// `None` if there's no cache yet or more than one edit has landed.
     #[must_use]
-    pub fn incremental_logical_bytes(&self) -> (Option<Arc<Vec<u8>>>, Option<InputEdit>) {
+    pub(crate) fn incremental_logical_bytes(&self) -> (Option<Arc<Vec<u8>>>, Option<InputEdit>) {
         match self.logical_bytes_pending_edits.as_slice() {
             [edit] if self.cached_logical_bytes.is_some() => {
                 (self.cached_logical_bytes.clone(), Some(*edit))
@@ -149,12 +140,12 @@ impl Syntax {
     /// The `Arc<RawLib>` keeping this syntax's `language` alive, if it came
     /// from a dynamically loaded grammar. Clone it into anything that outlives `self`.
     #[must_use]
-    pub fn lib(&self) -> Option<Arc<super::loader::RawLib>> {
+    pub(crate) fn lib(&self) -> Option<Arc<super::loader::RawLib>> {
         self.lib.clone()
     }
 
     /// Attach an injections query and pre-built injection layers (static protocol).
-    pub fn set_injections(
+    pub(crate) fn set_injections(
         &mut self,
         injections_query: Arc<Query>,
         capture_langs: Vec<(u32, String)>,
@@ -168,7 +159,7 @@ impl Syntax {
 
     // Update from background job result
 
-    pub fn update_from_result(&mut self, result: SyntaxParseResult) {
+    pub(crate) fn update_from_result(&mut self, result: SyntaxParseResult) {
         if result.language_name != self.language_name {
             return;
         }
@@ -182,7 +173,7 @@ impl Syntax {
 
     /// Discard all cached trees and highlights after a non-incremental change (e.g. undo/redo).
     /// The next `incremental_parse()` will do a full re-parse from scratch.
-    pub fn invalidate_trees(&mut self) {
+    pub(crate) fn invalidate_trees(&mut self) {
         self.tree = None;
         self.cached_highlights = Arc::new(IntervalTree::default());
         self.highlights_generation += 1;
@@ -224,7 +215,7 @@ impl Syntax {
 
     /// Notify the syntax tree of an edit, in the caller's own vocabulary
     /// (byte offsets and row/column pairs) rather than tree-sitter's types.
-    pub fn notify_edit(
+    pub(crate) fn notify_edit(
         &mut self,
         start_byte: usize,
         old_end_byte: usize,
@@ -257,7 +248,7 @@ impl Syntax {
 
     /// Time-budgeted incremental parse, aborting if it exceeds `budget`. On
     /// `Aborted`, tree/highlights are untouched; caller falls back to a background job.
-    pub fn try_incremental_parse(
+    pub(crate) fn try_incremental_parse(
         &mut self,
         source: &[u8],
         budget: std::time::Duration,
@@ -362,7 +353,7 @@ impl Syntax {
 
     /// Incremental parse of the host grammar, then injection layers.
     /// Returns `true` if host parsing succeeded.
-    pub fn incremental_parse(&mut self, source: &[u8]) -> bool {
+    pub(crate) fn incremental_parse(&mut self, source: &[u8]) -> bool {
         let mut parser = Parser::new();
         if parser.set_language(&self.language).is_err() {
             return false;
@@ -398,7 +389,7 @@ impl Syntax {
 
     /// Re-run injection parsing after an external tree update. `old_host_tree`/`edit`
     /// scope the requery when this reflects exactly one edit since injections were derived.
-    pub fn parse_injections_pub(
+    pub(crate) fn parse_injections_pub(
         &mut self,
         source: &[u8],
         old_host_tree: Option<&Tree>,
@@ -641,7 +632,7 @@ impl Syntax {
 
     /// Host grammar highlights for a byte range (or the full document).
     #[must_use]
-    pub fn highlights(
+    pub(crate) fn highlights(
         &self,
         range: Option<std::ops::Range<usize>>,
     ) -> Vec<(std::ops::Range<usize>, u32)> {
@@ -659,7 +650,7 @@ impl Syntax {
     /// All injection layer highlights (static and dynamic) as
     /// `(byte_range, capture_name)` pairs.
     #[must_use]
-    pub fn injection_highlights_named(
+    pub(crate) fn injection_highlights_named(
         &self,
         range: Option<&std::ops::Range<usize>>,
     ) -> Vec<(std::ops::Range<usize>, String)> {
@@ -708,7 +699,7 @@ impl Syntax {
 
     /// Capture names from the host grammar's query.
     #[must_use]
-    pub fn capture_names(&self) -> &[&str] {
+    pub(crate) fn capture_names(&self) -> &[&str] {
         if let Some(query) = &self.highlights_query {
             query.capture_names()
         } else {
@@ -833,7 +824,6 @@ fn build_dynamic_layer(
         tree: Some(new_tree),
         cached_highlights: Arc::new(highlights),
         byte_ranges: ranges,
-        lib: lang_loaded.lib,
     })
 }
 
@@ -841,15 +831,12 @@ fn build_dynamic_layer(
 
 /// Build a `Syntax` with injection layers pre-configured from the loader:
 /// pre-created for static grammars (Svelte/HTML), lazy for dynamic ones (Markdown).
-///
-/// # Errors
-/// Returns `Err` only when `Syntax::new` does, which currently never happens.
-pub fn build_syntax(
+pub(crate) fn build_syntax(
     loaded: LoadedLanguage,
     highlights_query: Option<Arc<Query>>,
     language_loader: &Arc<super::loader::LanguageLoader>,
-) -> Result<Syntax, RiftError> {
-    let mut syntax = Syntax::new(loaded, highlights_query)?;
+) -> Syntax {
+    let mut syntax = Syntax::new(loaded, highlights_query);
     syntax.language_loader = Some(language_loader.clone());
 
     if let Some(inj_src) = language_loader.load_injections_query(&syntax.language_name) {
@@ -888,7 +875,6 @@ pub fn build_syntax(
                             tree: None,
                             cached_highlights: Arc::new(IntervalTree::default()),
                             byte_ranges: Vec::new(),
-                            lib: lang_loaded.lib,
                         });
                     }
                 }
@@ -898,7 +884,7 @@ pub fn build_syntax(
         }
     }
 
-    Ok(syntax)
+    syntax
 }
 
 // Helpers
@@ -920,7 +906,7 @@ fn normalize_lang_name(name: &str) -> String {
 
 /// Ranges to (re)query for a single-edit reparse: `changed_ranges` plus the
 /// edit's own span (`changed_ranges` alone can miss a token absorbing an edit).
-pub fn scoped_query_ranges(
+pub(crate) fn scoped_query_ranges(
     prev_tree: &Tree,
     new_tree: &Tree,
     edit: InputEdit,
@@ -954,7 +940,7 @@ pub fn scoped_query_ranges(
     merged
 }
 
-pub fn scoped_kept_items<T: Clone>(
+pub(crate) fn scoped_kept_items<T: Clone>(
     old_items: &IntervalTree<T>,
     edit: InputEdit,
     query_ranges: &[std::ops::Range<usize>],
@@ -972,7 +958,7 @@ pub fn scoped_kept_items<T: Clone>(
 
 /// Orders same-range captures so a later-declared query pattern always wins,
 /// independent of whether the query was scoped or a full scan.
-pub fn finalize_highlights(
+pub(crate) fn finalize_highlights(
     mut highlights: Vec<(std::ops::Range<usize>, u32, usize)>,
 ) -> Vec<(std::ops::Range<usize>, u32)> {
     highlights.sort_by(|a, b| {
@@ -987,7 +973,7 @@ pub fn finalize_highlights(
 
 /// Recompute a highlights query, scoped to the changed region on a
 /// single-edit incremental reparse, or a full scan of `new_tree` otherwise.
-pub fn scoped_query_highlights(
+pub(crate) fn scoped_query_highlights(
     query: &Query,
     new_tree: &Tree,
     source: &[u8],

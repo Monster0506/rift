@@ -7,11 +7,12 @@ use crate::split::navigation::Direction;
 use crate::state::UserSettings;
 
 /// Function pointer type for command factories
-pub type CommandFactory = fn(&SettingsRegistry<UserSettings>, &[&str], usize) -> ParsedCommand;
+pub(crate) type CommandFactory =
+    fn(&SettingsRegistry<UserSettings>, &[&str], usize) -> ParsedCommand;
 
 /// What kind of argument completion a command supports
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CompletionHint {
+pub(crate) enum CompletionHint {
     None,
     /// Both files and directories (e.g. :edit, :write)
     FilePath,
@@ -25,15 +26,15 @@ pub enum CompletionHint {
 
 /// Descriptor for a command
 #[derive(Clone, Copy)]
-pub struct CommandDescriptor {
-    pub name: &'static str,
-    pub aliases: &'static [&'static str],
-    pub description: &'static str,
-    pub factory: Option<CommandFactory>,
-    pub subcommands: &'static [Self],
-    pub completion: CompletionHint,
+pub(crate) struct CommandDescriptor {
+    pub(crate) name: &'static str,
+    pub(crate) aliases: &'static [&'static str],
+    pub(crate) description: &'static str,
+    pub(crate) factory: Option<CommandFactory>,
+    pub(crate) subcommands: &'static [Self],
+    pub(crate) completion: CompletionHint,
     /// Prefix required before subcommand tokens (e.g. ":" for `:split :left`)
-    pub subcommand_prefix: &'static str,
+    pub(crate) subcommand_prefix: &'static str,
 }
 
 // Factory functions
@@ -1194,7 +1195,7 @@ const LSP_SUBS: &[CommandDescriptor] = &[
     },
 ];
 
-pub const COMMANDS: &[CommandDescriptor] = &[
+pub(crate) const COMMANDS: &[CommandDescriptor] = &[
     // Core
     CommandDescriptor {
         name: "quit",

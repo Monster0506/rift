@@ -18,25 +18,25 @@ static DOCUMENT_SETTINGS_REGISTRY: LazyLock<SettingsRegistry<DocumentOptions>> =
     LazyLock::new(create_document_settings_registry);
 
 #[derive(Debug, Clone)]
-pub struct CompletionPayload {
-    pub result: CompletionResult,
-    pub input: String,
-    pub token_start: usize,
+pub(crate) struct CompletionPayload {
+    pub(crate) result: CompletionResult,
+    pub(crate) input: String,
+    pub(crate) token_start: usize,
 }
 
-crate::impl_job_payload!(CompletionPayload);
+crate::job_manager::impl_job_payload!(CompletionPayload);
 
 #[derive(Debug)]
-pub struct CompletionJob {
-    pub input: String,
-    pub current_settings: Option<UserSettings>,
-    pub current_doc_options: Option<DocumentOptions>,
+pub(crate) struct CompletionJob {
+    pub(crate) input: String,
+    pub(crate) current_settings: Option<UserSettings>,
+    pub(crate) current_doc_options: Option<DocumentOptions>,
     /// Plugin commands: (name, description, `arg_type`).
-    pub plugin_commands: Vec<(String, String, Option<String>)>,
+    pub(crate) plugin_commands: Vec<(String, String, Option<String>)>,
     /// Total number of lines in the active buffer (for `int` / `range` completion).
-    pub line_count: usize,
+    pub(crate) line_count: usize,
     /// Unique words extracted from the active buffer (for `word` / `string` completion).
-    pub buf_words: Vec<String>,
+    pub(crate) buf_words: Vec<String>,
 }
 
 impl Job for CompletionJob {

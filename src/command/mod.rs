@@ -2,7 +2,7 @@
 //! key-level input), self-contained enough to apply without extra context.
 use crate::action::Motion;
 
-pub mod input;
+pub(crate) mod input;
 
 /// Editor commands
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,7 +79,7 @@ pub enum Command {
 impl Command {
     /// Check if command mutates the buffer content
     #[must_use]
-    pub const fn is_mutating(&self) -> bool {
+    pub(crate) const fn is_mutating(&self) -> bool {
         matches!(
             self,
             Self::DeleteForward
@@ -104,7 +104,7 @@ impl Command {
 
     /// Check if command should be recorded for dot-repeat
     #[must_use]
-    pub const fn is_repeatable(&self) -> bool {
+    pub(crate) const fn is_repeatable(&self) -> bool {
         self.is_mutating() && !matches!(self, Self::Undo | Self::Redo)
     }
 }

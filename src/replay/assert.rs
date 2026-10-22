@@ -8,7 +8,7 @@ use crate::editor::Editor;
 use crate::error::{ErrorType, RiftError};
 use std::io::Write;
 
-pub fn check<W: Write>(
+pub(crate) fn check<W: Write>(
     ed: &mut Editor<ReplayBackend<W>>,
     assertion: &Assertion,
 ) -> Result<(), RiftError> {

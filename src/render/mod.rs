@@ -10,37 +10,37 @@ use crate::state::State;
 use crate::viewport::Viewport;
 use crate::wrap::DisplayMap;
 
-pub mod components;
-pub mod ecs;
-pub mod pipeline;
-pub mod system;
-pub use pipeline::*;
+pub(crate) mod components;
+pub(crate) mod ecs;
+pub(crate) mod pipeline;
+pub(crate) mod system;
+pub(crate) use pipeline::*;
 pub use system::RenderSystem;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CursorInfo {
-    pub row: usize,
-    pub col: usize,
+pub(crate) struct CursorInfo {
+    pub(crate) row: usize,
+    pub(crate) col: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ContentDrawState {
-    pub revision: u64,
-    pub top_line: usize,
-    pub top_visual_row: usize,
-    pub left_col: usize,
-    pub rows: usize,
-    pub tab_width: usize,
-    pub show_line_numbers: bool,
-    pub highlights_hash: u64,
-    pub gutter_width: usize,
-    pub search_matches_count: usize,
-    pub conceal_hash: u64,
-    pub annotation_styles_hash: u64,
-    pub annotation_text_hash: u64,
-    pub editor_bg: Option<crate::color::Color>,
-    pub editor_fg: Option<crate::color::Color>,
-    pub theme: Option<String>,
+pub(crate) struct ContentDrawState {
+    pub(crate) revision: u64,
+    pub(crate) top_line: usize,
+    pub(crate) top_visual_row: usize,
+    pub(crate) left_col: usize,
+    pub(crate) rows: usize,
+    pub(crate) tab_width: usize,
+    pub(crate) show_line_numbers: bool,
+    pub(crate) highlights_hash: u64,
+    pub(crate) gutter_width: usize,
+    pub(crate) search_matches_count: usize,
+    pub(crate) conceal_hash: u64,
+    pub(crate) annotation_styles_hash: u64,
+    pub(crate) annotation_text_hash: u64,
+    pub(crate) editor_bg: Option<crate::color::Color>,
+    pub(crate) editor_fg: Option<crate::color::Color>,
+    pub(crate) theme: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -187,64 +187,64 @@ fn advance_idx_past<T>(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StatusDrawState {
-    pub mode: Mode,
-    pub pending_key: Option<crate::key::Key>,
-    pub pending_count: usize,
-    pub last_keypress: Option<crate::key::Key>,
-    pub file_name: String,
-    pub is_dirty: bool,
-    pub cursor: CursorInfo,
-    pub total_lines: usize,
-    pub debug_mode: bool,
-    pub cols: usize,
-    pub search_query: Option<String>,
-    pub search_match_index: Option<usize>,
-    pub search_total_matches: usize,
-    pub status_line: crate::state::StatusLineSettings,
-    pub editor_bg: Option<crate::color::Color>,
-    pub editor_fg: Option<crate::color::Color>,
-    pub lsp_status: Option<String>,
-    pub lsp_ok_color: Option<crate::color::Color>,
-    pub lsp_error_color: Option<crate::color::Color>,
-    pub lsp_warn_color: Option<crate::color::Color>,
-    pub is_remote: bool,
+pub(crate) struct StatusDrawState {
+    pub(crate) mode: Mode,
+    pub(crate) pending_key: Option<crate::key::Key>,
+    pub(crate) pending_count: usize,
+    pub(crate) last_keypress: Option<crate::key::Key>,
+    pub(crate) file_name: String,
+    pub(crate) is_dirty: bool,
+    pub(crate) cursor: CursorInfo,
+    pub(crate) total_lines: usize,
+    pub(crate) debug_mode: bool,
+    pub(crate) cols: usize,
+    pub(crate) search_query: Option<String>,
+    pub(crate) search_match_index: Option<usize>,
+    pub(crate) search_total_matches: usize,
+    pub(crate) status_line: crate::state::StatusLineSettings,
+    pub(crate) editor_bg: Option<crate::color::Color>,
+    pub(crate) editor_fg: Option<crate::color::Color>,
+    pub(crate) lsp_status: Option<String>,
+    pub(crate) lsp_ok_color: Option<crate::color::Color>,
+    pub(crate) lsp_error_color: Option<crate::color::Color>,
+    pub(crate) lsp_warn_color: Option<crate::color::Color>,
+    pub(crate) is_remote: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommandDrawState {
-    pub content: String,
-    pub cursor: CursorInfo,
-    pub width: usize,
-    pub height: usize,
-    pub has_border: bool,
-    pub reverse_video: bool,
-    pub editor_bg: Option<crate::color::Color>,
-    pub editor_fg: Option<crate::color::Color>,
+pub(crate) struct CommandDrawState {
+    pub(crate) content: String,
+    pub(crate) cursor: CursorInfo,
+    pub(crate) width: usize,
+    pub(crate) height: usize,
+    pub(crate) has_border: bool,
+    pub(crate) reverse_video: bool,
+    pub(crate) editor_bg: Option<crate::color::Color>,
+    pub(crate) editor_fg: Option<crate::color::Color>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CompletionMenuDrawState {
-    pub candidates: Vec<(String, String)>,
-    pub selected: Option<usize>,
-    pub terminal_cols: usize,
-    pub cmd_width_ratio: f64,
-    pub cmd_min_width: usize,
-    pub cmd_height: usize,
-    pub editor_bg: Option<crate::color::Color>,
-    pub editor_fg: Option<crate::color::Color>,
-    pub scroll_offset: usize,
+pub(crate) struct CompletionMenuDrawState {
+    pub(crate) candidates: Vec<(String, String)>,
+    pub(crate) selected: Option<usize>,
+    pub(crate) terminal_cols: usize,
+    pub(crate) cmd_width_ratio: f64,
+    pub(crate) cmd_min_width: usize,
+    pub(crate) cmd_height: usize,
+    pub(crate) editor_bg: Option<crate::color::Color>,
+    pub(crate) editor_fg: Option<crate::color::Color>,
+    pub(crate) scroll_offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NotificationDrawState {
-    pub generation: u64,
-    pub count: usize,
+pub(crate) struct NotificationDrawState {
+    pub(crate) generation: u64,
+    pub(crate) count: usize,
 }
 
-pub type InlineAdornment = (usize, usize, String, Color, bool);
+pub(crate) type InlineAdornment = (usize, usize, String, Color, bool);
 
-pub type LineAdornment<'a> = (usize, std::borrow::Cow<'a, str>, Color);
+pub(crate) type LineAdornment<'a> = (usize, std::borrow::Cow<'a, str>, Color);
 
 pub struct RenderState<'a> {
     pub buf: &'a TextBuffer,
@@ -277,38 +277,38 @@ pub struct RenderState<'a> {
     pub kind_registry_generation: u64,
 }
 
-pub struct DrawContext<'a> {
-    pub buf: &'a TextBuffer,
-    pub viewport: &'a Viewport,
-    pub current_mode: Mode,
-    pub pending_key: Option<Key>,
-    pub custom_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
-    pub git_gutter_colors: Option<&'a [(usize, Color)]>,
-    pub annotation_styles: Option<&'a [(std::ops::Range<usize>, crate::layer::CellStyle)]>,
-    pub annotation_adornments: Option<&'a [LineAdornment<'a>]>,
-    pub annotation_inline: Option<&'a [InlineAdornment]>,
-    pub annotation_concealed: Option<&'a [(usize, usize)]>,
-    pub terminal_cell_colors: Option<&'a [crate::color::CellColorSpan]>,
-    pub pending_count: usize,
-    pub state: &'a State,
-    pub needs_clear: bool,
-    pub tab_width: usize,
-    pub highlights: Option<&'a [(std::ops::Range<usize>, u32)]>,
-    pub capture_map: Option<&'a [&'a str]>,
-    pub injection_highlights: Option<&'a [(std::ops::Range<usize>, String)]>,
-    pub show_line_numbers: bool,
-    pub display_map: Option<&'a DisplayMap>,
-    pub gutter_width_override: Option<usize>,
-    pub search_matches_override: Option<&'a [crate::search::SearchMatch]>,
-    pub syntax_generation: u64,
-    pub annotations_revision: u64,
-    pub kind_registry_generation: u64,
+pub(crate) struct DrawContext<'a> {
+    pub(crate) buf: &'a TextBuffer,
+    pub(crate) viewport: &'a Viewport,
+    pub(crate) current_mode: Mode,
+    pub(crate) pending_key: Option<Key>,
+    pub(crate) custom_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
+    pub(crate) git_gutter_colors: Option<&'a [(usize, Color)]>,
+    pub(crate) annotation_styles: Option<&'a [(std::ops::Range<usize>, crate::layer::CellStyle)]>,
+    pub(crate) annotation_adornments: Option<&'a [LineAdornment<'a>]>,
+    pub(crate) annotation_inline: Option<&'a [InlineAdornment]>,
+    pub(crate) annotation_concealed: Option<&'a [(usize, usize)]>,
+    pub(crate) terminal_cell_colors: Option<&'a [crate::color::CellColorSpan]>,
+    pub(crate) pending_count: usize,
+    pub(crate) state: &'a State,
+    pub(crate) needs_clear: bool,
+    pub(crate) tab_width: usize,
+    pub(crate) highlights: Option<&'a [(std::ops::Range<usize>, u32)]>,
+    pub(crate) capture_map: Option<&'a [&'a str]>,
+    pub(crate) injection_highlights: Option<&'a [(std::ops::Range<usize>, String)]>,
+    pub(crate) show_line_numbers: bool,
+    pub(crate) display_map: Option<&'a DisplayMap>,
+    pub(crate) gutter_width_override: Option<usize>,
+    pub(crate) search_matches_override: Option<&'a [crate::search::SearchMatch]>,
+    pub(crate) syntax_generation: u64,
+    pub(crate) annotations_revision: u64,
+    pub(crate) kind_registry_generation: u64,
 }
 
 impl<'a> DrawContext<'a> {
     /// Gutter columns for this draw, 0 when line numbers are hidden.
     #[must_use]
-    pub fn gutter_cols(&self) -> usize {
+    pub(crate) fn gutter_cols(&self) -> usize {
         if !self.state.line_numbers_on(self.show_line_numbers) {
             return 0;
         }
@@ -317,7 +317,7 @@ impl<'a> DrawContext<'a> {
     }
 
     #[must_use]
-    pub fn search_matches(&self) -> &'a [crate::search::SearchMatch] {
+    pub(crate) fn search_matches(&self) -> &'a [crate::search::SearchMatch] {
         self.search_matches_override
             .unwrap_or_else(|| &self.state.search_matches)
     }
@@ -1179,11 +1179,12 @@ fn render_trailing_adornment(
     col
 }
 
-pub fn calculate_cursor_column(buf: &TextBuffer, line: usize, tab_width: usize) -> usize {
+#[cfg(test)]
+pub(crate) fn calculate_cursor_column(buf: &TextBuffer, line: usize, tab_width: usize) -> usize {
     calculate_cursor_column_at(buf, line, tab_width, buf.cursor())
 }
 
-pub fn calculate_cursor_column_at(
+pub(crate) fn calculate_cursor_column_at(
     buf: &TextBuffer,
     line: usize,
     tab_width: usize,
@@ -1219,7 +1220,7 @@ pub fn calculate_cursor_column_at(
 }
 
 #[must_use]
-pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
+pub(crate) fn wrap_text(text: &str, width: usize) -> Vec<String> {
     use unicode_width::UnicodeWidthStr;
 
     let mut lines = Vec::new();

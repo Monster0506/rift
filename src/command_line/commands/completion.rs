@@ -5,14 +5,14 @@ use crate::document::definitions::DocumentOptions;
 use crate::state::UserSettings;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PathFilter {
+pub(crate) enum PathFilter {
     Both,
     FilesOnly,
     DirectoriesOnly,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CompletionContext {
+pub(crate) enum CompletionContext {
     CommandName,
     Subcommand {
         parent: String,
@@ -35,21 +35,21 @@ pub enum CompletionContext {
 }
 
 #[derive(Debug, Clone)]
-pub struct CompletionCandidate {
-    pub text: String,
-    pub description: String,
-    pub is_directory: bool,
+pub(crate) struct CompletionCandidate {
+    pub(crate) text: String,
+    pub(crate) description: String,
+    pub(crate) is_directory: bool,
 }
 
 #[derive(Debug, Clone)]
-pub struct CompletionResult {
-    pub common_prefix: String,
-    pub candidates: Vec<CompletionCandidate>,
+pub(crate) struct CompletionResult {
+    pub(crate) common_prefix: String,
+    pub(crate) candidates: Vec<CompletionCandidate>,
 }
 
 impl CompletionResult {
     #[must_use]
-    pub const fn empty() -> Self {
+    pub(crate) const fn empty() -> Self {
         Self {
             common_prefix: String::new(),
             candidates: Vec::new(),
@@ -57,7 +57,7 @@ impl CompletionResult {
     }
 
     #[must_use]
-    pub fn from_candidates(mut candidates: Vec<CompletionCandidate>) -> Self {
+    pub(crate) fn from_candidates(mut candidates: Vec<CompletionCandidate>) -> Self {
         candidates.sort_by(|a, b| {
             a.is_directory
                 .cmp(&b.is_directory)
@@ -74,10 +74,10 @@ impl CompletionResult {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedContext {
-    pub context: CompletionContext,
-    pub prefix: String,
-    pub token_start: usize,
+pub(crate) struct ParsedContext {
+    pub(crate) context: CompletionContext,
+    pub(crate) prefix: String,
+    pub(crate) token_start: usize,
 }
 
 fn subcommand_context(
@@ -120,7 +120,7 @@ fn file_context(path_prefix: &str, token_start: usize, filter: PathFilter) -> Pa
     }
 }
 
-pub fn parse_context(
+pub(crate) fn parse_context(
     input: &str,
     settings_registry: &SettingsRegistry<UserSettings>,
     document_settings_registry: &SettingsRegistry<DocumentOptions>,
@@ -291,12 +291,12 @@ fn complete_from_descriptors(descriptors: &[CommandDescriptor], prefix: &str) ->
 }
 
 #[must_use]
-pub fn complete_command_name(prefix: &str) -> CompletionResult {
+pub(crate) fn complete_command_name(prefix: &str) -> CompletionResult {
     complete_from_descriptors(COMMANDS, prefix)
 }
 
 #[must_use]
-pub fn complete_subcommand(parent: &str, prefix: &str) -> CompletionResult {
+pub(crate) fn complete_subcommand(parent: &str, prefix: &str) -> CompletionResult {
     let parent_lower = parent.to_lowercase();
     let parent_cmd = COMMANDS
         .iter()
@@ -307,7 +307,7 @@ pub fn complete_subcommand(parent: &str, prefix: &str) -> CompletionResult {
 }
 
 #[must_use]
-pub fn complete_setting_name<T: 'static>(
+pub(crate) fn complete_setting_name<T: 'static>(
     prefix: &str,
     settings_registry: &SettingsRegistry<T>,
 ) -> CompletionResult {
@@ -366,7 +366,7 @@ pub fn complete_setting_name<T: 'static>(
 }
 
 #[must_use]
-pub fn complete_setting_value<T: 'static>(
+pub(crate) fn complete_setting_value<T: 'static>(
     name: &str,
     settings_registry: &SettingsRegistry<T>,
     current: Option<&T>,
@@ -435,7 +435,7 @@ pub fn complete_setting_value<T: 'static>(
 }
 
 #[derive(Debug)]
-pub enum CompletionAction {
+pub(crate) enum CompletionAction {
     Discard,
     Clear,
     ApplyAndClear {
@@ -456,7 +456,7 @@ pub enum CompletionAction {
 }
 
 #[must_use]
-pub fn resolve_completion(
+pub(crate) fn resolve_completion(
     result: CompletionResult,
     payload_input: &str,
     token_start: usize,
@@ -497,7 +497,7 @@ pub fn resolve_completion(
 }
 
 #[must_use]
-pub fn split_path_prefix(prefix: &str) -> (String, String) {
+pub(crate) fn split_path_prefix(prefix: &str) -> (String, String) {
     if prefix.ends_with('/') || prefix.ends_with('\\') {
         let dir = prefix.trim_end_matches(['/', '\\']);
         return (
@@ -522,7 +522,7 @@ pub fn split_path_prefix(prefix: &str) -> (String, String) {
 }
 
 #[must_use]
-pub fn longest_common_prefix_of(strs: &[&str]) -> String {
+pub(crate) fn longest_common_prefix_of(strs: &[&str]) -> String {
     if strs.is_empty() {
         return String::new();
     }

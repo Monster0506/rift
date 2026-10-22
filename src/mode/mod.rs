@@ -28,7 +28,7 @@ pub enum Mode {
 impl Mode {
     /// Returns the lowercase mode name for Lua state. `OperatorPending` uses `"normal"`.
     #[must_use]
-    pub const fn as_str(self) -> &'static str {
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Normal | Self::OperatorPending => "normal",
             Self::Insert => "insert",
@@ -42,14 +42,14 @@ impl Mode {
 
     /// True for any of the three Visual-family modes.
     #[must_use]
-    pub const fn is_visual(self) -> bool {
+    pub(crate) const fn is_visual(self) -> bool {
         matches!(self, Self::Visual | Self::VisualLine | Self::VisualBlock)
     }
 
     /// The `RangeKind` a region built from this mode should use, or `None`
     /// for non-visual modes.
     #[must_use]
-    pub const fn visual_range_kind(self) -> Option<crate::wrap::RangeKind> {
+    pub(crate) const fn visual_range_kind(self) -> Option<crate::wrap::RangeKind> {
         match self {
             Self::Visual => Some(crate::wrap::RangeKind::Charwise),
             Self::VisualLine => Some(crate::wrap::RangeKind::Linewise),

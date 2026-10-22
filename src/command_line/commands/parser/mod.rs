@@ -8,10 +8,10 @@ use crate::command_line::settings::SettingsRegistry;
 use crate::state::UserSettings;
 
 // Re-export ParsedCommand for convenience and backward compatibility
-pub use crate::command_line::commands::ParsedCommand;
+pub(crate) use crate::command_line::commands::ParsedCommand;
 
 /// Command parser
-pub struct CommandParser {
+pub(crate) struct CommandParser {
     registry: CommandRegistry,
     settings_registry: SettingsRegistry<UserSettings>,
     commands: &'static [CommandDescriptor],
@@ -20,13 +20,13 @@ pub struct CommandParser {
 impl CommandParser {
     /// Create a new command parser
     #[must_use]
-    pub fn new(settings_registry: SettingsRegistry<UserSettings>) -> Self {
+    pub(crate) fn new(settings_registry: SettingsRegistry<UserSettings>) -> Self {
         Self::with_commands(settings_registry, COMMANDS)
     }
 
     /// Create a new command parser with custom commands (for testing)
     #[must_use]
-    pub fn with_commands(
+    pub(crate) fn with_commands(
         settings_registry: SettingsRegistry<UserSettings>,
         commands: &'static [CommandDescriptor],
     ) -> Self {
@@ -66,7 +66,7 @@ impl CommandParser {
 
     /// Parse a command string
     #[must_use]
-    pub fn parse(&self, input: &str) -> ParsedCommand {
+    pub(crate) fn parse(&self, input: &str) -> ParsedCommand {
         let input = input.trim();
 
         // Remove leading colon if present

@@ -1,45 +1,45 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Viewport {
-    pub rows: u16,
-    pub cols: u16,
+pub(crate) struct Viewport {
+    pub(crate) rows: u16,
+    pub(crate) cols: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InitializeParams {
-    pub token: String,
-    pub client_name: String,
-    pub viewport: Viewport,
+pub(crate) struct InitializeParams {
+    pub(crate) token: String,
+    pub(crate) client_name: String,
+    pub(crate) viewport: Viewport,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InputKeyParams {
-    pub key: String,
-    pub seq: u64,
+pub(crate) struct InputKeyParams {
+    pub(crate) key: String,
+    pub(crate) seq: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResizeParams {
-    pub rows: u16,
-    pub cols: u16,
+pub(crate) struct ResizeParams {
+    pub(crate) rows: u16,
+    pub(crate) cols: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RenderUpdateParams {
-    pub screen: String,
-    pub last_seq: u64,
+pub(crate) struct RenderUpdateParams {
+    pub(crate) screen: String,
+    pub(crate) last_seq: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionEndingParams {
-    pub reason: String,
+pub(crate) struct SessionEndingParams {
+    pub(crate) reason: String,
 }
 
-pub const ERR_UNAUTHORIZED: i64 = -32003;
+pub(crate) const ERR_UNAUTHORIZED: i64 = -32003;
 
 #[must_use]
-pub fn b64_encode(bytes: &[u8]) -> String {
+pub(crate) fn b64_encode(bytes: &[u8]) -> String {
     const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
@@ -64,7 +64,7 @@ pub fn b64_encode(bytes: &[u8]) -> String {
 }
 
 #[must_use]
-pub fn b64_decode(s: &str) -> Option<Vec<u8>> {
+pub(crate) fn b64_decode(s: &str) -> Option<Vec<u8>> {
     const fn val(b: u8) -> Option<u8> {
         match b {
             b'A'..=b'Z' => Some(b - b'A'),

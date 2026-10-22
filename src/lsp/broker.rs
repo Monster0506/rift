@@ -30,13 +30,13 @@ struct BrokerDescriptor {
 }
 
 #[must_use]
-pub fn broker_dir() -> PathBuf {
+pub(crate) fn broker_dir() -> PathBuf {
     crate::ipc::session::data_dir().join("lsp")
 }
 
 /// Stable cache key for one (server command, args, project root) combination.
 #[must_use]
-pub fn broker_key(command: &str, args: &[String], root_uri: Option<&str>) -> String {
+pub(crate) fn broker_key(command: &str, args: &[String], root_uri: Option<&str>) -> String {
     // FNV-1a: deterministic across processes and rift builds.
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     let mut eat = |bytes: &[u8]| {
@@ -70,7 +70,7 @@ pub fn broker_key(command: &str, args: &[String], root_uri: Option<&str>) -> Str
 ///
 /// # Errors
 /// Returns an error if keepalive is disabled or no broker connection can be made.
-pub fn attach(
+pub(crate) fn attach(
     command: &str,
     args: &[String],
     root_uri: Option<&str>,
@@ -374,10 +374,10 @@ impl ProxyState {
 
 // --- Broker runtime ---
 
-pub struct BrokerParams {
-    pub key: String,
-    pub dir: PathBuf,
-    pub idle_timeout: Duration,
+pub(crate) struct BrokerParams {
+    pub(crate) key: String,
+    pub(crate) dir: PathBuf,
+    pub(crate) idle_timeout: Duration,
 }
 
 /// Entry point for `rift --lsp-broker <key>`; the result is the process exit status.
@@ -467,7 +467,7 @@ fn descriptor_owned_by_other(desc_path: &std::path::Path) -> bool {
 ///
 /// # Panics
 /// Panics if the spawned server does not expose piped stdin and stdout.
-pub fn serve(params: &BrokerParams) -> anyhow::Result<()> {
+pub(crate) fn serve(params: &BrokerParams) -> anyhow::Result<()> {
     let req_path = params.dir.join(format!("{}.req.json", params.key));
     let desc_path = params.dir.join(format!("{}.json", params.key));
     let req: BrokerRequest = serde_json::from_str(&std::fs::read_to_string(&req_path)?)?;

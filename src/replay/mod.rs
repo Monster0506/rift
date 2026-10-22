@@ -2,15 +2,15 @@
 //! sequence for profiling and deterministic regression checks.
 
 mod assert;
-pub mod backend;
-pub mod fuzz;
-pub mod ops;
-pub mod runner;
-pub mod shrink;
+pub(crate) mod backend;
+#[cfg(test)]
+pub(crate) mod fuzz;
+pub(crate) mod ops;
+pub(crate) mod runner;
+#[cfg(test)]
+pub(crate) mod shrink;
 
-pub use backend::ReplayBackend;
-pub use fuzz::{run as run_fuzz, FuzzConfig, FuzzFailure};
-pub use ops::{parse, Assertion, ParseError, ScriptOp};
-#[cfg(feature = "perf_instrumentation")]
-pub use runner::PerfSpanSummary;
-pub use runner::{run, Mark, Percentiles, RunReport, TickTiming};
+#[cfg(test)]
+pub(crate) use backend::ReplayBackend;
+pub use ops::parse;
+pub use runner::{run, RunReport};

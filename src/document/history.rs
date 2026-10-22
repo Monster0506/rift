@@ -7,7 +7,7 @@ use crate::history::{EditOperation, EditTransaction, Position};
 impl Document {
     /// Start a transaction for grouping multiple edits. A fresh top-level
     /// transaction first commits any ghost cut still pending on this document.
-    pub fn begin_transaction(&mut self, description: impl Into<String>) {
+    pub(crate) fn begin_transaction(&mut self, description: impl Into<String>) {
         if self.transaction_depth == 0 {
             self.commit_pending_ghost();
         }
@@ -22,7 +22,7 @@ impl Document {
     }
 
     /// Commit the current transaction to undo history.
-    pub fn commit_transaction(&mut self) {
+    pub(crate) fn commit_transaction(&mut self) {
         if self.transaction_depth == 0 {
             return;
         }
@@ -45,7 +45,7 @@ impl Document {
     }
 
     /// Undo the last edit. Returns true if successful.
-    pub fn undo(&mut self) -> bool {
+    pub(crate) fn undo(&mut self) -> bool {
         self.commit_pending_ghost();
         if !self.history.can_undo() {
             return false;
@@ -79,7 +79,7 @@ impl Document {
     }
 
     /// Redo the last undone edit. Returns true if successful.
-    pub fn redo(&mut self) -> bool {
+    pub(crate) fn redo(&mut self) -> bool {
         self.commit_pending_ghost();
         if !self.history.can_redo() {
             return false;
@@ -303,18 +303,14 @@ impl Document {
         }
     }
 
+    #[cfg(test)]
     /// Check if undo is available
-    pub const fn can_undo(&self) -> bool {
+    pub(crate) const fn can_undo(&self) -> bool {
         self.history.can_undo()
     }
 
-    /// Check if redo is available
-    pub fn can_redo(&self) -> bool {
-        self.history.can_redo()
-    }
-
     /// Create a checkpoint at the current position
-    pub fn checkpoint(&mut self) {
+    pub(crate) fn checkpoint(&mut self) {
         use crate::buffer::api::BufferView;
         use crate::history::DocumentSnapshot;
 
@@ -328,7 +324,7 @@ impl Document {
     ///
     /// # Errors
     /// Propagates the `UndoError` from `history.goto_seq` when the target cannot be reached.
-    pub fn goto_seq(&mut self, target: u64) -> Result<(), crate::history::UndoError> {
+    pub(crate) fn goto_seq(&mut self, target: u64) -> Result<(), crate::history::UndoError> {
         self.commit_pending_ghost();
         let replay_path = self.history.goto_seq(target)?;
 
@@ -373,8 +369,9 @@ impl Document {
         Ok(())
     }
 
+    #[cfg(test)]
     /// Get the line number where an edit occurred for a specific sequence
-    pub fn get_changed_line_for_seq(&self, seq: u64) -> Option<usize> {
+    pub(crate) fn get_changed_line_for_seq(&self, seq: u64) -> Option<usize> {
         use crate::history::EditOperation;
 
         let node = self.history.nodes.get(&seq)?;

@@ -4,7 +4,9 @@ use super::{FileSystem, FsEntry};
 use crate::error::RiftError;
 use crate::job_manager::jobs::fs::{is_cross_device, FsCopyJob};
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Read;
+#[cfg(test)]
+use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
 /// Resolve `.`/`..` components manually for paths that don't exist yet, then
@@ -29,7 +31,7 @@ fn normalize_missing(path: &Path) -> PathBuf {
     }
 }
 
-pub struct NativeFileSystem;
+pub(crate) struct NativeFileSystem;
 
 impl FileSystem for NativeFileSystem {
     fn read_file(&self, path: &Path) -> Result<Vec<u8>, RiftError> {
@@ -43,6 +45,7 @@ impl FileSystem for NativeFileSystem {
         Ok(buf)
     }
 
+    #[cfg(test)]
     fn write_file(&self, path: &Path, content: &[u8]) -> Result<(), RiftError> {
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
         let temp_path = parent.join(format!(

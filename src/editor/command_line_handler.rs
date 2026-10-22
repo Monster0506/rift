@@ -1,7 +1,6 @@
 use super::Editor;
 use crate::command_line::commands::CommandExecutor;
 use crate::mode::Mode;
-use crate::search::SearchDirection;
 use crate::term::TerminalBackend;
 
 /// Debounce window for re-running the search after undo/redo, coalescing a
@@ -259,20 +258,6 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn handle_command_line_message(&mut self, msg: crate::message::CommandLineMessage) {
         use crate::message::CommandLineMessage;
         match msg {
-            CommandLineMessage::ExecuteCommand(cmd) => {
-                self.execute_command_line(&cmd);
-                self.state.clear_command_line();
-            }
-            CommandLineMessage::ExecuteSearch(query) => {
-                if query.is_empty() || self.perform_search(&query, SearchDirection::Forward, false)
-                {
-                    self.state.clear_command_line();
-                }
-            }
-            CommandLineMessage::CancelMode => {
-                self.state.completion_session = None;
-                self.state.clear_command_line();
-            }
             CommandLineMessage::RequestCompletion(input) => {
                 use crate::job_manager::jobs::completion::CompletionJob;
                 let current_settings = Some(self.state.settings.clone());

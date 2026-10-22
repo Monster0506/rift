@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use monster_rift::job_manager::{CancellationSignal, Job, JobManager, JobMessage};
+use monster_rift::bench_api::job_manager::{CancellationSignal, Job, JobManager, JobMessage};
 use std::hint::black_box;
 use std::sync::mpsc::Sender;
 use std::thread;

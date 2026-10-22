@@ -3,7 +3,7 @@
 
 /// Command history with prefix matching support
 #[derive(Debug, Clone)]
-pub struct CommandHistory {
+pub(crate) struct CommandHistory {
     /// Stored history items (oldest first)
     items: Vec<String>,
     /// Maximum number of items to store
@@ -24,7 +24,7 @@ impl Default for CommandHistory {
 impl CommandHistory {
     /// Create a new command history with the specified maximum size
     #[must_use]
-    pub const fn new(max_size: usize) -> Self {
+    pub(crate) const fn new(max_size: usize) -> Self {
         Self {
             items: Vec::new(),
             max_size,
@@ -35,7 +35,7 @@ impl CommandHistory {
 
     /// Add a command to history; skips empty/consecutive-duplicate commands
     /// and resets navigation state.
-    pub fn add(&mut self, command: String) {
+    pub(crate) fn add(&mut self, command: String) {
         // Skip empty commands
         if command.is_empty() {
             return;
@@ -61,14 +61,14 @@ impl CommandHistory {
 
     /// Start navigation (if not already started), capturing the current input
     /// line before the first prev/next call.
-    pub fn start_navigation(&mut self, current_line: String) {
+    pub(crate) fn start_navigation(&mut self, current_line: String) {
         if self.original_line.is_none() {
             self.original_line = Some(current_line);
         }
     }
 
     /// Navigate to the previous (older) matching history entry, or None if no match found.
-    pub fn prev_match(&mut self) -> Option<&str> {
+    pub(crate) fn prev_match(&mut self) -> Option<&str> {
         if self.items.is_empty() {
             return None;
         }
@@ -95,7 +95,7 @@ impl CommandHistory {
 
     /// Navigate to the next (newer) matching history entry, or the original
     /// line if returning to present.
-    pub fn next_match(&mut self) -> Option<&str> {
+    pub(crate) fn next_match(&mut self) -> Option<&str> {
         let idx = self.history_index?;
 
         let prefix = self.original_line.as_deref().unwrap_or("");
@@ -114,20 +114,22 @@ impl CommandHistory {
     }
 
     /// Reset navigation state, clearing `history_index` and `original_line` but keeping items.
-    pub fn reset_navigation(&mut self) {
+    pub(crate) fn reset_navigation(&mut self) {
         self.history_index = None;
         self.original_line = None;
     }
 
+    #[cfg(test)]
     /// Get the number of items in history
     #[must_use]
-    pub const fn len(&self) -> usize {
+    pub(crate) const fn len(&self) -> usize {
         self.items.len()
     }
 
+    #[cfg(test)]
     /// Check if history is empty
     #[must_use]
-    pub const fn is_empty(&self) -> bool {
+    pub(crate) const fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 }

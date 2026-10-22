@@ -317,58 +317,6 @@ fn test_find_all_empty_pattern_with_flags_terminates_with_no_matches() {
     assert!(matches.is_empty());
 }
 
-#[test]
-fn test_large_file_search_performance_with_cache() {
-    use crate::buffer::byte_map::ByteLineMap;
-    use crate::document::Document;
-
-    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-
-    let line = "This is a line of text to simulate a file content.\n";
-    let mut large_text = String::with_capacity(1_000_000);
-    for _ in 0..20_000 {
-        large_text.push_str(line);
-    }
-    doc.insert_str(&large_text).unwrap();
-
-    {
-        let buffer = &doc.buffer;
-        let mut current_byte_offset = 0;
-        let mut current_char_offset = 0;
-        let mut line_starts = vec![0];
-        let mut line_char_starts = vec![0];
-
-        for c in buffer {
-            current_byte_offset += c.len_utf8();
-            current_char_offset += 1;
-            if c == crate::character::Character::Newline {
-                line_starts.push(current_byte_offset);
-                line_char_starts.push(current_char_offset);
-            }
-        }
-
-        if let Some(cell) = buffer.byte_line_map() {
-            *cell.borrow_mut() = Some(ByteLineMap::new(
-                line_starts,
-                line_char_starts,
-                buffer.revision(),
-            ));
-        }
-    }
-    let start = std::time::Instant::now();
-    let result = doc.perform_search("nonexistent_string_12345", SearchDirection::Forward, false);
-    let duration = start.elapsed();
-    eprintln!("[perf] warm-cache literal search took {duration:?}");
-
-    let max_duration = if cfg!(debug_assertions) { 250 } else { 15 };
-
-    assert!(
-        duration.as_millis() < max_duration,
-        "Search took too long: {duration:?} (expected <{max_duration}ms with cache)"
-    );
-    assert!(result.unwrap().0.is_none());
-}
-
 /// Complex searches over a ~1 MB buffer must finish under 1s, run on a worker
 /// thread so a true hang fails the budget instead of blocking the test.
 #[test]

@@ -7,7 +7,7 @@ use crate::color::Color;
 const GHOST_PRIORITY: i32 = 8;
 
 impl Document {
-    pub fn create_ghosts(&mut self, ranges: &[(usize, usize)]) {
+    pub(crate) fn create_ghosts(&mut self, ranges: &[(usize, usize)]) {
         self.commit_pending_ghost();
 
         let mut ranges: Vec<(usize, usize)> =
@@ -43,12 +43,12 @@ impl Document {
         self.pending_ghost = ghosts;
     }
 
-    pub fn most_recent_ghost(&self) -> Option<(&[Character], usize)> {
+    pub(crate) fn most_recent_ghost(&self) -> Option<(&[Character], usize)> {
         let ghost = self.pending_ghost.first()?;
         Some((&ghost.text, ghost.at))
     }
 
-    pub fn commit_pending_ghost(&mut self) {
+    pub(crate) fn commit_pending_ghost(&mut self) {
         if self.pending_ghost.is_empty() {
             return;
         }
@@ -56,7 +56,7 @@ impl Document {
         self.pending_ghost.clear();
     }
 
-    pub fn begin_ghost_paint(&mut self) -> Option<super::SyntaxSync> {
+    pub(crate) fn begin_ghost_paint(&mut self) -> Option<super::SyntaxSync> {
         if self.pending_ghost.is_empty() {
             return None;
         }
@@ -107,7 +107,7 @@ impl Document {
         Some(self.resync_syntax())
     }
 
-    pub fn end_ghost_paint(&mut self) -> Option<super::SyntaxSync> {
+    pub(crate) fn end_ghost_paint(&mut self) -> Option<super::SyntaxSync> {
         let real_cursor = self.ghost_paint_cursor.take()?;
 
         let mut order: Vec<(usize, usize)> = self

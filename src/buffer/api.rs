@@ -2,7 +2,6 @@
 //! are code-point based; revision increments only on mutation/commit, never on cursor movement.
 
 use crate::character::Character;
-use crate::error::RiftError;
 use std::ops::Range;
 
 /// Read-only view of a document at a specific revision.
@@ -46,13 +45,6 @@ pub trait BufferView {
         None
     }
 
-    /// Access to byte line map cache if available (for search index optimization)
-    fn byte_line_map(
-        &self,
-    ) -> Option<&std::cell::RefCell<Option<crate::buffer::byte_map::ByteLineMap>>> {
-        None
-    }
-
     /// Convert character index to byte offset (efficient O(log N) or better)
     fn char_to_byte(&self, char_index: usize) -> usize {
         // Default implementation falls back to iteration (slow)
@@ -66,112 +58,4 @@ pub trait BufferView {
         }
         byte_offset
     }
-}
-
-/// Builder for accumulating operations in a transaction. Code-point based
-/// offsets; operations do not increment revision until the transaction commits.
-pub trait TransactionBuilder {
-    /// Set cursor to `pos` (code-point offset).
-    ///
-    /// # Errors
-    /// Returns `Err` if `pos` is past the end of the buffer.
-    fn set_cursor(&mut self, pos: usize) -> Result<(), RiftError>;
-
-    /// Current cursor position (code-point offset).
-    fn cursor(&self) -> usize;
-
-    /// Insert UTF-8 string at cursor.
-    ///
-    /// # Errors
-    /// Returns `Err` if the text cannot be inserted at the cursor.
-    fn insert_str(&mut self, s: &str) -> Result<(), RiftError>;
-
-    /// Delete `count` code-points before cursor (backspace).
-    ///
-    /// # Errors
-    /// Returns `Err` if the deletion cannot be applied at the cursor.
-    fn delete_backward(&mut self, count: usize) -> Result<(), RiftError>;
-
-    /// Delete `count` code-points at cursor (forward delete).
-    ///
-    /// # Errors
-    /// Returns `Err` if the deletion cannot be applied at the cursor.
-    fn delete_forward(&mut self, count: usize) -> Result<(), RiftError>;
-
-    /// Move cursor left by `chars` code-points. Returns `true` if moved.
-    fn move_left(&mut self, chars: usize) -> bool;
-
-    /// Move cursor right by `chars` code-points. Returns `true` if moved.
-    fn move_right(&mut self, chars: usize) -> bool;
-
-    /// Move cursor up by `lines` logical lines. Returns `true` if moved.
-    fn move_up(&mut self, lines: usize) -> bool;
-
-    /// Move cursor down by `lines` logical lines. Returns `true` if moved.
-    fn move_down(&mut self, lines: usize) -> bool;
-}
-
-/// Mutable buffer interface used by the command executor and UI.
-pub trait BufferMut {
-    /// The concrete snapshot type for this buffer.
-    type Snapshot: BufferView + Send + Sync;
-
-    /// Set cursor to `pos` (code-point offset).
-    /// Does not increment revision (navigation is not an edit).
-    ///
-    /// # Errors
-    /// Returns `Err` if `pos` is past the end of the buffer.
-    fn set_cursor(&mut self, pos: usize) -> Result<(), RiftError>;
-
-    /// Current cursor position (code-point offset).
-    fn cursor(&self) -> usize;
-
-    /// Insert UTF-8 string at cursor. Does not move cursor.
-    /// Increments revision by 1.
-    ///
-    /// # Errors
-    /// Returns `Err` if the text cannot be inserted at the cursor.
-    fn insert_str(&mut self, s: &str) -> Result<(), RiftError>;
-
-    /// Delete `count` code-points before cursor (backspace).
-    /// Increments revision by 1.
-    ///
-    /// # Errors
-    /// Returns `Err` if the deletion cannot be applied at the cursor.
-    fn delete_backward(&mut self, count: usize) -> Result<(), RiftError>;
-
-    /// Delete `count` code-points at cursor (forward delete).
-    /// Increments revision by 1.
-    ///
-    /// # Errors
-    /// Returns `Err` if the deletion cannot be applied at the cursor.
-    fn delete_forward(&mut self, count: usize) -> Result<(), RiftError>;
-
-    /// Move cursor left by `chars` code-points. Returns `true` if moved.
-    /// Does not increment revision (navigation is not an edit).
-    fn move_left(&mut self, chars: usize) -> bool;
-
-    /// Move cursor right by `chars` code-points. Returns `true` if moved.
-    /// Does not increment revision (navigation is not an edit).
-    fn move_right(&mut self, chars: usize) -> bool;
-
-    /// Move cursor up by `lines` logical lines. Returns `true` if moved.
-    /// Does not increment revision (navigation is not an edit).
-    fn move_up(&mut self, lines: usize) -> bool;
-
-    /// Move cursor down by `lines` logical lines. Returns `true` if moved.
-    /// Does not increment revision (navigation is not an edit).
-    fn move_down(&mut self, lines: usize) -> bool;
-
-    /// Execute a batch of operations atomically as a single revision increment,
-    /// or rolls back with revision unchanged if the closure returns `Err`.
-    ///
-    /// # Errors
-    /// Returns the error from `f`; the buffer is rolled back.
-    fn transaction<F>(&mut self, f: F) -> Result<(), RiftError>
-    where
-        F: FnOnce(&mut dyn TransactionBuilder) -> Result<(), RiftError>;
-
-    /// Produce a cheap, immutable snapshot of the buffer at the current revision.
-    fn snapshot(&self) -> Self::Snapshot;
 }

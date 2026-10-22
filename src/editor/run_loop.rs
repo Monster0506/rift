@@ -34,7 +34,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// # Errors
     ///
     /// Returns an error if a tick's input, job, or render work fails.
-    pub fn tick(&mut self) -> Result<(), RiftError> {
+    pub(crate) fn tick(&mut self) -> Result<(), RiftError> {
         let result = self.tick_inner();
         #[cfg(debug_assertions)]
         {
@@ -271,12 +271,7 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some(term) = doc.terminal_mut() {
                 if !bytes.is_empty() {
                     term.scroll_to_bottom();
-                    if let Err(e) = term.write(&bytes) {
-                        self.state.notify(
-                            crate::notification::NotificationType::Error,
-                            format!("Write failed: {e}"),
-                        );
-                    }
+                    term.write(&bytes);
                 }
             }
         }
@@ -609,12 +604,7 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some(doc) = self.document_manager.active_document_mut() {
                 if let Some(term) = doc.terminal_mut() {
                     term.scroll_to_bottom();
-                    if let Err(e) = term.write(text.as_bytes()) {
-                        self.state.notify(
-                            crate::notification::NotificationType::Error,
-                            format!("Write failed: {e}"),
-                        );
-                    }
+                    term.write(text.as_bytes());
                 }
             }
             return self.update_and_render();
@@ -674,8 +664,10 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Handle special actions (mutations happen here, not during input handling)
+    #[allow(clippy::unused_self)]
     pub(super) fn handle_key_actions(&mut self, action: crate::key_handler::KeyAction) {
         match action {
+            #[cfg(test)]
             KeyAction::ExitInsertMode => {
                 // Finalize insert recording for dot-repeat
                 if !self.dot_repeat.is_replaying() {
@@ -688,6 +680,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .commit_transaction();
                 self.set_mode(Mode::Normal);
             }
+            #[cfg(test)]
             KeyAction::ExitCommandMode => {
                 // Close completion dropdown without exiting command mode
                 if self.current_mode == Mode::Command
@@ -707,20 +700,25 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.clear_command_line();
                 self.set_mode(Mode::Normal);
             }
+            #[cfg(test)]
             KeyAction::ExitSearchMode => {
                 self.state.clear_command_line();
                 self.set_mode(Mode::Normal);
             }
+            #[cfg(test)]
             KeyAction::ToggleDebug => {
                 self.state.toggle_debug();
             }
+            #[cfg(test)]
             KeyAction::Resize(cols, rows) => {
                 self.render_system.resize(rows as usize, cols as usize);
                 self.plugin_host
                     .dispatch(&crate::plugin::EditorEvent::WindowResized { rows, cols });
                 self.apply_plugin_mutations();
             }
-            KeyAction::SkipAndRender | KeyAction::Continue => {
+            #[cfg(test)]
+            KeyAction::SkipAndRender => {}
+            KeyAction::Continue => {
                 // No special action needed
             }
         }

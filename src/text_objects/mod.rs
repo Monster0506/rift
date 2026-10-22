@@ -5,17 +5,17 @@ use crate::wrap::{MotionRange, RangeKind};
 #[cfg(feature = "treesitter")]
 mod treesitter;
 #[cfg(feature = "treesitter")]
-pub use treesitter::SyntaxContext;
+pub(crate) use treesitter::SyntaxContext;
 
 /// Inert stand-in when tree-sitter is compiled out: text objects that need a
 /// parse tree simply never resolve, so no context value is ever constructed.
 #[cfg(not(feature = "treesitter"))]
-pub struct SyntaxContext<'a> {
+pub(crate) struct SyntaxContext<'a> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Modifier {
+pub(crate) enum Modifier {
     Inner,
     Around,
     InnerStrict,
@@ -23,7 +23,7 @@ pub enum Modifier {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Direction {
+pub(crate) enum Direction {
     #[default]
     Current,
     Next,
@@ -31,7 +31,7 @@ pub enum Direction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ObjectKind {
+pub(crate) enum ObjectKind {
     Word,
     BigWord,
     DoubleQuote,
@@ -58,10 +58,10 @@ pub enum ObjectKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TextObjectSpec {
-    pub modifier: Modifier,
-    pub direction: Direction,
-    pub nesting: u8,
-    pub kind: ObjectKind,
+    pub(crate) modifier: Modifier,
+    pub(crate) direction: Direction,
+    pub(crate) nesting: u8,
+    pub(crate) kind: ObjectKind,
 }
 
 const BRACKET_PAIRS: [(char, char); 4] = [('(', ')'), ('{', '}'), ('[', ']'), ('<', '>')];
@@ -69,7 +69,7 @@ const QUOTE_CHARS: [char; 3] = ['"', '\'', '`'];
 
 /// Object key char -> kind. `n`/`p` are reserved for the direction prefix
 /// and never appear here.
-pub const OBJECT_KEY_TABLE: &[(char, ObjectKind)] = &[
+pub(crate) const OBJECT_KEY_TABLE: &[(char, ObjectKind)] = &[
     ('w', ObjectKind::Word),
     ('W', ObjectKind::BigWord),
     ('"', ObjectKind::DoubleQuote),
@@ -99,8 +99,9 @@ pub const OBJECT_KEY_TABLE: &[(char, ObjectKind)] = &[
 ];
 
 /// True for objects that require a tree-sitter parse tree to resolve.
+#[cfg(feature = "treesitter")]
 #[must_use]
-pub const fn requires_treesitter(kind: ObjectKind) -> bool {
+pub(crate) const fn requires_treesitter(kind: ObjectKind) -> bool {
     matches!(
         kind,
         ObjectKind::FunctionCall
@@ -114,7 +115,7 @@ pub const fn requires_treesitter(kind: ObjectKind) -> bool {
 }
 
 #[must_use]
-pub fn object_kind_for_key(ch: char) -> Option<ObjectKind> {
+pub(crate) fn object_kind_for_key(ch: char) -> Option<ObjectKind> {
     OBJECT_KEY_TABLE
         .iter()
         .find(|&&(c, _)| c == ch)
@@ -122,7 +123,7 @@ pub fn object_kind_for_key(ch: char) -> Option<ObjectKind> {
 }
 
 #[must_use]
-pub const fn modifier_for_key(ch: char) -> Option<Modifier> {
+pub(crate) const fn modifier_for_key(ch: char) -> Option<Modifier> {
     match ch {
         'i' => Some(Modifier::Inner),
         'a' => Some(Modifier::Around),
@@ -142,7 +143,7 @@ fn compose_nesting(spec_nesting: u8, count: usize) -> u8 {
     u8::try_from((n * c).min(u32::from(u8::MAX))).unwrap_or(u8::MAX)
 }
 
-pub fn resolve(
+pub(crate) fn resolve(
     spec: TextObjectSpec,
     buf: &TextBuffer,
     count: usize,
@@ -1161,7 +1162,7 @@ fn resolve_buffer(buf: &TextBuffer) -> Option<MotionRange> {
 
 /// For `ci<delim>` on an empty delimiter pair (e.g. cursor inside `()`),
 /// returns the byte position to place the insert cursor, or `None` if none.
-pub fn resolve_insert_cursor(
+pub(crate) fn resolve_insert_cursor(
     spec: TextObjectSpec,
     buf: &TextBuffer,
     count: usize,
@@ -1251,7 +1252,7 @@ fn any_quote_insert_pair(
 /// Maps a surround key to its `(open, close)` delimiter strings, each repeated
 /// `count` times. Opening bracket chars get an inner space pad; others don't.
 #[must_use]
-pub fn surround_strings(ch: char, count: usize) -> Option<(String, String)> {
+pub(crate) fn surround_strings(ch: char, count: usize) -> Option<(String, String)> {
     const MAX_DELIM_REPEAT: usize = 10_000;
     let (open, close) = match ch {
         '(' | ')' | 'b' => ('(', ')'),
@@ -1277,7 +1278,7 @@ pub fn surround_strings(ch: char, count: usize) -> Option<(String, String)> {
 
 /// Locates a surround pair enclosing the cursor for `ds`/`cs`, returning
 /// open/close delete ranges; `count` expands over further delimiter occurrences.
-pub fn resolve_surround_pair(
+pub(crate) fn resolve_surround_pair(
     ch: char,
     buf: &TextBuffer,
     count: usize,

@@ -18,7 +18,7 @@ fn resize_updates_size() {
         size: (24, 80),
         name: "stub".to_string(),
     };
-    term.resize(30, 100).unwrap();
+    term.resize(30, 100);
     assert_eq!(term.size, (30, 100));
 }
 
@@ -28,7 +28,7 @@ fn write_is_a_silent_no_op() {
         size: (24, 80),
         name: "stub".to_string(),
     };
-    assert!(term.write(b"ignored").is_ok());
+    term.write(b"ignored");
 }
 
 #[test]

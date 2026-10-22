@@ -6,16 +6,16 @@ use crate::render::{
 
 /// Position and size of a visual element
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Rect {
-    pub row: usize,
-    pub col: usize,
-    pub height: usize,
-    pub width: usize,
+pub(crate) struct Rect {
+    pub(crate) row: usize,
+    pub(crate) col: usize,
+    pub(crate) height: usize,
+    pub(crate) width: usize,
 }
 
 impl Rect {
     #[must_use]
-    pub const fn new(row: usize, col: usize, height: usize, width: usize) -> Self {
+    pub(crate) const fn new(row: usize, col: usize, height: usize, width: usize) -> Self {
         Self {
             row,
             col,
@@ -27,7 +27,7 @@ impl Rect {
 
 /// The visual content to be rendered
 #[derive(Debug, Clone, PartialEq)]
-pub enum Renderable {
+pub(crate) enum Renderable {
     TextBuffer(ContentDrawState),
     StatusBar(StatusDrawState),
     Window(CommandDrawState),
@@ -36,4 +36,4 @@ pub enum Renderable {
 }
 
 /// A component that defines the Z-ordering
-pub type Layer = LayerPriority;
+pub(crate) type Layer = LayerPriority;

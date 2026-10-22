@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use std::hint::black_box;
 
-use monster_rift::buffer::TextBuffer;
+use monster_rift::bench_api::buffer::TextBuffer;
 
 fn buffer_insertion(c: &mut Criterion) {
     static TEXT: &str = "The quick brown fox jumps over the lazy dog. ";

@@ -256,12 +256,6 @@ fn test_double_buffer_clear_content() {
 }
 
 #[test]
-fn test_double_buffer_clear_error() {
-    let mut buffer = DoubleBuffer::new(3, 3);
-    assert!(buffer.clear().is_err());
-}
-
-#[test]
 fn test_double_buffer_copy_from() {
     let mut buffer = DoubleBuffer::new(3, 3);
 

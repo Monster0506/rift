@@ -29,7 +29,7 @@ pub(crate) fn tab_fill_width(buf: &TextBuffer, tab_width: usize) -> usize {
     tab_width - (calculate_current_column(buf, tab_width) % tab_width)
 }
 
-pub fn compute_motion_range(
+pub(crate) fn compute_motion_range(
     motion: Motion,
     count: usize,
     doc: &mut Document,
@@ -114,7 +114,7 @@ pub fn compute_motion_range(
     }
 }
 
-pub fn compute_change_range(
+pub(crate) fn compute_change_range(
     motion: Motion,
     count: usize,
     doc: &mut Document,
@@ -224,7 +224,7 @@ pub(crate) fn range_to_offsets(
 }
 
 /// # Errors
-pub fn execute_command(
+pub(crate) fn execute_command(
     cmd: Command,
     doc: &mut Document,
     expand_tabs: bool,

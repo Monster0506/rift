@@ -229,15 +229,6 @@ fn test_multiple_jobs_have_independent_names() {
 }
 
 #[test]
-fn test_cache_warming_job_name() {
-    use crate::buffer::rope::PieceTable;
-    use crate::job_manager::jobs::cache_warming::CacheWarmingJob;
-    let job = CacheWarmingJob::new(PieceTable::new(vec![]), 0);
-    assert_eq!(job.name(), "cache-warming");
-    assert!(job.is_silent());
-}
-
-#[test]
 fn test_completion_job_name() {
     use crate::job_manager::jobs::completion::CompletionJob;
     let job = CompletionJob {
