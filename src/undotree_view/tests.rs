@@ -38,11 +38,19 @@ fn test_git_graph_render() {
 
     println!("Rendered Tree:");
     for line in &lines {
-        let line_str: String = line.iter().map(crate::layer::Cell::to_char).collect();
+        let line_str: String = line
+            .iter()
+            .copied()
+            .map(crate::layer::Cell::to_char)
+            .collect();
         println!("{line_str}");
     }
 
-    let l0: String = lines[0].iter().map(crate::layer::Cell::to_char).collect();
+    let l0: String = lines[0]
+        .iter()
+        .copied()
+        .map(crate::layer::Cell::to_char)
+        .collect();
     assert!(l0.contains('@'));
     assert!(l0.contains("Msg5"));
 }
@@ -75,6 +83,7 @@ fn test_cursor_position_on_merge() {
 
     let cursor_line_str: String = lines[cursor_row]
         .iter()
+        .copied()
         .map(crate::layer::Cell::to_char)
         .collect();
 
@@ -82,7 +91,11 @@ fn test_cursor_position_on_merge() {
     println!("Cursor Row: {cursor_row}");
     println!("Cursor Line Content: '{cursor_line_str}'");
     for (i, line) in lines.iter().enumerate() {
-        let s: String = line.iter().map(crate::layer::Cell::to_char).collect();
+        let s: String = line
+            .iter()
+            .copied()
+            .map(crate::layer::Cell::to_char)
+            .collect();
         println!("{i}: {s}");
     }
 
@@ -117,6 +130,7 @@ fn test_saved_node_marker() {
     let saved_row = seqs.iter().position(|&s| s == 1).unwrap();
     let saved_line: String = lines[saved_row]
         .iter()
+        .copied()
         .map(crate::layer::Cell::to_char)
         .collect();
     assert!(
@@ -128,6 +142,7 @@ fn test_saved_node_marker() {
     let current_row = seqs.iter().position(|&s| s == 2).unwrap();
     let current_line: String = lines[current_row]
         .iter()
+        .copied()
         .map(crate::layer::Cell::to_char)
         .collect();
     assert!(
@@ -152,7 +167,11 @@ fn test_saved_current_node_shows_current_marker() {
     let (lines, seqs, _cursor) = render_tree(&tree);
 
     let row = seqs.iter().position(|&s| s == 1).unwrap();
-    let line: String = lines[row].iter().map(crate::layer::Cell::to_char).collect();
+    let line: String = lines[row]
+        .iter()
+        .copied()
+        .map(crate::layer::Cell::to_char)
+        .collect();
     assert!(line.contains('@'), "Current+saved node should show '@'");
     assert!(
         !line.contains('S'),
@@ -178,6 +197,7 @@ fn test_root_saved_no_marker() {
     let root_row = seqs.iter().position(|&s| s == 0).unwrap();
     let root_line: String = lines[root_row]
         .iter()
+        .copied()
         .map(crate::layer::Cell::to_char)
         .collect();
     assert!(

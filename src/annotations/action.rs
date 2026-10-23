@@ -15,7 +15,7 @@ impl KeyHint {
     }
 
     #[must_use]
-    pub(crate) fn as_str(&self) -> &str {
+    pub(super) fn as_str(&self) -> &str {
         &self.0
     }
 }
@@ -27,9 +27,9 @@ pub struct Action {
     /// "activate" (default), "toggle", "stage", "discard", etc.
     pub(crate) verb: String,
     /// Bound to the generic activate key.
-    pub(crate) default: bool,
+    pub(super) default: bool,
     /// Suggested binding shown in affordance UI.
-    pub(crate) key_hint: Option<KeyHint>,
+    pub(super) key_hint: Option<KeyHint>,
     /// Serializable args passed to the handler.
     pub(crate) params: Value,
 }

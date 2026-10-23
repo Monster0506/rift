@@ -19,7 +19,7 @@ impl BufferKind {
     }
 
     #[must_use]
-    pub(crate) fn for_builtin(id: BufferKindId) -> Self {
+    pub(super) fn for_builtin(id: BufferKindId) -> Self {
         Self {
             id,
             descriptor: builtin_descriptor(id),
@@ -27,87 +27,87 @@ impl BufferKind {
     }
 
     #[must_use]
-    pub(crate) fn file() -> Self {
+    pub(super) fn file() -> Self {
         Self::for_builtin(BufferKindId::FILE)
     }
 
     #[must_use]
-    pub(crate) fn terminal() -> Self {
+    pub(super) fn terminal() -> Self {
         Self::for_builtin(BufferKindId::TERMINAL)
     }
 
     #[must_use]
-    pub(crate) fn directory() -> Self {
+    pub(super) fn directory() -> Self {
         Self::for_builtin(BufferKindId::DIRECTORY)
     }
 
     #[must_use]
-    pub(crate) fn undotree() -> Self {
+    pub(super) fn undotree() -> Self {
         Self::for_builtin(BufferKindId::UNDO_TREE)
     }
 
     #[must_use]
-    pub(crate) fn messages() -> Self {
+    pub(super) fn messages() -> Self {
         Self::for_builtin(BufferKindId::MESSAGES)
     }
 
     #[must_use]
-    pub(crate) fn clipboard() -> Self {
+    pub(super) fn clipboard() -> Self {
         Self::for_builtin(BufferKindId::CLIPBOARD)
     }
 
     #[must_use]
-    pub(crate) fn scratch() -> Self {
+    pub(super) fn scratch() -> Self {
         Self::for_builtin(BufferKindId::SCRATCH)
     }
 
     #[must_use]
-    pub(crate) fn git_status() -> Self {
+    pub(super) fn git_status() -> Self {
         Self::for_builtin(BufferKindId::GIT_STATUS)
     }
 
     #[must_use]
-    pub(crate) fn git_commit_message() -> Self {
+    pub(super) fn git_commit_message() -> Self {
         Self::for_builtin(BufferKindId::GIT_COMMIT_MESSAGE)
     }
 
     #[must_use]
-    pub(crate) fn git_blame() -> Self {
+    pub(super) fn git_blame() -> Self {
         Self::for_builtin(BufferKindId::GIT_BLAME)
     }
 
     #[must_use]
-    pub(crate) fn git_log() -> Self {
+    pub(super) fn git_log() -> Self {
         Self::for_builtin(BufferKindId::GIT_LOG)
     }
 
     #[must_use]
-    pub(crate) fn git_rebase_todo() -> Self {
+    pub(super) fn git_rebase_todo() -> Self {
         Self::for_builtin(BufferKindId::GIT_REBASE_TODO)
     }
 
     #[must_use]
-    pub(crate) fn buffer_list() -> Self {
+    pub(super) fn buffer_list() -> Self {
         Self::for_builtin(BufferKindId::BUFFER_LIST)
     }
 
     #[must_use]
-    pub(crate) fn undo_file_view() -> Self {
+    pub(super) fn undo_file_view() -> Self {
         Self::for_builtin(BufferKindId::UNDO_FILE_VIEW)
     }
 
     #[must_use]
-    pub(crate) const fn id(&self) -> BufferKindId {
+    pub(super) const fn id(&self) -> BufferKindId {
         self.id
     }
 
     #[must_use]
-    pub(crate) fn descriptor(&self) -> &KindDescriptor {
+    pub(super) fn descriptor(&self) -> &KindDescriptor {
         &self.descriptor
     }
 
     #[must_use]
-    pub(crate) fn policies(&self) -> &BufferPolicies {
+    pub(super) fn policies(&self) -> &BufferPolicies {
         self.descriptor.policies()
     }
 
@@ -117,7 +117,7 @@ impl BufferKind {
     }
 
     #[must_use]
-    pub(crate) fn display_name<'a>(
+    pub(super) fn display_name<'a>(
         &'a self,
         file_path: Option<&'a Path>,
         terminal_name: Option<&'a str>,

@@ -34,7 +34,7 @@ impl Range {
 
     #[cfg(test)]
     #[must_use]
-    pub(crate) fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.start == self.end
     }
 }
@@ -72,7 +72,7 @@ fn saturating_u32(n: usize) -> u32 {
 
 impl EditOperation {
     #[must_use]
-    pub(crate) fn inverse(&self) -> Self {
+    fn inverse(&self) -> Self {
         match self {
             Self::Insert { position, text, .. } => Self::Delete {
                 range: Range::new(
@@ -157,7 +157,7 @@ impl EditOperation {
     }
 
     #[must_use]
-    pub(crate) fn estimated_size(&self) -> usize {
+    fn estimated_size(&self) -> usize {
         match self {
             Self::Insert { text, .. } => text.len() + 32,
             Self::Delete { deleted_text, .. } => deleted_text.len() + 32,
@@ -210,7 +210,7 @@ impl EditTransaction {
     }
 
     #[must_use]
-    pub(crate) fn estimated_size(&self) -> usize {
+    fn estimated_size(&self) -> usize {
         self.ops
             .iter()
             .map(EditOperation::estimated_size)
@@ -312,7 +312,7 @@ impl UndoTree {
     }
 
     #[must_use]
-    pub(crate) fn with_config(checkpoint_interval: u64, memory_threshold: usize) -> Self {
+    fn with_config(checkpoint_interval: u64, memory_threshold: usize) -> Self {
         let root = EditNode::new(0, EditTransaction::new("Initial state"), None);
         let mut nodes = BTreeMap::new();
         nodes.insert(0, root);
@@ -330,7 +330,7 @@ impl UndoTree {
         }
     }
 
-    pub(crate) fn from_parts(nodes: BTreeMap<EditSeq, EditNode>, current: EditSeq) -> Self {
+    fn from_parts(nodes: BTreeMap<EditSeq, EditNode>, current: EditSeq) -> Self {
         let total_memory = nodes.values().map(|n| n.transaction.estimated_size()).sum();
         let next_seq = nodes.keys().copied().max().map_or(1, |max| max + 1);
         let mut tree = Self::new();
@@ -608,7 +608,7 @@ impl UndoTree {
 
     #[cfg(test)]
     #[must_use]
-    pub(crate) fn branch_count(&self) -> usize {
+    fn branch_count(&self) -> usize {
         self.nodes
             .get(&self.current)
             .map_or(0, |n| n.children.len())
@@ -627,7 +627,7 @@ impl UndoTree {
     }
 
     #[cfg(test)]
-    pub(crate) fn clear(&mut self) {
+    fn clear(&mut self) {
         self.nodes.retain(|&seq, _| seq == self.root_seq);
         self.current = self.root_seq;
         self.next_seq = 1;

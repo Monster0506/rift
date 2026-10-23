@@ -34,7 +34,7 @@ pub(crate) struct DispatchRegistry {
 
 impl DispatchRegistry {
     #[must_use]
-    pub(crate) fn new() -> Self {
+    fn new() -> Self {
         Self {
             handlers: HashMap::new(),
         }
@@ -71,7 +71,7 @@ impl DispatchRegistry {
 
     #[cfg(test)]
     /// Remove every handler registered under an exact key (all its verbs).
-    pub(crate) fn remove_key(&mut self, key: &str) {
+    fn remove_key(&mut self, key: &str) {
         self.handlers.retain(|(k, _), _| k != key);
     }
 
@@ -104,9 +104,9 @@ impl DispatchRegistry {
 /// Per-kind defaults: presentation applied when an annotation sets none, and a
 /// description used as a fallback hover tooltip.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct KindDefaults {
-    pub(crate) presentation: Option<super::Presentation>,
-    pub(crate) description: Option<String>,
+struct KindDefaults {
+    presentation: Option<super::Presentation>,
+    description: Option<String>,
 }
 
 /// Per-kind (or per-prefix) defaults resolved with namespace-prefix fallback.
@@ -121,7 +121,7 @@ pub struct KindRegistry {
 
 impl KindRegistry {
     #[must_use]
-    pub(crate) fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             defaults: HashMap::new(),
             generation: 0,
@@ -191,13 +191,13 @@ impl KindRegistry {
 
     /// Default presentation for a kind, with prefix fallback.
     #[must_use]
-    pub(crate) fn default_presentation(&self, kind: &Kind) -> Option<&super::Presentation> {
+    pub(super) fn default_presentation(&self, kind: &Kind) -> Option<&super::Presentation> {
         self.resolve(kind).and_then(|d| d.presentation.as_ref())
     }
 
     /// Default description (hover doc) for a kind, with prefix fallback.
     #[must_use]
-    pub(crate) fn default_description(&self, kind: &Kind) -> Option<&str> {
+    pub(super) fn default_description(&self, kind: &Kind) -> Option<&str> {
         self.resolve(kind).and_then(|d| d.description.as_deref())
     }
 }

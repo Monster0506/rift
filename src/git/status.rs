@@ -80,7 +80,7 @@ impl StatusEntry {
     }
 
     #[must_use]
-    pub(crate) const fn is_ignored(&self) -> bool {
+    const fn is_ignored(&self) -> bool {
         matches!(self.kind, EntryKind::Ignored)
     }
 

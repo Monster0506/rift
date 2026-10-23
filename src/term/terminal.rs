@@ -7,7 +7,7 @@ use alacritty_terminal::tty::{self, Options, Shell};
 use std::sync::{mpsc, Arc};
 
 #[derive(Clone)]
-pub(crate) struct TerminalListener(mpsc::Sender<TerminalEvent>);
+struct TerminalListener(mpsc::Sender<TerminalEvent>);
 
 impl EventListener for TerminalListener {
     fn send_event(&self, event: Event) {
@@ -47,8 +47,8 @@ impl alacritty_terminal::grid::Dimensions for TermDims {
 }
 
 pub(crate) struct Terminal {
-    pub(crate) term: Arc<FairMutex<Term<TerminalListener>>>,
-    pub(crate) notifier: Notifier,
+    term: Arc<FairMutex<Term<TerminalListener>>>,
+    notifier: Notifier,
     pub(crate) size: (u16, u16),
     pub(crate) name: String,
 }

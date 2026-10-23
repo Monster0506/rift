@@ -96,7 +96,7 @@ pub enum AsyncOpDomain {
 pub struct AsyncToken {
     pub(crate) handle: DocumentHandle,
     pub(crate) expected_kind: BufferKindId,
-    pub(crate) epoch: u64,
+    epoch: u64,
     pub(crate) owner: Option<PluginGeneration>,
     pub(crate) domain: AsyncOpDomain,
 }
@@ -121,7 +121,7 @@ impl AsyncToken {
 
     /// Creates a new `AsyncToken` with an owner generation and explicit domain.
     #[must_use]
-    pub(crate) const fn with_owner(
+    const fn with_owner(
         handle: DocumentHandle,
         expected_kind: BufferKindId,
         epoch: u64,
@@ -169,17 +169,13 @@ pub enum JobMessage {
 
 /// Sends a job's successful result, then its Finished message. The common
 /// two-message tail of a job's `run()` once it has produced a payload.
-pub(crate) fn send_job_result(
-    sender: &Sender<JobMessage>,
-    id: usize,
-    payload: Box<dyn JobPayload>,
-) {
+fn send_job_result(sender: &Sender<JobMessage>, id: usize, payload: Box<dyn JobPayload>) {
     let _ = sender.send(JobMessage::Custom(id, payload));
     let _ = sender.send(JobMessage::Finished(id, true));
 }
 
 /// Sends a job's successful result carrying an `AsyncToken`, then its Finished message.
-pub(crate) fn send_job_result_with_token(
+fn send_job_result_with_token(
     sender: &Sender<JobMessage>,
     id: usize,
     token: AsyncToken,
@@ -198,7 +194,7 @@ pub struct CancellationSignal {
 impl CancellationSignal {
     /// Create a signal already in the given cancelled state.
     #[must_use]
-    pub(crate) fn new(cancelled: bool) -> Self {
+    fn new(cancelled: bool) -> Self {
         Self {
             cancelled: Arc::new(AtomicBool::new(cancelled)),
         }
@@ -206,13 +202,13 @@ impl CancellationSignal {
 
     /// Create a signal that is never cancelled, for non-job callers.
     #[must_use]
-    pub(crate) fn new_uncancelled() -> Self {
+    fn new_uncancelled() -> Self {
         Self::new(false)
     }
 
     /// Check if the job has been cancelled.
     #[must_use]
-    pub(crate) fn is_cancelled(&self) -> bool {
+    fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Relaxed)
     }
 }
@@ -227,14 +223,14 @@ pub(crate) enum JobState {
 }
 
 /// Handle to a running job
-pub(crate) struct JobHandle {
-    pub(crate) handle: JoinHandle<()>,
-    pub(crate) state: JobState,
-    pub(crate) cancellation_token: Arc<AtomicBool>,
+struct JobHandle {
+    handle: JoinHandle<()>,
+    state: JobState,
+    cancellation_token: Arc<AtomicBool>,
     /// Whether the job opted out of notifications
-    pub(crate) silent: bool,
+    silent: bool,
     /// Descriptive name for the job type
-    pub(crate) name: &'static str,
+    name: &'static str,
 }
 
 /// Trait defining a background job.
@@ -559,7 +555,7 @@ impl JobManager {
     }
 
     /// Registers an `AsyncToken` for a specific job ID.
-    pub(crate) fn register_job_token(&mut self, job_id: usize, token: AsyncToken) {
+    fn register_job_token(&mut self, job_id: usize, token: AsyncToken) {
         self.job_tokens.insert(job_id, token);
     }
 

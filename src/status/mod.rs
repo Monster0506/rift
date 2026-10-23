@@ -33,18 +33,18 @@ pub(crate) struct StatusBar;
 impl StatusBar {
     /// Format mode name for display
     #[must_use]
-    pub(crate) const fn format_mode(mode: Mode) -> &'static str {
+    const fn format_mode(mode: Mode) -> &'static str {
         match mode {
-            Mode::Normal => crate::constants::modes::NORMAL,
-            Mode::Insert => crate::constants::modes::INSERT,
-            Mode::Command => crate::constants::modes::COMMAND,
-            Mode::Search => crate::constants::modes::SEARCH,
-            Mode::Rename => crate::constants::modes::RENAME,
-            Mode::OperatorPending => crate::constants::modes::OPERATOR_PENDING,
-            Mode::Replace => crate::constants::modes::REPLACE,
-            Mode::Visual => crate::constants::modes::VISUAL,
-            Mode::VisualLine => crate::constants::modes::VISUAL_LINE,
-            Mode::VisualBlock => crate::constants::modes::VISUAL_BLOCK,
+            Mode::Normal => modes::NORMAL,
+            Mode::Insert => modes::INSERT,
+            Mode::Command => modes::COMMAND,
+            Mode::Search => modes::SEARCH,
+            Mode::Rename => modes::RENAME,
+            Mode::OperatorPending => modes::OPERATOR_PENDING,
+            Mode::Replace => modes::REPLACE,
+            Mode::Visual => modes::VISUAL,
+            Mode::VisualLine => modes::VISUAL_LINE,
+            Mode::VisualBlock => modes::VISUAL_BLOCK,
         }
     }
 
@@ -297,3 +297,16 @@ impl StatusBar {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+mod modes {
+    pub(crate) const NORMAL: &str = "NORMAL";
+    pub(crate) const INSERT: &str = "INSERT";
+    pub(crate) const COMMAND: &str = "COMMAND";
+    pub(crate) const SEARCH: &str = "SEARCH";
+    pub(crate) const RENAME: &str = "RENAME";
+    pub(crate) const OPERATOR_PENDING: &str = "OPERATOR_PENDING";
+    pub(crate) const REPLACE: &str = "REPLACE";
+    pub(crate) const VISUAL: &str = "VISUAL";
+    pub(crate) const VISUAL_LINE: &str = "VISUAL_LINE";
+    pub(crate) const VISUAL_BLOCK: &str = "VISUAL_BLOCK";
+}

@@ -36,7 +36,7 @@ impl Rect {
     }
     /// Check if two rects intersect
     #[must_use]
-    pub(crate) const fn intersects(&self, other: &Self) -> bool {
+    const fn intersects(&self, other: &Self) -> bool {
         self.start_row <= other.end_row
             && self.end_row >= other.start_row
             && self.start_col <= other.end_col
@@ -45,7 +45,7 @@ impl Rect {
 
     /// Check if two rects are adjacent (touching)
     #[must_use]
-    pub(crate) const fn is_adjacent(&self, other: &Self) -> bool {
+    const fn is_adjacent(&self, other: &Self) -> bool {
         // Expand self by 1 in all directions and check for intersection
         let expanded = Self {
             start_row: self.start_row.saturating_sub(1),
@@ -141,7 +141,7 @@ impl CellAttrs {
 
     /// True when every attribute in `other` is also set.
     #[must_use]
-    pub(crate) const fn contains(self, other: Self) -> bool {
+    const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
     }
 
@@ -237,8 +237,7 @@ impl Cell {
 
     /// Convert cell content to char (best effort)
     #[must_use]
-    #[allow(clippy::wrong_self_convention)]
-    pub(crate) const fn to_char(&self) -> char {
+    pub(crate) const fn to_char(self) -> char {
         self.content.to_char_lossy()
     }
 
@@ -309,9 +308,6 @@ impl Default for Cell {
 /// A single rendering layer: a grid of optional cells, `None` = transparent.
 #[derive(Debug, Clone)]
 pub(crate) struct Layer {
-    /// The priority (z-order) of this layer
-    #[cfg(test)]
-    priority: LayerPriority,
     /// Flat grid of cells - index = row * cols + col
     /// None = transparent, Some = content
     cells: Vec<Option<Cell>>,
@@ -329,13 +325,9 @@ impl Layer {
 
     /// Create a new layer with the given dimensions
     #[must_use]
-    pub(crate) fn new(priority: LayerPriority, rows: usize, cols: usize) -> Self {
+    pub(crate) fn new(rows: usize, cols: usize) -> Self {
         let cells = vec![None; rows * cols];
-        #[cfg(not(test))]
-        let _ = priority;
         Self {
-            #[cfg(test)]
-            priority,
             cells,
             // Initial state is fully dirty
             dirty_rects: vec![Rect::new(
@@ -349,28 +341,21 @@ impl Layer {
         }
     }
 
-    #[cfg(test)]
-    /// Get the layer's priority
-    #[must_use]
-    pub(crate) const fn priority(&self) -> LayerPriority {
-        self.priority
-    }
-
     /// Check if the layer has been modified
     #[must_use]
-    pub(crate) const fn is_dirty(&self) -> bool {
+    const fn is_dirty(&self) -> bool {
         !self.dirty_rects.is_empty()
     }
 
     #[cfg(test)]
     /// Get the list of dirty rectangles
     #[must_use]
-    pub(crate) fn get_dirty_rects(&self) -> &[Rect] {
+    fn get_dirty_rects(&self) -> &[Rect] {
         &self.dirty_rects
     }
 
     /// Add a dirty rectangle to the tracking list
-    pub(crate) fn add_dirty_rect(&mut self, rect: Rect) {
+    fn add_dirty_rect(&mut self, rect: Rect) {
         let mut merged = false;
         for existing in &mut self.dirty_rects {
             if existing.intersects(&rect) || existing.is_adjacent(&rect) {
@@ -417,13 +402,13 @@ impl Layer {
     }
 
     /// Mark the layer as clean (after compositing)
-    pub(crate) fn mark_clean(&mut self) {
+    fn mark_clean(&mut self) {
         self.dirty_rects.clear();
     }
 
     #[cfg(test)]
     /// Mark the entire layer as dirty without changing content
-    pub(crate) fn mark_fully_dirty(&mut self) {
+    fn mark_fully_dirty(&mut self) {
         self.dirty_rects.clear();
         self.dirty_rects.push(Rect::new(
             0,
@@ -501,7 +486,7 @@ impl Layer {
 
     #[cfg(test)]
     /// Write a string of text at the given position from a string slice
-    pub(crate) fn write_str(&mut self, row: usize, start_col: usize, text: &str) {
+    fn write_str(&mut self, row: usize, start_col: usize, text: &str) {
         for (i, ch) in text.chars().enumerate() {
             let col = start_col + i;
             if col < self.cols {
@@ -512,7 +497,7 @@ impl Layer {
 
     #[cfg(test)]
     /// Fill a row with a character
-    pub(crate) fn fill_row(&mut self, row: usize, ch: char, fg: Option<Color>, bg: Option<Color>) {
+    fn fill_row(&mut self, row: usize, ch: char, fg: Option<Color>, bg: Option<Color>) {
         if row < self.rows {
             for col in 0..self.cols {
                 self.set_cell(row, col, Cell::from_char(ch).with_colors(fg, bg));
@@ -522,7 +507,7 @@ impl Layer {
 
     #[cfg(test)]
     /// Fill a rectangular region with a cell
-    pub(crate) fn fill_rect(&mut self, rect: Rect, cell: Cell) {
+    fn fill_rect(&mut self, rect: Rect, cell: Cell) {
         for row in rect.start_row..=rect.end_row.min(self.rows.saturating_sub(1)) {
             for col in rect.start_col..=rect.end_col.min(self.cols.saturating_sub(1)) {
                 self.set_cell(row, col, cell);
@@ -532,7 +517,7 @@ impl Layer {
 
     /// Resize the layer to new dimensions
     /// Content is preserved where possible
-    pub(crate) fn resize(&mut self, new_rows: usize, new_cols: usize) {
+    fn resize(&mut self, new_rows: usize, new_cols: usize) {
         let mut new_cells = vec![None; new_rows * new_cols];
 
         // Copy existing content
@@ -615,7 +600,7 @@ impl LayerCompositor {
     pub(crate) fn get_layer_mut(&mut self, priority: LayerPriority) -> &mut Layer {
         self.layers
             .entry(priority)
-            .or_insert_with(|| Layer::new(priority, self.rows, self.cols))
+            .or_insert_with(|| Layer::new(self.rows, self.cols))
     }
 
     #[cfg(test)]
@@ -627,7 +612,7 @@ impl LayerCompositor {
 
     #[cfg(test)]
     /// Remove a layer
-    pub(crate) fn remove_layer(&mut self, priority: LayerPriority) -> Option<Layer> {
+    fn remove_layer(&mut self, priority: LayerPriority) -> Option<Layer> {
         // Removing a layer may reveal content underneath.
         // For now, mark all other layers as dirty to ensure a full re-composite.
 
@@ -661,13 +646,13 @@ impl LayerCompositor {
 
     /// Check if any layer has dirty rects
     #[must_use]
-    pub(crate) fn has_dirty(&self) -> bool {
+    fn has_dirty(&self) -> bool {
         self.layers.values().any(Layer::is_dirty)
     }
 
     /// Composite all layers into the output buffer
     /// Layers are merged from lowest priority to highest
-    pub(crate) fn composite(&mut self) {
+    fn composite(&mut self) {
         // Collect all dirty rects from all layers
         // We do this to know WHICH pixels need updating.
         let mut dirty_rects = Vec::new();

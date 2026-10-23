@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) mod common;
+mod common;
 
 #[cfg(feature = "treesitter")]
 mod bench_harness;

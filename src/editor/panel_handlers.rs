@@ -57,7 +57,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    pub(crate) fn refresh_clipboard_buffer_if_open(&mut self) {
+    pub(super) fn refresh_clipboard_buffer_if_open(&mut self) {
         let Some(layout) = self.panel_layout_of(PanelKind::Clipboard) else {
             return;
         };
@@ -74,7 +74,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(super) fn handle_clipboard_select(&mut self) {
+    fn handle_clipboard_select(&mut self) {
         let Some(layout) = self.panel_layout_of(PanelKind::Clipboard) else {
             return;
         };
@@ -108,7 +108,7 @@ impl<T: TerminalBackend> Editor<T> {
         {
             let old_revision = preview.buffer.revision;
             if let Ok(mut new_buf) = crate::buffer::TextBuffer::new(entry_text.len().max(64)) {
-                let _ = new_buf.insert_chars(&entry_text);
+                new_buf.insert_chars(&entry_text);
                 let _ = new_buf.set_cursor(0);
                 new_buf.revision = old_revision + 1;
                 preview.buffer = new_buf;
@@ -130,7 +130,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    pub(super) fn handle_clipboard_new(&mut self) {
+    fn handle_clipboard_new(&mut self) {
         let Some(layout) = self.panel_layout_of(PanelKind::Clipboard) else {
             return;
         };

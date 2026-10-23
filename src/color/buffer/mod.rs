@@ -8,7 +8,7 @@ use std::collections::HashMap;
 /// Maps line and column positions to color styles
 /// Can be populated manually or by a syntax highlighter
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ColorMap {
+struct ColorMap {
     /// Map from line number to color spans for that line
     /// Spans are stored as (`start_col`, `end_col`, style) tuples
     line_colors: HashMap<usize, Vec<ColorSpan>>,
@@ -17,26 +17,20 @@ pub(crate) struct ColorMap {
 impl ColorMap {
     /// Create a new empty color map
     #[must_use]
-    pub(crate) fn new() -> Self {
+    fn new() -> Self {
         Self {
             line_colors: HashMap::new(),
         }
     }
 
     /// Set color for a specific character position
-    pub(crate) fn set_char(&mut self, line: usize, column: usize, style: ColorStyle) {
+    fn set_char(&mut self, line: usize, column: usize, style: ColorStyle) {
         // For single character, create a span of length 1
         self.set_span(line, column, column + 1, style);
     }
 
     /// Set color for a span of text
-    pub(crate) fn set_span(
-        &mut self,
-        line: usize,
-        start_col: usize,
-        end_col: usize,
-        style: ColorStyle,
-    ) {
+    fn set_span(&mut self, line: usize, start_col: usize, end_col: usize, style: ColorStyle) {
         if start_col >= end_col {
             return; // Empty span
         }
@@ -56,7 +50,7 @@ impl ColorMap {
 
     /// Get color style for a specific position
     #[must_use]
-    pub(crate) fn get_style(&self, line: usize, column: usize) -> Option<ColorStyle> {
+    fn get_style(&self, line: usize, column: usize) -> Option<ColorStyle> {
         self.line_colors.get(&line).and_then(|spans| {
             spans
                 .iter()
@@ -67,17 +61,17 @@ impl ColorMap {
 
     /// Get all color spans for a line
     #[must_use]
-    pub(crate) fn get_line_spans(&self, line: usize) -> Vec<ColorSpan> {
+    fn get_line_spans(&self, line: usize) -> Vec<ColorSpan> {
         self.line_colors.get(&line).cloned().unwrap_or_default()
     }
 
     /// Clear all colors for a specific line
-    pub(crate) fn clear_line(&mut self, line: usize) {
+    fn clear_line(&mut self, line: usize) {
         self.line_colors.remove(&line);
     }
 
     /// Clear all colors
-    pub(crate) fn clear(&mut self) {
+    fn clear(&mut self) {
         self.line_colors.clear();
     }
 
@@ -111,7 +105,7 @@ impl ColorMap {
 
     /// Check if color map is empty
     #[must_use]
-    pub(crate) fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.line_colors.is_empty()
     }
 }

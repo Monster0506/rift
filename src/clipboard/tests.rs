@@ -10,7 +10,7 @@ fn system_clipboard_cache_starts_empty() {
 #[test]
 fn capture_text_preserves_byte_and_control_chars() {
     let mut buf = TextBuffer::new(16).unwrap();
-    let _ = buf.insert_chars(&[
+    buf.insert_chars(&[
         Character::Unicode('a'),
         Character::Byte(0xFF),
         Character::Control(0x0C),

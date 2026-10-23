@@ -29,6 +29,7 @@ pub(super) fn ring_text(editor: &Editor<MockTerminal>, index: usize) -> Option<S
     editor.clipboard_ring.get(index).map(|chars| {
         chars
             .iter()
+            .copied()
             .map(crate::character::Character::to_char_lossy)
             .collect()
     })

@@ -21,18 +21,18 @@ pub(crate) enum MatchResult {
 #[derive(Debug, Clone)]
 pub(crate) struct CommandDef {
     /// Canonical command name
-    pub(crate) name: String,
+    name: String,
     /// Explicit aliases for this command
-    pub(crate) aliases: Vec<String>,
+    aliases: Vec<String>,
     /// Description of the command
-    pub(crate) description: String,
+    description: String,
     /// Subcommands registry
-    pub(crate) subcommands: Option<CommandRegistry>,
+    pub(super) subcommands: Option<CommandRegistry>,
 }
 
 impl CommandDef {
     /// Create a new command definition
-    pub(crate) fn new(name: impl Into<String>) -> Self {
+    pub(in crate::command_line) fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             aliases: Vec::new(),
@@ -43,21 +43,21 @@ impl CommandDef {
 
     /// Add a description
     #[must_use]
-    pub(crate) fn with_description(mut self, description: impl Into<String>) -> Self {
+    pub(super) fn with_description(mut self, description: impl Into<String>) -> Self {
         self.description = description.into();
         self
     }
 
     /// Add an explicit alias
     #[must_use]
-    pub(crate) fn with_alias(mut self, alias: impl Into<String>) -> Self {
+    pub(in crate::command_line) fn with_alias(mut self, alias: impl Into<String>) -> Self {
         self.aliases.push(alias.into());
         self
     }
 
     /// Add multiple explicit aliases
     #[must_use]
-    pub(crate) fn with_aliases(mut self, aliases: Vec<impl Into<String>>) -> Self {
+    pub(super) fn with_aliases(mut self, aliases: Vec<impl Into<String>>) -> Self {
         for alias in aliases {
             self.aliases.push(alias.into());
         }
@@ -66,7 +66,7 @@ impl CommandDef {
 
     /// Add a subcommand
     #[must_use]
-    pub(crate) fn with_subcommand(mut self, cmd: Self) -> Self {
+    pub(super) fn with_subcommand(mut self, cmd: Self) -> Self {
         let mut registry = self.subcommands.unwrap_or_default();
         registry = registry.register(cmd);
         self.subcommands = Some(registry);
@@ -83,7 +83,7 @@ pub(crate) struct CommandRegistry {
 impl CommandRegistry {
     /// Create a new empty registry
     #[must_use]
-    pub(crate) const fn new() -> Self {
+    pub(in crate::command_line) const fn new() -> Self {
         Self {
             commands: Vec::new(),
         }
@@ -91,7 +91,7 @@ impl CommandRegistry {
 
     /// Register a command
     #[must_use]
-    pub(crate) fn register(mut self, cmd: CommandDef) -> Self {
+    pub(in crate::command_line) fn register(mut self, cmd: CommandDef) -> Self {
         self.commands.push(cmd);
         self
     }
@@ -99,7 +99,7 @@ impl CommandRegistry {
     /// Match an input string to a command: exact name/alias, then shortest
     /// unambiguous prefix, else ambiguous (multiple matches) or unknown.
     #[must_use]
-    pub(crate) fn match_command(&self, input: &str) -> MatchResult {
+    pub(in crate::command_line) fn match_command(&self, input: &str) -> MatchResult {
         let input = input.trim();
         let input_lower = input.to_lowercase();
 
@@ -156,13 +156,13 @@ impl CommandRegistry {
     #[cfg(test)]
     /// Get all registered command names
     #[must_use]
-    pub(crate) fn command_names(&self) -> Vec<&String> {
+    fn command_names(&self) -> Vec<&String> {
         self.commands.iter().map(|c| &c.name).collect()
     }
 
     /// Get a command definition by canonical name
     #[must_use]
-    pub(crate) fn get(&self, name: &str) -> Option<&CommandDef> {
+    pub(super) fn get(&self, name: &str) -> Option<&CommandDef> {
         self.commands.iter().find(|c| c.name == name)
     }
 }

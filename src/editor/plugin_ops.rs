@@ -944,6 +944,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.language_loader
                     .register_injections_query(&lang_name, &query_src);
             }
+            #[cfg(feature = "treesitter")]
             PluginMutation::RegisterGrammar {
                 lang_name,
                 so_path,
@@ -958,6 +959,19 @@ impl<T: TerminalBackend> Editor<T> {
                         format!("register_grammar '{lang_name}': {e}"),
                     );
                 }
+            }
+            #[cfg(not(feature = "treesitter"))]
+            PluginMutation::RegisterGrammar {
+                lang_name,
+                so_path,
+                fn_name,
+            } => {
+                self.state.notify(
+                    crate::notification::NotificationType::Error,
+                    format!(
+                        "register_grammar '{lang_name}' ({so_path}:{fn_name}): tree-sitter support is not compiled in"
+                    ),
+                );
             }
             _ => self.report_misrouted(),
         }

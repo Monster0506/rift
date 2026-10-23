@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) mod common;
+mod common;
 
 mod directory_buffer_tests;
 mod directory_diff_tests;

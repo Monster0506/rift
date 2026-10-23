@@ -126,7 +126,7 @@ impl EditorEvent {
     /// # Errors
     /// Returns an error if the table cannot be created or a field cannot be set.
     #[cfg(feature = "plugins")]
-    pub(crate) fn to_lua_table(&self, lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
+    pub(super) fn to_lua_table(&self, lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
         let t = lua.create_table()?;
         match self {
             Self::BufOpen {
@@ -214,7 +214,7 @@ impl EditorEvent {
 
     /// Short name used for handler lookup tables.
     #[must_use]
-    pub(crate) const fn name(&self) -> &'static str {
+    pub(super) const fn name(&self) -> &'static str {
         match self {
             Self::BufOpen { .. } => "BufOpen",
             Self::BufClose { .. } => "BufClose",

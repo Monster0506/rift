@@ -2,7 +2,7 @@ use super::common::*;
 
 #[test]
 fn test_render_status_bar_normal_mode_layer() {
-    let mut layer = Layer::new(LayerPriority::STATUS_BAR, 10, 80);
+    let mut layer = Layer::new(10, 80);
 
     let statusdrawstate = create_default_statusdrawstate();
 
@@ -15,7 +15,7 @@ fn test_render_status_bar_normal_mode_layer() {
 
 #[test]
 fn test_render_status_bar_insert_mode_layer() {
-    let mut layer = Layer::new(LayerPriority::STATUS_BAR, 10, 80);
+    let mut layer = Layer::new(10, 80);
     let mut statusdrawstate = create_default_statusdrawstate();
     statusdrawstate.mode = Mode::Insert;
 
@@ -28,7 +28,7 @@ fn test_render_status_bar_insert_mode_layer() {
 
 #[test]
 fn test_render_status_bar_pending_key_layer() {
-    let mut layer = Layer::new(LayerPriority::STATUS_BAR, 10, 80);
+    let mut layer = Layer::new(10, 80);
     let mut statusdrawstate = create_default_statusdrawstate();
     statusdrawstate.pending_key = Some(Key::ctrl('d'));
 
@@ -234,7 +234,7 @@ fn test_render_file_loaded_at_start() {
     let mut term = MockTerminal::new(10, 80);
     let mut buf = TextBuffer::new(100).unwrap();
 
-    buf.insert_bytes(b"line1\nline2\nline3\n").unwrap();
+    buf.insert_bytes(b"line1\nline2\nline3\n");
     buf.move_to_start();
 
     let state = State::new();

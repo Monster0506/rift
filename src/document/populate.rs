@@ -78,10 +78,11 @@ impl Document {
         let old_revision = self.buffer.revision;
         let byte_len: usize = chars
             .iter()
+            .copied()
             .map(super::super::character::Character::len_utf8)
             .sum();
         if let Ok(mut new_buffer) = TextBuffer::new(byte_len.max(64)) {
-            let _ = new_buffer.insert_chars(chars);
+            new_buffer.insert_chars(chars);
             let _ = new_buffer.set_cursor(0);
             new_buffer.revision = old_revision + 1;
             self.buffer = new_buffer;
@@ -480,7 +481,7 @@ impl Document {
                 let col = start.saturating_sub(line_start);
                 let raw: String = source_buf
                     .chars(start..end)
-                    .map(|c| c.to_char_lossy())
+                    .map(super::super::character::Character::to_char_lossy)
                     .collect();
                 let raw = raw.replace('\n', "\u{23ce}");
                 let preview: String = if raw.chars().count() > 48 {
@@ -1489,12 +1490,12 @@ fn dir_entry_color(
 }
 
 mod git_status_sections {
-    pub(crate) const UNMERGED: &str = "unmerged";
-    pub(crate) const STAGED: &str = "staged";
-    pub(crate) const UNSTAGED: &str = "unstaged";
-    pub(crate) const UNTRACKED: &str = "untracked";
+    pub(super) const UNMERGED: &str = "unmerged";
+    pub(super) const STAGED: &str = "staged";
+    pub(super) const UNSTAGED: &str = "unstaged";
+    pub(super) const UNTRACKED: &str = "untracked";
 
-    pub(crate) fn header_text(section: &str, count: usize) -> String {
+    pub(super) fn header_text(section: &str, count: usize) -> String {
         match section {
             UNMERGED => format!("Unmerged paths ({count})"),
             STAGED => format!("Staged changes ({count})"),

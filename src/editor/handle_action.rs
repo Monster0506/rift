@@ -1308,7 +1308,7 @@ impl<T: TerminalBackend> Editor<T> {
         resolved
     }
 
-    pub(super) fn enter_visual_or_resume(&mut self, mode: Mode) -> bool {
+    fn enter_visual_or_resume(&mut self, mode: Mode) -> bool {
         let Some(kind) = mode.visual_range_kind() else {
             return false;
         };
@@ -1357,7 +1357,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let _ = doc.buffer.set_cursor(pos);
         doc.begin_transaction("Put");
-        let _ = doc.insert_characters(text);
+        doc.insert_characters(text);
         doc.commit_transaction();
         let _ = doc.buffer.set_cursor(pos);
         self.do_incremental_syntax_parse();
@@ -1414,17 +1414,13 @@ impl<T: TerminalBackend> Editor<T> {
 
         doc.begin_transaction("Put");
         if needs_leading_newline {
-            if doc
-                .insert_characters(&[crate::character::Character::Newline])
-                .is_ok()
-            {
-                let trimmed = text
-                    .strip_suffix(&[crate::character::Character::Newline])
-                    .unwrap_or(text);
-                let _ = doc.insert_characters(trimmed);
-            }
+            doc.insert_characters(&[crate::character::Character::Newline]);
+            let trimmed = text
+                .strip_suffix(&[crate::character::Character::Newline])
+                .unwrap_or(text);
+            doc.insert_characters(trimmed);
         } else {
-            let _ = doc.insert_characters(text);
+            doc.insert_characters(text);
         }
         doc.commit_transaction();
 

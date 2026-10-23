@@ -4,14 +4,14 @@ use monster_regex::{Haystack, HaystackCursor};
 
 /// Context that holds the necessary indices for the haystack.
 /// This struct owns the "Shadow Byte Index".
-pub(crate) struct BufferHaystackContext<'a, B: BufferView + ?Sized> {
+pub(super) struct BufferHaystackContext<'a, B: BufferView + ?Sized> {
     buffer: &'a B,
     line_byte_starts: Vec<usize>,
     line_char_starts: Vec<usize>,
 }
 
 impl<'a, B: BufferView + ?Sized> BufferHaystackContext<'a, B> {
-    pub(crate) fn new(buffer: &'a B) -> Self {
+    pub(super) fn new(buffer: &'a B) -> Self {
         let line_count = buffer.line_count();
         let mut line_byte_starts = Vec::with_capacity(line_count + 1);
         let mut line_char_starts = Vec::with_capacity(line_count + 1);
@@ -39,7 +39,7 @@ impl<'a, B: BufferView + ?Sized> BufferHaystackContext<'a, B> {
         }
     }
 
-    pub(crate) fn make_haystack(&'a self) -> BufferHaystack<'a, B> {
+    pub(super) fn make_haystack(&'a self) -> BufferHaystack<'a, B> {
         BufferHaystack {
             buffer: self.buffer,
             line_byte_starts: &self.line_byte_starts,
@@ -55,14 +55,14 @@ impl<B: BufferView + ?Sized> Clone for BufferHaystack<'_, B> {
 }
 impl<B: BufferView + ?Sized> Copy for BufferHaystack<'_, B> {}
 
-pub(crate) struct BufferHaystack<'a, B: BufferView + ?Sized> {
+pub(super) struct BufferHaystack<'a, B: BufferView + ?Sized> {
     buffer: &'a B,
     line_byte_starts: &'a [usize],
     line_char_starts: &'a [usize],
 }
 
 impl<B: BufferView + ?Sized> BufferHaystack<'_, B> {
-    pub(crate) fn byte_offset_to_char_abs(&self, byte_pos: usize) -> usize {
+    pub(super) fn byte_offset_to_char_abs(&self, byte_pos: usize) -> usize {
         let Some((line_idx, offset_in_line)) = self.find_line_for_byte(byte_pos) else {
             return self.buffer.len();
         };
@@ -130,14 +130,17 @@ impl<I: Iterator<Item = Character> + Clone> Iterator for BufferCursor<I> {
         if let Some(c) = self.peeked.take() {
             return Some(c);
         }
-        self.iter.next().map(|c| c.to_char_lossy())
+        self.iter
+            .next()
+            .map(super::super::character::Character::to_char_lossy)
     }
 }
 
 impl<I: Iterator<Item = Character> + Clone> HaystackCursor for BufferCursor<I> {
     fn peek(&self) -> Option<char> {
         let mut iter = self.iter.clone();
-        iter.next().map(|c| c.to_char_lossy())
+        iter.next()
+            .map(super::super::character::Character::to_char_lossy)
     }
 }
 

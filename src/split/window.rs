@@ -15,7 +15,7 @@ impl WindowId {
         self.0
     }
 
-    pub(crate) const fn next(self) -> Self {
+    pub(super) const fn next(self) -> Self {
         Self(self.0 + 1)
     }
 }
@@ -34,7 +34,7 @@ pub(crate) struct Window {
 
 impl Window {
     #[must_use]
-    pub(crate) const fn new(document_id: DocumentId, rows: usize, cols: usize) -> Self {
+    pub(super) const fn new(document_id: DocumentId, rows: usize, cols: usize) -> Self {
         Self {
             document_id,
             viewport: Viewport::new(rows, cols),

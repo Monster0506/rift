@@ -32,7 +32,7 @@ impl RebaseVerb {
     /// Parse a verb from its full word or git's single-letter abbreviation
     /// (`p`/`s`/`f`/`r`/`e`/`d`), case-insensitively.
     #[must_use]
-    pub(crate) fn parse(s: &str) -> Option<Self> {
+    fn parse(s: &str) -> Option<Self> {
         match s.to_ascii_lowercase().as_str() {
             "pick" | "p" => Some(Self::Pick),
             "squash" | "s" => Some(Self::Squash),
@@ -87,7 +87,7 @@ pub(crate) fn initial_todo_from_log(commits: &[crate::git::log::CommitSummary]) 
 /// Render a todo list as `<verb> <short-sha> <subject>` lines, git's own
 /// `rebase -i` visual format (we parse and execute it ourselves, not git).
 #[must_use]
-pub(crate) fn render_todo(steps: &[RebaseStep]) -> String {
+fn render_todo(steps: &[RebaseStep]) -> String {
     steps
         .iter()
         .map(|s| {
@@ -101,7 +101,7 @@ pub(crate) fn render_todo(steps: &[RebaseStep]) -> String {
 #[cfg(test)]
 /// Parse an edited todo buffer back into steps. Unrecognized lines (bad verb, too few tokens, blank/comment lines) are skipped; a rebase todo, like a git status buffer, tolerates stray text without failing the whole parse. `sha` fields may be abbreviated; resolve with `resolve_short_shas` before executing.
 #[must_use]
-pub(crate) fn parse_todo(text: &str) -> Vec<RebaseStep> {
+fn parse_todo(text: &str) -> Vec<RebaseStep> {
     text.lines()
         .filter_map(|line| {
             let trimmed = line.trim();

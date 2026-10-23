@@ -170,7 +170,7 @@ impl UserSettings {
         settings
     }
 
-    pub(crate) fn apply_theme(&mut self, theme: &Theme) {
+    fn apply_theme(&mut self, theme: &Theme) {
         theme.apply_to_settings(self);
     }
 }
@@ -181,7 +181,7 @@ impl Default for UserSettings {
     }
 }
 
-pub(crate) const COMPLETION_MAX_VISIBLE: usize = 8;
+const COMPLETION_MAX_VISIBLE: usize = 8;
 
 #[derive(Debug, Clone)]
 pub(crate) struct CompletionSession {
@@ -255,15 +255,15 @@ pub struct State {
     pub(crate) file_path: Option<String>,
     pub(crate) file_name: String,
     pub(crate) last_keypress: Option<Key>,
-    pub(crate) last_command: Option<Command>,
+    last_command: Option<Command>,
     pub(crate) cursor_pos: (usize, usize),
     pub(crate) total_lines: usize,
     pub(crate) gutter_width: usize,
-    pub(crate) buffer_size: usize,
+    buffer_size: usize,
     pub(crate) command_line: String,
     pub(crate) command_line_cursor: usize,
     pub(crate) is_dirty: bool,
-    pub(crate) line_ending: LineEnding,
+    line_ending: LineEnding,
     pub(crate) error_manager: ErrorManager,
     pub(crate) last_find_char: Option<(char, bool, bool)>,
     pub(crate) last_search_query: Option<String>,
@@ -279,7 +279,7 @@ const GUTTER_PADDING: usize = 2;
 
 /// Columns the line-number gutter needs for `total_lines` lines, padding included.
 #[must_use]
-pub(crate) fn gutter_width_for(total_lines: usize) -> usize {
+fn gutter_width_for(total_lines: usize) -> usize {
     if total_lines == 0 {
         return 0;
     }
@@ -348,7 +348,7 @@ impl State {
     }
 
     #[cfg(test)]
-    pub(crate) const fn set_default_border_chars(&mut self, border_chars: Option<BorderChars>) {
+    const fn set_default_border_chars(&mut self, border_chars: Option<BorderChars>) {
         self.settings.default_border_chars = border_chars;
     }
 

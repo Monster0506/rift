@@ -26,7 +26,7 @@ fn process_jobs(editor: &mut Editor<MockTerminal>) {
     }
 }
 
-fn render_ascii(editor: &mut Editor<MockTerminal>) -> String {
+pub(super) fn render_ascii(editor: &mut Editor<MockTerminal>) -> String {
     editor.update_and_render().unwrap();
     let rows = editor.render_system.compositor.rows();
     let cols = editor.render_system.compositor.cols();

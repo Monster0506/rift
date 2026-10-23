@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 
 /// Render `hunk` as a standalone unified-diff patch for `path`, suitable for `git apply`. A hunk never changes a file's path (renames are a whole-file operation elsewhere), so `path` is used verbatim on both sides. `is_new_file` selects the header `git apply --cached` needs to create a brand-new index entry for.
 #[must_use]
-pub(crate) fn render_patch(path: &str, hunk: &Hunk, is_new_file: bool) -> String {
+fn render_patch(path: &str, hunk: &Hunk, is_new_file: bool) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "diff --git a/{path} b/{path}");
     if is_new_file {

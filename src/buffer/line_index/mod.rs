@@ -15,7 +15,7 @@ pub struct LineIndex {
 
 impl LineIndex {
     #[must_use]
-    pub(crate) fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             table: PieceTable::new(Vec::new()),
             line_starts: RefCell::new(None),
@@ -156,7 +156,7 @@ impl LineIndex {
         self.with_starts(|starts| starts.partition_point(|&s| s <= pos).saturating_sub(1))
     }
 
-    pub(crate) fn insert(&mut self, pos: usize, chars: &[Character]) {
+    pub(super) fn insert(&mut self, pos: usize, chars: &[Character]) {
         self.table.insert(pos, chars);
         if let Some(starts) = self.line_starts.get_mut().as_mut() {
             Self::apply_insert(starts, pos, chars);
@@ -168,7 +168,7 @@ impl LineIndex {
         }
     }
 
-    pub(crate) fn delete(&mut self, pos: usize, len: usize) {
+    pub(super) fn delete(&mut self, pos: usize, len: usize) {
         self.table.delete(pos..pos + len);
         if let Some(starts) = self.line_starts.get_mut().as_mut() {
             Self::apply_delete(starts, pos, len);
@@ -180,7 +180,7 @@ impl LineIndex {
         }
     }
 
-    pub(crate) fn replace(&mut self, pos: usize, count: usize, chars: &[Character]) {
+    pub(super) fn replace(&mut self, pos: usize, count: usize, chars: &[Character]) {
         self.table.replace(pos, count, chars);
         if let Some(starts) = self.line_starts.get_mut().as_mut() {
             Self::apply_delete(starts, pos, count);
@@ -193,33 +193,33 @@ impl LineIndex {
         }
     }
 
-    pub(crate) fn len(&self) -> usize {
+    pub(super) fn len(&self) -> usize {
         self.table.len()
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.table.is_empty()
     }
 
-    pub(crate) fn char_at(&self, pos: usize) -> Character {
+    pub(super) fn char_at(&self, pos: usize) -> Character {
         self.table.char_at(pos)
     }
 
     /// Convert byte offset to character index
-    pub(crate) fn byte_to_char(&self, byte_offset: usize) -> usize {
+    pub(super) fn byte_to_char(&self, byte_offset: usize) -> usize {
         self.table.byte_to_char(byte_offset)
     }
 
     /// Convert character index to byte offset
-    pub(crate) fn char_to_byte(&self, char_index: usize) -> usize {
+    pub(super) fn char_to_byte(&self, char_index: usize) -> usize {
         self.table.char_to_byte(char_index)
     }
 
-    pub(crate) fn bytes_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
+    pub(super) fn bytes_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
         self.table.bytes_range(range)
     }
 
-    pub(crate) fn check_invariants(&self) -> Vec<String> {
+    pub(super) fn check_invariants(&self) -> Vec<String> {
         let mut out = Vec::new();
         self.ensure_built();
         let cache = self.line_starts.borrow();

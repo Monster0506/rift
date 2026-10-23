@@ -2,17 +2,17 @@
 //! Provides predefined color themes for the editor
 
 use super::Color;
-use crate::constants::captures::{
+use crate::state::UserSettings;
+use captures::{
     ATTRIBUTE, BOOLEAN, BUILTIN, CHARACTER, COMMENT, CONSTANT, CONSTRUCTOR, C_IMPORT, ESCAPE,
     FUNCTION, KEYWORD, LABEL, MODULE, MODULE_BUILTIN, NAMESPACE, NUMBER, OPERATOR, PARAMETER,
     PROPERTY, PUNCTUATION, SPELL, STRING, TAG, TEXT_LITERAL, TEXT_REFERENCE, TEXT_TITLE, TEXT_URI,
     TYPE, VARIABLE,
 };
-use crate::state::UserSettings;
 
 /// Theme handler trait, allowing themes to be extended to apply more than
 /// just background/foreground colors (status bar, selection, cursor, etc.)
-pub(crate) trait ThemeHandler {
+trait ThemeHandler {
     /// Apply a theme to the given settings; called whenever a theme is
     /// changed via `:set theme <name>`.
     fn apply_theme(&self, theme: &Theme, settings: &mut UserSettings);
@@ -20,7 +20,7 @@ pub(crate) trait ThemeHandler {
 
 /// Default theme handler; applies background and foreground colors, and can
 /// be extended to handle additional theme properties as they're added.
-pub(crate) struct DefaultThemeHandler;
+struct DefaultThemeHandler;
 
 impl ThemeHandler for DefaultThemeHandler {
     fn apply_theme(&self, theme: &Theme, settings: &mut UserSettings) {
@@ -41,7 +41,7 @@ use std::collections::HashMap;
 /// Syntax highlighting colors for a theme
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntaxColors {
-    pub(crate) colors: HashMap<String, Color>,
+    colors: HashMap<String, Color>,
 }
 
 impl SyntaxColors {
@@ -81,21 +81,21 @@ impl SyntaxColors {
 #[derive(Debug, Clone)]
 pub(crate) struct Theme {
     /// Theme name
-    pub(crate) name: &'static str,
+    name: &'static str,
     /// Background color
     pub(crate) background: Color,
     /// Foreground (text) color
     pub(crate) foreground: Color,
     /// Cursor accent color (block fill in Normal mode, bar color in Insert mode)
-    pub(crate) cursor_color: Color,
+    cursor_color: Color,
     /// Optional syntax highlighting colors
-    pub(crate) syntax: Option<SyntaxColors>,
+    syntax: Option<SyntaxColors>,
 }
 
 impl Theme {
     /// Create a new theme
     #[must_use]
-    pub(crate) const fn new(
+    const fn new(
         name: &'static str,
         background: Color,
         foreground: Color,
@@ -616,3 +616,35 @@ impl Theme {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+mod captures {
+    pub(crate) const ATTRIBUTE: &str = "attribute";
+    pub(crate) const BOOLEAN: &str = "boolean";
+    pub(crate) const BUILTIN: &str = "builtin";
+    pub(crate) const COMMENT: &str = "comment";
+    pub(crate) const CONSTANT: &str = "constant";
+    pub(crate) const CONSTRUCTOR: &str = "constructor";
+    pub(crate) const ESCAPE: &str = "escape";
+    pub(crate) const FUNCTION: &str = "function";
+    pub(crate) const KEYWORD: &str = "keyword";
+    pub(crate) const LABEL: &str = "label";
+    pub(crate) const MODULE: &str = "module";
+    pub(crate) const NAMESPACE: &str = "namespace";
+    pub(crate) const NUMBER: &str = "number";
+    pub(crate) const OPERATOR: &str = "operator";
+    pub(crate) const PARAMETER: &str = "parameter";
+    pub(crate) const PROPERTY: &str = "property";
+    pub(crate) const PUNCTUATION: &str = "punctuation";
+    pub(crate) const STRING: &str = "string";
+    pub(crate) const TAG: &str = "tag";
+    pub(crate) const TEXT_LITERAL: &str = "text.literal";
+    pub(crate) const TEXT_REFERENCE: &str = "text.reference";
+    pub(crate) const TEXT_TITLE: &str = "text.title";
+    pub(crate) const TEXT_URI: &str = "text.uri";
+    pub(crate) const TYPE: &str = "type";
+    pub(crate) const VARIABLE: &str = "variable";
+    pub(crate) const C_IMPORT: &str = "cImport";
+    pub(crate) const CHARACTER: &str = "character";
+    pub(crate) const MODULE_BUILTIN: &str = "module.builtin";
+    pub(crate) const SPELL: &str = "spell";
+}

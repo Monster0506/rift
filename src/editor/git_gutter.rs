@@ -69,7 +69,7 @@ impl<T: TerminalBackend> Editor<T> {
             };
             doc.buffer
                 .chars(0..doc.buffer.len())
-                .map(|c| c.to_char_lossy())
+                .map(super::super::character::Character::to_char_lossy)
                 .collect()
         };
 

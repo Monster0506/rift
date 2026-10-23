@@ -3,11 +3,11 @@ use crate::action::{Action, EditorAction};
 use crate::editor::Editor;
 use crate::test_utils::MockTerminal;
 
-fn create_editor() -> Editor<MockTerminal> {
+pub(in crate::editor) fn create_editor() -> Editor<MockTerminal> {
     Editor::new(MockTerminal::new(24, 80)).unwrap()
 }
 
-fn drain_jobs(editor: &mut Editor<MockTerminal>) {
+pub(in crate::editor) fn drain_jobs(editor: &mut Editor<MockTerminal>) {
     use std::time::{Duration, Instant};
     let deadline = Instant::now() + Duration::from_millis(500);
     loop {

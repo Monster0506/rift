@@ -23,12 +23,12 @@ impl Mods {
     }
 
     #[must_use]
-    pub(crate) const fn is_empty(self) -> bool {
+    const fn is_empty(self) -> bool {
         self.0 == 0
     }
 
     #[must_use]
-    pub(crate) const fn without(self, other: Self) -> Self {
+    const fn without(self, other: Self) -> Self {
         Self(self.0 & !other.0)
     }
 }
@@ -200,9 +200,8 @@ impl Key {
 
     /// Convert key to xterm byte sequence for PTY input.
     #[must_use]
-    #[allow(clippy::wrong_self_convention)]
-    pub(crate) fn to_vt100_bytes(&self) -> Vec<u8> {
-        vt100::encode(*self)
+    pub(crate) fn to_vt100_bytes(self) -> Vec<u8> {
+        vt100::encode(self)
     }
 }
 

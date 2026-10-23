@@ -35,7 +35,7 @@ pub(crate) struct TrieNode {
 
 impl TrieNode {
     /// Insert a sequence into the trie
-    pub(crate) fn insert(&mut self, keys: &[Key], action: Action) {
+    pub(super) fn insert(&mut self, keys: &[Key], action: Action) {
         if keys.is_empty() {
             self.action = Some(action);
             return;
@@ -49,7 +49,7 @@ impl TrieNode {
     }
 
     /// Remove a sequence from the trie. Returns `true` if a binding was removed.
-    pub(crate) fn remove(&mut self, keys: &[Key]) -> bool {
+    pub(super) fn remove(&mut self, keys: &[Key]) -> bool {
         if keys.is_empty() {
             let had = self.action.is_some();
             self.action = None;
@@ -69,7 +69,7 @@ impl TrieNode {
 
     /// Look up a sequence
     #[must_use]
-    pub(crate) fn lookup<'a>(&'a self, keys: &[Key], strictness: Strictness) -> MatchResult<'a> {
+    pub(super) fn lookup<'a>(&'a self, keys: &[Key], strictness: Strictness) -> MatchResult<'a> {
         if keys.is_empty() {
             // A node with both an action and children is Ambiguous: the caller
             // waits for more keys, then flushes to this action on timeout.

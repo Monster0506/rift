@@ -5,23 +5,23 @@ use super::ColorStyle;
 
 /// A single character with color style
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct StyledChar {
+struct StyledChar {
     /// The character byte
-    pub(crate) ch: u8,
+    ch: u8,
     /// Color style for this character
-    pub(crate) style: ColorStyle,
+    style: ColorStyle,
 }
 
 impl StyledChar {
     /// Create a new styled character
     #[must_use]
-    pub(crate) const fn new(ch: u8, style: ColorStyle) -> Self {
+    const fn new(ch: u8, style: ColorStyle) -> Self {
         Self { ch, style }
     }
 
     /// Create with default (no color) style
     #[must_use]
-    pub(crate) const fn plain(ch: u8) -> Self {
+    const fn plain(ch: u8) -> Self {
         Self {
             ch,
             style: ColorStyle::new(),
@@ -31,38 +31,38 @@ impl StyledChar {
 
 /// A color span representing a range of text with a color style
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ColorSpan {
+pub(super) struct ColorSpan {
     /// Start column (inclusive)
-    pub(crate) start: usize,
+    pub(super) start: usize,
     /// End column (exclusive)
-    pub(crate) end: usize,
+    pub(super) end: usize,
     /// Color style for this span
-    pub(crate) style: ColorStyle,
+    pub(super) style: ColorStyle,
 }
 
 impl ColorSpan {
     /// Create a new color span
     #[must_use]
-    pub(crate) const fn new(start: usize, end: usize, style: ColorStyle) -> Self {
+    pub(super) const fn new(start: usize, end: usize, style: ColorStyle) -> Self {
         Self { start, end, style }
     }
 
     /// Check if span is empty (start >= end)
     #[must_use]
-    pub(crate) const fn is_empty(&self) -> bool {
+    const fn is_empty(&self) -> bool {
         self.start >= self.end
     }
 
     /// Get the length of the span
     #[must_use]
-    pub(crate) const fn len(&self) -> usize {
+    const fn len(&self) -> usize {
         self.end.saturating_sub(self.start)
     }
 }
 
 /// A styled line supporting both per-character and per-span coloring
 #[derive(Debug, Clone)]
-pub(crate) enum StyledLine {
+enum StyledLine {
     /// Plain text with no colors
     Plain(Vec<u8>),
     /// Per-character coloring (more flexible but uses more memory)
@@ -79,25 +79,25 @@ pub(crate) enum StyledLine {
 impl StyledLine {
     /// Create a plain unstyled line
     #[must_use]
-    pub(crate) const fn plain(text: Vec<u8>) -> Self {
+    const fn plain(text: Vec<u8>) -> Self {
         Self::Plain(text)
     }
 
     /// Create a line with per-character coloring
     #[must_use]
-    pub(crate) const fn per_char(chars: Vec<StyledChar>) -> Self {
+    const fn per_char(chars: Vec<StyledChar>) -> Self {
         Self::PerChar(chars)
     }
 
     /// Create a line with per-span coloring
     #[must_use]
-    pub(crate) const fn per_span(text: Vec<u8>, spans: Vec<ColorSpan>) -> Self {
+    const fn per_span(text: Vec<u8>, spans: Vec<ColorSpan>) -> Self {
         Self::PerSpan { text, spans }
     }
 
     /// Get the length of the line
     #[must_use]
-    pub(crate) const fn len(&self) -> usize {
+    const fn len(&self) -> usize {
         match self {
             Self::Plain(text) | Self::PerSpan { text, .. } => text.len(),
             Self::PerChar(chars) => chars.len(),
@@ -106,7 +106,7 @@ impl StyledLine {
 
     /// Get the plain text bytes (without color information)
     #[must_use]
-    pub(crate) fn as_bytes(&self) -> Vec<u8> {
+    fn as_bytes(&self) -> Vec<u8> {
         match self {
             Self::Plain(text) | Self::PerSpan { text, .. } => text.clone(),
             Self::PerChar(chars) => chars.iter().map(|sc| sc.ch).collect(),
@@ -116,7 +116,7 @@ impl StyledLine {
     /// Convert to per-character representation
     /// Useful when you need uniform access to colors
     #[must_use]
-    pub(crate) fn to_per_char(&self) -> Vec<StyledChar> {
+    fn to_per_char(&self) -> Vec<StyledChar> {
         match self {
             Self::Plain(text) => text.iter().map(|&ch| StyledChar::plain(ch)).collect(),
             Self::PerChar(chars) => chars.clone(),
@@ -149,7 +149,7 @@ impl StyledLine {
 
     /// Get color style for a specific column
     #[must_use]
-    pub(crate) fn get_style_at(&self, column: usize) -> ColorStyle {
+    fn get_style_at(&self, column: usize) -> ColorStyle {
         match self {
             Self::Plain(_) => ColorStyle::new(),
             Self::PerChar(chars) => chars.get(column).map(|sc| sc.style).unwrap_or_default(),

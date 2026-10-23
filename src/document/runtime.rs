@@ -19,7 +19,7 @@ impl BufferKindId {
     pub(crate) const CLIPBOARD_ENTRY: Self = Self(NonZeroU32::new(7).unwrap());
     pub(crate) const LOCATION_LIST: Self = Self(NonZeroU32::new(8).unwrap());
     pub(crate) const REGIONS: Self = Self(NonZeroU32::new(9).unwrap());
-    pub(crate) const SCRATCH: Self = Self(NonZeroU32::new(10).unwrap());
+    pub(super) const SCRATCH: Self = Self(NonZeroU32::new(10).unwrap());
     pub(crate) const GIT_STATUS: Self = Self(NonZeroU32::new(11).unwrap());
     pub(crate) const GIT_COMMIT_MESSAGE: Self = Self(NonZeroU32::new(12).unwrap());
     pub(crate) const GIT_BLAME: Self = Self(NonZeroU32::new(13).unwrap());
@@ -28,9 +28,9 @@ impl BufferKindId {
     pub(crate) const BUFFER_LIST: Self = Self(NonZeroU32::new(16).unwrap());
     pub(crate) const UNDO_FILE_VIEW: Self = Self(NonZeroU32::new(17).unwrap());
 
-    pub(crate) const RESERVED_BUILTIN_END: u32 = 64;
+    const RESERVED_BUILTIN_END: u32 = 64;
 
-    pub(crate) const FIRST_RUNTIME_ID: u32 = 65;
+    const FIRST_RUNTIME_ID: u32 = 65;
 
     #[cfg(test)]
     #[must_use]
@@ -39,12 +39,12 @@ impl BufferKindId {
     }
 
     #[must_use]
-    pub(crate) const fn get(self) -> u32 {
+    const fn get(self) -> u32 {
         self.0.get()
     }
 
     #[must_use]
-    pub(crate) const fn is_builtin(self) -> bool {
+    pub(super) const fn is_builtin(self) -> bool {
         self.get() <= Self::RESERVED_BUILTIN_END
     }
 }
@@ -58,7 +58,7 @@ impl std::fmt::Display for BufferKindId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct DocumentHandle {
     pub(crate) doc_id: DocumentId,
-    pub(crate) instance: u64,
+    instance: u64,
 }
 
 impl DocumentHandle {
@@ -105,7 +105,7 @@ pub(crate) enum GhostCutPolicy {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum InputPolicy {
+enum InputPolicy {
     EditorText,
     TerminalRaw,
 }
@@ -143,10 +143,10 @@ pub(crate) enum KeyFallback {
 pub(crate) struct BufferPolicies {
     pub(crate) read_only: ReadOnlyPolicy,
     pub(crate) close: ClosePolicy,
-    pub(crate) structural_edit: StructuralEditPolicy,
-    pub(crate) ghost_cut: GhostCutPolicy,
-    pub(crate) input: InputPolicy,
-    pub(crate) projection: TextProjectionPolicy,
+    pub(super) structural_edit: StructuralEditPolicy,
+    pub(super) ghost_cut: GhostCutPolicy,
+    input: InputPolicy,
+    pub(super) projection: TextProjectionPolicy,
     pub(crate) navigation: NavigationPolicy,
     pub(crate) language_services: LanguageServicesPolicy,
     pub(crate) key_fallback: KeyFallback,
@@ -169,7 +169,7 @@ impl BufferPolicies {
     }
 
     #[must_use]
-    pub(crate) const fn read_only_panel() -> Self {
+    const fn read_only_panel() -> Self {
         Self {
             read_only: ReadOnlyPolicy::FixedReadOnly,
             close: ClosePolicy::DiscardDirty,
@@ -184,7 +184,7 @@ impl BufferPolicies {
     }
 
     #[must_use]
-    pub(crate) const fn read_only_list() -> Self {
+    const fn read_only_list() -> Self {
         Self {
             navigation: NavigationPolicy::Text,
             ..Self::read_only_panel()
@@ -192,7 +192,7 @@ impl BufferPolicies {
     }
 
     #[must_use]
-    pub(crate) const fn writable_scratch_text() -> Self {
+    const fn writable_scratch_text() -> Self {
         Self {
             read_only: ReadOnlyPolicy::FixedWritable,
             close: ClosePolicy::ConfirmDirty,
@@ -234,10 +234,10 @@ impl DescriptorOwner {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TombstoneMetadata {
-    pub(crate) reason: String,
+    reason: String,
 }
 
-pub(crate) type NativeActionHandler = fn(DocumentHandle);
+type NativeActionHandler = fn(DocumentHandle);
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ActionDispatch {
@@ -253,7 +253,7 @@ pub(crate) enum SaveResult {
     Failed,
 }
 
-pub(crate) type NativeSaveHandler = fn(DocumentHandle) -> SaveResult;
+type NativeSaveHandler = fn(DocumentHandle) -> SaveResult;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum SaveDispatch {
@@ -263,7 +263,7 @@ pub(crate) enum SaveDispatch {
     Reject,
 }
 
-pub(crate) type NativeCloseHandler = fn(DocumentHandle);
+type NativeCloseHandler = fn(DocumentHandle);
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum CloseHandler {
@@ -285,7 +285,7 @@ pub(crate) enum ReloadDispatch {
 }
 
 impl CloseHandler {
-    pub(crate) const NOOP: Self = Self::Native(noop_close);
+    const NOOP: Self = Self::Native(noop_close);
 }
 
 #[derive(Debug, Clone)]
@@ -298,7 +298,7 @@ pub(crate) enum DisplayNameStrategy {
 
 impl DisplayNameStrategy {
     #[must_use]
-    pub(crate) fn resolve<'a>(
+    fn resolve<'a>(
         &'a self,
         kind_name: &'a str,
         file_path: Option<&'a Path>,
@@ -323,7 +323,7 @@ pub(crate) struct StateKeyId {
 
 impl StateKeyId {
     #[must_use]
-    pub(crate) const fn of<T: 'static>(name: &'static str) -> Self {
+    const fn of<T: 'static>(name: &'static str) -> Self {
         Self {
             type_id: std::any::TypeId::of::<T>(),
             name,
@@ -367,7 +367,7 @@ impl<T: 'static> std::hash::Hash for StateKey<T> {
 
 impl<T: 'static> StateKey<T> {
     #[must_use]
-    pub(crate) const fn new(name: &'static str) -> Self {
+    const fn new(name: &'static str) -> Self {
         Self {
             id: StateKeyId::of::<T>(name),
             _marker: std::marker::PhantomData,
@@ -386,129 +386,129 @@ pub(crate) static FILE_STATE_KEY: StateKey<FileState> = StateKey::new("file");
 
 #[derive(Debug, Default)]
 pub(crate) struct TerminalState {
-    pub(crate) terminal: Option<crate::term::Terminal>,
-    pub(crate) terminal_cursor: Option<(usize, usize)>,
-    pub(crate) terminal_cell_colors: crate::color::CellColorSpans,
+    pub(super) terminal: Option<crate::term::Terminal>,
+    pub(super) terminal_cursor: Option<(usize, usize)>,
+    pub(super) terminal_cell_colors: crate::color::CellColorSpans,
 }
 pub(crate) static TERMINAL_STATE_KEY: StateKey<TerminalState> = StateKey::new("terminal");
 
 #[derive(Debug, Clone)]
 pub(crate) struct DirectoryState {
-    pub(crate) path: PathBuf,
-    pub(crate) entries: Vec<DirEntry>,
-    pub(crate) show_hidden: bool,
+    pub(super) path: PathBuf,
+    pub(super) entries: Vec<DirEntry>,
+    pub(super) show_hidden: bool,
 }
 pub(crate) static DIRECTORY_STATE_KEY: StateKey<DirectoryState> = StateKey::new("directory");
 
 #[derive(Debug, Clone)]
 pub(crate) struct UndoTreeState {
-    pub(crate) linked_doc_id: DocumentId,
-    pub(crate) sequences: Vec<crate::history::EditSeq>,
+    pub(super) linked_doc_id: DocumentId,
+    pub(super) sequences: Vec<crate::history::EditSeq>,
 }
 pub(crate) static UNDO_TREE_STATE_KEY: StateKey<UndoTreeState> = StateKey::new("undotree");
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct MessagesState {
-    pub(crate) show_all: bool,
+    pub(super) show_all: bool,
 }
 pub(crate) static MESSAGES_STATE_KEY: StateKey<MessagesState> = StateKey::new("messages");
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ClipboardState {
-    pub(crate) entries: Vec<Vec<crate::character::Character>>,
+    pub(super) entries: Vec<Vec<crate::character::Character>>,
 }
 pub(crate) static CLIPBOARD_STATE_KEY: StateKey<ClipboardState> = StateKey::new("clipboard");
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ClipboardEntryState {
-    pub(crate) entry_index: Option<usize>,
+    pub(super) entry_index: Option<usize>,
 }
 pub(crate) static CLIPBOARD_ENTRY_STATE_KEY: StateKey<ClipboardEntryState> =
     StateKey::new("clipboard_entry");
 
 #[derive(Debug, Clone)]
 pub(crate) struct LocationListState {
-    pub(crate) entries: Vec<LocationEntry>,
+    pub(super) entries: Vec<LocationEntry>,
 }
 pub(crate) static LOCATION_LIST_STATE_KEY: StateKey<LocationListState> =
     StateKey::new("location_list");
 
 #[derive(Debug, Clone)]
 pub(crate) struct RegionsState {
-    pub(crate) source_doc_id: DocumentId,
+    pub(super) source_doc_id: DocumentId,
 }
 pub(crate) static REGIONS_STATE_KEY: StateKey<RegionsState> = StateKey::new("regions");
 
 #[derive(Debug, Clone)]
 pub(crate) struct ScratchState {
-    pub(crate) title: String,
+    pub(super) title: String,
 }
 pub(crate) static SCRATCH_STATE_KEY: StateKey<ScratchState> = StateKey::new("scratch");
 
 #[derive(Debug, Clone)]
 pub(crate) struct GitStatusState {
-    pub(crate) repo_root: PathBuf,
-    pub(crate) snapshot: crate::git::status::StatusSnapshot,
-    pub(crate) expanded_diffs: HashMap<(PathBuf, bool), Vec<crate::git::diff::Hunk>>,
-    pub(crate) head_subject: Option<String>,
+    pub(super) repo_root: PathBuf,
+    pub(super) snapshot: crate::git::status::StatusSnapshot,
+    pub(super) expanded_diffs: HashMap<(PathBuf, bool), Vec<crate::git::diff::Hunk>>,
+    pub(super) head_subject: Option<String>,
 }
 pub(crate) static GIT_STATUS_STATE_KEY: StateKey<GitStatusState> = StateKey::new("git_status");
 
 #[derive(Debug, Clone)]
 pub(crate) struct GitCommitMessageState {
-    pub(crate) repo_root: PathBuf,
-    pub(crate) target: GitCommitTarget,
+    pub(super) repo_root: PathBuf,
+    pub(super) target: GitCommitTarget,
 }
 pub(crate) static GIT_COMMIT_MESSAGE_STATE_KEY: StateKey<GitCommitMessageState> =
     StateKey::new("git_commit_message");
 
 #[derive(Debug, Clone)]
 pub(crate) struct GitBlameState {
-    pub(crate) repo_root: PathBuf,
-    pub(crate) linked_doc_id: DocumentId,
-    pub(crate) linked_window_id: crate::split::window::WindowId,
-    pub(crate) path: PathBuf,
-    pub(crate) at_commit: Option<String>,
-    pub(crate) history: Vec<Option<String>>,
-    pub(crate) lines: Vec<crate::git::blame::BlameLine>,
-    pub(crate) wrap_rows: Vec<usize>,
-    pub(crate) wrap_key: Option<(DocumentId, usize, usize, u64)>,
+    pub(super) repo_root: PathBuf,
+    pub(super) linked_doc_id: DocumentId,
+    pub(super) linked_window_id: crate::split::window::WindowId,
+    pub(super) path: PathBuf,
+    pub(super) at_commit: Option<String>,
+    pub(super) history: Vec<Option<String>>,
+    pub(super) lines: Vec<crate::git::blame::BlameLine>,
+    pub(super) wrap_rows: Vec<usize>,
+    pub(super) wrap_key: Option<(DocumentId, usize, usize, u64)>,
 }
 pub(crate) static GIT_BLAME_STATE_KEY: StateKey<GitBlameState> = StateKey::new("git_blame");
 
 #[derive(Debug, Clone)]
 pub(crate) struct GitLogState {
-    pub(crate) repo_root: PathBuf,
-    pub(crate) path: Option<PathBuf>,
-    pub(crate) commits: Vec<crate::git::log::CommitSummary>,
-    pub(crate) expanded: Option<String>,
-    pub(crate) expanded_body: Option<String>,
+    pub(super) repo_root: PathBuf,
+    pub(super) path: Option<PathBuf>,
+    pub(super) commits: Vec<crate::git::log::CommitSummary>,
+    pub(super) expanded: Option<String>,
+    pub(super) expanded_body: Option<String>,
 }
 pub(crate) static GIT_LOG_STATE_KEY: StateKey<GitLogState> = StateKey::new("git_log");
 
 #[derive(Debug, Clone)]
 pub(crate) struct GitRebaseTodoState {
-    pub(crate) repo_root: PathBuf,
-    pub(crate) base: String,
-    pub(crate) branch: String,
-    pub(crate) pause: Option<crate::git::rebase::RebasePause>,
-    pub(crate) steps: Vec<crate::git::rebase::RebaseStep>,
-    pub(crate) message_overrides: HashMap<String, String>,
-    pub(crate) expanded_bodies: HashSet<String>,
-    pub(crate) original_bodies: HashMap<String, String>,
+    pub(super) repo_root: PathBuf,
+    pub(super) base: String,
+    pub(super) branch: String,
+    pub(super) pause: Option<crate::git::rebase::RebasePause>,
+    pub(super) steps: Vec<crate::git::rebase::RebaseStep>,
+    pub(super) message_overrides: HashMap<String, String>,
+    pub(super) expanded_bodies: HashSet<String>,
+    pub(super) original_bodies: HashMap<String, String>,
 }
 pub(crate) static GIT_REBASE_TODO_STATE_KEY: StateKey<GitRebaseTodoState> =
     StateKey::new("git_rebase_todo");
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct BufferListState {
-    pub(crate) entries: Vec<DocumentId>,
+    pub(super) entries: Vec<DocumentId>,
 }
 pub(crate) static BUFFER_LIST_STATE_KEY: StateKey<BufferListState> = StateKey::new("buffer_list");
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct UndoFileViewState {
-    pub(crate) sequences: Vec<crate::history::EditSeq>,
+    pub(super) sequences: Vec<crate::history::EditSeq>,
 }
 pub(crate) static UNDO_FILE_VIEW_STATE_KEY: StateKey<UndoFileViewState> =
     StateKey::new("undo_file_view");
@@ -532,13 +532,13 @@ impl StateSlot {
     }
 
     #[must_use]
-    pub(crate) const fn key_id(&self) -> StateKeyId {
+    pub(super) const fn key_id(&self) -> StateKeyId {
         self.key_id
     }
 
     /// Returns the stored state if `key` matches and the stored type is `T`.
     #[must_use]
-    pub(crate) fn try_get<T: 'static>(&self, key: StateKey<T>) -> Option<&T> {
+    pub(super) fn try_get<T: 'static>(&self, key: StateKey<T>) -> Option<&T> {
         if self.key_id == key.id() {
             self.state.downcast_ref::<T>()
         } else {
@@ -547,7 +547,7 @@ impl StateSlot {
     }
 
     /// Mutable counterpart of [`Self::try_get`].
-    pub(crate) fn try_get_mut<T: 'static>(&mut self, key: StateKey<T>) -> Option<&mut T> {
+    pub(super) fn try_get_mut<T: 'static>(&mut self, key: StateKey<T>) -> Option<&mut T> {
         if self.key_id == key.id() {
             self.state.downcast_mut::<T>()
         } else {
@@ -584,12 +584,12 @@ impl KindDescriptor {
     }
 
     #[must_use]
-    pub(crate) const fn policies(&self) -> &BufferPolicies {
+    pub(super) const fn policies(&self) -> &BufferPolicies {
         &self.policies
     }
 
     #[must_use]
-    pub(crate) const fn state_key(&self) -> StateKeyId {
+    pub(super) const fn state_key(&self) -> StateKeyId {
         self.state_key
     }
 
@@ -599,12 +599,12 @@ impl KindDescriptor {
     }
 
     #[must_use]
-    pub(crate) fn help_lines(&self) -> Option<&[String]> {
+    pub(super) fn help_lines(&self) -> Option<&[String]> {
         self.help_lines.as_deref()
     }
 
     #[must_use]
-    pub(crate) fn to_tombstone(&self, reason: String) -> Self {
+    fn to_tombstone(&self, reason: String) -> Self {
         let mut policies = self.policies;
         policies.read_only = ReadOnlyPolicy::FixedReadOnly;
         policies.close = ClosePolicy::ConfirmDirty;
@@ -629,7 +629,7 @@ impl KindDescriptor {
     }
 
     #[must_use]
-    pub(crate) fn resolve_display_name<'a>(
+    pub(super) fn resolve_display_name<'a>(
         &'a self,
         file_path: Option<&'a Path>,
         terminal_name: Option<&'a str>,
@@ -673,7 +673,7 @@ pub(crate) struct BufferKindRegistry {
 
 impl BufferKindRegistry {
     #[must_use]
-    pub(crate) fn new() -> Self {
+    fn new() -> Self {
         Self {
             names: HashMap::new(),
             descriptors: HashMap::new(),
@@ -698,7 +698,7 @@ impl BufferKindRegistry {
     ///
     /// Returns `NotBuiltinId` for a non-builtin id, `AlreadyRegistered` if the id is
     /// taken, or `DuplicateName` if the name is taken.
-    pub(crate) fn register_builtin(
+    fn register_builtin(
         &mut self,
         descriptor: KindDescriptor,
     ) -> Result<Arc<KindDescriptor>, RegistryError> {
@@ -793,11 +793,11 @@ impl BufferKindRegistry {
     }
 
     #[must_use]
-    pub(crate) fn open_count(&self, id: BufferKindId) -> usize {
+    fn open_count(&self, id: BufferKindId) -> usize {
         self.open_counts.get(&id).copied().unwrap_or(0)
     }
 
-    pub(crate) fn tombstone_descriptor(
+    fn tombstone_descriptor(
         &mut self,
         id: BufferKindId,
         reason: String,
@@ -849,7 +849,7 @@ impl BufferKindRegistry {
     ///
     /// Returns the first registration error from the built-in groups; the built-in set
     /// is fixed, so this does not occur in practice.
-    pub(crate) fn register_builtins(&mut self) -> Result<(), RegistryError> {
+    fn register_builtins(&mut self) -> Result<(), RegistryError> {
         self.register_core_builtins()?;
         self.register_view_builtins()?;
         self.register_git_status_builtins()?;

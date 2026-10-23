@@ -31,6 +31,7 @@ mod invariants;
 mod ipc;
 mod job_manager;
 mod key;
+#[cfg(test)]
 mod key_handler;
 mod keymap;
 mod layer;

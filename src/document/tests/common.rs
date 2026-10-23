@@ -23,7 +23,7 @@ pub(super) fn make_populated_directory_doc(dir: &str, names: &[(&str, bool)]) ->
     doc
 }
 
-pub(super) fn set_buffer_text(doc: &mut Document, text: &str) {
+fn set_buffer_text(doc: &mut Document, text: &str) {
     let old_len = doc.buffer.len();
     let _ = doc.buffer.set_cursor(0);
     let _ = doc.delete_range(0, old_len);

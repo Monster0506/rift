@@ -522,7 +522,7 @@ pub(crate) fn split_path_prefix(prefix: &str) -> (String, String) {
 }
 
 #[must_use]
-pub(crate) fn longest_common_prefix_of(strs: &[&str]) -> String {
+fn longest_common_prefix_of(strs: &[&str]) -> String {
     if strs.is_empty() {
         return String::new();
     }

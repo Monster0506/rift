@@ -27,10 +27,8 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn update_state_and_render(
         &mut self,
         keypress: crate::key::Key,
-        action: crate::key_handler::KeyAction,
         command: crate::command::Command,
     ) -> Result<(), RiftError> {
-        self.handle_key_actions(action);
         self.handle_mode_management(command);
 
         self.state.update_keypress(keypress);
@@ -159,7 +157,7 @@ impl<T: TerminalBackend> Editor<T> {
         Some((doc_id, needs_clear, display_map, scroll_hint))
     }
 
-    pub(super) fn update_selection_highlights(&mut self) {
+    fn update_selection_highlights(&mut self) {
         crate::perf_span!(
             "update_selection_highlights",
             crate::perf::PerfFields::default()
@@ -225,7 +223,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// # Errors
     /// Returns an error if the frame fails to render or the terminal cannot be written.
-    pub(crate) fn update_and_render(&mut self) -> Result<(), RiftError> {
+    pub(super) fn update_and_render(&mut self) -> Result<(), RiftError> {
         self.begin_ghost_paint();
         let result = self.update_and_render_painted();
         self.end_ghost_paint();
@@ -265,7 +263,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(crate) fn cursor_screen_row(&mut self) -> usize {
+    pub(super) fn cursor_screen_row(&mut self) -> usize {
         let focused_id = self.split_tree.focused_window_id();
         let doc_id = self.split_tree.focused_window().document_id;
         let (row_off, top_line, top_visual, content_width, rows) =
@@ -426,7 +424,7 @@ impl<T: TerminalBackend> Editor<T> {
         Some((doc_id, cols.saturating_sub(gutter_width).max(1)))
     }
 
-    pub(super) fn render_clipboard_tooltip(&mut self) {
+    fn render_clipboard_tooltip(&mut self) {
         crate::perf_span!(
             "render_clipboard_tooltip",
             crate::perf::PerfFields::default()
@@ -453,7 +451,7 @@ impl<T: TerminalBackend> Editor<T> {
     #[cfg(test)]
     /// # Errors
     /// Returns an error if the cursor or output cannot be written, or the compositor fails.
-    pub(crate) fn render_to_terminal(
+    pub(super) fn render_to_terminal(
         &mut self,
         needs_clear: bool,
     ) -> Result<FrameStats, RiftError> {
@@ -474,7 +472,7 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(stats)
     }
 
-    pub(super) fn render(
+    fn render(
         &mut self,
         needs_clear: bool,
         display_map: Option<&crate::wrap::DisplayMap>,
@@ -628,7 +626,7 @@ impl<T: TerminalBackend> Editor<T> {
         )
     }
 
-    pub(super) fn render_plugin_float(&mut self) {
+    fn render_plugin_float(&mut self) {
         crate::perf_span!("render_plugin_float", crate::perf::PerfFields::default());
         if self.plugin_host.has_open_float() {
             let layer = self
@@ -647,7 +645,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(super) fn update_window_viewports(&mut self) {
+    fn update_window_viewports(&mut self) {
         crate::perf_span!(
             "update_window_viewports",
             crate::perf::PerfFields::default()
@@ -933,7 +931,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(super) fn render_multi_window(&mut self, needs_clear: bool) -> Result<(), RiftError> {
+    fn render_multi_window(&mut self, needs_clear: bool) -> Result<(), RiftError> {
         use crate::layer::LayerPriority;
         crate::perf_span!("render_multi_window", crate::perf::PerfFields::default());
 
@@ -1330,7 +1328,7 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
-    pub(super) fn render_annotation_tooltip(&mut self, cursor_row: usize) {
+    fn render_annotation_tooltip(&mut self, cursor_row: usize) {
         use crate::color::Color;
         use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
         use crate::layer::{Cell, LayerPriority};
@@ -1432,7 +1430,7 @@ impl<T: TerminalBackend> Editor<T> {
         window.render_cells(layer, &rows);
     }
 
-    pub(super) fn render_explorer_diff_tooltip(&mut self) {
+    fn render_explorer_diff_tooltip(&mut self) {
         use crate::color::Color;
         use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
         use crate::layer::{Cell, LayerPriority};

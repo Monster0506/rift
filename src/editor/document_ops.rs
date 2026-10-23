@@ -35,7 +35,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// # Errors
     /// Returns `Err` when the document is unknown, not in tab order, has unsaved changes
     /// on a normal removal, or a replacement buffer cannot be created.
-    pub(crate) fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
+    pub(super) fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
         self.remove_document_with_intent(id, crate::document::RemovalIntent::Normal)
     }
 
@@ -144,7 +144,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// Returns `Err` when an undo file cannot be opened, a placeholder cannot be created,
     /// the parent directory is missing, or the active document cannot be reloaded
     /// (unsaved changes without `force`, or reload unsupported).
-    pub(crate) fn open_file(
+    pub(super) fn open_file(
         &mut self,
         file_path: Option<String>,
         force: bool,
@@ -269,7 +269,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// # Errors
     /// Returns `Err` when the scratch document cannot be created or switched to.
-    pub(crate) fn create_scratch_buffer(
+    pub(super) fn create_scratch_buffer(
         &mut self,
         title: String,
         lines: &[String],
@@ -295,7 +295,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// cannot be created.
     /// # Panics
     /// Panics if the new terminal document has no handle (`terminal_emulation` builds).
-    pub(crate) fn open_terminal(&mut self, shell_cmd: Option<String>) -> Result<(), RiftError> {
+    pub(super) fn open_terminal(&mut self, shell_cmd: Option<String>) -> Result<(), RiftError> {
         let size = self
             .term
             .get_size()

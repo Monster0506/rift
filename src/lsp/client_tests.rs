@@ -23,7 +23,7 @@ impl LspClient {
     }
 
     /// OS process id of the server, for tests verifying it doesn't leak.
-    pub(crate) fn pid(&self) -> u32 {
+    pub(in crate::lsp) fn pid(&self) -> u32 {
         self.process.as_ref().expect("stdio client").id()
     }
 }

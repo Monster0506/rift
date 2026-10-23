@@ -31,7 +31,7 @@ fn normalize_missing(path: &Path) -> PathBuf {
     }
 }
 
-pub(crate) struct NativeFileSystem;
+pub(super) struct NativeFileSystem;
 
 impl FileSystem for NativeFileSystem {
     fn read_file(&self, path: &Path) -> Result<Vec<u8>, RiftError> {

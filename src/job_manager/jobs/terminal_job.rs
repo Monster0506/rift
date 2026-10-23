@@ -5,9 +5,9 @@ use std::fmt;
 use std::sync::mpsc::{Receiver, Sender};
 
 pub(crate) struct TerminalInputJob {
-    pub(crate) document_id: DocumentId,
-    pub(crate) rx: Receiver<TerminalEvent>,
-    pub(crate) token: AsyncToken,
+    document_id: DocumentId,
+    rx: Receiver<TerminalEvent>,
+    token: AsyncToken,
 }
 
 impl TerminalInputJob {

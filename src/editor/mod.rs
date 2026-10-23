@@ -1,4 +1,4 @@
-pub(crate) mod actions;
+mod actions;
 mod annotations_ops;
 
 #[cfg(all(test, feature = "terminal_emulation"))]
@@ -131,9 +131,9 @@ fn resolve_display_map(
 
 pub struct Editor<T: TerminalBackend> {
     pub(crate) term: T,
-    pub(crate) document_manager: crate::document::DocumentManager,
-    pub(crate) buffer_kinds: crate::document::BufferKindRegistry,
-    pub(crate) render_system: crate::render::RenderSystem,
+    document_manager: crate::document::DocumentManager,
+    buffer_kinds: crate::document::BufferKindRegistry,
+    render_system: crate::render::RenderSystem,
     current_mode: Mode,
     should_quit: bool,
     state: State,
@@ -143,8 +143,8 @@ pub struct Editor<T: TerminalBackend> {
     language_loader: Arc<crate::syntax::loader::LanguageLoader>,
     pub(crate) job_manager: crate::job_manager::JobManager,
     pending_quit_job_id: Option<usize>,
-    pub(crate) keymap: KeyMap,
-    pub(crate) split_tree: SplitTree,
+    keymap: KeyMap,
+    split_tree: SplitTree,
     native_action_handlers: std::collections::HashMap<
         crate::document::BufferKindId,
         handle_action::NativeActionHandler<T>,
@@ -159,25 +159,25 @@ pub struct Editor<T: TerminalBackend> {
     pending_operator: Option<PendingOperator>,
     pending_grammar: Option<pending_grammar::PendingGrammar>,
     pending_keys_started_at: Option<crate::time::Instant>,
-    pub(super) visual_anchor: Option<usize>,
-    pub(super) pending_multi_insert_anchors: Vec<usize>,
+    visual_anchor: Option<usize>,
+    pending_multi_insert_anchors: Vec<usize>,
     replace_originals: Vec<replace_mode::ReplaceEntry>,
-    pub(super) region_build_recording: Vec<crate::action::Action>,
-    pub(super) expand_history: Vec<(usize, usize)>,
+    region_build_recording: Vec<crate::action::Action>,
+    expand_history: Vec<(usize, usize)>,
     display_map_cache: Vec<DisplayMapCacheEntry>,
     pending_text_changed: Option<crate::document::DocumentId>,
     pending_cursor_moved: Option<(crate::document::DocumentId, usize, usize)>,
     dot_repeat: DotRepeat,
-    pub(crate) panel_layout: Option<PanelLayout>,
+    panel_layout: Option<PanelLayout>,
     last_notification_generation: u64,
-    pub(crate) plugin_host: crate::plugin::PluginHost,
-    pub(crate) clipboard_ring: crate::clipboard::ClipboardRing,
+    plugin_host: crate::plugin::PluginHost,
+    clipboard_ring: crate::clipboard::ClipboardRing,
     system_clipboard_cache: crate::clipboard::SystemClipboardCache,
     post_paste_state: Option<PostPasteState>,
     pending_cursor_entry: Option<String>,
     file_load_jobs: std::collections::HashMap<usize, crate::document::DocumentId>,
     #[cfg(feature = "lsp")]
-    pub(crate) lsp_manager: crate::lsp::LspManager,
+    lsp_manager: crate::lsp::LspManager,
     #[cfg(feature = "lsp")]
     lsp_diagnostics: std::collections::BTreeMap<String, Vec<crate::lsp::protocol::LspDiagnostic>>,
     #[cfg(feature = "lsp")]
@@ -188,8 +188,8 @@ pub struct Editor<T: TerminalBackend> {
     rename_context: Option<(std::path::PathBuf, u32, u32)>,
     #[cfg(feature = "lsp")]
     pending_goto_target: Option<(crate::document::DocumentId, usize, usize)>,
-    pub(crate) dispatch_registry: crate::annotations::registry::DispatchRegistry,
-    pub(crate) kind_registry: crate::annotations::registry::KindRegistry,
+    dispatch_registry: crate::annotations::registry::DispatchRegistry,
+    kind_registry: crate::annotations::registry::KindRegistry,
     hovered_annotation: Option<crate::annotations::AnnotationId>,
     pending_syntax_reparse:
         std::collections::HashMap<crate::document::DocumentId, jobs::PendingSyntaxReparse>,
@@ -202,8 +202,8 @@ pub struct Editor<T: TerminalBackend> {
     pending_search_refresh: Option<crate::time::Instant>,
     search_highlights_synced: Option<(crate::document::DocumentId, u64, String)>,
     pending_explorer_preview: Option<explorer::PendingExplorerPreview>,
-    pub(crate) startup_first_paint: Option<crate::time::Instant>,
-    pub(super) unrendered_key_count: usize,
+    startup_first_paint: Option<crate::time::Instant>,
+    unrendered_key_count: usize,
 }
 
 struct DisplayMapCacheEntry {
@@ -224,13 +224,13 @@ struct PostPasteState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum PendingOperator {
+enum PendingOperator {
     Op(crate::action::OperatorType),
     SurroundAdd(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PanelKind {
+enum PanelKind {
     FileExplorer,
     UndoTree,
     Clipboard,
@@ -240,13 +240,13 @@ pub(crate) enum PanelKind {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct PanelLayout {
-    pub(crate) kind: PanelKind,
-    pub(crate) dir_win_id: crate::split::window::WindowId,
-    pub(crate) preview_win_id: crate::split::window::WindowId,
-    pub(crate) dir_doc_id: DocumentId,
-    pub(crate) preview_doc_id: DocumentId,
-    pub(crate) original_doc_id: DocumentId,
+struct PanelLayout {
+    kind: PanelKind,
+    dir_win_id: crate::split::window::WindowId,
+    preview_win_id: crate::split::window::WindowId,
+    dir_doc_id: DocumentId,
+    preview_doc_id: DocumentId,
+    original_doc_id: DocumentId,
 }
 
 impl<T: TerminalBackend> Drop for Editor<T> {

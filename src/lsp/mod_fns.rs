@@ -1,7 +1,7 @@
 use super::*;
 
 #[must_use]
-pub(crate) fn route_response_pub(
+pub(super) fn route_response_pub(
     method: &str,
     uri: Option<&str>,
     result: Value,
@@ -10,11 +10,11 @@ pub(crate) fn route_response_pub(
 }
 
 #[must_use]
-pub(crate) fn route_notification_pub(method: &str, params: &Value) -> Option<LspMessage> {
+pub(super) fn route_notification_pub(method: &str, params: &Value) -> Option<LspMessage> {
     route_notification(method, params)
 }
 
 #[must_use]
-pub(crate) fn extract_hover_text_pub(result: &Value) -> Option<String> {
+pub(super) fn extract_hover_text_pub(result: &Value) -> Option<String> {
     extract_hover_text(result)
 }

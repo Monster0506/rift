@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 /// Unique identifier for an entity
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) struct EntityId(pub(crate) u64);
+pub(super) struct EntityId(pub(crate) u64);
 
 #[derive(Debug, Clone)]
 struct Entry<T> {
@@ -13,7 +13,7 @@ struct Entry<T> {
 
 /// Generic storage for components
 #[derive(Debug, Clone)]
-pub(crate) struct ComponentStorage<T> {
+pub(super) struct ComponentStorage<T> {
     components: HashMap<EntityId, Entry<T>>,
 }
 
@@ -26,7 +26,7 @@ impl<T> Default for ComponentStorage<T> {
 }
 
 impl<T: PartialEq> ComponentStorage<T> {
-    pub(crate) fn insert(&mut self, entity: EntityId, component: T, version: u64) {
+    fn insert(&mut self, entity: EntityId, component: T, version: u64) {
         match self.components.get_mut(&entity) {
             Some(entry) => {
                 if entry.data != component {
@@ -49,40 +49,40 @@ impl<T: PartialEq> ComponentStorage<T> {
 
 impl<T> ComponentStorage<T> {
     #[must_use]
-    pub(crate) fn get(&self, entity: EntityId) -> Option<&T> {
+    pub(super) fn get(&self, entity: EntityId) -> Option<&T> {
         self.components.get(&entity).map(|e| &e.data)
     }
 
     #[must_use]
-    pub(crate) fn get_version(&self, entity: EntityId) -> Option<u64> {
+    pub(super) fn get_version(&self, entity: EntityId) -> Option<u64> {
         self.components.get(&entity).map(|e| e.version)
     }
 
-    pub(crate) fn remove(&mut self, entity: EntityId) -> Option<T> {
+    fn remove(&mut self, entity: EntityId) -> Option<T> {
         self.components.remove(&entity).map(|e| e.data)
     }
 
-    pub(crate) fn clear(&mut self) {
+    fn clear(&mut self) {
         self.components.clear();
     }
 
     #[cfg(test)]
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (&EntityId, &T)> {
+    pub(super) fn iter(&self) -> impl Iterator<Item = (&EntityId, &T)> {
         self.components.iter().map(|(id, entry)| (id, &entry.data))
     }
 }
 
 /// Persistent world holding all entities and components, tracking component versions.
 #[derive(Debug)]
-pub(crate) struct World {
+pub(super) struct World {
     next_entity_id: u64,
     entities: HashSet<EntityId>,
-    pub(crate) current_version: u64,
+    pub(super) current_version: u64,
 
     // Component Storages
-    pub(crate) renderables: ComponentStorage<Renderable>,
-    pub(crate) rects: ComponentStorage<Rect>,
-    pub(crate) layers: ComponentStorage<Layer>,
+    pub(super) renderables: ComponentStorage<Renderable>,
+    rects: ComponentStorage<Rect>,
+    pub(super) layers: ComponentStorage<Layer>,
 }
 
 impl Default for World {
@@ -101,12 +101,12 @@ impl Default for World {
 impl World {
     /// Create a new empty world
     #[must_use]
-    pub(crate) fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self::default()
     }
 
     /// Clear the world completely (resetting versions too)
-    pub(crate) fn clear(&mut self) {
+    pub(super) fn clear(&mut self) {
         self.next_entity_id = 0;
         self.current_version = 1;
         self.entities.clear();
@@ -116,12 +116,12 @@ impl World {
     }
 
     /// Advance the world version, signifying a new frame/update cycle
-    pub(crate) const fn tick(&mut self) {
+    pub(super) const fn tick(&mut self) {
         self.current_version += 1;
     }
 
     /// Create a new entity
-    pub(crate) fn create_entity(&mut self) -> EntityId {
+    pub(super) fn create_entity(&mut self) -> EntityId {
         let id = EntityId(self.next_entity_id);
         self.next_entity_id += 1;
         self.entities.insert(id);
@@ -129,7 +129,7 @@ impl World {
     }
 
     /// Destroy an entity and all its components
-    pub(crate) fn destroy_entity(&mut self, entity: EntityId) {
+    pub(super) fn destroy_entity(&mut self, entity: EntityId) {
         if self.entities.remove(&entity) {
             self.renderables.remove(entity);
             self.rects.remove(entity);
@@ -138,7 +138,7 @@ impl World {
     }
 
     /// Helper to add a renderable component
-    pub(crate) fn add_renderable(&mut self, entity: EntityId, renderable: Renderable) {
+    pub(super) fn add_renderable(&mut self, entity: EntityId, renderable: Renderable) {
         if self.entities.contains(&entity) {
             self.renderables
                 .insert(entity, renderable, self.current_version);
@@ -146,14 +146,14 @@ impl World {
     }
 
     /// Helper to add a rect component
-    pub(crate) fn add_rect(&mut self, entity: EntityId, rect: Rect) {
+    pub(super) fn add_rect(&mut self, entity: EntityId, rect: Rect) {
         if self.entities.contains(&entity) {
             self.rects.insert(entity, rect, self.current_version);
         }
     }
 
     /// Helper to add a layer component
-    pub(crate) fn add_layer(&mut self, entity: EntityId, layer: Layer) {
+    pub(super) fn add_layer(&mut self, entity: EntityId, layer: Layer) {
         if self.entities.contains(&entity) {
             self.layers.insert(entity, layer, self.current_version);
         }
@@ -161,7 +161,7 @@ impl World {
 
     /// Get all entities
     #[must_use]
-    pub(crate) const fn entities(&self) -> &HashSet<EntityId> {
+    pub(super) const fn entities(&self) -> &HashSet<EntityId> {
         &self.entities
     }
 }

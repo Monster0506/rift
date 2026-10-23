@@ -5,7 +5,7 @@ pub struct LineCache;
 
 impl LineCache {
     #[must_use]
-    pub(crate) fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self
     }
 }

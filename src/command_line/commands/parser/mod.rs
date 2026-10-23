@@ -26,7 +26,7 @@ impl CommandParser {
 
     /// Create a new command parser with custom commands (for testing)
     #[must_use]
-    pub(crate) fn with_commands(
+    fn with_commands(
         settings_registry: SettingsRegistry<UserSettings>,
         commands: &'static [CommandDescriptor],
     ) -> Self {

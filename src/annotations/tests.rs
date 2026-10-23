@@ -2,7 +2,7 @@ use super::*;
 
 impl AnnotationStore {
     /// Whether the interval tree index is currently stale. Test-only.
-    pub(crate) fn is_index_dirty(&self) -> bool {
+    fn is_index_dirty(&self) -> bool {
         self.index_dirty.get()
     }
 }

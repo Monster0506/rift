@@ -8,19 +8,19 @@ use std::sync::Arc;
 pub(crate) struct BlameCommit {
     pub(crate) sha: String,
     pub(crate) author: String,
-    pub(crate) author_mail: String,
+    author_mail: String,
     pub(crate) author_time: i64,
-    pub(crate) author_tz: String,
-    pub(crate) committer: String,
-    pub(crate) committer_mail: String,
-    pub(crate) committer_time: i64,
-    pub(crate) committer_tz: String,
-    pub(crate) summary: String,
+    author_tz: String,
+    committer: String,
+    committer_mail: String,
+    committer_time: i64,
+    committer_tz: String,
+    summary: String,
     /// `previous <sha> <filename>`: the commit/path this content was last changed from, absent for a commit that introduced the line (or for a `--boundary` root shown without one).
-    pub(crate) previous: Option<(String, String)>,
+    previous: Option<(String, String)>,
     /// Set when git printed a bare `boundary` marker line for this commit
     /// (a `--boundary`-limited ancestor at the edge of the walked range).
-    pub(crate) boundary: bool,
+    boundary: bool,
 }
 
 /// One final-file line of a blame listing, attributed to the commit that
@@ -28,9 +28,9 @@ pub(crate) struct BlameCommit {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BlameLine {
     pub(crate) commit: Arc<BlameCommit>,
-    pub(crate) orig_line: u32,
-    pub(crate) final_line: u32,
-    pub(crate) content: String,
+    orig_line: u32,
+    final_line: u32,
+    content: String,
 }
 
 /// Mutable accumulator for a commit's metadata lines while a new group is being read. Every field defaults to empty/zero/false so truncated input (a commit whose metadata block was cut short) still produces a usable, non-panicking [`BlameCommit`] rather than failing the whole parse.

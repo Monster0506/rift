@@ -4,7 +4,7 @@ use crate::term::TerminalBackend;
 
 #[derive(Debug, Clone)]
 pub(super) struct PendingExplorerPreview {
-    pub(super) path: std::path::PathBuf,
+    path: std::path::PathBuf,
     pub(super) job_id: usize,
 }
 
@@ -128,7 +128,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(crate) fn open_explorer(&mut self, dir: std::path::PathBuf) {
+    pub(super) fn open_explorer(&mut self, dir: std::path::PathBuf) {
         if let Some(ref layout) = self.panel_layout.clone() {
             self.split_tree.set_focus(layout.dir_win_id);
             let _ = self.document_manager.switch_to_document(layout.dir_doc_id);
@@ -199,7 +199,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    pub(crate) fn close_split_panel(&mut self) {
+    pub(super) fn close_split_panel(&mut self) {
         let Some(layout) = self.panel_layout.take() else {
             return;
         };
@@ -250,7 +250,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    pub(crate) fn open_messages(&mut self, show_all: bool) {
+    pub(super) fn open_messages(&mut self, show_all: bool) {
         let id = self.document_manager.next_id();
         let mut doc = match crate::document::Document::new_messages(id, show_all) {
             Ok(d) => d,
@@ -278,7 +278,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    pub(crate) fn open_clipboard(&mut self) {
+    pub(super) fn open_clipboard(&mut self) {
         if let Some(ref layout) = self.panel_layout.clone() {
             if layout.kind == PanelKind::Clipboard {
                 self.split_tree.set_focus(layout.dir_win_id);
@@ -352,7 +352,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    pub(crate) fn open_buffer_list_panel(&mut self) {
+    pub(super) fn open_buffer_list_panel(&mut self) {
         if let Some(layout) = self.panel_layout.clone() {
             if layout.kind == PanelKind::BufferList {
                 self.split_tree.set_focus(layout.dir_win_id);
@@ -542,7 +542,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(preview) = self.document_manager.get_document_mut(preview_doc_id) {
             let old_revision = preview.buffer.revision;
             if let Ok(mut new_buf) = crate::buffer::TextBuffer::new(entry_text.len().max(64)) {
-                let _ = new_buf.insert_chars(&entry_text);
+                new_buf.insert_chars(&entry_text);
                 let _ = new_buf.set_cursor(0);
                 new_buf.revision = old_revision + 1;
                 preview.buffer = new_buf;
@@ -594,7 +594,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    pub(crate) fn open_undotree_split(&mut self) {
+    pub(super) fn open_undotree_split(&mut self) {
         if let Some(ref layout) = self.panel_layout.clone() {
             if layout.kind == PanelKind::UndoTree {
                 self.split_tree.set_focus(layout.dir_win_id);
@@ -851,7 +851,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(super) fn handle_explorer_split_parent(&mut self) {
+    fn handle_explorer_split_parent(&mut self) {
         let Some(layout) = self.panel_layout.clone() else {
             return;
         };

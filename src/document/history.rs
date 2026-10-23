@@ -248,7 +248,7 @@ impl Document {
                 let line_start = Self::line_start_checked(buffer, position.line);
                 let char_offset = line_start + position.col as usize;
                 let _ = buffer.set_cursor(char_offset);
-                let _ = buffer.insert_chars(text);
+                buffer.insert_chars(text);
             }
             EditOperation::Delete { range, .. } => {
                 let start_offset =
@@ -295,9 +295,9 @@ impl Document {
                 let _ = buffer.set_cursor(start_offset.min(buffer.len()));
                 for (i, line) in new_content.iter().enumerate() {
                     if i > 0 {
-                        let _ = buffer.insert_character(crate::character::Character::Newline);
+                        buffer.insert_character(crate::character::Character::Newline);
                     }
-                    let _ = buffer.insert_chars(line);
+                    buffer.insert_chars(line);
                 }
             }
         }
@@ -371,7 +371,7 @@ impl Document {
 
     #[cfg(test)]
     /// Get the line number where an edit occurred for a specific sequence
-    pub(crate) fn get_changed_line_for_seq(&self, seq: u64) -> Option<usize> {
+    pub(super) fn get_changed_line_for_seq(&self, seq: u64) -> Option<usize> {
         use crate::history::EditOperation;
 
         let node = self.history.nodes.get(&seq)?;

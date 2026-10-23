@@ -25,21 +25,20 @@ pub enum Character {
     Control(u8),
 }
 
-#[allow(clippy::trivially_copy_pass_by_ref)]
 impl Character {
     /// Render the character to a formatter/output
     ///
     /// # Errors
     /// Returns an error if writing to `out` fails.
-    pub(crate) fn render(&self, out: &mut impl fmt::Write) -> fmt::Result {
+    pub(crate) fn render(self, out: &mut impl fmt::Write) -> fmt::Result {
         match self {
             Self::Unicode(c) => write!(out, "{c}"),
             Self::Byte(b) => write!(out, "\\x{b:02X}"),
             Self::Tab => write!(out, "\t"),
             Self::Newline => writeln!(out),
-            Self::Control(b) if *b >= C1_CONTROL_MIN => write!(out, "<{b:02X}>"),
+            Self::Control(b) if b >= C1_CONTROL_MIN => write!(out, "<{b:02X}>"),
             Self::Control(b) => {
-                if *b == b'\r' {
+                if b == b'\r' {
                     write!(out, "\\n")
                 } else {
                     write!(out, "^{}", (b ^ CARET_FLIP) as char)
@@ -50,9 +49,9 @@ impl Character {
 
     /// Get the visual width of the character at a specific column
     #[must_use]
-    pub(crate) fn render_width(&self, col: usize, tab_width: usize) -> usize {
+    pub(crate) fn render_width(self, col: usize, tab_width: usize) -> usize {
         match self {
-            Self::Unicode(c) => UnicodeWidthChar::width(*c).unwrap_or(0),
+            Self::Unicode(c) => UnicodeWidthChar::width(c).unwrap_or(0),
             Self::Byte(_) | Self::Control(C1_CONTROL_MIN..=u8::MAX) => 4, // \xNN or <NN>
             Self::Tab => tab_width - (col % tab_width),
             Self::Newline => 0,
@@ -62,28 +61,28 @@ impl Character {
 
     /// Get the UTF-8 byte length for serialization
     #[must_use]
-    pub(crate) const fn len_utf8(&self) -> usize {
+    pub(crate) const fn len_utf8(self) -> usize {
         match self {
             Self::Unicode(c) => c.len_utf8(),
-            Self::Control(b) if *b >= C1_CONTROL_MIN => 2,
+            Self::Control(b) if b >= C1_CONTROL_MIN => 2,
             Self::Byte(_) | Self::Tab | Self::Newline | Self::Control(_) => 1,
         }
     }
 
     /// Encode the character as UTF-8 bytes into a buffer
-    pub(crate) fn encode_utf8(&self, buf: &mut Vec<u8>) {
+    pub(crate) fn encode_utf8(self, buf: &mut Vec<u8>) {
         match self {
             Self::Unicode(c) => {
                 let mut b = [0; 4];
                 let s = c.encode_utf8(&mut b);
                 buf.extend_from_slice(s.as_bytes());
             }
-            Self::Control(b) if *b >= C1_CONTROL_MIN => {
+            Self::Control(b) if b >= C1_CONTROL_MIN => {
                 let mut utf8 = [0; 4];
-                let s = char::from(*b).encode_utf8(&mut utf8);
+                let s = char::from(b).encode_utf8(&mut utf8);
                 buf.extend_from_slice(s.as_bytes());
             }
-            Self::Byte(b) | Self::Control(b) => buf.push(*b),
+            Self::Byte(b) | Self::Control(b) => buf.push(b),
             Self::Tab => buf.push(b'\t'),
             Self::Newline => buf.push(b'\n'),
         }
@@ -91,14 +90,13 @@ impl Character {
 
     /// Convert to char if possible (best effort for display/search)
     #[must_use]
-    #[allow(clippy::wrong_self_convention)]
-    pub(crate) const fn to_char_lossy(&self) -> char {
+    pub(crate) const fn to_char_lossy(self) -> char {
         match self {
-            Self::Unicode(c) => *c,
+            Self::Unicode(c) => c,
             Self::Byte(_) => '\u{FFFD}',
             Self::Tab => '\t',
             Self::Newline => '\n',
-            Self::Control(b) => *b as char,
+            Self::Control(b) => b as char,
         }
     }
 }

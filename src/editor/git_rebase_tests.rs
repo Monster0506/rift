@@ -5,14 +5,14 @@ use crate::test_utils::MockTerminal;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-fn create_editor() -> Editor<MockTerminal> {
+pub(super) fn create_editor() -> Editor<MockTerminal> {
     let term = MockTerminal::new(24, 80);
     Editor::new(term).unwrap()
 }
 
 /// Drains pending job messages, blocking until every spawned job thread has
 /// actually finished (not just "no message arrived in the last 50ms").
-fn drain_jobs(editor: &mut Editor<MockTerminal>) {
+pub(super) fn drain_jobs(editor: &mut Editor<MockTerminal>) {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         match editor

@@ -67,7 +67,7 @@ impl Value {
     }
 
     #[must_use]
-    pub(crate) const fn as_int(&self) -> Option<i64> {
+    pub(super) const fn as_int(&self) -> Option<i64> {
         match self {
             Self::Int(i) => Some(*i),
             _ => None,

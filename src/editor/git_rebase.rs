@@ -181,7 +181,7 @@ fn advance_rebase(
 
 impl<T: TerminalBackend> Editor<T> {
     /// `r` in the Status buffer: start a rebase of the current branch onto its configured upstream. No interactive base picker; configure an upstream first (`git branch --set-upstream-to=<ref>`), or use `r` on a commit in the Log buffer to rebase from a specific point in history instead. `repo_root` is.
-    pub(crate) fn open_git_rebase(&mut self, repo_root: PathBuf) {
+    pub(super) fn open_git_rebase(&mut self, repo_root: PathBuf) {
         let Some(branch) = self.current_branch_or_notify(&repo_root) else {
             return;
         };
@@ -564,7 +564,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// `<Space>gR`/abort key: discard the in-progress rebase and return to the original branch (a no-op detached-HEAD walk, since the branch ref itself is only moved on successful completion).
-    pub(crate) fn abort_git_rebase(&mut self) {
+    pub(super) fn abort_git_rebase(&mut self) {
         let (doc_id, repo_root, branch) = {
             let doc = self.active_document();
             if !doc.is_git_rebase_todo() {

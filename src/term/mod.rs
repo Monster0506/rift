@@ -106,10 +106,10 @@ pub trait TerminalBackend {
 pub(crate) mod crossterm;
 
 #[cfg(feature = "terminal_emulation")]
-pub(crate) mod terminal;
+mod terminal;
 #[cfg(not(feature = "terminal_emulation"))]
 #[path = "terminal_stub.rs"]
-pub(crate) mod terminal;
+mod terminal;
 
 pub(crate) use terminal::Terminal;
 

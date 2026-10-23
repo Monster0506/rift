@@ -111,36 +111,7 @@ fn render_loop(c: &mut Criterion) {
             setup_render,
             |(mut rs, buf, state, mut term)| {
                 // Construct RenderState (ephemeral)
-                let render_state = RenderState {
-                    buf: &buf,
-                    current_mode: Mode::Normal,
-                    pending_key: None,
-                    pending_count: 0,
-                    state: &state,
-                    needs_clear: false,
-                    tab_width: 4,
-                    highlights: None,
-                    capture_map: None,
-                    injection_highlights: None,
-                    skip_content: false,
-                    cursor_row_offset: 0,
-                    cursor_col_offset: 0,
-                    cursor_viewport: None,
-                    terminal_cursor: None,
-                    custom_highlights: None,
-                    git_gutter_colors: None,
-                    annotation_styles: None,
-                    annotation_adornments: None,
-                    annotation_inline: None,
-                    annotation_concealed: None,
-                    terminal_cell_colors: None,
-                    show_line_numbers: true,
-                    display_map: None,
-                    scroll_hint: None,
-                    syntax_generation: 0,
-                    annotations_revision: 0,
-                    kind_registry_generation: 0,
-                };
+                let render_state = RenderState::new(&buf, &state, Mode::Normal);
 
                 // Measure the full render pass
                 // Note: We access `rs` mutably, but `state` and `buf` are borrowed

@@ -160,7 +160,7 @@ impl TreeRows {
 
 #[must_use]
 // One layout pass; the column state is shared across every row.
-pub(crate) fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSeq>, usize) {
+fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSeq>, usize) {
     let mut all_seqs: Vec<EditSeq> = tree.nodes.keys().copied().collect();
     all_seqs.sort_by(|a, b| b.cmp(a)); // Descending
 

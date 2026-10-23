@@ -11,7 +11,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 /// Number of events kept in the in-memory ring buffer.
-pub(crate) const RING_CAPACITY: usize = 16384;
+const RING_CAPACITY: usize = 16384;
 
 /// Optional metadata attached to a [`PerfSpan`]; all fields default to `None`,
 /// filled via struct-update syntax (`PerfFields { bytes: Some(n), ..Default::default() }`).
@@ -33,7 +33,7 @@ pub(crate) struct PerfEvent {
     /// Wall-clock elapsed time.
     pub(crate) duration: Duration,
     /// Optional metadata.
-    pub(crate) fields: PerfFields,
+    fields: PerfFields,
 }
 
 /// An active timing span.  The event is recorded automatically when this value
@@ -130,7 +130,7 @@ fn get_sink() -> &'static Mutex<Option<PerfSink>> {
 /// Record a [`PerfEvent`] into the ring buffer and `rift-perf.log`. Called
 /// automatically by [`PerfSpan::drop`]; rarely needed directly.
 #[inline]
-pub(crate) fn record(event: PerfEvent) {
+fn record(event: PerfEvent) {
     if let Ok(mut guard) = get_sink().lock() {
         if let Some(sink) = guard.as_mut() {
             // Maintain the ring buffer.
@@ -175,7 +175,7 @@ static DEALLOC_BYTES: AtomicU64 = AtomicU64::new(0);
 
 /// Thin wrapper around [`System`] that atomically counts every alloc/dealloc.
 /// Installed as `#[global_allocator]` below, so only builds with this feature pay for it.
-pub(crate) struct CountingAllocator;
+struct CountingAllocator;
 
 // SAFETY: every method forwards to `System` unchanged, so the caller's
 // GlobalAlloc contract is exactly what `System` requires.

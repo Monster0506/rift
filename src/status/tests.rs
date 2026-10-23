@@ -1,7 +1,7 @@
 //! Tests for status bar
 
 use crate::key::Key;
-use crate::layer::{Layer, LayerPriority};
+use crate::layer::Layer;
 use crate::mode::Mode;
 use crate::render::{CursorInfo, StatusDrawState};
 use crate::status::StatusBar;
@@ -35,7 +35,7 @@ fn default_state() -> StatusDrawState {
 /// Render `state` into a fresh `rows`x`cols` layer and read the status row
 /// back as plain text (blank cells become spaces).
 fn render_row_text(state: &StatusDrawState, rows: usize, cols: usize) -> String {
-    let mut layer = Layer::new(LayerPriority::STATUS_BAR, rows, cols);
+    let mut layer = Layer::new(rows, cols);
     let mut paint_frame = crate::paint::PaintFrame::new(0);
     StatusBar::render_to_layer(&mut layer, state, &mut paint_frame);
     let row = rows.saturating_sub(1);
@@ -111,7 +111,7 @@ fn test_status_bar_render_debug_with_pending() {
 #[test]
 fn test_status_bar_render_fills_line() {
     let state = default_state();
-    let mut layer = Layer::new(LayerPriority::STATUS_BAR, 10, 80);
+    let mut layer = Layer::new(10, 80);
     let mut paint_frame = crate::paint::PaintFrame::new(0);
     StatusBar::render_to_layer(&mut layer, &state, &mut paint_frame);
 
@@ -125,7 +125,7 @@ fn test_status_bar_render_reverse_video() {
     let mut state = default_state();
     state.status_line.reverse_video = true;
 
-    let mut layer = Layer::new(LayerPriority::STATUS_BAR, 10, 80);
+    let mut layer = Layer::new(10, 80);
     let mut paint_frame = crate::paint::PaintFrame::new(0);
     StatusBar::render_to_layer(&mut layer, &state, &mut paint_frame);
 
@@ -139,7 +139,7 @@ fn test_status_bar_render_reverse_video() {
 fn test_status_bar_render_reverse_video_off() {
     let state = default_state();
 
-    let mut layer = Layer::new(LayerPriority::STATUS_BAR, 10, 80);
+    let mut layer = Layer::new(10, 80);
     let mut paint_frame = crate::paint::PaintFrame::new(0);
     StatusBar::render_to_layer(&mut layer, &state, &mut paint_frame);
 

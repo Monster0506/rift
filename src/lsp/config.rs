@@ -44,14 +44,14 @@ pub(crate) struct LspServerConfig {
 
 impl LspServerConfig {
     #[must_use]
-    pub(crate) fn has_capability(&self, cap: LspCapability) -> bool {
+    pub(super) fn has_capability(&self, cap: LspCapability) -> bool {
         self.capabilities.is_empty() || self.capabilities.contains(&cap)
     }
 }
 
 /// Derive the LSP languageId from a filetype/language name.
 #[must_use]
-pub(crate) fn language_id(lang: &str) -> &'static str {
+pub(super) fn language_id(lang: &str) -> &'static str {
     match lang {
         "rust" => "rust",
         "python" => "python",

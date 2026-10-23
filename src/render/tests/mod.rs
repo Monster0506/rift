@@ -1,4 +1,4 @@
-pub(super) mod common;
+mod common;
 
 mod blit_cache_tests;
 mod compositor_tests;

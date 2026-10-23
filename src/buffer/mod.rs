@@ -6,7 +6,7 @@ use std::fmt::{self, Display};
 use std::cell::RefCell;
 
 pub(crate) mod api;
-pub(crate) mod line_cache;
+mod line_cache;
 pub(crate) mod line_index;
 pub(crate) mod rope;
 use line_cache::LineCache;
@@ -26,7 +26,7 @@ pub struct TextBuffer {
     cursor: usize,
     desired_col: Option<usize>,
     pub(crate) revision: u64,
-    pub(crate) line_cache: RefCell<LineCache>,
+    line_cache: RefCell<LineCache>,
     char_edit_log: Vec<CharEdit>,
 }
 
@@ -113,7 +113,7 @@ impl TextBuffer {
     }
 
     #[cfg(test)]
-    pub(crate) const fn desired_col(&self) -> Option<usize> {
+    const fn desired_col(&self) -> Option<usize> {
         self.desired_col
     }
 
@@ -161,19 +161,16 @@ impl TextBuffer {
     /// Never returns `Err`.
     pub fn insert_char(&mut self, ch: char) -> Result<(), RiftError> {
         let character = Character::from(ch);
-        self.insert_chars(&[character])
+        self.insert_chars(&[character]);
+        Ok(())
     }
 
-    /// # Errors
-    /// Never returns `Err`.
-    pub(crate) fn insert_character(&mut self, ch: Character) -> Result<(), RiftError> {
-        self.insert_chars(&[ch])
+    pub(crate) fn insert_character(&mut self, ch: Character) {
+        self.insert_chars(&[ch]);
     }
 
     #[cfg(test)]
-    /// # Errors
-    /// Never returns `Err`.
-    pub(crate) fn insert_bytes(&mut self, bytes: &[u8]) -> Result<(), RiftError> {
+    pub(crate) fn insert_bytes(&mut self, bytes: &[u8]) {
         let mut chars = Vec::with_capacity(bytes.len());
         let mut remaining = bytes;
         loop {
@@ -199,27 +196,31 @@ impl TextBuffer {
                 }
             }
         }
-        self.insert_chars(&chars)
+        self.insert_chars(&chars);
     }
 
     /// # Errors
     /// Never returns `Err`.
     pub fn insert_str(&mut self, s: &str) -> Result<(), RiftError> {
         let chars: Vec<Character> = s.chars().map(Character::from).collect();
-        self.insert_chars(&chars)
+        self.insert_chars(&chars);
+        Ok(())
     }
 
-    /// # Errors
-    /// Never returns `Err`.
-    #[allow(clippy::unnecessary_wraps)]
-    pub(crate) fn insert_chars(&mut self, chars: &[Character]) -> Result<(), RiftError> {
+    pub(crate) fn insert_chars(&mut self, chars: &[Character]) {
         crate::perf_span!(
             "buffer_mutate",
             crate::perf::PerfFields {
                 tag: Some("insert"),
                 bytes: Some(
-                    u32::try_from(chars.iter().map(Character::len_utf8).sum::<usize>())
-                        .unwrap_or(u32::MAX),
+                    u32::try_from(
+                        chars
+                            .iter()
+                            .copied()
+                            .map(Character::len_utf8)
+                            .sum::<usize>()
+                    )
+                    .unwrap_or(u32::MAX),
                 ),
                 ..Default::default()
             }
@@ -228,7 +229,6 @@ impl TextBuffer {
         self.line_index.insert(self.cursor, chars);
         self.cursor += chars.len();
         self.revision += 1;
-        Ok(())
     }
 
     pub fn delete_range(&mut self, start: usize, count: usize) -> bool {
@@ -282,7 +282,11 @@ impl TextBuffer {
                 bytes: Some(
                     u32::try_from(
                         self.char_to_byte(end) - self.char_to_byte(start)
-                            + chars.iter().map(Character::len_utf8).sum::<usize>(),
+                            + chars
+                                .iter()
+                                .copied()
+                                .map(Character::len_utf8)
+                                .sum::<usize>(),
                     )
                     .unwrap_or(u32::MAX),
                 ),
@@ -397,7 +401,7 @@ impl TextBuffer {
         Some(patched)
     }
 
-    pub(crate) fn iter(&self) -> crate::buffer::rope::PieceTableIterator<'_> {
+    fn iter(&self) -> crate::buffer::rope::PieceTableIterator<'_> {
         self.line_index.table.iter()
     }
 

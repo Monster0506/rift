@@ -7,32 +7,32 @@ use crate::layer::{Cell, CellAttrs, Layer};
 /// A run of characters sharing one style, in visual order starting at `col`.
 /// Holds `Character`, not `String`, so raw non-UTF8 bytes survive losslessly.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TextRun {
-    pub(crate) col: usize,
-    pub(crate) chars: Vec<Character>,
-    pub(crate) fg: Option<Color>,
-    pub(crate) bg: Option<Color>,
-    pub(crate) attrs: CellAttrs,
+struct TextRun {
+    col: usize,
+    chars: Vec<Character>,
+    fg: Option<Color>,
+    bg: Option<Color>,
+    attrs: CellAttrs,
 }
 
 /// One visual row's worth of styled runs, in the order they were painted.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct PaintRow {
-    pub(crate) runs: Vec<TextRun>,
+    runs: Vec<TextRun>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SelectionPaint {
-    pub(crate) row: usize,
-    pub(crate) col_start: usize,
-    pub(crate) col_end: usize,
+struct SelectionPaint {
+    row: usize,
+    col_start: usize,
+    col_end: usize,
 }
 
 /// A screen's worth of paint output, in row/col units (not yet pixels).
 #[derive(Debug, Clone, Default)]
 pub(crate) struct PaintFrame {
     pub(crate) rows: Vec<PaintRow>,
-    pub(crate) selections: Vec<SelectionPaint>,
+    selections: Vec<SelectionPaint>,
     /// Pool of emptied `TextRun.chars` buffers reused across `reset()` calls
     /// instead of allocating fresh; excluded from `PartialEq` as an internal cache.
     char_buf_pool: Vec<Vec<Character>>,

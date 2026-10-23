@@ -21,12 +21,12 @@ impl Kind {
     }
 
     #[must_use]
-    pub(crate) fn namespace(&self) -> &str {
+    pub(super) fn namespace(&self) -> &str {
         self.0.split('.').next().unwrap_or(&self.0)
     }
 
     #[must_use]
-    pub(crate) fn matches_prefix(&self, prefix: &str) -> bool {
+    pub(super) fn matches_prefix(&self, prefix: &str) -> bool {
         &*self.0 == prefix || self.0.starts_with(prefix)
     }
 }
@@ -51,16 +51,16 @@ impl std::fmt::Display for Kind {
 
 pub(crate) mod well_known {
     pub(crate) const FS_ENTRY: &str = "fs.entry";
-    pub(crate) const LSP_DIAGNOSTIC: &str = "lsp.diagnostic";
-    pub(crate) const GIT_BLAME: &str = "git.blame";
-    pub(crate) const GIT_STATUS_ENTRY: &str = "git.status_entry";
-    pub(crate) const GIT_STATUS_HEAD: &str = "git.status_head";
-    pub(crate) const GIT_HUNK: &str = "git.hunk";
-    pub(crate) const GIT_HUNK_LINE: &str = "git.hunk_line";
-    pub(crate) const GIT_LOG_COMMIT: &str = "git.log_commit";
-    pub(crate) const GIT_REBASE_STEP: &str = "git.rebase_step";
-    pub(crate) const GIT_GUTTER: &str = "git.gutter";
-    pub(crate) const BUFFER_ENTRY: &str = "buffer.entry";
+    pub(in crate::annotations) const LSP_DIAGNOSTIC: &str = "lsp.diagnostic";
+    pub(in crate::annotations) const GIT_BLAME: &str = "git.blame";
+    pub(in crate::annotations) const GIT_STATUS_ENTRY: &str = "git.status_entry";
+    pub(in crate::annotations) const GIT_STATUS_HEAD: &str = "git.status_head";
+    pub(in crate::annotations) const GIT_HUNK: &str = "git.hunk";
+    pub(in crate::annotations) const GIT_HUNK_LINE: &str = "git.hunk_line";
+    pub(in crate::annotations) const GIT_LOG_COMMIT: &str = "git.log_commit";
+    pub(in crate::annotations) const GIT_REBASE_STEP: &str = "git.rebase_step";
+    pub(in crate::annotations) const GIT_GUTTER: &str = "git.gutter";
+    pub(in crate::annotations) const BUFFER_ENTRY: &str = "buffer.entry";
     pub(crate) const PLUGIN_HIGHLIGHT: &str = "plugin.highlight";
 }
 

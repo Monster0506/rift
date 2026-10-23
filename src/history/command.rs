@@ -24,7 +24,7 @@ impl Default for CommandHistory {
 impl CommandHistory {
     /// Create a new command history with the specified maximum size
     #[must_use]
-    pub(crate) const fn new(max_size: usize) -> Self {
+    pub(super) const fn new(max_size: usize) -> Self {
         Self {
             items: Vec::new(),
             max_size,
@@ -122,14 +122,14 @@ impl CommandHistory {
     #[cfg(test)]
     /// Get the number of items in history
     #[must_use]
-    pub(crate) const fn len(&self) -> usize {
+    pub(super) const fn len(&self) -> usize {
         self.items.len()
     }
 
     #[cfg(test)]
     /// Check if history is empty
     #[must_use]
-    pub(crate) const fn is_empty(&self) -> bool {
+    pub(super) const fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 }

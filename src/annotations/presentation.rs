@@ -15,7 +15,7 @@ impl FaceRef {
     }
 
     #[must_use]
-    pub(crate) fn as_str(&self) -> &str {
+    fn as_str(&self) -> &str {
         &self.0
     }
 }
@@ -48,10 +48,10 @@ pub struct StyleOverride {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Adornment {
     pub(crate) text: String,
-    pub(crate) placement: Placement,
-    pub(crate) face: Option<FaceRef>,
+    pub(super) placement: Placement,
+    pub(super) face: Option<FaceRef>,
     /// Inline color override, preferred over `face` and any kind default.
-    pub(crate) style: Option<StyleOverride>,
+    pub(super) style: Option<StyleOverride>,
 }
 
 impl Adornment {
@@ -120,7 +120,7 @@ impl Presentation {
 /// Resolve a named face to a foreground color against the active syntax colors,
 /// with built-in fallbacks for well-known faces so presentation works untheme-aware.
 #[must_use]
-pub(crate) fn resolve_face(
+pub(super) fn resolve_face(
     face: &FaceRef,
     colors: Option<&crate::color::theme::SyntaxColors>,
 ) -> Option<Color> {

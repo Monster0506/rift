@@ -30,7 +30,7 @@ impl MockTerminal {
 
     /// Get all written bytes as a single vector
     #[must_use]
-    pub(crate) fn get_written_bytes(&self) -> Vec<u8> {
+    fn get_written_bytes(&self) -> Vec<u8> {
         self.writes.iter().flatten().copied().collect()
     }
 

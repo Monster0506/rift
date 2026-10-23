@@ -7,7 +7,7 @@ mod kind;
 pub(crate) mod manager;
 mod persistence;
 mod populate;
-pub(crate) mod runtime;
+mod runtime;
 mod search;
 mod selection_render;
 mod syntax_sync;
@@ -57,7 +57,7 @@ impl DocumentId {
         self.0
     }
 
-    pub(crate) const fn next(self) -> Self {
+    const fn next(self) -> Self {
         Self(self.0 + 1)
     }
 }
@@ -77,7 +77,7 @@ enum AnnotationUndo {
     Snapshot(Vec<crate::annotations::Annotation>),
 }
 
-pub(crate) enum AnnotationUndoHint {
+enum AnnotationUndoHint {
     Insertion {
         start: usize,
         new_end: usize,
@@ -126,9 +126,9 @@ pub(crate) enum GitStatusAction {
 }
 
 pub(crate) struct GhostCut {
-    pub(super) at: usize,
-    pub(super) text: Vec<crate::character::Character>,
-    pub(super) painted: Option<(usize, crate::annotations::AnnotationId)>,
+    at: usize,
+    text: Vec<crate::character::Character>,
+    painted: Option<(usize, crate::annotations::AnnotationId)>,
 }
 
 #[derive(Debug, Clone)]
@@ -185,8 +185,8 @@ pub(crate) struct Document {
     pub(crate) history: UndoTree,
     current_transaction: Option<EditTransaction>,
     transaction_depth: usize,
-    pub(crate) handle: DocumentHandle,
-    pub(crate) view_state: ViewState,
+    handle: DocumentHandle,
+    view_state: ViewState,
     pub(crate) kind: BufferKind,
     pub(crate) state: StateSlot,
     pub(crate) vars: std::collections::HashMap<String, crate::annotations::Value>,
@@ -201,8 +201,8 @@ pub(crate) struct Document {
     lsp_synced_revision: u64,
     lsp_full_sync_needed: bool,
     pub(crate) pending_ghost: Vec<GhostCut>,
-    pub(super) ghost_paint_active: bool,
-    pub(super) ghost_paint_cursor: Option<usize>,
+    ghost_paint_active: bool,
+    ghost_paint_cursor: Option<usize>,
 }
 
 macro_rules! state_get {
@@ -233,7 +233,7 @@ macro_rules! state_set {
 
 impl Document {
     #[cfg(test)]
-    pub(crate) const fn version(&self) -> u64 {
+    const fn version(&self) -> u64 {
         self.content_version
     }
 
@@ -306,7 +306,9 @@ impl Document {
         character: u32,
         encoding: crate::lsp::protocol::PositionEncoding,
     ) -> usize {
-        let chars = self.line_chars(line).map(|c| c.to_char_lossy());
+        let chars = self
+            .line_chars(line)
+            .map(super::character::Character::to_char_lossy);
         encoding.char_offset_in_line(chars, character)
     }
 
@@ -317,7 +319,9 @@ impl Document {
         char_offset: usize,
         encoding: crate::lsp::protocol::PositionEncoding,
     ) -> u32 {
-        let chars = self.line_chars(line).map(|c| c.to_char_lossy());
+        let chars = self
+            .line_chars(line)
+            .map(super::character::Character::to_char_lossy);
         encoding.units_for_char_offset(chars, char_offset)
     }
 
@@ -348,7 +352,7 @@ impl Document {
                 line: position.line,
                 character: units,
             };
-            let text: String = text.iter().map(Character::to_char_lossy).collect();
+            let text: String = text.iter().copied().map(Character::to_char_lossy).collect();
             return Some((
                 LspRange {
                     start: pos.clone(),
@@ -371,7 +375,7 @@ impl Document {
                     line: position.line,
                     character: units,
                 };
-                let text: String = text.iter().map(Character::to_char_lossy).collect();
+                let text: String = text.iter().copied().map(Character::to_char_lossy).collect();
                 Some((
                     LspRange {
                         start: pos.clone(),
@@ -405,7 +409,11 @@ impl Document {
                 }
                 let (start, end) =
                     self.lsp_range_across_removed(range, old_text.len(), &old_text, encoding);
-                let text: String = new_text.iter().map(Character::to_char_lossy).collect();
+                let text: String = new_text
+                    .iter()
+                    .copied()
+                    .map(Character::to_char_lossy)
+                    .collect();
                 Some((LspRange { start, end }, text))
             }
             EditOperation::BlockChange { .. } => None,
@@ -432,10 +440,11 @@ impl Document {
         );
         let prefix = self
             .line_chars(range.start.line as usize)
-            .map(|c| c.to_char_lossy())
+            .map(super::character::Character::to_char_lossy)
             .take(range.start.col as usize);
         let removed = removed_text
             .iter()
+            .copied()
             .map(super::character::Character::to_char_lossy);
         let end_char_offset = range.start.col as usize + removed_len;
         let end_units = encoding.units_for_char_offset(prefix.chain(removed), end_char_offset);
@@ -547,7 +556,7 @@ impl Document {
     }
 
     #[cfg(test)]
-    pub(crate) fn is_file(&self) -> bool {
+    fn is_file(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::FILE
     }
 
@@ -560,11 +569,11 @@ impl Document {
     }
 
     #[cfg(test)]
-    pub(crate) fn is_undotree(&self) -> bool {
+    fn is_undotree(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::UNDO_TREE
     }
 
-    pub(crate) fn is_messages(&self) -> bool {
+    fn is_messages(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::MESSAGES
     }
 
@@ -687,7 +696,7 @@ impl Document {
         self.state = StateSlot::new(REGIONS_STATE_KEY, RegionsState { source_doc_id });
     }
 
-    state_get!(pub(crate) fn scratch_title(&self) -> &str = SCRATCH_STATE_KEY, |s| s.title.as_str());
+    state_get!(fn scratch_title(&self) -> &str = SCRATCH_STATE_KEY, |s| s.title.as_str());
 
     pub(crate) fn convert_to_scratch(&mut self, title: String) {
         self.kind = BufferKind::for_builtin(BufferKindId::SCRATCH);
@@ -725,11 +734,16 @@ impl Document {
         }
     }
 
-    #[allow(clippy::option_option)]
-    pub(crate) fn pop_git_blame_history(&mut self) -> Option<Option<String>> {
-        self.state
+    /// Step the blame view back to the commit it showed before the last push.
+    pub(crate) fn rewind_git_blame_history(&mut self) {
+        let Some(previous) = self
+            .state
             .try_get_mut(GIT_BLAME_STATE_KEY)
             .and_then(|s| s.history.pop())
+        else {
+            return;
+        };
+        self.set_git_blame_at_commit(previous);
     }
 
     pub(crate) fn git_blame_lines_len(&self) -> usize {

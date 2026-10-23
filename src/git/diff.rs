@@ -18,9 +18,9 @@ pub(crate) struct DiffLine {
     /// Line text with the leading `+`/`-`/` ` marker stripped; no trailing newline.
     pub(crate) content: String,
     /// 1-based line number on the old side. `None` for a pure addition.
-    pub(crate) old_lineno: Option<u32>,
+    pub(super) old_lineno: Option<u32>,
     /// 1-based line number on the new side. `None` for a pure deletion.
-    pub(crate) new_lineno: Option<u32>,
+    pub(super) new_lineno: Option<u32>,
 }
 
 /// One `@@ -old_start,old_lines +new_start,new_lines @@` block.
@@ -41,23 +41,23 @@ pub(crate) struct Hunk {
 pub(crate) struct FileDiff {
     /// `None` when the file doesn't exist on the old side (new file, or the
     /// `--- /dev/null` line was seen).
-    pub(crate) old_path: Option<PathBuf>,
+    old_path: Option<PathBuf>,
     /// `None` when the file doesn't exist on the new side (deleted file, or
     /// the `+++ /dev/null` line was seen).
-    pub(crate) new_path: Option<PathBuf>,
+    new_path: Option<PathBuf>,
     // Markers can combine (e.g. rename plus binary), so they are flags, not an enum.
-    pub(crate) markers: FileMarkers,
-    pub(crate) old_mode: Option<String>,
-    pub(crate) new_mode: Option<String>,
+    markers: FileMarkers,
+    old_mode: Option<String>,
+    new_mode: Option<String>,
     /// `similarity index NN%` from a rename/copy header, if present.
-    pub(crate) similarity: Option<u8>,
+    similarity: Option<u8>,
     pub(crate) hunks: Vec<Hunk>,
 }
 
 /// Header markers for one file. Several can hold at once (a rename can also be
 /// binary), so this is a bitset rather than an enum.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct FileMarkers(u8);
+struct FileMarkers(u8);
 
 impl FileMarkers {
     const NEW_FILE: Self = Self(1);
@@ -76,25 +76,25 @@ impl FileMarkers {
 
     #[cfg(test)]
     #[must_use]
-    pub(crate) const fn is_new_file(self) -> bool {
+    const fn is_new_file(self) -> bool {
         self.contains(Self::NEW_FILE)
     }
 
     #[cfg(test)]
     #[must_use]
-    pub(crate) const fn is_deleted_file(self) -> bool {
+    const fn is_deleted_file(self) -> bool {
         self.contains(Self::DELETED_FILE)
     }
 
     #[cfg(test)]
     #[must_use]
-    pub(crate) const fn is_rename(self) -> bool {
+    const fn is_rename(self) -> bool {
         self.contains(Self::RENAME)
     }
 
     #[cfg(test)]
     #[must_use]
-    pub(crate) const fn is_binary(self) -> bool {
+    const fn is_binary(self) -> bool {
         self.contains(Self::BINARY)
     }
 }

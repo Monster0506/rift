@@ -211,7 +211,7 @@ impl DisplayMap {
 
     /// `build`, giving the lines in `eol_rows` (sorted) an extra row for
     /// their line end when their text exactly fills the last segment.
-    pub(crate) fn build_with(
+    fn build_with(
         buf: &TextBuffer,
         wrap_width: usize,
         tab_width: usize,
@@ -623,12 +623,7 @@ impl DisplayMap {
 
     /// Like `visual_down` but uses `target_col` instead of the cursor's current column.
     /// Pass `usize::MAX` to always land at end-of-visual-row (the `$` case).
-    pub(crate) fn visual_down_to_col(
-        &self,
-        char_offset: usize,
-        target_col: usize,
-        buf: &TextBuffer,
-    ) -> usize {
+    fn visual_down_to_col(&self, char_offset: usize, target_col: usize, buf: &TextBuffer) -> usize {
         let cur_row = self.char_to_visual_row(char_offset);
         self.row_below(cur_row).map_or(char_offset, |row| {
             self.find_char_at_col(row, target_col, buf)
@@ -644,12 +639,7 @@ impl DisplayMap {
 
     /// Like `visual_up` but uses `target_col` instead of the cursor's current column.
     /// Pass `usize::MAX` to always land at end-of-visual-row (the `$` case).
-    pub(crate) fn visual_up_to_col(
-        &self,
-        char_offset: usize,
-        target_col: usize,
-        buf: &TextBuffer,
-    ) -> usize {
+    fn visual_up_to_col(&self, char_offset: usize, target_col: usize, buf: &TextBuffer) -> usize {
         let cur_row = self.char_to_visual_row(char_offset);
         self.row_above(cur_row).map_or(char_offset, |row| {
             self.find_char_at_col(row, target_col, buf)
@@ -678,7 +668,7 @@ impl DisplayMap {
     #[cfg(test)]
     /// Extending counterpart of `char_to_visual_row`: grows the map to cover
     /// `char_offset` before answering, so the result is always exact.
-    pub(crate) fn char_to_visual_row_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
+    fn char_to_visual_row_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
         self.extend_to_char(buf, char_offset);
         self.char_to_visual_row(char_offset)
     }
@@ -691,7 +681,7 @@ impl DisplayMap {
 
     #[cfg(test)]
     /// Extending counterpart of `get_visual_row`.
-    pub(crate) fn get_visual_row_ext(
+    fn get_visual_row_ext(
         &mut self,
         visual_row: usize,
         buf: &TextBuffer,
@@ -702,7 +692,7 @@ impl DisplayMap {
 
     #[cfg(test)]
     /// Extending counterpart of `visual_down`.
-    pub(crate) fn visual_down_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
+    fn visual_down_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
         self.extend_to_char(buf, char_offset);
         let cur_row = self.char_to_visual_row(char_offset);
         self.extend_to_row(buf, cur_row + 3);
@@ -725,7 +715,7 @@ impl DisplayMap {
     #[cfg(test)]
     /// Extending counterpart of `visual_up` - upward motion never needs new
     /// wrapping once `char_offset`'s own row is built.
-    pub(crate) fn visual_up_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
+    fn visual_up_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
         self.extend_to_char(buf, char_offset);
         self.visual_up(char_offset, buf)
     }
@@ -744,7 +734,7 @@ impl DisplayMap {
 
 #[inline]
 #[must_use]
-pub(crate) fn char_visual_width(ch: Character, abs_col: usize, tab_width: usize) -> usize {
+fn char_visual_width(ch: Character, abs_col: usize, tab_width: usize) -> usize {
     ch.render_width(abs_col, tab_width)
 }
 

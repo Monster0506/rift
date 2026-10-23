@@ -29,11 +29,8 @@ fn startup_target(file_path: Option<&str>) -> (Option<std::path::PathBuf>, Optio
 fn startup_language_loader() -> Arc<crate::syntax::loader::LanguageLoader> {
     let grammar_dir = std::env::current_exe()
         .ok()
-        .and_then(|p| {
-            p.parent()
-                .map(|p| p.join(crate::constants::paths::GRAMMARS_DIR))
-        })
-        .unwrap_or_else(|| std::path::PathBuf::from(crate::constants::paths::GRAMMARS_DIR));
+        .and_then(|p| p.parent().map(|p| p.join(paths::GRAMMARS_DIR)))
+        .unwrap_or_else(|| std::path::PathBuf::from(paths::GRAMMARS_DIR));
     Arc::new(crate::syntax::loader::LanguageLoader::new(grammar_dir))
 }
 
@@ -72,7 +69,7 @@ impl<T: TerminalBackend> Editor<T> {
     #[cfg(test)]
     /// # Errors
     /// Returns an error if the terminal cannot be initialized or the startup buffer cannot be created.
-    pub(crate) fn new(terminal: T) -> Result<Self, RiftError> {
+    pub(super) fn new(terminal: T) -> Result<Self, RiftError> {
         Self::with_file(terminal, None)
     }
 
@@ -248,7 +245,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(crate) fn active_document_id(&self) -> DocumentId {
+    pub(super) fn active_document_id(&self) -> DocumentId {
         self.split_tree.focused_window().document_id
     }
 
@@ -345,7 +342,7 @@ impl<T: TerminalBackend> Editor<T> {
         })
     }
 
-    pub(super) fn retire_lua_plugins(&mut self) {
+    fn retire_lua_plugins(&mut self) {
         let active_gens = self.plugin_host.active_generations();
         for gen in active_gens {
             self.plugin_host.retire_generation(gen);
@@ -418,4 +415,8 @@ impl<T: TerminalBackend> Editor<T> {
     pub(crate) const fn set_remote(&mut self, remote: bool) {
         self.state.is_remote = remote;
     }
+}
+
+mod paths {
+    pub(crate) const GRAMMARS_DIR: &str = "grammars";
 }

@@ -170,7 +170,7 @@ impl<T: Clone> IntervalTree<T> {
     /// delta, overlapping it are dropped (caller must also filter its fresh requery for touching cases).
     #[cfg(any(test, feature = "treesitter"))]
     #[must_use]
-    pub(crate) fn shift_for_edit(
+    pub(super) fn shift_for_edit(
         &self,
         start_byte: usize,
         old_end_byte: usize,

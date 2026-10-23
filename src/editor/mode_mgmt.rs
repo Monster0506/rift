@@ -43,7 +43,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.document_manager
                     .active_document_mut()
                     .unwrap()
-                    .begin_transaction(crate::constants::history::INSERT_LABEL);
+                    .begin_transaction(history::INSERT_LABEL);
                 if !self.dot_repeat.is_replaying() {
                     self.dot_repeat.start_insert_recording(command);
                 }
@@ -52,7 +52,7 @@ impl<T: TerminalBackend> Editor<T> {
             Command::EnterInsertModeAfter => {
                 let doc = self.document_manager.active_document_mut().unwrap();
                 doc.buffer.move_right();
-                doc.begin_transaction(crate::constants::history::INSERT_LABEL);
+                doc.begin_transaction(history::INSERT_LABEL);
                 if !self.dot_repeat.is_replaying() {
                     self.dot_repeat.start_insert_recording(command);
                 }
@@ -61,7 +61,7 @@ impl<T: TerminalBackend> Editor<T> {
             Command::EnterInsertModeAtLineStart => {
                 let doc = self.document_manager.active_document_mut().unwrap();
                 doc.buffer.move_to_line_start();
-                doc.begin_transaction(crate::constants::history::INSERT_LABEL);
+                doc.begin_transaction(history::INSERT_LABEL);
                 if !self.dot_repeat.is_replaying() {
                     self.dot_repeat.start_insert_recording(command);
                 }
@@ -70,7 +70,7 @@ impl<T: TerminalBackend> Editor<T> {
             Command::EnterInsertModeAtLineEnd => {
                 let doc = self.document_manager.active_document_mut().unwrap();
                 doc.buffer.move_to_line_end();
-                doc.begin_transaction(crate::constants::history::INSERT_LABEL);
+                doc.begin_transaction(history::INSERT_LABEL);
                 if !self.dot_repeat.is_replaying() {
                     self.dot_repeat.start_insert_recording(command);
                 }
@@ -78,7 +78,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             Command::OpenLineBelow => {
                 let doc = self.document_manager.active_document_mut().unwrap();
-                doc.begin_transaction(crate::constants::history::INSERT_LABEL);
+                doc.begin_transaction(history::INSERT_LABEL);
                 doc.buffer.move_to_line_end();
                 let _ = doc.insert_char('\n');
                 if !self.dot_repeat.is_replaying() {
@@ -88,7 +88,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             Command::OpenLineAbove => {
                 let doc = self.document_manager.active_document_mut().unwrap();
-                doc.begin_transaction(crate::constants::history::INSERT_LABEL);
+                doc.begin_transaction(history::INSERT_LABEL);
                 doc.buffer.move_to_line_start();
                 let _ = doc.insert_char('\n');
                 doc.buffer.move_up();
@@ -375,4 +375,8 @@ impl<T: TerminalBackend> Editor<T> {
             self.pending_operator_count = 0;
         }
     }
+}
+
+mod history {
+    pub(crate) const INSERT_LABEL: &str = "Insert";
 }

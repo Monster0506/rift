@@ -4,7 +4,7 @@ use crate::invariants::InvariantTier;
 use crate::key::{format_key, Key};
 
 #[must_use]
-pub(crate) fn reproduces_area(keys: &[Key], target_area: &'static str) -> bool {
+pub(super) fn reproduces_area(keys: &[Key], target_area: &'static str) -> bool {
     let backend = ReplayBackend::new(std::io::sink(), 24, 80);
     let Ok(mut ed) = Editor::with_file(backend, None) else {
         return false;
@@ -30,7 +30,7 @@ pub(crate) fn reproduces_area(keys: &[Key], target_area: &'static str) -> bool {
 ///
 /// # Panics
 /// Panics if `reproduces` does not hold for the initial `keys`.
-pub(crate) fn ddmin(mut keys: Vec<Key>, reproduces: impl Fn(&[Key]) -> bool) -> Vec<Key> {
+pub(super) fn ddmin(mut keys: Vec<Key>, reproduces: impl Fn(&[Key]) -> bool) -> Vec<Key> {
     assert!(
         reproduces(&keys),
         "ddmin: the initial input must already reproduce the failure"
@@ -87,7 +87,7 @@ pub(crate) fn ddmin(mut keys: Vec<Key>, reproduces: impl Fn(&[Key]) -> bool) -> 
     keys
 }
 
-pub(crate) fn bracket_list(keys: &[Key]) -> String {
+pub(super) fn bracket_list(keys: &[Key]) -> String {
     let tokens: Vec<String> = keys.iter().copied().map(format_key).collect();
     format!("[{}]", tokens.join(", "))
 }

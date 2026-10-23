@@ -463,7 +463,7 @@ fn get_undo_dir(s: &UserSettings) -> SettingValue {
     )
 }
 
-pub(crate) const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
+const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "command_line.borderstyle",
         aliases: &["clborderstyle"],

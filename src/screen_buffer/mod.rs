@@ -43,19 +43,19 @@ const fn cell_visual_width(cell: &Cell) -> usize {
 pub struct FrameStats {
     /// Total cells in the buffer
     #[cfg(test)]
-    pub(crate) total_cells: usize,
+    total_cells: usize,
     /// Cells that changed this frame
-    pub(crate) changed_cells: usize,
+    changed_cells: usize,
     /// Whether this was a full redraw
     #[cfg(test)]
-    pub(crate) full_redraw: bool,
+    full_redraw: bool,
 }
 
 impl FrameStats {
     #[cfg(test)]
     /// Calculate the percentage of cells that changed
     #[must_use]
-    pub(crate) fn change_percentage(&self) -> f64 {
+    fn change_percentage(&self) -> f64 {
         if self.total_cells == 0 {
             0.0
         } else {
@@ -76,31 +76,31 @@ struct TermTrack {
 #[cfg(test)]
 /// A change to a single cell that needs to be rendered
 #[derive(Debug, Clone)]
-pub(crate) struct CellChange<'a> {
+struct CellChange<'a> {
     /// Row position (0-indexed)
-    pub(crate) row: usize,
+    row: usize,
     /// Column position (0-indexed)
-    pub(crate) col: usize,
+    col: usize,
     /// The cell content to render
-    pub(crate) cell: &'a Cell,
+    cell: &'a Cell,
 }
 
 /// A batch of consecutive cell changes on the same row
 #[derive(Debug, Clone)]
 pub struct CellBatch {
     /// Row position (0-indexed)
-    pub(crate) row: usize,
+    row: usize,
     /// Starting column position (0-indexed)
-    pub(crate) start_col: usize,
+    start_col: usize,
     /// Owns the cells so buffers can be reused across frames.
-    pub(crate) cells: Vec<Cell>,
+    cells: Vec<Cell>,
 }
 
 impl CellBatch {
     #[cfg(test)]
     /// Get the ending column (exclusive)
     #[must_use]
-    pub(crate) const fn end_col(&self) -> usize {
+    const fn end_col(&self) -> usize {
         self.start_col + self.cells.len()
     }
 }
@@ -207,7 +207,7 @@ impl DoubleBuffer {
 
     #[cfg(test)]
     /// Copy a 2D buffer into the current frame
-    pub(crate) fn copy_from(&mut self, source: &[Vec<Cell>]) {
+    fn copy_from(&mut self, source: &[Vec<Cell>]) {
         for (row_idx, row) in source.iter().enumerate() {
             if row_idx >= self.rows {
                 break;
@@ -293,14 +293,14 @@ impl DoubleBuffer {
     #[cfg(test)]
     /// Check if a full redraw is pending
     #[must_use]
-    pub(crate) const fn needs_full_redraw(&self) -> bool {
+    const fn needs_full_redraw(&self) -> bool {
         self.force_full_redraw
     }
 
     #[cfg(test)]
     /// Check if a specific cell has changed
     #[must_use]
-    pub(crate) fn cell_changed(&self, row: usize, col: usize) -> bool {
+    fn cell_changed(&self, row: usize, col: usize) -> bool {
         if self.force_full_redraw {
             return true;
         }
@@ -314,7 +314,7 @@ impl DoubleBuffer {
     #[cfg(test)]
     /// Iterate over all changed cells
     /// Returns individual cell changes (not batched)
-    pub(crate) fn iter_changes(&self) -> impl Iterator<Item = CellChange<'_>> {
+    fn iter_changes(&self) -> impl Iterator<Item = CellChange<'_>> {
         let force = self.force_full_redraw;
         let cols = self.cols;
         self.current
@@ -521,7 +521,7 @@ impl DoubleBuffer {
 
     #[cfg(test)]
     /// Clear content (fill with empty)
-    pub(crate) fn clear_content(&mut self) {
+    fn clear_content(&mut self) {
         for cell in &mut self.current {
             *cell = Cell::empty();
         }
@@ -536,7 +536,7 @@ impl DoubleBuffer {
     #[cfg(test)]
     /// Get frame statistics for the current diff
     #[must_use]
-    pub(crate) fn get_stats(&self) -> FrameStats {
+    fn get_stats(&self) -> FrameStats {
         let mut stats = FrameStats {
             total_cells: self.rows * self.cols,
             changed_cells: 0,

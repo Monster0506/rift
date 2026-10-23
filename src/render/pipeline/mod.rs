@@ -7,23 +7,18 @@ use unicode_width::UnicodeWidthChar;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RenderItem {
-    pub(crate) char: Character,
-    pub(crate) fg: Option<Color>,
-    pub(crate) bg: Option<Color>,
-    pub(crate) attrs: crate::layer::CellAttrs,
-    pub(crate) byte_offset: usize,
-    pub(crate) len_bytes: usize,
-    pub(crate) char_offset: usize,
+    char: Character,
+    fg: Option<Color>,
+    bg: Option<Color>,
+    attrs: crate::layer::CellAttrs,
+    byte_offset: usize,
+    len_bytes: usize,
+    char_offset: usize,
 }
 
 impl RenderItem {
     #[must_use]
-    pub(crate) fn new(
-        char: Character,
-        byte_offset: usize,
-        len_bytes: usize,
-        char_offset: usize,
-    ) -> Self {
+    fn new(char: Character, byte_offset: usize, len_bytes: usize, char_offset: usize) -> Self {
         Self {
             char,
             fg: None,
@@ -36,14 +31,14 @@ impl RenderItem {
     }
 }
 
-pub(crate) struct LineSource<'a, I: Iterator<Item = Character>> {
+pub(super) struct LineSource<'a, I: Iterator<Item = Character>> {
     chars: I,
     current_byte_offset: usize,
     current_char_offset: usize,
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
-pub(crate) fn new_line_source(
+pub(super) fn new_line_source(
     buf: &TextBuffer,
     line_idx: usize,
 ) -> LineSource<'_, impl Iterator<Item = Character> + '_> {
@@ -78,7 +73,7 @@ impl<I: Iterator<Item = Character>> Iterator for LineSource<'_, I> {
     }
 }
 
-pub(crate) struct SyntaxDecorator<'a, I: Iterator<Item = RenderItem>> {
+pub(super) struct SyntaxDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     highlights: &'a [(std::ops::Range<usize>, u32)],
     idx: &'a mut usize,
@@ -87,7 +82,7 @@ pub(crate) struct SyntaxDecorator<'a, I: Iterator<Item = RenderItem>> {
 }
 
 impl<'a, I: Iterator<Item = RenderItem>> SyntaxDecorator<'a, I> {
-    pub(crate) const fn new(
+    pub(super) const fn new(
         input: I,
         highlights: &'a [(std::ops::Range<usize>, u32)],
         idx: &'a mut usize,
@@ -141,7 +136,7 @@ impl<I: Iterator<Item = RenderItem>> Iterator for SyntaxDecorator<'_, I> {
     }
 }
 
-pub(crate) struct InjectionDecorator<'a, I: Iterator<Item = RenderItem>> {
+pub(super) struct InjectionDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     highlights: &'a [(std::ops::Range<usize>, String)],
     idx: &'a mut usize,
@@ -149,7 +144,7 @@ pub(crate) struct InjectionDecorator<'a, I: Iterator<Item = RenderItem>> {
 }
 
 impl<'a, I: Iterator<Item = RenderItem>> InjectionDecorator<'a, I> {
-    pub(crate) const fn new(
+    pub(super) const fn new(
         input: I,
         highlights: &'a [(std::ops::Range<usize>, String)],
         idx: &'a mut usize,
@@ -197,14 +192,14 @@ impl<I: Iterator<Item = RenderItem>> Iterator for InjectionDecorator<'_, I> {
     }
 }
 
-pub(crate) struct ColorDecorator<'a, I: Iterator<Item = RenderItem>> {
+pub(super) struct ColorDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     highlights: &'a [(std::ops::Range<usize>, Color)],
     idx: &'a mut usize,
 }
 
 impl<'a, I: Iterator<Item = RenderItem>> ColorDecorator<'a, I> {
-    pub(crate) const fn new(
+    pub(super) const fn new(
         input: I,
         highlights: &'a [(std::ops::Range<usize>, Color)],
         idx: &'a mut usize,
@@ -241,14 +236,14 @@ impl<I: Iterator<Item = RenderItem>> Iterator for ColorDecorator<'_, I> {
     }
 }
 
-pub(crate) struct PresentationDecorator<'a, I: Iterator<Item = RenderItem>> {
+pub(super) struct PresentationDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     styles: &'a [(std::ops::Range<usize>, crate::layer::CellStyle)],
     idx: &'a mut usize,
 }
 
 impl<'a, I: Iterator<Item = RenderItem>> PresentationDecorator<'a, I> {
-    pub(crate) const fn new(
+    pub(super) const fn new(
         input: I,
         styles: &'a [(std::ops::Range<usize>, crate::layer::CellStyle)],
         idx: &'a mut usize,
@@ -282,14 +277,14 @@ impl<I: Iterator<Item = RenderItem>> Iterator for PresentationDecorator<'_, I> {
     }
 }
 
-pub(crate) struct TerminalColorDecorator<'a, I: Iterator<Item = RenderItem>> {
+pub(super) struct TerminalColorDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     colors: &'a [crate::color::CellColorSpan],
     idx: &'a mut usize,
 }
 
 impl<'a, I: Iterator<Item = RenderItem>> TerminalColorDecorator<'a, I> {
-    pub(crate) const fn new(
+    pub(super) const fn new(
         input: I,
         colors: &'a [crate::color::CellColorSpan],
         idx: &'a mut usize,
@@ -326,7 +321,7 @@ impl<I: Iterator<Item = RenderItem>> Iterator for TerminalColorDecorator<'_, I> 
 }
 
 #[cfg(test)]
-pub(crate) struct SearchDecorator<'a, I: Iterator<Item = RenderItem>> {
+struct SearchDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     matches: &'a [crate::search::SearchMatch],
     idx: &'a mut usize,
@@ -334,11 +329,7 @@ pub(crate) struct SearchDecorator<'a, I: Iterator<Item = RenderItem>> {
 
 #[cfg(test)]
 impl<'a, I: Iterator<Item = RenderItem>> SearchDecorator<'a, I> {
-    pub(crate) const fn new(
-        input: I,
-        matches: &'a [crate::search::SearchMatch],
-        idx: &'a mut usize,
-    ) -> Self {
+    const fn new(input: I, matches: &'a [crate::search::SearchMatch], idx: &'a mut usize) -> Self {
         Self {
             input,
             matches,
@@ -375,14 +366,14 @@ impl<I: Iterator<Item = RenderItem>> Iterator for SearchDecorator<'_, I> {
     }
 }
 
-pub(crate) struct TabLayout<I: Iterator<Item = RenderItem>> {
+pub(super) struct TabLayout<I: Iterator<Item = RenderItem>> {
     input: I,
     tab_width: usize,
     visual_col: usize,
 }
 
 impl<I: Iterator<Item = RenderItem>> TabLayout<I> {
-    pub(crate) const fn new(input: I, tab_width: usize) -> Self {
+    pub(super) const fn new(input: I, tab_width: usize) -> Self {
         Self {
             input,
             tab_width,
@@ -392,13 +383,13 @@ impl<I: Iterator<Item = RenderItem>> TabLayout<I> {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct LayoutItem {
-    pub(crate) char: Character,
-    pub(crate) fg: Option<Color>,
-    pub(crate) bg: Option<Color>,
-    pub(crate) attrs: crate::layer::CellAttrs,
-    pub(crate) byte_offset: usize,
-    pub(crate) width: usize,
+pub(super) struct LayoutItem {
+    pub(super) char: Character,
+    pub(super) fg: Option<Color>,
+    pub(super) bg: Option<Color>,
+    pub(super) attrs: crate::layer::CellAttrs,
+    pub(super) byte_offset: usize,
+    pub(super) width: usize,
 }
 
 impl<I: Iterator<Item = RenderItem>> Iterator for TabLayout<I> {

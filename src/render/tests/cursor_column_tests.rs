@@ -93,7 +93,7 @@ fn test_cursor_column_combining_chars() {
 #[test]
 fn test_cursor_column_truncated_utf8() {
     let mut buf = TextBuffer::new(100).unwrap();
-    buf.insert_bytes(&[0xE2, 0x80]).unwrap();
+    buf.insert_bytes(&[0xE2, 0x80]);
     assert_eq!(calculate_cursor_column(&buf, 0, 4), 8);
 }
 

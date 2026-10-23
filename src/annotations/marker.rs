@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// Insertion bias for a marker when text is inserted exactly at its offset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) enum Gravity {
+enum Gravity {
     /// Text inserted exactly at the marker stays to the marker's *right*; the
     /// marker does not move. (Emacs insertion-type nil.)
     Left,
@@ -17,17 +17,17 @@ pub(crate) enum Gravity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Marker {
     pub offset: usize,
-    pub(crate) gravity: Gravity,
+    gravity: Gravity,
 }
 
 impl Marker {
     #[must_use]
-    pub(crate) const fn new(offset: usize, gravity: Gravity) -> Self {
+    const fn new(offset: usize, gravity: Gravity) -> Self {
         Self { offset, gravity }
     }
 
     #[must_use]
-    pub(crate) const fn left(offset: usize) -> Self {
+    pub(super) const fn left(offset: usize) -> Self {
         Self::new(offset, Gravity::Left)
     }
 
@@ -38,7 +38,7 @@ impl Marker {
 
     /// Update for an edit that replaced bytes [start, `old_end`) with new_end-start
     /// bytes. Modeled as delete-then-insert for correctness across replacements.
-    pub(crate) fn on_edit(&mut self, start: usize, old_end: usize, new_end: usize) {
+    pub(super) fn on_edit(&mut self, start: usize, old_end: usize, new_end: usize) {
         debug_assert!(start <= old_end, "edit range must be ordered");
         let old_len = old_end - start;
         let new_len = new_end.saturating_sub(start);

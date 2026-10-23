@@ -21,13 +21,13 @@ crate::job_manager::impl_job_payload!(FileSaveResult);
 
 #[derive(Debug)]
 pub(crate) struct FileSaveJob {
-    pub(crate) document_id: DocumentId,
-    pub(crate) piece_table: PieceTable,
-    pub(crate) path: PathBuf,
-    pub(crate) line_ending: LineEnding,
-    pub(crate) has_bom: bool,
-    pub(crate) saved_seq: EditSeq,
-    pub(crate) token: Option<crate::job_manager::AsyncToken>,
+    document_id: DocumentId,
+    piece_table: PieceTable,
+    path: PathBuf,
+    line_ending: LineEnding,
+    has_bom: bool,
+    saved_seq: EditSeq,
+    token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl FileSaveJob {
@@ -175,10 +175,10 @@ crate::job_manager::impl_job_payload!(FileLoadResult);
 
 #[derive(Debug)]
 pub(crate) struct FileLoadJob {
-    pub(crate) document_id: DocumentId,
-    pub(crate) path: PathBuf,
-    pub(crate) is_reload: bool,
-    pub(crate) token: Option<crate::job_manager::AsyncToken>,
+    document_id: DocumentId,
+    path: PathBuf,
+    is_reload: bool,
+    token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl FileLoadJob {

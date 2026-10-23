@@ -12,13 +12,13 @@ const fn utf16_len(ch: char) -> u32 {
 
 /// Convert a code-point offset within a line to a UTF-16 code-unit offset,
 /// the unit LSP `Position.character` is measured in over the wire.
-pub(crate) fn char_offset_to_utf16(line: impl Iterator<Item = char>, char_offset: usize) -> u32 {
+pub(super) fn char_offset_to_utf16(line: impl Iterator<Item = char>, char_offset: usize) -> u32 {
     line.take(char_offset).map(utf16_len).sum()
 }
 
 /// Convert a UTF-16 code-unit offset (as received from an LSP server) to a
 /// code-point offset within a line.
-pub(crate) fn utf16_offset_to_char(line: impl Iterator<Item = char>, utf16_offset: u32) -> usize {
+pub(super) fn utf16_offset_to_char(line: impl Iterator<Item = char>, utf16_offset: u32) -> usize {
     let mut units = 0u32;
     let mut chars = 0usize;
     for ch in line {
@@ -32,7 +32,7 @@ pub(crate) fn utf16_offset_to_char(line: impl Iterator<Item = char>, utf16_offse
 }
 
 /// Convert a code-point offset within a line to a UTF-8 byte offset.
-pub(crate) fn char_offset_to_utf8(line: impl Iterator<Item = char>, char_offset: usize) -> u32 {
+pub(super) fn char_offset_to_utf8(line: impl Iterator<Item = char>, char_offset: usize) -> u32 {
     line.take(char_offset)
         .map(|c| u32::try_from(c.len_utf8()).unwrap_or(u32::MAX))
         .sum()
@@ -40,7 +40,7 @@ pub(crate) fn char_offset_to_utf8(line: impl Iterator<Item = char>, char_offset:
 
 /// Convert a UTF-8 byte offset (as received from an LSP server) to a
 /// code-point offset within a line.
-pub(crate) fn utf8_offset_to_char(line: impl Iterator<Item = char>, byte_offset: u32) -> usize {
+pub(super) fn utf8_offset_to_char(line: impl Iterator<Item = char>, byte_offset: u32) -> usize {
     let mut bytes = 0u32;
     let mut chars = 0usize;
     for ch in line {
@@ -64,7 +64,7 @@ pub(crate) enum PositionEncoding {
 
 impl PositionEncoding {
     #[must_use]
-    pub(crate) fn from_wire(s: &str) -> Option<Self> {
+    pub(super) fn from_wire(s: &str) -> Option<Self> {
         match s {
             "utf-16" => Some(Self::Utf16),
             "utf-8" => Some(Self::Utf8),
@@ -92,43 +92,43 @@ impl PositionEncoding {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct JsonRpcRequest {
-    pub(crate) jsonrpc: &'static str,
-    pub(crate) id: u64,
-    pub(crate) method: String,
+pub(super) struct JsonRpcRequest {
+    pub(super) jsonrpc: &'static str,
+    pub(super) id: u64,
+    pub(super) method: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) params: Option<Value>,
+    pub(super) params: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct JsonRpcNotification {
-    pub(crate) jsonrpc: &'static str,
-    pub(crate) method: String,
+pub(super) struct JsonRpcNotification {
+    pub(super) jsonrpc: &'static str,
+    pub(super) method: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) params: Option<Value>,
+    pub(super) params: Option<Value>,
 }
 
 /// A JSON-RPC request/response id, which the spec permits to be either a
 /// number or a string. Server-initiated requests may use either.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
-pub(crate) enum RequestId {
+pub(super) enum RequestId {
     Number(u64),
     String(String),
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct JsonRpcMessage {
-    pub(crate) id: Option<Value>,
-    pub(crate) method: Option<String>,
-    pub(crate) params: Option<Value>,
-    pub(crate) result: Option<Value>,
-    pub(crate) error: Option<JsonRpcError>,
+pub(super) struct JsonRpcMessage {
+    pub(super) id: Option<Value>,
+    pub(super) method: Option<String>,
+    pub(super) params: Option<Value>,
+    pub(super) result: Option<Value>,
+    pub(super) error: Option<JsonRpcError>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct JsonRpcError {
-    pub(crate) message: String,
+pub(super) struct JsonRpcError {
+    pub(super) message: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,25 +152,26 @@ pub(crate) struct LspLocation {
 /// `LocationLink`, the alternative shape servers may return for definition
 /// requests; collapses to the target's selection range.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(clippy::struct_field_names)]
-pub(crate) struct LspLocationLink {
-    pub(crate) target_uri: String,
-    pub(crate) target_range: LspRange,
-    pub(crate) target_selection_range: Option<LspRange>,
+struct LspLocationLink {
+    #[serde(rename = "targetUri")]
+    uri: String,
+    #[serde(rename = "targetRange")]
+    range: LspRange,
+    #[serde(rename = "targetSelectionRange")]
+    selection_range: Option<LspRange>,
 }
 
 impl From<LspLocationLink> for LspLocation {
     fn from(link: LspLocationLink) -> Self {
         Self {
-            uri: link.target_uri,
-            range: link.target_selection_range.unwrap_or(link.target_range),
+            uri: link.uri,
+            range: link.selection_range.unwrap_or(link.range),
         }
     }
 }
 
 /// Parse one `Location | LocationLink` value.
-pub(crate) fn location_from_value(v: Value) -> Option<LspLocation> {
+pub(super) fn location_from_value(v: Value) -> Option<LspLocation> {
     if v.get("targetUri").is_some() {
         serde_json::from_value::<LspLocationLink>(v)
             .ok()
@@ -198,140 +199,139 @@ pub(crate) struct LspTextEdit {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct WorkspaceFolder {
-    pub(crate) uri: String,
-    pub(crate) name: String,
+pub(super) struct WorkspaceFolder {
+    pub(super) uri: String,
+    pub(super) name: String,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct InitializeParams {
+pub(super) struct InitializeParams {
     #[serde(rename = "processId")]
-    pub(crate) process_id: Option<u32>,
+    pub(super) process_id: Option<u32>,
     #[serde(rename = "rootUri")]
-    pub(crate) root_uri: Option<String>,
+    pub(super) root_uri: Option<String>,
     #[serde(rename = "workspaceFolders")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) workspace_folders: Option<Vec<WorkspaceFolder>>,
-    pub(crate) capabilities: ClientCapabilities,
+    pub(super) workspace_folders: Option<Vec<WorkspaceFolder>>,
+    pub(super) capabilities: ClientCapabilities,
     #[serde(rename = "initializationOptions")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) initialization_options: Option<Value>,
+    pub(super) initialization_options: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct ClientCapabilities {
+pub(super) struct ClientCapabilities {
     #[serde(rename = "textDocument")]
-    pub(crate) text_document: TextDocumentClientCapabilities,
-    pub(crate) workspace: WorkspaceClientCapabilities,
-    pub(crate) general: GeneralCapabilities,
-    pub(crate) window: WindowCapabilities,
+    pub(super) text_document: TextDocumentClientCapabilities,
+    pub(super) workspace: WorkspaceClientCapabilities,
+    pub(super) general: GeneralCapabilities,
+    pub(super) window: WindowCapabilities,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct WorkspaceClientCapabilities {
+pub(super) struct WorkspaceClientCapabilities {
     /// We answer `workspace/applyEdit` by applying the edit in the editor.
     #[serde(rename = "applyEdit")]
-    pub(crate) apply_edit: bool,
+    pub(super) apply_edit: bool,
     #[serde(rename = "workspaceEdit")]
-    pub(crate) workspace_edit: WorkspaceEditClientCapabilities,
+    pub(super) workspace_edit: WorkspaceEditClientCapabilities,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct WorkspaceEditClientCapabilities {
+pub(super) struct WorkspaceEditClientCapabilities {
     #[serde(rename = "documentChanges")]
-    pub(crate) document_changes: bool,
+    pub(super) document_changes: bool,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct WindowCapabilities {
+pub(super) struct WindowCapabilities {
     #[serde(rename = "workDoneProgress")]
-    pub(crate) work_done_progress: bool,
+    pub(super) work_done_progress: bool,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct GeneralCapabilities {
+pub(super) struct GeneralCapabilities {
     #[serde(rename = "positionEncodings")]
-    pub(crate) position_encodings: Vec<String>,
+    pub(super) position_encodings: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct TextDocumentClientCapabilities {
-    pub(crate) synchronization: TextDocumentSyncClientCapabilities,
-    pub(crate) hover: HoverClientCapabilities,
-    pub(crate) definition: DefinitionClientCapabilities,
-    pub(crate) references: ReferencesClientCapabilities,
-    pub(crate) rename: RenameClientCapabilities,
-    pub(crate) formatting: FormattingClientCapabilities,
+pub(super) struct TextDocumentClientCapabilities {
+    pub(super) synchronization: TextDocumentSyncClientCapabilities,
+    pub(super) hover: HoverClientCapabilities,
+    pub(super) definition: DefinitionClientCapabilities,
+    pub(super) references: ReferencesClientCapabilities,
+    pub(super) rename: RenameClientCapabilities,
+    pub(super) formatting: FormattingClientCapabilities,
     #[serde(rename = "publishDiagnostics")]
-    pub(crate) publish_diagnostics: PublishDiagnosticsClientCapabilities,
+    pub(super) publish_diagnostics: PublishDiagnosticsClientCapabilities,
     #[serde(rename = "codeAction")]
-    pub(crate) code_action: CodeActionClientCapabilities,
+    pub(super) code_action: CodeActionClientCapabilities,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct TextDocumentSyncClientCapabilities {
+pub(super) struct TextDocumentSyncClientCapabilities {
     #[serde(rename = "dynamicRegistration")]
-    pub(crate) dynamic_registration: bool,
+    pub(super) dynamic_registration: bool,
     #[serde(rename = "willSave")]
-    pub(crate) will_save: bool,
+    pub(super) will_save: bool,
     #[serde(rename = "didSave")]
-    pub(crate) did_save: bool,
+    pub(super) did_save: bool,
 }
 
 #[derive(Debug, Serialize, Default)]
-pub(crate) struct HoverClientCapabilities {}
+pub(super) struct HoverClientCapabilities {}
 
 #[derive(Debug, Serialize, Default)]
-pub(crate) struct DefinitionClientCapabilities {}
+pub(super) struct DefinitionClientCapabilities {}
 
 #[derive(Debug, Serialize, Default)]
-pub(crate) struct ReferencesClientCapabilities {}
+pub(super) struct ReferencesClientCapabilities {}
 
 #[derive(Debug, Serialize, Default)]
-pub(crate) struct RenameClientCapabilities {}
+pub(super) struct RenameClientCapabilities {}
 
 #[derive(Debug, Serialize, Default)]
-pub(crate) struct FormattingClientCapabilities {}
+pub(super) struct FormattingClientCapabilities {}
 
 #[derive(Debug, Serialize, Default)]
-pub(crate) struct PublishDiagnosticsClientCapabilities {}
+pub(super) struct PublishDiagnosticsClientCapabilities {}
 
 #[derive(Debug, Serialize)]
-#[allow(clippy::struct_field_names)]
-pub(crate) struct CodeActionClientCapabilities {
+pub(super) struct CodeActionClientCapabilities {
     #[serde(rename = "codeActionLiteralSupport")]
-    pub(crate) code_action_literal_support: CodeActionLiteralSupport,
+    literal: CodeActionLiteralSupport,
     #[serde(rename = "resolveSupport")]
-    pub(crate) resolve_support: CodeActionResolveSupport,
+    resolve: CodeActionResolveSupport,
     #[serde(rename = "dataSupport")]
-    pub(crate) data_support: bool,
+    data: bool,
     #[serde(rename = "isPreferredSupport")]
-    pub(crate) is_preferred_support: bool,
+    is_preferred: bool,
 }
 
 impl Default for CodeActionClientCapabilities {
     fn default() -> Self {
         Self {
-            code_action_literal_support: CodeActionLiteralSupport::default(),
-            resolve_support: CodeActionResolveSupport {
+            literal: CodeActionLiteralSupport::default(),
+            resolve: CodeActionResolveSupport {
                 properties: vec!["edit".into()],
             },
-            data_support: true,
-            is_preferred_support: true,
+            data: true,
+            is_preferred: true,
         }
     }
 }
 
 #[derive(Debug, Serialize, Default)]
-pub(crate) struct CodeActionLiteralSupport {
+struct CodeActionLiteralSupport {
     #[serde(rename = "codeActionKind")]
-    pub(crate) code_action_kind: CodeActionKindSet,
+    code_action_kind: CodeActionKindSet,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct CodeActionKindSet {
+struct CodeActionKindSet {
     #[serde(rename = "valueSet")]
-    pub(crate) value_set: Vec<String>,
+    value_set: Vec<String>,
 }
 
 impl Default for CodeActionKindSet {
@@ -353,125 +353,125 @@ impl Default for CodeActionKindSet {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct CodeActionResolveSupport {
-    pub(crate) properties: Vec<String>,
+struct CodeActionResolveSupport {
+    properties: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct DidOpenTextDocumentParams {
+pub(super) struct DidOpenTextDocumentParams {
     #[serde(rename = "textDocument")]
-    pub(crate) text_document: TextDocumentItem,
+    pub(super) text_document: TextDocumentItem,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct TextDocumentItem {
-    pub(crate) uri: String,
+pub(super) struct TextDocumentItem {
+    pub(super) uri: String,
     #[serde(rename = "languageId")]
-    pub(crate) language_id: String,
-    pub(crate) version: i64,
-    pub(crate) text: String,
+    pub(super) language_id: String,
+    pub(super) version: i64,
+    pub(super) text: String,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct DidChangeTextDocumentParams {
+pub(super) struct DidChangeTextDocumentParams {
     #[serde(rename = "textDocument")]
-    pub(crate) text_document: VersionedTextDocumentIdentifier,
+    pub(super) text_document: VersionedTextDocumentIdentifier,
     #[serde(rename = "contentChanges")]
-    pub(crate) content_changes: Vec<TextDocumentContentChangeEvent>,
+    pub(super) content_changes: Vec<TextDocumentContentChangeEvent>,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct VersionedTextDocumentIdentifier {
-    pub(crate) uri: String,
-    pub(crate) version: i64,
+pub(super) struct VersionedTextDocumentIdentifier {
+    pub(super) uri: String,
+    pub(super) version: i64,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct TextDocumentContentChangeEvent {
+pub(super) struct TextDocumentContentChangeEvent {
     /// Present for an incremental change (replace just this range); omitted
     /// for a full-document change, where `text` is the entire new content.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) range: Option<LspRange>,
-    pub(crate) text: String,
+    pub(super) range: Option<LspRange>,
+    pub(super) text: String,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct DidSaveTextDocumentParams {
+pub(super) struct DidSaveTextDocumentParams {
     #[serde(rename = "textDocument")]
-    pub(crate) text_document: TextDocumentIdentifier,
+    pub(super) text_document: TextDocumentIdentifier,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) text: Option<String>,
+    pub(super) text: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct DidCloseTextDocumentParams {
+pub(super) struct DidCloseTextDocumentParams {
     #[serde(rename = "textDocument")]
-    pub(crate) text_document: TextDocumentIdentifier,
+    pub(super) text_document: TextDocumentIdentifier,
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub(crate) struct TextDocumentIdentifier {
-    pub(crate) uri: String,
+pub(super) struct TextDocumentIdentifier {
+    pub(super) uri: String,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct TextDocumentPositionParams {
+pub(super) struct TextDocumentPositionParams {
     #[serde(rename = "textDocument")]
-    pub(crate) text_document: TextDocumentIdentifier,
-    pub(crate) position: LspPosition,
+    pub(super) text_document: TextDocumentIdentifier,
+    pub(super) position: LspPosition,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct ReferenceParams {
+pub(super) struct ReferenceParams {
     #[serde(rename = "textDocument")]
-    pub(crate) text_document: TextDocumentIdentifier,
-    pub(crate) position: LspPosition,
-    pub(crate) context: ReferenceContext,
+    pub(super) text_document: TextDocumentIdentifier,
+    pub(super) position: LspPosition,
+    pub(super) context: ReferenceContext,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct ReferenceContext {
+pub(super) struct ReferenceContext {
     #[serde(rename = "includeDeclaration")]
-    pub(crate) include_declaration: bool,
+    pub(super) include_declaration: bool,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct RenameParams {
+pub(super) struct RenameParams {
     #[serde(rename = "textDocument")]
-    pub(crate) text_document: TextDocumentIdentifier,
-    pub(crate) position: LspPosition,
+    pub(super) text_document: TextDocumentIdentifier,
+    pub(super) position: LspPosition,
     #[serde(rename = "newName")]
-    pub(crate) new_name: String,
+    pub(super) new_name: String,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct DocumentFormattingParams {
+pub(super) struct DocumentFormattingParams {
     #[serde(rename = "textDocument")]
-    pub(crate) text_document: TextDocumentIdentifier,
-    pub(crate) options: FormattingOptions,
+    pub(super) text_document: TextDocumentIdentifier,
+    pub(super) options: FormattingOptions,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct FormattingOptions {
+pub(super) struct FormattingOptions {
     #[serde(rename = "tabSize")]
-    pub(crate) tab_size: u32,
+    pub(super) tab_size: u32,
     #[serde(rename = "insertSpaces")]
-    pub(crate) insert_spaces: bool,
+    pub(super) insert_spaces: bool,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct CodeActionParams {
+pub(super) struct CodeActionParams {
     #[serde(rename = "textDocument")]
-    pub(crate) text_document: TextDocumentIdentifier,
-    pub(crate) range: LspRange,
-    pub(crate) context: CodeActionContext,
+    pub(super) text_document: TextDocumentIdentifier,
+    pub(super) range: LspRange,
+    pub(super) context: CodeActionContext,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct CodeActionContext {
-    pub(crate) diagnostics: Vec<LspDiagnostic>,
+pub(super) struct CodeActionContext {
+    pub(super) diagnostics: Vec<LspDiagnostic>,
     #[serde(rename = "triggerKind")]
-    pub(crate) trigger_kind: u32,
+    pub(super) trigger_kind: u32,
 }
 
 /// Percent-encode a URI path: everything except RFC 3986 unreserved chars

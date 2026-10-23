@@ -83,7 +83,7 @@ impl Document {
 
             let _ = self.buffer.set_cursor(insert_at);
             self.ghost_paint_active = true;
-            let _ = self.insert_characters(&text);
+            self.insert_characters(&text);
             self.ghost_paint_active = false;
 
             let byte_start = self.buffer.char_to_byte(insert_at);

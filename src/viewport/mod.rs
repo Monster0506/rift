@@ -6,7 +6,7 @@
 
 /// Viewport manages which portion of the buffer is visible
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Viewport {
+pub(crate) struct Viewport {
     /// Top line of the visible area (0-indexed)
     top_line: usize,
     /// Previous top line (for detecting scroll changes)
@@ -202,14 +202,14 @@ impl Viewport {
     /// Fractional scroll offset in [0.0, 1.0] below `top_line`. Always 0.0
     /// until a future renderer calls `set_sub_line_offset`.
     #[must_use]
-    pub(crate) const fn sub_line_offset(&self) -> f64 {
+    const fn sub_line_offset(&self) -> f64 {
         self.sub_line_offset
     }
 
     #[cfg(test)]
     /// Set the fractional scroll offset below `top_line`, clamped to
     /// [0.0, 1.0]. Does not itself move `top_line`.
-    pub(crate) const fn set_sub_line_offset(&mut self, offset: f64) {
+    const fn set_sub_line_offset(&mut self, offset: f64) {
         self.sub_line_offset = offset.clamp(0.0, 1.0);
     }
 

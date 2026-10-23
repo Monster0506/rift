@@ -1054,7 +1054,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Create a location list split panel with the given entries.
-    pub(super) fn open_location_list_panel(
+    fn open_location_list_panel(
         &mut self,
         entries: Vec<crate::document::LocationEntry>,
         title: &str,

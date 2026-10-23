@@ -90,7 +90,7 @@ fn hash_virtual_text(
 pub struct RenderSystem {
     pub(crate) compositor: LayerCompositor,
     pub(crate) viewport: Viewport,
-    pub(crate) world: World,
+    pub(super) world: World,
 
     content_entity: Option<crate::render::ecs::EntityId>,
     status_entity: Option<crate::render::ecs::EntityId>,
@@ -105,7 +105,7 @@ pub struct RenderSystem {
     last_cursor_shape: Option<CursorShape>,
     cursor_animator: crate::cursor::CursorAnimator,
 
-    pub(crate) content_paint_frame: crate::paint::PaintFrame,
+    content_paint_frame: crate::paint::PaintFrame,
     pub(crate) content_blit_key: Option<crate::render::ContentBlitKey>,
     pub(crate) window_paint_caches:
         std::collections::HashMap<crate::split::window::WindowId, WindowPaintCache>,

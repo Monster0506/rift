@@ -8,7 +8,7 @@ use crate::editor::Editor;
 use crate::error::{ErrorType, RiftError};
 use std::io::Write;
 
-pub(crate) fn check<W: Write>(
+pub(super) fn check<W: Write>(
     ed: &mut Editor<ReplayBackend<W>>,
     assertion: &Assertion,
 ) -> Result<(), RiftError> {
@@ -77,13 +77,19 @@ fn line_text<W: Write>(ed: &mut Editor<ReplayBackend<W>>, row: usize) -> Option<
         buf.len()
     };
     Some(strip_trailing_newline(
-        buf.chars(start..end).map(|c| c.to_char_lossy()).collect(),
+        buf.chars(start..end)
+            .map(super::super::character::Character::to_char_lossy)
+            .collect(),
     ))
 }
 
 fn buffer_text<W: Write>(ed: &mut Editor<ReplayBackend<W>>) -> String {
     let buf = &ed.active_document().buffer;
-    strip_trailing_newline(buf.chars(0..buf.len()).map(|c| c.to_char_lossy()).collect())
+    strip_trailing_newline(
+        buf.chars(0..buf.len())
+            .map(super::super::character::Character::to_char_lossy)
+            .collect(),
+    )
 }
 
 fn strip_trailing_newline(mut text: String) -> String {

@@ -2,7 +2,6 @@
 //! mutating editor or buffer state.
 
 use crate::color::Color;
-use crate::constants;
 
 use crate::character::Character;
 use crate::layer::{Cell, Layer};
@@ -16,12 +15,12 @@ struct RenderLayout {
 }
 
 /// Border characters for floating windows
-pub(crate) use constants::ui::borders::BorderSet as BorderChars;
+pub(crate) use ui::borders::BorderSet as BorderChars;
 
 impl Default for BorderChars {
     /// Create default border characters (Unicode box drawing)
     fn default() -> Self {
-        constants::ui::borders::UNICODE
+        ui::borders::UNICODE
     }
 }
 
@@ -65,15 +64,15 @@ pub(crate) enum WindowPosition {
 #[derive(Debug, Clone)]
 pub(crate) struct WindowStyle {
     /// Whether to draw a border around the window
-    pub(crate) border: bool,
+    border: bool,
     /// Custom border characters (None uses defaults)
-    pub(crate) border_chars: Option<BorderChars>,
+    border_chars: Option<BorderChars>,
     /// Foreground color for window content
-    pub(crate) fg: Option<Color>,
+    fg: Option<Color>,
     /// Background color for window content
-    pub(crate) bg: Option<Color>,
+    bg: Option<Color>,
     /// Whether to use reverse video (swap fg/bg)
-    pub(crate) reverse_video: bool,
+    reverse_video: bool,
 }
 
 impl Default for WindowStyle {
@@ -156,7 +155,7 @@ impl FloatingWindow {
     #[cfg(test)]
     /// Create a new floating window with default style
     #[must_use]
-    pub(crate) fn new(position: WindowPosition, width: usize, height: usize) -> Self {
+    fn new(position: WindowPosition, width: usize, height: usize) -> Self {
         Self {
             position,
             width,
@@ -184,7 +183,7 @@ impl FloatingWindow {
     #[cfg(test)]
     /// Set whether to draw a border (builder pattern for compatibility)
     #[must_use]
-    pub(crate) const fn with_border(mut self, border: bool) -> Self {
+    const fn with_border(mut self, border: bool) -> Self {
         self.style.border = border;
         self
     }
@@ -192,7 +191,7 @@ impl FloatingWindow {
     #[cfg(test)]
     /// Set whether to use reverse video (builder pattern for compatibility)
     #[must_use]
-    pub(crate) const fn with_reverse_video(mut self, reverse: bool) -> Self {
+    const fn with_reverse_video(mut self, reverse: bool) -> Self {
         self.style.reverse_video = reverse;
         self
     }
@@ -200,7 +199,7 @@ impl FloatingWindow {
     #[cfg(test)]
     /// Set custom border characters (builder pattern for compatibility)
     #[must_use]
-    pub(crate) const fn with_border_chars(mut self, border_chars: BorderChars) -> Self {
+    const fn with_border_chars(mut self, border_chars: BorderChars) -> Self {
         self.style.border_chars = Some(border_chars);
         self
     }
@@ -208,21 +207,21 @@ impl FloatingWindow {
     #[cfg(test)]
     /// Get the width of the window
     #[must_use]
-    pub(crate) const fn width(&self) -> usize {
+    const fn width(&self) -> usize {
         self.width
     }
 
     #[cfg(test)]
     /// Get the height of the window
     #[must_use]
-    pub(crate) const fn height(&self) -> usize {
+    const fn height(&self) -> usize {
         self.height
     }
 
     #[cfg(test)]
     /// Get the content width (width minus border if enabled)
     #[must_use]
-    pub(crate) const fn content_width(&self) -> usize {
+    const fn content_width(&self) -> usize {
         if self.style.border {
             self.width.saturating_sub(2)
         } else {
@@ -233,7 +232,7 @@ impl FloatingWindow {
     #[cfg(test)]
     /// Get the content height (height minus border if enabled)
     #[must_use]
-    pub(crate) const fn content_height(&self) -> usize {
+    const fn content_height(&self) -> usize {
         if self.style.border {
             self.height.saturating_sub(2)
         } else {
@@ -343,7 +342,7 @@ impl FloatingWindow {
     }
 
     /// Render with custom border chars and Cells
-    pub(crate) fn render_cells_with_border_chars(
+    fn render_cells_with_border_chars(
         &self,
         layer: &mut Layer,
         content: &[Vec<Cell>],
@@ -718,3 +717,26 @@ impl FloatingWindow {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+mod ui {
+    pub(crate) mod borders {
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        pub(crate) struct BorderSet {
+            pub(crate) top_left: char,
+            pub(crate) top_right: char,
+            pub(crate) bottom_left: char,
+            pub(crate) bottom_right: char,
+            pub(crate) horizontal: char,
+            pub(crate) vertical: char,
+        }
+
+        pub(crate) const UNICODE: BorderSet = BorderSet {
+            top_left: '╭',
+            top_right: '╮',
+            bottom_left: '╰',
+            bottom_right: '╯',
+            horizontal: '─',
+            vertical: '│',
+        };
+    }
+}

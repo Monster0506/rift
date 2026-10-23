@@ -55,7 +55,7 @@ pub(crate) struct FsCopyJob {
 impl FsCopyJob {
     #[cfg(test)]
     #[must_use]
-    pub(crate) const fn new(source: PathBuf, destination: PathBuf) -> Self {
+    pub(in crate::job_manager) const fn new(source: PathBuf, destination: PathBuf) -> Self {
         Self {
             source,
             destination,
@@ -167,7 +167,7 @@ mod fs_tests;
 #[cfg(test)]
 /// Job to move/rename a file or directory
 #[derive(Debug)]
-pub(crate) struct FsMoveJob {
+pub(in crate::job_manager) struct FsMoveJob {
     source: PathBuf,
     destination: PathBuf,
 }
@@ -175,7 +175,7 @@ pub(crate) struct FsMoveJob {
 #[cfg(test)]
 impl FsMoveJob {
     #[must_use]
-    pub(crate) const fn new(source: PathBuf, destination: PathBuf) -> Self {
+    pub(in crate::job_manager) const fn new(source: PathBuf, destination: PathBuf) -> Self {
         Self {
             source,
             destination,
@@ -244,14 +244,14 @@ impl Job for FsMoveJob {
 #[cfg(test)]
 /// Job to delete a file or directory
 #[derive(Debug)]
-pub(crate) struct FsDeleteJob {
+pub(in crate::job_manager) struct FsDeleteJob {
     path: PathBuf,
 }
 
 #[cfg(test)]
 impl FsDeleteJob {
     #[must_use]
-    pub(crate) const fn new(path: PathBuf) -> Self {
+    pub(in crate::job_manager) const fn new(path: PathBuf) -> Self {
         Self { path }
     }
 }
@@ -292,7 +292,7 @@ impl Job for FsDeleteJob {
 #[cfg(test)]
 /// Job to create a file or directory
 #[derive(Debug)]
-pub(crate) struct FsCreateJob {
+pub(in crate::job_manager) struct FsCreateJob {
     path: PathBuf,
     is_dir: bool,
 }
@@ -300,7 +300,7 @@ pub(crate) struct FsCreateJob {
 #[cfg(test)]
 impl FsCreateJob {
     #[must_use]
-    pub(crate) const fn new(path: PathBuf, is_dir: bool) -> Self {
+    pub(in crate::job_manager) const fn new(path: PathBuf, is_dir: bool) -> Self {
         Self { path, is_dir }
     }
 }
@@ -346,14 +346,14 @@ impl Job for FsCreateJob {
 #[cfg(test)]
 /// Job to delete multiple files or directories
 #[derive(Debug)]
-pub(crate) struct FsBatchDeleteJob {
+pub(in crate::job_manager) struct FsBatchDeleteJob {
     paths: Vec<PathBuf>,
 }
 
 #[cfg(test)]
 impl FsBatchDeleteJob {
     #[must_use]
-    pub(crate) const fn new(paths: Vec<PathBuf>) -> Self {
+    pub(in crate::job_manager) const fn new(paths: Vec<PathBuf>) -> Self {
         Self { paths }
     }
 }

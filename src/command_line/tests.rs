@@ -2,13 +2,13 @@
 
 use crate::character::Character;
 use crate::command_line::CommandLine;
-use crate::layer::{Layer, LayerPriority};
+use crate::layer::Layer;
 use crate::state::CommandLineWindowSettings;
 use crate::viewport::Viewport;
 
 #[test]
 fn test_command_line_render_to_layer() {
-    let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 24, 80);
+    let mut layer = Layer::new(24, 80);
     let viewport = Viewport::new(24, 80);
     let window_settings = CommandLineWindowSettings::default();
 
@@ -47,7 +47,7 @@ fn test_command_line_render_to_layer() {
 fn test_command_line_render_scrolled_multibyte_does_not_panic() {
     // Scrolled command line ("offset" computed from a column budget) must not
     // byte-slice into the middle of a multi-byte UTF-8 char.
-    let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 24, 9);
+    let mut layer = Layer::new(24, 9);
     let viewport = Viewport::new(24, 9);
     let window_settings = CommandLineWindowSettings {
         width_ratio: 1.0,
@@ -118,7 +118,7 @@ fn test_command_line_cursor_position_clamped() {
 fn test_command_line_with_custom_border_chars() {
     use crate::floating_window::BorderChars;
 
-    let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 24, 80);
+    let mut layer = Layer::new(24, 80);
     let viewport = Viewport::new(24, 80);
     let window_settings = CommandLineWindowSettings::default();
     let custom_border = BorderChars::from_ascii('+', '+', '+', '+', '-', '|');

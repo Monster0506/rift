@@ -189,7 +189,7 @@ pub(super) fn native_reload_handlers<T: TerminalBackend>(
 }
 
 impl<T: TerminalBackend> Editor<T> {
-    pub(super) fn dispatch_save_sync(&mut self) -> crate::document::SaveResult {
+    fn dispatch_save_sync(&mut self) -> crate::document::SaveResult {
         let Some((doc_id, kind_id, kind_name, dispatch)) =
             self.document_manager.active_document().map(|document| {
                 (

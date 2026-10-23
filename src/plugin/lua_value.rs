@@ -3,17 +3,17 @@
 use crate::annotations::Value;
 
 /// Lua integers are `i64`; out-of-range values saturate instead of wrapping.
-pub(crate) fn lua_int<T: TryInto<i64>>(value: T) -> i64 {
+pub(super) fn lua_int<T: TryInto<i64>>(value: T) -> i64 {
     value.try_into().unwrap_or(i64::MAX)
 }
 
 /// Clamps a Lua integer to `0..=usize::MAX` for use as an index or count.
-pub(crate) fn lua_index(value: i64) -> usize {
+pub(super) fn lua_index(value: i64) -> usize {
     usize::try_from(value.max(0)).unwrap_or(usize::MAX)
 }
 
 /// Convert an arbitrary Lua value into a `Value`; `nil` becomes `Null`.
-pub(crate) fn value_from_lua(value: &mlua::Value) -> mlua::Result<Value> {
+pub(super) fn value_from_lua(value: &mlua::Value) -> mlua::Result<Value> {
     Ok(match value {
         mlua::Value::Nil => Value::Null,
         mlua::Value::Boolean(b) => Value::Bool(*b),
@@ -33,7 +33,7 @@ pub(crate) fn value_from_lua(value: &mlua::Value) -> mlua::Result<Value> {
 
 /// Tables keyed exactly `1..=n` become a `List`; otherwise a `Map` with
 /// stringified keys sorted for deterministic ordering.
-pub(crate) fn value_from_lua_table(table: &mlua::Table) -> mlua::Result<Value> {
+pub(super) fn value_from_lua_table(table: &mlua::Table) -> mlua::Result<Value> {
     let len = table.raw_len();
     let mut is_array = len > 0;
     if is_array {
@@ -89,7 +89,7 @@ pub(crate) fn value_from_lua_table(table: &mlua::Table) -> mlua::Result<Value> {
 }
 
 /// Convert a `Value` into a Lua value (the inverse of [`value_from_lua`]).
-pub(crate) fn value_into_lua(value: Value, lua: &mlua::Lua) -> mlua::Result<mlua::Value> {
+pub(super) fn value_into_lua(value: Value, lua: &mlua::Lua) -> mlua::Result<mlua::Value> {
     Ok(match value {
         Value::Null => mlua::Value::Nil,
         Value::Bool(b) => mlua::Value::Boolean(b),

@@ -112,7 +112,7 @@ fn hunk_verb_action(
 
 impl<T: TerminalBackend> Editor<T> {
     /// Resolve the git repository root to operate on: the active buffer's own repo root if it's already a git buffer, else discovered from the active file's directory (falling back to cwd), mirroring `OpenExplorer`'s target-path resolution.
-    pub(super) fn resolve_git_repo_root(&mut self) -> Result<PathBuf, RiftError> {
+    fn resolve_git_repo_root(&mut self) -> Result<PathBuf, RiftError> {
         if let Some(root) = self.active_document().git_repo_root() {
             return Ok(root.to_path_buf());
         }
@@ -135,12 +135,12 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// `<Space>gs` opens a `GitStatus` buffer in the active window. Open a split first to create another instance.
-    pub(crate) fn open_git_status(&mut self) {
+    pub(super) fn open_git_status(&mut self) {
         self.open_git_status_inner();
     }
 
     /// `:Git diff`/`:Git diff --cached`: open status, and once the async snapshot populates, expand every hunk in the given section (`true` = staged); the closest structured equivalent to a bare `git diff`.
-    pub(super) fn open_git_status_expand_all(&mut self, staged_side: bool) {
+    fn open_git_status_expand_all(&mut self, staged_side: bool) {
         if let Some(id) = self.open_git_status_inner() {
             self.pending_git_status_expand_all.insert(id, staged_side);
         }
@@ -388,7 +388,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// `]c`/`[c`: move the cursor to the next/previous expanded hunk header.
-    pub(super) fn git_status_navigate_hunk(&mut self, forward: bool) {
+    fn git_status_navigate_hunk(&mut self, forward: bool) {
         let doc = self.active_document();
         let cursor = doc.buffer.cursor();
         let current_line = doc.buffer.line_index.get_line_at(cursor);
@@ -495,13 +495,13 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// `cc` in the status buffer: open an empty commit message buffer.
-    pub(crate) fn open_git_commit_new(&mut self) {
+    pub(super) fn open_git_commit_new(&mut self) {
         self.open_git_commit_message(GitCommitTarget::New, "");
     }
 
     /// `ca`/`cw` in the status buffer: open a commit message buffer prefilled
     /// with HEAD's message, amending on save.
-    pub(crate) fn open_git_commit_amend(&mut self) {
+    pub(super) fn open_git_commit_amend(&mut self) {
         let repo_root = match self.resolve_git_repo_root() {
             Ok(root) => root,
             Err(e) => {
@@ -516,7 +516,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// `cf` in the status buffer: commit currently-staged changes as a fixup
     /// of HEAD (`git commit --fixup=HEAD`);  no message buffer needed.
-    pub(crate) fn run_git_commit_fixup(&mut self) {
+    pub(super) fn run_git_commit_fixup(&mut self) {
         let repo_root = match self.resolve_git_repo_root() {
             Ok(root) => root,
             Err(e) => {
@@ -590,7 +590,7 @@ impl<T: TerminalBackend> Editor<T> {
             let message: String = doc
                 .buffer
                 .chars(0..doc.buffer.len())
-                .map(|c| c.to_char_lossy())
+                .map(super::super::character::Character::to_char_lossy)
                 .collect();
             (repo_root, target, message, doc.id)
         };
@@ -691,7 +691,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// `:Git <args>` escape hatch: run an arbitrary git subcommand and show its output. View-only; no `--no-ext-diff`, so a configured `diff.external` etc. is respected for anything that falls through. Fugitive convention: bare `:Git`/`:G` opens the status buffer, bare `:Git log` opens the log browser, bare `:Git`.
-    pub(crate) fn run_git_command(&mut self, args: String) {
+    pub(super) fn run_git_command(&mut self, args: String) {
         let trimmed = args.trim();
         if trimmed.is_empty() {
             self.open_git_status();

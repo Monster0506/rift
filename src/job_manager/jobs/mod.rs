@@ -14,4 +14,4 @@ pub(crate) mod undotree;
 
 #[cfg(test)]
 #[path = "test_support.rs"]
-pub(crate) mod test_support;
+mod test_support;

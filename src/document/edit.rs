@@ -9,7 +9,7 @@ impl Document {
         point
     }
 
-    pub(crate) fn get_edit_points(&self, byte_offset: usize) -> ((usize, usize), Position) {
+    pub(super) fn get_edit_points(&self, byte_offset: usize) -> ((usize, usize), Position) {
         let char_offset = self.buffer.byte_to_char(byte_offset);
         let line = self.buffer.line_index.get_line_at(char_offset);
         let line_start_char = self.buffer.line_index.get_start(line).unwrap_or(0);
@@ -24,7 +24,7 @@ impl Document {
         ((line, byte_col), position)
     }
 
-    pub(super) fn record_edit(
+    fn record_edit(
         &mut self,
         op: EditOperation,
         description: &str,
@@ -194,11 +194,9 @@ impl Document {
         Ok(())
     }
 
-    /// # Errors
-    /// Propagates any error from the text buffer insert.
-    pub(crate) fn insert_characters(&mut self, chars: &[Character]) -> Result<(), RiftError> {
+    pub(crate) fn insert_characters(&mut self, chars: &[Character]) {
         if self.is_read_only() {
-            return Ok(());
+            return;
         }
         let newline_count = chars
             .iter()
@@ -214,10 +212,11 @@ impl Document {
         let start_byte = self.buffer.char_to_byte(cursor_before);
         let (start_position, history_pos) = self.get_edit_points(start_byte);
 
-        self.buffer.insert_chars(chars)?;
+        self.buffer.insert_chars(chars);
 
         let added_bytes: usize = chars
             .iter()
+            .copied()
             .map(super::super::character::Character::len_utf8)
             .sum();
         let new_end_byte = start_byte + added_bytes;
@@ -264,8 +263,6 @@ impl Document {
                 self.annotations.on_line_inserted(before_line + 1 + i);
             }
         }
-
-        Ok(())
     }
 
     #[must_use]

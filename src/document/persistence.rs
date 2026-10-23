@@ -11,7 +11,7 @@ impl Document {
     ///
     /// # Errors
     /// Returns an error if the document has no file path or the write fails.
-    pub(crate) fn save(&mut self) -> Result<(), RiftError> {
+    pub(super) fn save(&mut self) -> Result<(), RiftError> {
         let path = self.file_path.as_ref().ok_or_else(|| {
             RiftError::new(
                 ErrorType::Io,
@@ -30,7 +30,7 @@ impl Document {
     ///
     /// # Errors
     /// Returns an error if the file cannot be written.
-    pub(crate) fn save_as(&mut self, path: impl AsRef<Path>) -> Result<(), RiftError> {
+    fn save_as(&mut self, path: impl AsRef<Path>) -> Result<(), RiftError> {
         let path = path.as_ref();
         crate::perf_span!("document_save", crate::perf::PerfFields::default());
         self.write_to_file(path)?;
@@ -43,7 +43,7 @@ impl Document {
     ///
     /// # Errors
     /// Returns an error if the document has no file path or the file cannot be loaded.
-    pub(crate) fn reload_from_disk(&mut self) -> Result<(), RiftError> {
+    pub(super) fn reload_from_disk(&mut self) -> Result<(), RiftError> {
         let path = self.file_path.clone().ok_or_else(|| {
             RiftError::new(
                 ErrorType::Io,

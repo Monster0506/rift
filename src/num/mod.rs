@@ -27,7 +27,7 @@ pub(crate) fn usize_to_f64(v: usize) -> f64 {
 #[cfg(test)]
 /// Nearest `f64` to `v` (ties to even), identical to `v as f64`.
 #[must_use]
-pub(crate) fn i64_to_f64(v: i64) -> f64 {
+fn i64_to_f64(v: i64) -> f64 {
     let magnitude = u64_to_f64(v.unsigned_abs());
     if v < 0 {
         -magnitude
@@ -39,7 +39,7 @@ pub(crate) fn i64_to_f64(v: i64) -> f64 {
 /// Truncates toward zero. NaN and values below 1 give 0; values past
 /// `u64::MAX` (including infinity) saturate.
 #[must_use]
-pub(crate) fn f64_to_u64(x: f64) -> u64 {
+fn f64_to_u64(x: f64) -> u64 {
     if x.is_nan() || x < 1.0 {
         return 0;
     }

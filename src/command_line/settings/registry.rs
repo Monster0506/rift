@@ -28,12 +28,12 @@ impl<T> SettingsRegistry<T> {
     }
 
     #[must_use]
-    pub(crate) const fn descriptors(&self) -> &[SettingDescriptor<T>] {
+    pub(in crate::command_line) const fn descriptors(&self) -> &[SettingDescriptor<T>] {
         self.settings
     }
 
     #[must_use]
-    pub(crate) fn build_option_registry(&self) -> CommandRegistry {
+    pub(in crate::command_line) fn build_option_registry(&self) -> CommandRegistry {
         (*self.cached_option_registry()).clone()
     }
 
@@ -59,7 +59,7 @@ impl<T> SettingsRegistry<T> {
     }
 
     #[must_use]
-    pub(crate) fn find_descriptor(&self, name: &str) -> Option<&SettingDescriptor<T>> {
+    pub(super) fn find_descriptor(&self, name: &str) -> Option<&SettingDescriptor<T>> {
         let matched_name = match self.cached_option_registry().match_command(name) {
             MatchResult::Exact(n) | MatchResult::Prefix(n) => n,
             MatchResult::Ambiguous { .. } | MatchResult::Unknown(_) => return None,
@@ -68,12 +68,12 @@ impl<T> SettingsRegistry<T> {
     }
 
     #[must_use]
-    pub(crate) fn get_setting(&self, name: &str, target: &T) -> Option<SettingValue> {
+    pub(super) fn get_setting(&self, name: &str, target: &T) -> Option<SettingValue> {
         let desc = self.find_descriptor(name)?;
         desc.get.map(|getter| getter(target))
     }
 
-    pub(crate) fn parse_value(ty: &SettingType, value: &str) -> Result<SettingValue, SettingError> {
+    pub(super) fn parse_value(ty: &SettingType, value: &str) -> Result<SettingValue, SettingError> {
         match ty {
             SettingType::Boolean => {
                 let val_lower = value.to_lowercase();

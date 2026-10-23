@@ -109,9 +109,9 @@ impl From<SettingError> for crate::error::RiftError {
     }
 }
 
-pub(crate) type SettingSetter<T> = fn(&mut T, &SettingValue) -> Result<(), SettingError>;
+type SettingSetter<T> = fn(&mut T, &SettingValue) -> Result<(), SettingError>;
 
-pub(crate) type SettingGetter<T> = fn(&T) -> SettingValue;
+type SettingGetter<T> = fn(&T) -> SettingValue;
 
 #[derive(Debug, Clone)]
 pub(crate) struct SettingDescriptor<T> {

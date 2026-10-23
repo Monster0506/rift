@@ -6,7 +6,7 @@ use std::sync::mpsc::Sender;
 #[derive(Debug, Clone)]
 pub(crate) struct FileEntry {
     pub(crate) path: PathBuf,
-    pub(crate) name: String,
+    name: String,
     pub(crate) is_dir: bool,
 }
 

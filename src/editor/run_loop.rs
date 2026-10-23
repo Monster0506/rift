@@ -3,6 +3,7 @@ use crate::action::{Action, EditorAction};
 use crate::command::Command;
 use crate::error::{ErrorType, RiftError};
 use crate::key::{InputEvent, Key};
+#[cfg(test)]
 use crate::key_handler::KeyAction;
 use crate::mode::Mode;
 use crate::term::TerminalBackend;
@@ -258,11 +259,7 @@ impl<T: TerminalBackend> Editor<T> {
         {
             let action = action.clone();
             self.handle_action(&action);
-            self.update_state_and_render(
-                key_press,
-                crate::key_handler::KeyAction::Continue,
-                crate::command::Command::Noop,
-            )?;
+            self.update_state_and_render(key_press, crate::command::Command::Noop)?;
             return Ok(true);
         }
 
@@ -283,11 +280,7 @@ impl<T: TerminalBackend> Editor<T> {
             return Ok(false);
         };
         self.advance_pending_grammar(grammar, key_press);
-        self.update_state_and_render(
-            key_press,
-            crate::key_handler::KeyAction::Continue,
-            crate::command::Command::Noop,
-        )?;
+        self.update_state_and_render(key_press, crate::command::Command::Noop)?;
         Ok(true)
     }
 
@@ -305,11 +298,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.pending_grammar = Some(pending_grammar::PendingGrammar::TextObject(
             text_object_input::PendingTextObject::new(modifier),
         ));
-        self.update_state_and_render(
-            key_press,
-            crate::key_handler::KeyAction::Continue,
-            crate::command::Command::Noop,
-        )?;
+        self.update_state_and_render(key_press, crate::command::Command::Noop)?;
         Ok(true)
     }
 
@@ -326,11 +315,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         self.handle_action(&Action::Editor(EditorAction::SurroundGiveLine));
-        self.update_state_and_render(
-            key_press,
-            crate::key_handler::KeyAction::Continue,
-            crate::command::Command::Noop,
-        )?;
+        self.update_state_and_render(key_press, crate::command::Command::Noop)?;
         Ok(true)
     }
 
@@ -357,11 +342,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.pending_count = self.pending_count.saturating_mul(10).saturating_add(digit);
         }
         // Update UI? (Render pending count)
-        self.update_state_and_render(
-            key_press,
-            crate::key_handler::KeyAction::Continue,
-            crate::command::Command::Noop,
-        )?;
+        self.update_state_and_render(key_press, crate::command::Command::Noop)?;
         Ok(true)
     }
 
@@ -393,11 +374,7 @@ impl<T: TerminalBackend> Editor<T> {
                         self.pending_count = 0;
                     }
 
-                    self.update_state_and_render(
-                        key_press,
-                        crate::key_handler::KeyAction::Continue,
-                        crate::command::Command::Noop,
-                    )?;
+                    self.update_state_and_render(key_press, crate::command::Command::Noop)?;
                     break;
                 }
                 MatchResult::Ambiguous(action) => {
@@ -407,30 +384,18 @@ impl<T: TerminalBackend> Editor<T> {
                         self.pending_keys_started_at = None;
                         self.handle_action(&action);
                         // Don't clear pending_count for operators
-                        self.update_state_and_render(
-                            key_press,
-                            crate::key_handler::KeyAction::Continue,
-                            crate::command::Command::Noop,
-                        )?;
+                        self.update_state_and_render(key_press, crate::command::Command::Noop)?;
                         break;
                     }
                     self.pending_keys_started_at
                         .get_or_insert_with(crate::time::Instant::now);
-                    self.update_state_and_render(
-                        key_press,
-                        crate::key_handler::KeyAction::Continue,
-                        crate::command::Command::Noop,
-                    )?;
+                    self.update_state_and_render(key_press, crate::command::Command::Noop)?;
                     break;
                 }
                 MatchResult::Prefix => {
                     self.pending_keys_started_at
                         .get_or_insert_with(crate::time::Instant::now);
-                    self.update_state_and_render(
-                        key_press,
-                        crate::key_handler::KeyAction::Continue,
-                        crate::command::Command::Noop,
-                    )?;
+                    self.update_state_and_render(key_press, crate::command::Command::Noop)?;
                     break;
                 }
                 MatchResult::None => {
@@ -442,11 +407,7 @@ impl<T: TerminalBackend> Editor<T> {
                         self.handle_single_unmatched_key();
                     }
 
-                    self.update_state_and_render(
-                        key_press,
-                        crate::key_handler::KeyAction::Continue,
-                        crate::command::Command::Noop,
-                    )?;
+                    self.update_state_and_render(key_press, crate::command::Command::Noop)?;
                     break;
                 }
             }
@@ -522,7 +483,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(super) fn resolve_key_context(&self) -> crate::keymap::KeyContext {
+    fn resolve_key_context(&self) -> crate::keymap::KeyContext {
         use crate::keymap::KeyContext;
 
         match self.current_mode {
@@ -543,7 +504,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(super) fn resolve_parent_key_context(
+    fn resolve_parent_key_context(
         &self,
         context: crate::keymap::KeyContext,
     ) -> Option<crate::keymap::KeyContext> {
@@ -584,7 +545,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Look up a key sequence in the keymap using the active editor parent resolver.
-    pub(super) fn lookup_key_sequence<'a>(
+    fn lookup_key_sequence<'a>(
         &'a self,
         context: crate::keymap::KeyContext,
         keys: &[crate::key::Key],
@@ -664,10 +625,9 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Handle special actions (mutations happen here, not during input handling)
-    #[allow(clippy::unused_self)]
+    #[cfg(test)]
     pub(super) fn handle_key_actions(&mut self, action: crate::key_handler::KeyAction) {
         match action {
-            #[cfg(test)]
             KeyAction::ExitInsertMode => {
                 // Finalize insert recording for dot-repeat
                 if !self.dot_repeat.is_replaying() {
@@ -680,7 +640,6 @@ impl<T: TerminalBackend> Editor<T> {
                     .commit_transaction();
                 self.set_mode(Mode::Normal);
             }
-            #[cfg(test)]
             KeyAction::ExitCommandMode => {
                 // Close completion dropdown without exiting command mode
                 if self.current_mode == Mode::Command
@@ -700,27 +659,20 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.clear_command_line();
                 self.set_mode(Mode::Normal);
             }
-            #[cfg(test)]
             KeyAction::ExitSearchMode => {
                 self.state.clear_command_line();
                 self.set_mode(Mode::Normal);
             }
-            #[cfg(test)]
             KeyAction::ToggleDebug => {
                 self.state.toggle_debug();
             }
-            #[cfg(test)]
             KeyAction::Resize(cols, rows) => {
                 self.render_system.resize(rows as usize, cols as usize);
                 self.plugin_host
                     .dispatch(&crate::plugin::EditorEvent::WindowResized { rows, cols });
                 self.apply_plugin_mutations();
             }
-            #[cfg(test)]
-            KeyAction::SkipAndRender => {}
-            KeyAction::Continue => {
-                // No special action needed
-            }
+            KeyAction::SkipAndRender | KeyAction::Continue => {}
         }
     }
 }

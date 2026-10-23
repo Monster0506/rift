@@ -1,9 +1,9 @@
 pub(crate) mod completion;
-pub(crate) mod definitions;
+mod definitions;
 pub(crate) mod executor;
-pub(crate) mod parser;
-pub(crate) mod registry;
-pub(crate) mod types;
+mod parser;
+mod registry;
+mod types;
 
 #[cfg(test)]
 pub(crate) use definitions::CompletionHint;

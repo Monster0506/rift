@@ -5,7 +5,7 @@ use super::*;
 fn test_undo_binary_data() {
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let binary_char = crate::character::Character::Byte(0xFF);
-    doc.buffer.insert_character(binary_char).unwrap();
+    doc.buffer.insert_character(binary_char);
 
     assert_eq!(doc.buffer.len(), 1);
     assert_eq!(doc.buffer.char_at(0), Some(binary_char));

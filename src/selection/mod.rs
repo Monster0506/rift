@@ -72,7 +72,7 @@ impl Region {
         a_start < b_end && b_start < a_end
     }
 
-    pub(crate) fn check_invariants(&self, buf: &TextBuffer) -> Vec<String> {
+    fn check_invariants(&self, buf: &TextBuffer) -> Vec<String> {
         let mut out = Vec::new();
         if self.anchor == usize::MAX || self.cursor == usize::MAX {
             out.push(format!(
@@ -94,7 +94,7 @@ impl Region {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SelectionSet {
     pub(crate) regions: Vec<Region>,
-    pub(crate) active: Option<Region>,
+    active: Option<Region>,
 }
 
 impl SelectionSet {
@@ -129,7 +129,7 @@ impl SelectionSet {
         self.regions.push(cur);
     }
 
-    pub(crate) fn commit_active(&mut self, buf: &TextBuffer) {
+    fn commit_active(&mut self, buf: &TextBuffer) {
         if let Some(region) = self.active.take() {
             self.bank(region, buf);
         }

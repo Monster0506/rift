@@ -10,14 +10,14 @@ use tree_sitter::{InputEdit, Parser, Query, QueryCursor, Tree};
 // Injection layer
 
 /// A single embedded-language layer (e.g. TypeScript inside a Svelte `<script>`).
-pub(crate) struct InjectedLayer {
-    pub(crate) language: tree_sitter::Language,
-    pub(crate) language_name: String,
-    pub(crate) highlights_query: Option<Arc<Query>>,
-    pub(crate) tree: Option<Tree>,
-    pub(crate) cached_highlights: Arc<IntervalTree<u32>>,
+struct InjectedLayer {
+    language: tree_sitter::Language,
+    language_name: String,
+    highlights_query: Option<Arc<Query>>,
+    tree: Option<Tree>,
+    cached_highlights: Arc<IntervalTree<u32>>,
     /// Byte ranges in the host document covered by this layer.
-    pub(crate) byte_ranges: Vec<std::ops::Range<usize>>,
+    byte_ranges: Vec<std::ops::Range<usize>>,
 }
 
 // Syntax
@@ -41,8 +41,8 @@ pub(crate) struct Syntax {
 
     // --- Static injection support (Svelte, HTML: capture name = language name) ---
     pub(crate) injections_query: Option<Arc<Query>>,
-    pub(crate) injection_capture_langs: Vec<(u32, String)>,
-    pub(crate) injection_layers: Vec<InjectedLayer>,
+    injection_capture_langs: Vec<(u32, String)>,
+    injection_layers: Vec<InjectedLayer>,
     /// Content ranges discovered by the last static-injection scan, keyed by
     /// index into `injection_layers`, so a single-edit reparse can reuse them.
     static_injection_ranges: IntervalTree<usize>,
@@ -145,7 +145,7 @@ impl Syntax {
     }
 
     /// Attach an injections query and pre-built injection layers (static protocol).
-    pub(crate) fn set_injections(
+    fn set_injections(
         &mut self,
         injections_query: Arc<Query>,
         capture_langs: Vec<(u32, String)>,
@@ -973,7 +973,7 @@ pub(crate) fn finalize_highlights(
 
 /// Recompute a highlights query, scoped to the changed region on a
 /// single-edit incremental reparse, or a full scan of `new_tree` otherwise.
-pub(crate) fn scoped_query_highlights(
+fn scoped_query_highlights(
     query: &Query,
     new_tree: &Tree,
     source: &[u8],

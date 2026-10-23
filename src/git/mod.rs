@@ -75,7 +75,7 @@ pub(crate) struct RepoPaths {
     /// Top-level worktree directory (`git rev-parse --show-toplevel`).
     pub(crate) root: PathBuf,
     /// Absolute git directory. `git rev-parse --git-dir` prints a path relative to `start` when invoked with a relative cwd, so this is resolved against `start` to always be absolute.
-    pub(crate) git_dir: PathBuf,
+    git_dir: PathBuf,
 }
 
 /// Discover the repository containing `start` (a directory). Fails with a

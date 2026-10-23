@@ -2,8 +2,8 @@
 //!
 //! Invariant: the host never mutates editor state directly; mutations are queued as [`PluginMutation`] and applied via `execute_command`, preserving undo/dot-repeat.
 
-pub(crate) mod events;
-pub(crate) mod lua_state;
+mod events;
+mod lua_state;
 
 #[cfg(feature = "plugins")]
 pub(crate) mod lua_host;
@@ -44,20 +44,20 @@ pub(crate) struct PluginId(NonZeroU32);
 impl PluginId {
     #[cfg(not(feature = "plugins"))]
     #[must_use]
-    pub(crate) const fn new(id: NonZeroU32) -> Self {
+    const fn new(id: NonZeroU32) -> Self {
         Self(id)
     }
 
     #[cfg(test)]
     /// Allocate a fresh, process-unique `PluginId`.
     #[must_use]
-    pub(crate) fn allocate() -> Self {
+    fn allocate() -> Self {
         allocate_next_plugin_id()
     }
 
     /// Return the raw `u32` value.
     #[must_use]
-    pub(crate) const fn get(self) -> u32 {
+    const fn get(self) -> u32 {
         self.0.get()
     }
 
@@ -85,7 +85,7 @@ pub(crate) struct PluginGeneration {
 impl PluginGeneration {
     /// Create a new `PluginGeneration` from a plugin id and a load generation counter.
     #[must_use]
-    pub(crate) const fn new(plugin_id: PluginId, generation: NonZeroU32) -> Self {
+    const fn new(plugin_id: PluginId, generation: NonZeroU32) -> Self {
         Self {
             plugin_id,
             generation,
@@ -94,7 +94,7 @@ impl PluginGeneration {
 
     /// Allocate a fresh, globally monotonic generation for the given plugin.
     #[must_use]
-    pub(crate) fn allocate(plugin_id: PluginId) -> Self {
+    fn allocate(plugin_id: PluginId) -> Self {
         Self::new(plugin_id, allocate_next_generation_id())
     }
 
@@ -112,7 +112,7 @@ impl PluginGeneration {
 
     /// Return the raw pair `(plugin_id, generation)` as u32 primitives.
     #[must_use]
-    pub(crate) const fn raw(self) -> (u32, u32) {
+    const fn raw(self) -> (u32, u32) {
         (self.plugin_id.get(), self.generation.get())
     }
 
@@ -142,7 +142,7 @@ impl From<(PluginId, NonZeroU32)> for PluginGeneration {
 
 /// Lifecycle status of a [`PluginGeneration`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum GenerationStatus {
+enum GenerationStatus {
     /// Active generation. Permitted to queue mutations and handle events.
     Active,
     /// Generation is in the process of retiring. New mutations are rejected;
@@ -165,7 +165,7 @@ pub(crate) struct PluginMutationEnvelope {
 impl PluginMutationEnvelope {
     /// Create a native mutation envelope without plugin origin tracking.
     #[must_use]
-    pub(crate) const fn native(mutation: PluginMutation) -> Self {
+    const fn native(mutation: PluginMutation) -> Self {
         Self {
             mutation,
             origin: None,
@@ -174,7 +174,7 @@ impl PluginMutationEnvelope {
 
     /// Create a plugin-originated mutation envelope tagged with the owning generation.
     #[must_use]
-    pub(crate) const fn plugin(mutation: PluginMutation, origin: PluginGeneration) -> Self {
+    const fn plugin(mutation: PluginMutation, origin: PluginGeneration) -> Self {
         Self {
             mutation,
             origin: Some(origin),
@@ -183,7 +183,7 @@ impl PluginMutationEnvelope {
 
     /// Create a mutation envelope with optional origin generation.
     #[must_use]
-    pub(crate) const fn new(mutation: PluginMutation, origin: Option<PluginGeneration>) -> Self {
+    const fn new(mutation: PluginMutation, origin: Option<PluginGeneration>) -> Self {
         Self { mutation, origin }
     }
 }
@@ -440,14 +440,14 @@ pub(crate) struct AnnotationHoverCtx {
 /// on each frame until `CloseFloat` is queued.
 #[derive(Debug, Clone)]
 pub(crate) struct PluginFloat {
-    pub(crate) title: String,
-    pub(crate) lines: Vec<String>,
+    title: String,
+    lines: Vec<String>,
     /// Screen row to keep uncovered: the float sits below it, else above.
-    pub(crate) anchor_row: Option<usize>,
+    anchor_row: Option<usize>,
     /// First visible line of `lines`.
-    pub(crate) scroll: usize,
+    scroll: usize,
     /// Content rows shown at the last render; bounds `scroll_float`.
-    pub(crate) visible_lines: usize,
+    visible_lines: usize,
 }
 
 impl PluginFloat {
@@ -647,7 +647,7 @@ impl PluginHost {
 
     #[cfg(test)]
     /// Register a command handler owned by a specific plugin generation.
-    pub(crate) fn register_command_with_generation<F>(
+    fn register_command_with_generation<F>(
         &mut self,
         name: &str,
         origin: PluginGeneration,
@@ -664,7 +664,7 @@ impl PluginHost {
 
     #[cfg(test)]
     /// Returns `true` if a plugin command with this name is registered.
-    pub(crate) fn has_command(&self, name: &str) -> bool {
+    fn has_command(&self, name: &str) -> bool {
         self.commands.contains_key(&name.to_lowercase())
     }
 
@@ -726,12 +726,8 @@ impl PluginHost {
 
     #[cfg(test)]
     /// Register a keymap action handler owned by a specific plugin generation.
-    pub(crate) fn register_action_with_generation<F>(
-        &mut self,
-        id: &str,
-        origin: PluginGeneration,
-        handler: F,
-    ) where
+    fn register_action_with_generation<F>(&mut self, id: &str, origin: PluginGeneration, handler: F)
+    where
         F: Fn() -> Vec<PluginMutation> + Send + 'static,
     {
         self.actions
@@ -1106,7 +1102,7 @@ impl PluginHost {
 
     #[cfg(test)]
     /// Register or retrieve a process-local `PluginId` for a plugin by name.
-    pub(crate) fn register_plugin(&mut self, name: &str) -> PluginId {
+    fn register_plugin(&mut self, name: &str) -> PluginId {
         if let Some(&id) = self.plugin_names.get(name) {
             return id;
         }
@@ -1118,19 +1114,19 @@ impl PluginHost {
 
     #[cfg(test)]
     /// Look up the `PluginId` for a given plugin name, if registered.
-    pub(crate) fn plugin_id_for_name(&self, name: &str) -> Option<PluginId> {
+    fn plugin_id_for_name(&self, name: &str) -> Option<PluginId> {
         self.plugin_names.get(name).copied()
     }
 
     #[cfg(test)]
     /// Look up the plugin name for a given `PluginId`, if known.
-    pub(crate) fn plugin_name(&self, id: PluginId) -> Option<&str> {
+    fn plugin_name(&self, id: PluginId) -> Option<&str> {
         self.plugin_ids.get(&id).map(std::string::String::as_str)
     }
 
     /// Spawn a new active generation for a plugin. Generation numbers are
     /// monotonic and never reused across the process lifetime.
-    pub(crate) fn new_generation(&mut self, plugin_id: PluginId) -> PluginGeneration {
+    fn new_generation(&mut self, plugin_id: PluginId) -> PluginGeneration {
         let gen = PluginGeneration::allocate(plugin_id);
         self.generations.insert(gen, GenerationStatus::Active);
         gen
@@ -1143,28 +1139,25 @@ impl PluginHost {
 
     #[cfg(test)]
     /// Check whether a generation is retiring.
-    pub(crate) fn is_generation_retiring(&self, generation: PluginGeneration) -> bool {
+    fn is_generation_retiring(&self, generation: PluginGeneration) -> bool {
         self.generations.get(&generation).copied() == Some(GenerationStatus::Retiring)
     }
 
     #[cfg(test)]
     /// Check whether a generation is retired.
-    pub(crate) fn is_generation_retired(&self, generation: PluginGeneration) -> bool {
+    fn is_generation_retired(&self, generation: PluginGeneration) -> bool {
         self.generations.get(&generation).copied() == Some(GenerationStatus::Retired)
     }
 
     #[cfg(test)]
     /// Get the current lifecycle status of a generation.
-    pub(crate) fn generation_status(
-        &self,
-        generation: PluginGeneration,
-    ) -> Option<GenerationStatus> {
+    fn generation_status(&self, generation: PluginGeneration) -> Option<GenerationStatus> {
         self.generations.get(&generation).copied()
     }
 
     /// Mark a generation as retiring. New mutations carrying this generation will be rejected.
     /// Returns true if the generation was previously active.
-    pub(crate) fn mark_generation_retiring(&mut self, generation: PluginGeneration) -> bool {
+    fn mark_generation_retiring(&mut self, generation: PluginGeneration) -> bool {
         if let Some(status) = self.generations.get_mut(&generation) {
             if *status == GenerationStatus::Active {
                 *status = GenerationStatus::Retiring;
@@ -1176,7 +1169,7 @@ impl PluginHost {
 
     /// Mark a generation as retired and unregister its handlers.
     /// Returns true if the generation was known and not already retired.
-    pub(crate) fn mark_generation_retired(&mut self, generation: PluginGeneration) -> bool {
+    fn mark_generation_retired(&mut self, generation: PluginGeneration) -> bool {
         let mut changed = false;
         if let Some(status) = self.generations.get_mut(&generation) {
             if *status != GenerationStatus::Retired {
@@ -1192,10 +1185,7 @@ impl PluginHost {
 
     /// Discard all queued mutations originating from the given generation.
     /// Returns the number of mutations discarded.
-    pub(crate) fn discard_mutations_for_generation(
-        &mut self,
-        generation: PluginGeneration,
-    ) -> usize {
+    fn discard_mutations_for_generation(&mut self, generation: PluginGeneration) -> usize {
         let initial_len = self.mutation_queue.len();
         self.mutation_queue
             .retain(|env| env.origin != Some(generation));
@@ -1203,7 +1193,7 @@ impl PluginHost {
     }
 
     /// Unregister all commands, actions, and event handlers owned by the given generation.
-    pub(crate) fn unregister_generation_handlers(&mut self, generation: PluginGeneration) {
+    fn unregister_generation_handlers(&mut self, generation: PluginGeneration) {
         self.commands
             .retain(|_, (_, origin)| *origin != Some(generation));
         self.command_descriptions
@@ -1240,7 +1230,7 @@ impl PluginHost {
 
     #[cfg(test)]
     /// Number of mutations currently queued.
-    pub(crate) const fn queued_mutation_count(&self) -> usize {
+    const fn queued_mutation_count(&self) -> usize {
         self.mutation_queue.len()
     }
 
@@ -1254,7 +1244,7 @@ impl PluginHost {
     #[cfg(test)]
     /// Queue a mutation tagged with its originating plugin generation.
     /// Returns false if the generation is not active (discarding the mutation).
-    pub(crate) fn queue_mutation_with_origin(
+    fn queue_mutation_with_origin(
         &mut self,
         mutation: PluginMutation,
         origin: PluginGeneration,
@@ -1275,7 +1265,7 @@ impl PluginHost {
 
     /// Apply a mutation tagged with its originating plugin generation.
     /// Returns false if the generation is not active.
-    pub(crate) fn apply_mutation_with_origin(
+    fn apply_mutation_with_origin(
         &mut self,
         mutation: PluginMutation,
         origin: PluginGeneration,
@@ -1288,7 +1278,7 @@ impl PluginHost {
 
     /// Apply a mutation envelope. Float open/close mutations are applied directly
     /// to `open_float`; all others are queued for the main loop.
-    pub(crate) fn apply_mutation_envelope(&mut self, envelope: PluginMutationEnvelope) -> bool {
+    fn apply_mutation_envelope(&mut self, envelope: PluginMutationEnvelope) -> bool {
         if let Some(origin) = envelope.origin {
             if !self.is_generation_active(origin) {
                 return false;
@@ -1316,7 +1306,7 @@ impl PluginHost {
     #[cfg(test)]
     /// Drain all queued mutations, discarding any whose origin generation is no longer active.
     /// Called by the main loop after every `dispatch` call.
-    pub(crate) fn drain_mutations(&mut self) -> impl Iterator<Item = PluginMutation> + '_ {
+    fn drain_mutations(&mut self) -> impl Iterator<Item = PluginMutation> + '_ {
         if let Some(lua) = &self.lua {
             let gen = lua.generation();
             for m in lua.drain_mutations() {

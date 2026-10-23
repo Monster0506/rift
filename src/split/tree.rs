@@ -34,7 +34,7 @@ pub(crate) enum SplitNode {
 pub(crate) struct SplitTree {
     pub(crate) root: SplitNode,
     pub(crate) windows: BTreeMap<WindowId, Window>,
-    pub(crate) focused_window: WindowId,
+    pub(super) focused_window: WindowId,
     pub(crate) previous_window: Option<WindowId>,
     next_window_id: WindowId,
 }
@@ -517,7 +517,7 @@ impl SplitTree {
     }
 
     #[cfg(test)]
-    pub(crate) fn focus_previous(&mut self) -> Option<WindowId> {
+    pub(super) fn focus_previous(&mut self) -> Option<WindowId> {
         let prev = self.previous_window?;
         if self.windows.contains_key(&prev) {
             self.set_focus(prev);
@@ -617,7 +617,7 @@ impl SplitTree {
 
     #[cfg(test)]
     #[must_use]
-    pub(crate) fn all_window_ids(&self) -> Vec<WindowId> {
+    pub(super) fn all_window_ids(&self) -> Vec<WindowId> {
         self.windows.keys().copied().collect()
     }
 

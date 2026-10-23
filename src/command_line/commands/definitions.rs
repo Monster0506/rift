@@ -7,8 +7,7 @@ use crate::split::navigation::Direction;
 use crate::state::UserSettings;
 
 /// Function pointer type for command factories
-pub(crate) type CommandFactory =
-    fn(&SettingsRegistry<UserSettings>, &[&str], usize) -> ParsedCommand;
+type CommandFactory = fn(&SettingsRegistry<UserSettings>, &[&str], usize) -> ParsedCommand;
 
 /// What kind of argument completion a command supports
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,14 +26,14 @@ pub(crate) enum CompletionHint {
 /// Descriptor for a command
 #[derive(Clone, Copy)]
 pub(crate) struct CommandDescriptor {
-    pub(crate) name: &'static str,
-    pub(crate) aliases: &'static [&'static str],
-    pub(crate) description: &'static str,
-    pub(crate) factory: Option<CommandFactory>,
-    pub(crate) subcommands: &'static [Self],
-    pub(crate) completion: CompletionHint,
+    pub(super) name: &'static str,
+    pub(super) aliases: &'static [&'static str],
+    pub(super) description: &'static str,
+    pub(super) factory: Option<CommandFactory>,
+    pub(super) subcommands: &'static [Self],
+    pub(super) completion: CompletionHint,
     /// Prefix required before subcommand tokens (e.g. ":" for `:split :left`)
-    pub(crate) subcommand_prefix: &'static str,
+    pub(super) subcommand_prefix: &'static str,
 }
 
 // Factory functions

@@ -1,5 +1,5 @@
 pub(crate) mod defaults;
-pub(crate) mod trie;
+mod trie;
 
 pub(crate) use self::trie::{MatchResult, Strictness, TrieNode};
 use crate::action::Action;
@@ -44,9 +44,9 @@ pub enum KeyContext {
     Buffer(BufferKindId),
 }
 
-/// Opaque token identifying a key binding registration layer or owner.
+/// Opaque token identifying a key binding owner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct KeyBindingToken(pub u64);
+pub(crate) struct KeyBindingToken(pub(crate) u64);
 
 impl KeyBindingToken {
     /// Create a new token from a raw identifier.
@@ -59,8 +59,6 @@ impl KeyBindingToken {
 /// A single registration layer entry for a sequence.
 #[derive(Debug, Clone)]
 struct LayerEntry {
-    #[cfg(test)]
-    token: KeyBindingToken,
     owner: Option<KeyBindingToken>,
     action: Action,
 }
@@ -72,8 +70,6 @@ pub struct KeyMap {
     mappings: HashMap<KeyContext, TrieNode>,
     /// Stack of registration layers for each sequence, ordered from oldest to newest.
     layers: BTreeMap<(KeyContext, Vec<Key>), Vec<LayerEntry>>,
-    /// Monotonic generator for internally allocated registration tokens.
-    next_token: u64,
 }
 
 impl KeyMap {
@@ -82,43 +78,22 @@ impl KeyMap {
         Self {
             mappings: HashMap::new(),
             layers: BTreeMap::new(),
-            next_token: 0,
         }
     }
 
-    /// Allocate a fresh unique registration token.
-    pub(crate) const fn allocate_token(&mut self) -> KeyBindingToken {
-        self.next_token += 1;
-        KeyBindingToken(self.next_token)
-    }
-
     /// Register a new single-key binding.
-    pub fn register(&mut self, context: KeyContext, key: Key, action: Action) -> KeyBindingToken {
-        self.register_sequence(context, vec![key], action)
+    pub fn register(&mut self, context: KeyContext, key: Key, action: Action) {
+        self.register_sequence(context, vec![key], action);
     }
 
-    /// Register a sequence binding with an auto-generated registration token.
+    /// Register a sequence binding.
     pub(crate) fn register_sequence(
         &mut self,
         context: KeyContext,
         keys: Vec<Key>,
         action: Action,
-    ) -> KeyBindingToken {
-        let token = self.allocate_token();
-        self.register_layered(context, keys, action, token, None);
-        token
-    }
-
-    #[cfg(test)]
-    /// Register a sequence binding with an explicit registration token.
-    pub(crate) fn register_with_token(
-        &mut self,
-        context: KeyContext,
-        keys: Vec<Key>,
-        action: Action,
-        token: KeyBindingToken,
     ) {
-        self.register_layered(context, keys, action, token, None);
+        self.register_layered(context, keys, action, None);
     }
 
     /// Register a sequence binding with an explicit owner token.
@@ -128,29 +103,22 @@ impl KeyMap {
         keys: Vec<Key>,
         action: Action,
         owner: KeyBindingToken,
-    ) -> KeyBindingToken {
-        let token = self.allocate_token();
-        self.register_layered(context, keys, action, token, Some(owner));
-        token
+    ) {
+        self.register_layered(context, keys, action, Some(owner));
     }
 
-    /// Register a layered sequence binding with an explicit token and optional owner token.
-    pub(crate) fn register_layered(
+    /// Register a layered sequence binding with an optional owner token.
+    fn register_layered(
         &mut self,
         context: KeyContext,
         keys: Vec<Key>,
         action: Action,
-        token: KeyBindingToken,
         owner: Option<KeyBindingToken>,
     ) {
         let entry = LayerEntry {
-            #[cfg(test)]
-            token,
             owner,
             action: action.clone(),
         };
-        #[cfg(not(test))]
-        let _ = token;
         self.mappings
             .entry(context)
             .or_default()
@@ -198,34 +166,6 @@ impl KeyMap {
         }
     }
 
-    #[cfg(test)]
-    /// Remove a registration layer by its registration token, restoring any lower layer.
-    pub(crate) fn unregister_token(&mut self, token: KeyBindingToken) -> bool {
-        let mut removed = false;
-        let mut to_cleanup = Vec::new();
-
-        for ((ctx, keys), stack) in &mut self.layers {
-            let initial_len = stack.len();
-            stack.retain(|entry| {
-                if entry.token == token {
-                    removed = true;
-                    false
-                } else {
-                    true
-                }
-            });
-            if stack.len() != initial_len {
-                to_cleanup.push((*ctx, keys.clone()));
-            }
-        }
-
-        for (ctx, keys) in to_cleanup {
-            self.refresh_binding(ctx, &keys);
-        }
-
-        removed
-    }
-
     /// Remove all registration layers belonging to an owner token, restoring any lower layers.
     pub(crate) fn unregister_owner(&mut self, owner: KeyBindingToken) -> usize {
         let mut count = 0;
@@ -256,7 +196,7 @@ impl KeyMap {
     #[cfg(test)]
     /// Return the active registration layer count for a sequence.
     #[must_use]
-    pub(crate) fn layer_count(&self, context: KeyContext, keys: &[Key]) -> usize {
+    fn layer_count(&self, context: KeyContext, keys: &[Key]) -> usize {
         self.layers
             .get(&(context, keys.to_vec()))
             .map_or(0, std::vec::Vec::len)
@@ -347,7 +287,7 @@ impl KeyMap {
     }
 
     /// Single-key compatibility lookup with caller-supplied parent resolution.
-    pub(crate) fn get_action_with_parent<R: ParentResolver>(
+    fn get_action_with_parent<R: ParentResolver>(
         &self,
         context: KeyContext,
         key: Key,

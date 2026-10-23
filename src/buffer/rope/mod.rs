@@ -25,16 +25,16 @@ fn utf8_len(c: Character) -> u32 {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum BufferSource {
+enum BufferSource {
     Original,
     Add,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Piece {
-    pub(crate) source: BufferSource,
-    pub(crate) start: usize,
-    pub(crate) len: usize, // Length in Characters
+struct Piece {
+    source: BufferSource,
+    start: usize,
+    len: usize, // Length in Characters
 }
 
 #[derive(Clone, Debug)]
@@ -130,21 +130,21 @@ impl PieceTable {
     }
 
     #[must_use]
-    pub(crate) fn len(&self) -> usize {
+    pub(super) fn len(&self) -> usize {
         self.root.as_ref().map_or(0, |n| n.len)
     }
 
     #[must_use]
-    pub(crate) fn byte_len(&self) -> usize {
+    pub(super) fn byte_len(&self) -> usize {
         self.root.as_ref().map_or(0, |n| n.byte_len)
     }
 
     #[must_use]
-    pub(crate) fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    pub(crate) fn check_invariants(&self) -> Vec<String> {
+    pub(super) fn check_invariants(&self) -> Vec<String> {
         let mut out = Vec::new();
         check_tree_metadata(self.root.as_deref(), &mut out);
         out
@@ -155,7 +155,7 @@ impl PieceTable {
         PieceTableChunkIterator::new(self.root.as_deref(), &self.original, &self.add)
     }
 
-    pub(crate) fn insert(&mut self, pos: usize, text: &[Character]) {
+    pub(super) fn insert(&mut self, pos: usize, text: &[Character]) {
         if text.is_empty() {
             return;
         }
@@ -208,7 +208,7 @@ impl PieceTable {
     }
 
     /// Replace `count` characters starting at `pos` with `text` in one pass.
-    pub(crate) fn replace(&mut self, pos: usize, count: usize, text: &[Character]) {
+    pub(super) fn replace(&mut self, pos: usize, count: usize, text: &[Character]) {
         if count == 0 {
             self.insert(pos, text);
             return;
@@ -246,7 +246,7 @@ impl PieceTable {
         assert_tree_metadata(self.root.as_deref());
     }
 
-    pub(crate) fn delete(&mut self, range: std::ops::Range<usize>) {
+    pub(super) fn delete(&mut self, range: std::ops::Range<usize>) {
         let start = range.start;
         let end = range.end;
         if start >= end {
@@ -274,20 +274,20 @@ impl PieceTable {
     }
 
     #[must_use]
-    pub(crate) fn get_line_count(&self) -> usize {
+    pub(super) fn get_line_count(&self) -> usize {
         self.root.as_ref().map_or(0, |n| n.newlines) + 1
     }
 
     #[must_use]
     /// # Panics
     /// Panics if `pos` is not less than the buffer length.
-    pub(crate) fn char_at(&self, pos: usize) -> Character {
+    pub(super) fn char_at(&self, pos: usize) -> Character {
         assert!(pos < self.len(), "Index out of bounds");
         get_char_recursive(self.root.as_deref(), pos, &self.original, &self.add)
     }
 
     #[must_use]
-    pub(crate) fn bytes_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
+    pub(super) fn bytes_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
         let mut result = Vec::new();
         collect_bytes_range(
             self.root.as_deref(),
@@ -301,7 +301,7 @@ impl PieceTable {
 
     #[cfg(test)]
     #[must_use]
-    pub(crate) fn line_start_offset(&self, line_idx: usize) -> usize {
+    fn line_start_offset(&self, line_idx: usize) -> usize {
         if line_idx == 0 {
             return 0;
         }
@@ -318,7 +318,7 @@ impl PieceTable {
 
     #[cfg(test)]
     #[must_use]
-    pub(crate) fn line_at_char(&self, pos: usize) -> usize {
+    fn line_at_char(&self, pos: usize) -> usize {
         if pos >= self.len() {
             return self.get_line_count().saturating_sub(1);
         }
@@ -333,7 +333,7 @@ impl PieceTable {
     /// Convert character index to byte offset. O(log n) to the target
     /// piece, then O(1) within it via `original_byte_prefix`/`add_byte_prefix`.
     #[must_use]
-    pub(crate) fn char_to_byte(&self, char_index: usize) -> usize {
+    pub(super) fn char_to_byte(&self, char_index: usize) -> usize {
         if char_index >= self.len() {
             return self.byte_len();
         }
@@ -348,7 +348,7 @@ impl PieceTable {
     /// Convert byte offset to character index (the char containing the byte, or starting at
     /// it). O(log n) to the target piece, then a binary search within it instead of a scan.
     #[must_use]
-    pub(crate) fn byte_to_char(&self, byte_offset: usize) -> usize {
+    pub(super) fn byte_to_char(&self, byte_offset: usize) -> usize {
         if byte_offset >= self.byte_len() {
             return self.len();
         }
@@ -378,7 +378,7 @@ impl PieceTable {
 
     /// Get an iterator starting at a specific character index
     #[must_use]
-    pub(crate) fn iter_at(&self, start_pos: usize) -> PieceTableIterator<'_> {
+    pub(super) fn iter_at(&self, start_pos: usize) -> PieceTableIterator<'_> {
         PieceTableIterator::new_at(self.root.as_deref(), start_pos, &self.original, &self.add)
     }
 

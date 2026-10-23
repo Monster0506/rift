@@ -2,7 +2,8 @@
 //! key-level input), self-contained enough to apply without extra context.
 use crate::action::Motion;
 
-pub(crate) mod input;
+#[cfg(test)]
+mod input;
 
 /// Editor commands
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -88,7 +88,7 @@ impl ClipboardRing {
     }
 
     #[must_use]
-    pub(crate) fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 }
@@ -237,7 +237,7 @@ impl SystemClipboardCache {
 
     #[cfg(test)]
     #[must_use]
-    pub(crate) const fn read_count(&self) -> u32 {
+    const fn read_count(&self) -> u32 {
         self.read_count
     }
 }
@@ -284,7 +284,11 @@ impl ClipboardTooltip {
 
         for (i, entry) in ring.entries().iter().enumerate() {
             let is_selected = i == selected;
-            let text: String = entry.iter().map(Character::to_char_lossy).collect();
+            let text: String = entry
+                .iter()
+                .copied()
+                .map(Character::to_char_lossy)
+                .collect();
             let row = render_entry(
                 &text,
                 content_width,

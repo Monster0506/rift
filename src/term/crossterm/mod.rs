@@ -19,7 +19,7 @@ use crate::term::{Size, TerminalBackend};
 
 /// Convert the core `Color` type to crossterm's `Color`.
 #[must_use]
-pub(crate) const fn color_to_crossterm(color: Color) -> CrosstermColor {
+const fn color_to_crossterm(color: Color) -> CrosstermColor {
     match color {
         Color::Reset => CrosstermColor::Reset,
         Color::Black => CrosstermColor::Black,
@@ -46,7 +46,7 @@ pub(crate) const fn color_to_crossterm(color: Color) -> CrosstermColor {
 #[cfg(test)]
 /// Convert crossterm's `Color` to the core `Color` type.
 #[must_use]
-pub(crate) const fn color_from_crossterm(color: CrosstermColor) -> Color {
+const fn color_from_crossterm(color: CrosstermColor) -> Color {
     match color {
         CrosstermColor::Reset => Color::Reset,
         CrosstermColor::Black => Color::Black,
@@ -288,7 +288,7 @@ impl<W: Write> TerminalBackend for CrosstermBackend<W> {
 }
 
 /// Translate crossterm `KeyEvent` to our `Key`. Unmapped codes yield `None`.
-pub(crate) fn translate_key_event(key_event: KeyEvent) -> Option<Key> {
+fn translate_key_event(key_event: KeyEvent) -> Option<Key> {
     let mods = translate_mods(key_event.modifiers);
 
     let code = match key_event.code {

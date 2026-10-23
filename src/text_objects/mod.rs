@@ -69,7 +69,7 @@ const QUOTE_CHARS: [char; 3] = ['"', '\'', '`'];
 
 /// Object key char -> kind. `n`/`p` are reserved for the direction prefix
 /// and never appear here.
-pub(crate) const OBJECT_KEY_TABLE: &[(char, ObjectKind)] = &[
+const OBJECT_KEY_TABLE: &[(char, ObjectKind)] = &[
     ('w', ObjectKind::Word),
     ('W', ObjectKind::BigWord),
     ('"', ObjectKind::DoubleQuote),

@@ -42,7 +42,7 @@ fn fill_runs(buf: &crate::buffer::TextBuffer, region: &Region) -> Vec<(usize, us
     runs
 }
 
-fn put_lines(doc: &mut Document, offset: usize, before: bool, text: &[Character]) -> bool {
+fn put_lines(doc: &mut Document, offset: usize, before: bool, text: &[Character]) {
     let line = doc.buffer.line_index.get_line_at(offset);
     let next_line = line + 1;
     let (pos, needs_newline) = if before {
@@ -54,11 +54,13 @@ fn put_lines(doc: &mut Document, offset: usize, before: bool, text: &[Character]
     };
     let _ = doc.buffer.set_cursor(pos);
     if !needs_newline {
-        return doc.insert_characters(text).is_ok();
+        doc.insert_characters(text);
+        return;
     }
 
     let trimmed = text.strip_suffix(&[Character::Newline]).unwrap_or(text);
-    doc.insert_characters(&[Character::Newline]).is_ok() && doc.insert_characters(trimmed).is_ok()
+    doc.insert_characters(&[Character::Newline]);
+    doc.insert_characters(trimmed);
 }
 
 fn merge_spans(mut spans: Vec<(usize, usize, bool)>) -> Vec<(usize, usize)> {
@@ -577,11 +579,13 @@ impl<T: TerminalBackend> Editor<T> {
             let (start, end) = region.buffer_span(&doc.buffer);
             if is_linewise {
                 let offset = if before { start } else { end.saturating_sub(1) };
-                return put_lines(doc, offset, before, &text);
+                put_lines(doc, offset, before, &text);
+                return true;
             }
             let pos = if before { start } else { end };
             let _ = doc.buffer.set_cursor(pos);
-            doc.insert_characters(&text).is_ok()
+            doc.insert_characters(&text);
+            true
         })
     }
 

@@ -1,5 +1,5 @@
 use super::*;
-use crate::layer::{Layer, LayerPriority};
+use crate::layer::Layer;
 
 fn cell(ch: char, fg: Option<Color>) -> Cell {
     Cell::from_char(ch).with_colors(fg, None)
@@ -60,7 +60,7 @@ fn later_overlapping_write_replays_after_the_earlier_one() {
     }
     frame.set_cell(0, 1, cell('X', Some(Color::Yellow)));
 
-    let mut layer = Layer::new(LayerPriority::CONTENT, 1, 10);
+    let mut layer = Layer::new(1, 10);
     rasterize(&frame, &mut layer);
 
     assert_eq!(layer.get_cell(0, 0).unwrap().to_char(), 'h');
@@ -146,7 +146,7 @@ fn reset_row_out_of_bounds_is_silently_ignored() {
 
 #[test]
 fn rasterize_matches_writing_directly_to_a_layer() {
-    let mut direct = Layer::new(LayerPriority::CONTENT, 3, 8);
+    let mut direct = Layer::new(3, 8);
     let writes: &[(usize, usize, char, Option<Color>)] = &[
         (0, 0, 'h', Some(Color::Red)),
         (0, 1, 'i', Some(Color::Red)),
@@ -163,7 +163,7 @@ fn rasterize_matches_writing_directly_to_a_layer() {
     for &(row, col, ch, fg) in writes {
         frame.set_cell(row, col, cell(ch, fg));
     }
-    let mut via_frame = Layer::new(LayerPriority::CONTENT, 3, 8);
+    let mut via_frame = Layer::new(3, 8);
     rasterize(&frame, &mut via_frame);
 
     for row in 0..3 {
@@ -182,7 +182,7 @@ fn write_str_colored_paints_one_cell_per_char() {
     let mut frame = PaintFrame::new(1);
     frame.write_str_colored(0, 2, "hi", Some(Color::Green), None);
 
-    let mut layer = Layer::new(LayerPriority::CONTENT, 1, 6);
+    let mut layer = Layer::new(1, 6);
     rasterize(&frame, &mut layer);
 
     assert_eq!(layer.get_cell(0, 2).unwrap().to_char(), 'h');
@@ -195,7 +195,7 @@ fn preserves_raw_byte_content_that_is_not_valid_utf8() {
     let mut frame = PaintFrame::new(1);
     frame.set_cell(0, 0, Cell::new(Character::Byte(0xFF)));
 
-    let mut layer = Layer::new(LayerPriority::CONTENT, 1, 4);
+    let mut layer = Layer::new(1, 4);
     rasterize(&frame, &mut layer);
 
     assert_eq!(layer.get_cell(0, 0).unwrap().content, Character::Byte(0xFF));

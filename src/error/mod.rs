@@ -22,11 +22,11 @@ impl fmt::Display for ErrorSeverity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             #[cfg(test)]
-            Self::Info => write!(f, "{}", crate::constants::logging::INFO),
-            Self::Warning => write!(f, "{}", crate::constants::logging::WARN),
-            Self::Error => write!(f, "{}", crate::constants::logging::ERROR),
+            Self::Info => write!(f, "{}", logging::INFO),
+            Self::Warning => write!(f, "{}", logging::WARN),
+            Self::Error => write!(f, "{}", logging::ERROR),
             #[cfg(test)]
-            Self::Critical => write!(f, "{}", crate::constants::logging::CRITICAL),
+            Self::Critical => write!(f, "{}", logging::CRITICAL),
         }
     }
 }
@@ -94,11 +94,7 @@ impl RiftError {
 
     #[cfg(test)]
     /// Create a new critical error (Severity: Critical)
-    pub(crate) fn critical(
-        kind: ErrorType,
-        code: impl Into<String>,
-        message: impl Into<String>,
-    ) -> Self {
+    fn critical(kind: ErrorType, code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             severity: ErrorSeverity::Critical,
             kind,
@@ -161,10 +157,19 @@ impl From<std::io::Error> for RiftError {
 
 #[cfg(test)]
 /// Result alias for Rift operations
-pub(crate) type Result<T> = std::result::Result<T, RiftError>;
+type Result<T> = std::result::Result<T, RiftError>;
 
 pub(crate) mod manager;
 
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+mod logging {
+    #[cfg(test)]
+    pub(crate) const INFO: &str = "INFO";
+    pub(crate) const WARN: &str = "WARN";
+    pub(crate) const ERROR: &str = "ERROR";
+    #[cfg(test)]
+    pub(crate) const CRITICAL: &str = "CRITICAL";
+}

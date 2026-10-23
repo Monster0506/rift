@@ -23,7 +23,7 @@ pub(crate) struct CreationReservation {
 
 impl CreationReservation {
     #[must_use]
-    pub(crate) const fn new(id: DocumentId, handle: DocumentHandle) -> Self {
+    const fn new(id: DocumentId, handle: DocumentHandle) -> Self {
         Self { id, handle }
     }
 
@@ -81,15 +81,15 @@ impl DocumentDraft {
         })
     }
 
-    pub(crate) fn into_document(self) -> Document {
+    fn into_document(self) -> Document {
         self.document
     }
 }
 
 pub(crate) struct PreparedRemoval {
-    pub(crate) id: DocumentId,
-    pub(crate) intent: RemovalIntent,
-    pub(crate) replacement: Option<Document>,
+    id: DocumentId,
+    intent: RemovalIntent,
+    replacement: Option<Document>,
 }
 
 impl std::fmt::Debug for PreparedRemoval {
@@ -105,12 +105,12 @@ impl std::fmt::Debug for PreparedRemoval {
 
 impl PreparedRemoval {
     #[cfg(test)]
-    pub(crate) const fn id(&self) -> DocumentId {
+    const fn id(&self) -> DocumentId {
         self.id
     }
 
     #[cfg(test)]
-    pub(crate) const fn intent(&self) -> RemovalIntent {
+    const fn intent(&self) -> RemovalIntent {
         self.intent
     }
 
@@ -161,7 +161,7 @@ impl DocumentManager {
 
     #[cfg(test)]
     #[must_use]
-    pub(crate) fn active_document_handle(&self) -> Option<DocumentHandle> {
+    fn active_document_handle(&self) -> Option<DocumentHandle> {
         let id = self.active_document_id()?;
         self.get_handle(id)
     }
@@ -455,7 +455,7 @@ impl DocumentManager {
     /// # Errors
     /// Returns an error if the document has unsaved changes, is not in the tab order, or its
     /// replacement cannot be created.
-    pub(crate) fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
+    pub(super) fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
         if !self.documents.contains_key(&id) {
             return Ok(());
         }
@@ -531,7 +531,7 @@ impl DocumentManager {
     }
 
     #[cfg(test)]
-    pub(crate) fn iter_documents_mut(&mut self) -> impl Iterator<Item = &mut Document> {
+    pub(super) fn iter_documents_mut(&mut self) -> impl Iterator<Item = &mut Document> {
         self.documents.values_mut()
     }
 

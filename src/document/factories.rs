@@ -162,7 +162,7 @@ impl Document {
 
     /// # Errors
     /// Returns an error if the text buffer cannot be created.
-    pub(crate) fn from_bytes(
+    pub(super) fn from_bytes(
         id: super::DocumentId,
         path: Option<&Path>,
         bytes: Vec<u8>,

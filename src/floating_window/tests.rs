@@ -2,7 +2,7 @@
 
 use crate::character::Character;
 use crate::floating_window::{BorderChars, FloatingWindow, WindowPosition, WindowStyle};
-use crate::layer::{Layer, LayerPriority};
+use crate::layer::Layer;
 
 #[test]
 fn test_floating_window_new() {
@@ -36,7 +36,7 @@ fn test_floating_window_content_dimensions() {
 
 #[test]
 fn test_floating_window_render_multiline() {
-    let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 24, 80);
+    let mut layer = Layer::new(24, 80);
     let window = FloatingWindow::new(WindowPosition::Center, 30, 5).with_border(true);
 
     let content = vec![
@@ -119,7 +119,7 @@ fn test_floating_window_position_absolute_clamped() {
 
 #[test]
 fn test_floating_window_content_truncation() {
-    let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 24, 80);
+    let mut layer = Layer::new(24, 80);
     let window = FloatingWindow::new(WindowPosition::Center, 10, 1).with_border(false);
 
     // Content longer than window width
@@ -143,7 +143,7 @@ fn test_floating_window_content_truncation() {
 
 #[test]
 fn test_floating_window_with_custom_border_chars() {
-    let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 24, 80);
+    let mut layer = Layer::new(24, 80);
     let custom_border = BorderChars::from_ascii('+', '+', '+', '+', '-', '|');
     let window = FloatingWindow::new(WindowPosition::Center, 10, 3)
         .with_border(true)
@@ -174,7 +174,7 @@ fn test_window_style_defaults() {
 
 #[test]
 fn test_floating_window_no_border() {
-    let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 24, 80);
+    let mut layer = Layer::new(24, 80);
     let window = FloatingWindow::new(WindowPosition::Center, 10, 3).with_border(false);
 
     window.render(

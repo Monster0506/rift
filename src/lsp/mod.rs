@@ -1,5 +1,5 @@
 pub(crate) mod broker;
-pub(crate) mod client;
+mod client;
 pub(crate) mod config;
 pub(crate) mod protocol;
 
@@ -144,7 +144,7 @@ impl LspManager {
     /// True while `language`'s server is doing its initial load: requests
     /// would only queue behind it. Never true again once it has been ready.
     #[must_use]
-    pub(crate) fn is_indexing(&self, language: &str) -> bool {
+    fn is_indexing(&self, language: &str) -> bool {
         if self.ready_once.contains(language) {
             return false;
         }
@@ -408,7 +408,7 @@ impl LspManager {
 
     #[cfg(test)]
     /// Notify the server that a document's content changed.
-    pub(crate) fn did_change(&mut self, path: &Path, content: &str) {
+    fn did_change(&mut self, path: &Path, content: &str) {
         self.did_change_uri(&path_to_uri(path), content);
     }
 
@@ -914,7 +914,7 @@ impl LspManager {
     #[cfg(test)]
     /// Returns `true` if there is an active LSP client for the given file path.
     #[must_use]
-    pub(crate) fn has_client_for_path(&self, path: &Path) -> bool {
+    fn has_client_for_path(&self, path: &Path) -> bool {
         self.open_docs.contains_key(&doc_key(path))
     }
 
@@ -1199,7 +1199,7 @@ fn parse_code_actions(result: Value) -> Vec<Value> {
 
 #[cfg(test)]
 #[path = "mod_fns.rs"]
-pub(crate) mod mod_fns;
+mod mod_fns;
 
 #[cfg(test)]
 mod annotation_tests;

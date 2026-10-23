@@ -55,13 +55,13 @@ fn random_key(rng: &mut Rng) -> Key {
     }
 }
 
-pub(crate) struct FuzzConfig {
-    pub(crate) seed: u64,
-    pub(crate) steps: usize,
-    pub(crate) tier: InvariantTier,
-    pub(crate) deep_every: usize,
-    pub(crate) rows: u16,
-    pub(crate) cols: u16,
+struct FuzzConfig {
+    seed: u64,
+    steps: usize,
+    tier: InvariantTier,
+    deep_every: usize,
+    rows: u16,
+    cols: u16,
 }
 
 impl Default for FuzzConfig {
@@ -77,11 +77,11 @@ impl Default for FuzzConfig {
     }
 }
 
-pub(crate) struct FuzzFailure {
-    pub(crate) step: usize,
-    pub(crate) keys: Vec<Key>,
-    pub(crate) violations: Vec<Violation>,
-    pub(crate) tick_error: Option<RiftError>,
+struct FuzzFailure {
+    step: usize,
+    keys: Vec<Key>,
+    violations: Vec<Violation>,
+    tick_error: Option<RiftError>,
 }
 
 /// Runs a random editing session described by `config`.
@@ -89,7 +89,7 @@ pub(crate) struct FuzzFailure {
 /// # Errors
 /// Returns the `FuzzFailure` for the first broken invariant. If the headless
 /// editor cannot be created, returns it at step 0 with `tick_error` set.
-pub(crate) fn run(config: &FuzzConfig) -> Result<usize, FuzzFailure> {
+fn run(config: &FuzzConfig) -> Result<usize, FuzzFailure> {
     let mut rng = Rng::new(config.seed);
     let backend = ReplayBackend::new(std::io::sink(), config.rows, config.cols);
     let mut ed = Editor::with_file(backend, None).map_err(|tick_error| FuzzFailure {

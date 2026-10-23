@@ -396,7 +396,7 @@ fn test_double_buffer_dirty_rect_expansion() {
 
     let contents: Vec<char> = batches
         .iter()
-        .flat_map(|b| b.cells.iter().map(Cell::to_char))
+        .flat_map(|b| b.cells.iter().copied().map(Cell::to_char))
         .collect();
     assert!(contents.contains(&'A'));
     assert!(contents.contains(&'Z'));

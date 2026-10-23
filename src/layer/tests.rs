@@ -68,8 +68,7 @@ fn test_cell_from_char() {
 
 #[test]
 fn test_layer_creation() {
-    let layer = Layer::new(LayerPriority::CONTENT, 10, 20);
-    assert_eq!(layer.priority(), LayerPriority::CONTENT);
+    let layer = Layer::new(10, 20);
     assert_eq!(layer.rows(), 10);
     assert_eq!(layer.cols(), 20);
     assert!(layer.is_dirty());
@@ -77,7 +76,7 @@ fn test_layer_creation() {
 
 #[test]
 fn test_layer_set_and_get_cell() {
-    let mut layer = Layer::new(LayerPriority::CONTENT, 5, 5);
+    let mut layer = Layer::new(5, 5);
 
     // Set a cell
     assert!(layer.set_cell(2, 3, Cell::from_char('X')));
@@ -93,7 +92,7 @@ fn test_layer_set_and_get_cell() {
 
 #[test]
 fn test_layer_out_of_bounds() {
-    let mut layer = Layer::new(LayerPriority::CONTENT, 5, 5);
+    let mut layer = Layer::new(5, 5);
 
     // Out of bounds set should return false
     assert!(!layer.set_cell(10, 10, Cell::from_char('X')));
@@ -103,7 +102,7 @@ fn test_layer_out_of_bounds() {
 
 #[test]
 fn test_layer_clear() {
-    let mut layer = Layer::new(LayerPriority::CONTENT, 3, 3);
+    let mut layer = Layer::new(3, 3);
     layer.set_cell(1, 1, Cell::from_char('X'));
 
     layer.clear();
@@ -118,7 +117,7 @@ fn test_layer_clear() {
 
 #[test]
 fn test_layer_write_bytes() {
-    let mut layer = Layer::new(LayerPriority::CONTENT, 3, 10);
+    let mut layer = Layer::new(3, 10);
     layer.write_str(1, 2, "Hello");
 
     assert_eq!(layer.get_cell(1, 2).unwrap().content, Character::from('H'));
@@ -130,7 +129,7 @@ fn test_layer_write_bytes() {
 
 #[test]
 fn test_layer_fill_row() {
-    let mut layer = Layer::new(LayerPriority::STATUS_BAR, 3, 5);
+    let mut layer = Layer::new(3, 5);
     layer.fill_row(1, '-', Some(Color::Green), None);
 
     for c in 0..5 {
@@ -142,7 +141,7 @@ fn test_layer_fill_row() {
 
 #[test]
 fn test_layer_resize() {
-    let mut layer = Layer::new(LayerPriority::CONTENT, 3, 3);
+    let mut layer = Layer::new(3, 3);
     layer.set_cell(0, 0, Cell::from_char('A'));
     layer.set_cell(2, 2, Cell::from_char('B'));
 
@@ -321,7 +320,7 @@ fn test_compositor_remove_layer() {
 
 #[test]
 fn test_layer_dirty_tracking() {
-    let mut layer = Layer::new(LayerPriority::CONTENT, 3, 3);
+    let mut layer = Layer::new(3, 3);
     assert!(layer.is_dirty()); // New layers are dirty
 
     layer.mark_clean();
@@ -406,7 +405,7 @@ fn test_rect_adjacency() {
 
 #[test]
 fn test_layer_set_cell_dirty_optimization() {
-    let mut layer = Layer::new(LayerPriority::CONTENT, 5, 5);
+    let mut layer = Layer::new(5, 5);
     layer.mark_clean();
     assert!(!layer.is_dirty());
 
@@ -434,7 +433,7 @@ fn test_layer_set_cell_dirty_optimization() {
 
 #[test]
 fn test_layer_dirty_rects_capping() {
-    let mut layer = Layer::new(LayerPriority::CONTENT, 20, 20);
+    let mut layer = Layer::new(20, 20);
     layer.mark_clean();
 
     // 11 non-overlapping rects, spaced so the merger won't merge them unless forced by the cap.

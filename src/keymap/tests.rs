@@ -641,50 +641,6 @@ fn test_layered_registration_and_restoration_by_sequence() {
 }
 
 #[test]
-fn test_layered_registration_and_restoration_by_token() {
-    let mut map = KeyMap::new();
-    let ctx = KeyContext::Global;
-    let keys = vec![Key::ctrl('x')];
-
-    let token1 = KeyBindingToken::new(10);
-    let token2 = KeyBindingToken::new(20);
-
-    map.register_with_token(
-        ctx,
-        keys.clone(),
-        Action::Editor(EditorAction::Quit),
-        token1,
-    );
-    assert_eq!(
-        map.lookup(ctx, &keys),
-        MatchResult::Exact(&Action::Editor(EditorAction::Quit))
-    );
-
-    // Layer 2 with token 20
-    map.register_with_token(
-        ctx,
-        keys.clone(),
-        Action::Editor(EditorAction::EnterNormalMode),
-        token2,
-    );
-    assert_eq!(
-        map.lookup(ctx, &keys),
-        MatchResult::Exact(&Action::Editor(EditorAction::EnterNormalMode))
-    );
-
-    // Removing token2 restores token1
-    assert!(map.unregister_token(token2));
-    assert_eq!(
-        map.lookup(ctx, &keys),
-        MatchResult::Exact(&Action::Editor(EditorAction::Quit))
-    );
-
-    // Removing token1 removes binding completely
-    assert!(map.unregister_token(token1));
-    assert_eq!(map.lookup(ctx, &keys), MatchResult::None);
-}
-
-#[test]
 fn test_layered_registration_and_restoration_by_owner() {
     let mut map = KeyMap::new();
     let ctx = KeyContext::Normal;
@@ -754,16 +710,18 @@ fn test_multi_key_sequence_layer_restoration() {
     let mut map = KeyMap::new();
     let ctx = KeyContext::Normal;
     let seq = vec![Key::char('g'), Key::char('d')];
+    let owner = KeyBindingToken::new(1);
 
-    let token1 = map.register_sequence(
+    map.register_sequence(
         ctx,
         seq.clone(),
         Action::Editor(EditorAction::Move(Motion::StartOfFile)),
     );
-    let token2 = map.register_sequence(
+    map.register_with_owner(
         ctx,
         seq.clone(),
         Action::Buffer("custom:definition".to_string()),
+        owner,
     );
 
     assert_eq!(
@@ -773,7 +731,7 @@ fn test_multi_key_sequence_layer_restoration() {
     assert_eq!(map.lookup(ctx, &[Key::char('g')]), MatchResult::Prefix);
 
     // Remove top layer
-    assert!(map.unregister_token(token2));
+    assert_eq!(map.unregister_owner(owner), 1);
     assert_eq!(
         map.lookup(ctx, &seq),
         MatchResult::Exact(&Action::Editor(EditorAction::Move(Motion::StartOfFile)))
@@ -781,7 +739,7 @@ fn test_multi_key_sequence_layer_restoration() {
     assert_eq!(map.lookup(ctx, &[Key::char('g')]), MatchResult::Prefix);
 
     // Remove base layer
-    assert!(map.unregister_token(token1));
+    assert!(map.unregister_sequence(ctx, &seq));
     assert_eq!(map.lookup(ctx, &seq), MatchResult::None);
     assert_eq!(map.lookup(ctx, &[Key::char('g')]), MatchResult::None);
 }

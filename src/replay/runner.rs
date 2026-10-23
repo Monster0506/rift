@@ -16,13 +16,13 @@ pub struct Mark {
     /// Perf spans recorded since the previous mark (or session start).
     /// Only populated when built with the `perf_instrumentation` feature.
     #[cfg(feature = "perf_instrumentation")]
-    pub(crate) perf_events: Vec<crate::perf::PerfEvent>,
+    perf_events: Vec<crate::perf::PerfEvent>,
 }
 
 /// Wall-clock cost of a single `tick()` spent processing one scripted key.
 #[derive(Debug, Clone)]
 pub struct TickTiming {
-    pub(crate) duration: Duration,
+    duration: Duration,
 }
 
 /// avg/p50/p95/max over a set of durations.

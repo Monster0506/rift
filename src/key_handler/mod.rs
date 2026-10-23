@@ -1,17 +1,11 @@
 //! Key handler: processes keypresses into actions, handling special keys and multi-key
 //! sequences before command translation. Deterministic; never mutates buffer/editor state directly.
-#[cfg(test)]
 use crate::key::InputEvent;
-#[cfg(test)]
 use crate::key::Key;
-#[cfg(test)]
 use crate::key::KeyCode;
-#[cfg(test)]
 use crate::key::Mods;
-#[cfg(test)]
 use crate::mode::Mode;
 
-#[cfg(test)]
 const CTRL_RIGHT_BRACKET: Key = Key {
     code: KeyCode::Char(']'),
     mods: Mods::CTRL,
@@ -24,34 +18,26 @@ pub(crate) enum KeyAction {
     /// Continue with normal command processing
     Continue,
     /// Skip command processing and re-render (e.g., escape to clear)
-    #[cfg(test)]
     SkipAndRender,
     /// Exit insert mode and re-render
-    #[cfg(test)]
     ExitInsertMode,
     /// Toggle debug mode and re-render
-    #[cfg(test)]
     ToggleDebug,
     /// Exit command mode and re-render
-    #[cfg(test)]
     ExitCommandMode,
     /// Exit search mode and re-render
-    #[cfg(test)]
     ExitSearchMode,
     /// Resize the terminal
-    #[cfg(test)]
     Resize(u16, u16),
 }
 
-#[cfg(test)]
 /// Key handler for processing special keypresses
-pub(crate) struct KeyHandler;
+struct KeyHandler;
 
-#[cfg(test)]
 impl KeyHandler {
     /// Process an input event and determine what action to take
     #[must_use]
-    pub(crate) const fn process_event(event: &InputEvent, current_mode: Mode) -> KeyAction {
+    const fn process_event(event: &InputEvent, current_mode: Mode) -> KeyAction {
         match event {
             InputEvent::Key(key) => Self::process_key(*key, current_mode),
             InputEvent::Resize(cols, rows) => KeyAction::Resize(*cols, *rows),
@@ -62,7 +48,7 @@ impl KeyHandler {
     /// Process a keypress and determine what action to take
     /// Returns the action the editor should take
     #[must_use]
-    pub(crate) const fn process_key(key: Key, current_mode: Mode) -> KeyAction {
+    const fn process_key(key: Key, current_mode: Mode) -> KeyAction {
         match current_mode {
             Mode::Normal => Self::process_normal_mode_key(key),
             Mode::Insert | Mode::Replace => Self::process_insert_mode_key(key),

@@ -3,11 +3,11 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SessionInfo {
-    pub(crate) pid: u32,
-    pub(crate) host: String,
-    pub(crate) port: u16,
-    pub(crate) token: String,
+pub(super) struct SessionInfo {
+    pub(super) pid: u32,
+    pub(super) host: String,
+    pub(super) port: u16,
+    pub(super) token: String,
 }
 
 pub(crate) fn data_dir() -> PathBuf {
@@ -32,7 +32,7 @@ pub(crate) fn data_dir() -> PathBuf {
 }
 
 #[must_use]
-pub(crate) fn session_path(pid: u32) -> PathBuf {
+pub(super) fn session_path(pid: u32) -> PathBuf {
     data_dir().join("sessions").join(format!("{pid}.json"))
 }
 
@@ -40,7 +40,7 @@ pub(crate) fn session_path(pid: u32) -> PathBuf {
 ///
 /// # Errors
 /// Returns `Err` if the parent directory cannot be created, the info cannot be serialized, or the file cannot be written.
-pub(crate) fn write(info: &SessionInfo, path: &Path) -> std::io::Result<()> {
+pub(super) fn write(info: &SessionInfo, path: &Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -53,17 +53,17 @@ pub(crate) fn write(info: &SessionInfo, path: &Path) -> std::io::Result<()> {
 ///
 /// # Errors
 /// Returns `Err` if the file cannot be read or does not contain valid session JSON.
-pub(crate) fn read(path: &Path) -> anyhow::Result<SessionInfo> {
+pub(super) fn read(path: &Path) -> anyhow::Result<SessionInfo> {
     let data = std::fs::read_to_string(path)?;
     Ok(serde_json::from_str(&data)?)
 }
 
-pub(crate) fn remove(path: &Path) {
+pub(super) fn remove(path: &Path) {
     let _ = std::fs::remove_file(path);
 }
 
 #[must_use]
-pub(crate) fn is_alive(pid: u32) -> bool {
+pub(super) fn is_alive(pid: u32) -> bool {
     #[cfg(target_os = "linux")]
     {
         Path::new(&format!("/proc/{pid}")).exists()
@@ -127,7 +127,7 @@ pub fn print_newest() -> ExitCode {
 ///
 /// # Errors
 /// Returns `Err` if the sessions directory cannot be read or no live session exists.
-pub(crate) fn find_local() -> anyhow::Result<PathBuf> {
+fn find_local() -> anyhow::Result<PathBuf> {
     let sessions_dir = data_dir().join("sessions");
 
     let mut entries: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(&sessions_dir)

@@ -15,7 +15,7 @@ pub(crate) enum CharClass {
 
 /// Classify a character for word boundary detection
 #[must_use]
-pub(crate) fn classify_char(c: char) -> CharClass {
+pub(super) fn classify_char(c: char) -> CharClass {
     if c.is_whitespace() {
         CharClass::Whitespace
     } else if c.is_alphanumeric() || c == '_' {
@@ -33,12 +33,12 @@ pub(crate) fn classify_character(ch: Character) -> CharClass {
 
 /// Check if a character is part of a word (not whitespace)
 #[must_use]
-pub(crate) const fn is_word_char(c: char) -> bool {
+pub(super) const fn is_word_char(c: char) -> bool {
     !c.is_whitespace()
 }
 
 /// Check if a character indicates sentence end
 #[must_use]
-pub(crate) const fn is_sentence_end(c: char) -> bool {
+pub(super) const fn is_sentence_end(c: char) -> bool {
     matches!(c, '.' | '!' | '?')
 }

@@ -1,12 +1,12 @@
 #[cfg(test)]
-pub(crate) mod buffer;
+mod buffer;
 #[cfg(test)]
-pub(crate) mod styled;
+mod styled;
 pub(crate) mod theme;
 
 pub(crate) use theme::Theme;
 
-pub(crate) type ColorPair = (Option<Color>, Option<Color>);
+type ColorPair = (Option<Color>, Option<Color>);
 
 pub(crate) type CellColorSpan = (std::ops::Range<usize>, ColorPair);
 
@@ -117,20 +117,20 @@ pub(crate) fn contrasting_color(bg: Color) -> Color {
 
 #[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ColorStyle {
-    pub(crate) fg: Option<Color>,
-    pub(crate) bg: Option<Color>,
+struct ColorStyle {
+    fg: Option<Color>,
+    bg: Option<Color>,
 }
 
 #[cfg(test)]
 impl ColorStyle {
     #[must_use]
-    pub(crate) const fn new() -> Self {
+    const fn new() -> Self {
         Self { fg: None, bg: None }
     }
 
     #[must_use]
-    pub(crate) const fn fg(fg: Color) -> Self {
+    const fn fg(fg: Color) -> Self {
         Self {
             fg: Some(fg),
             bg: None,
@@ -138,7 +138,7 @@ impl ColorStyle {
     }
 
     #[must_use]
-    pub(crate) const fn bg(bg: Color) -> Self {
+    const fn bg(bg: Color) -> Self {
         Self {
             fg: None,
             bg: Some(bg),
@@ -146,7 +146,7 @@ impl ColorStyle {
     }
 
     #[must_use]
-    pub(crate) const fn new_colors(fg: Color, bg: Color) -> Self {
+    const fn new_colors(fg: Color, bg: Color) -> Self {
         Self {
             fg: Some(fg),
             bg: Some(bg),
@@ -154,7 +154,7 @@ impl ColorStyle {
     }
 
     #[must_use]
-    pub(crate) const fn is_empty(self) -> bool {
+    const fn is_empty(self) -> bool {
         self.fg.is_none() && self.bg.is_none()
     }
 }

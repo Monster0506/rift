@@ -30,13 +30,13 @@ struct BrokerDescriptor {
 }
 
 #[must_use]
-pub(crate) fn broker_dir() -> PathBuf {
+fn broker_dir() -> PathBuf {
     crate::ipc::session::data_dir().join("lsp")
 }
 
 /// Stable cache key for one (server command, args, project root) combination.
 #[must_use]
-pub(crate) fn broker_key(command: &str, args: &[String], root_uri: Option<&str>) -> String {
+fn broker_key(command: &str, args: &[String], root_uri: Option<&str>) -> String {
     // FNV-1a: deterministic across processes and rift builds.
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     let mut eat = |bytes: &[u8]| {
@@ -70,7 +70,7 @@ pub(crate) fn broker_key(command: &str, args: &[String], root_uri: Option<&str>)
 ///
 /// # Errors
 /// Returns an error if keepalive is disabled or no broker connection can be made.
-pub(crate) fn attach(
+pub(super) fn attach(
     command: &str,
     args: &[String],
     root_uri: Option<&str>,
@@ -182,7 +182,7 @@ fn spawn_detached_broker(key: &str) -> anyhow::Result<()> {
 // --- Proxy core (pure, unit-tested) ---
 
 #[derive(Debug, PartialEq)]
-pub(crate) enum Action {
+enum Action {
     ToServer(Value),
     ToClient(Value),
 }
@@ -197,7 +197,7 @@ struct Inflight {
 /// Message-level proxy state: remaps request ids so sequential clients can
 /// reuse them, caches `initialize`, and cleans up when a client detaches.
 #[derive(Default)]
-pub(crate) struct ProxyState {
+struct ProxyState {
     init_result: Option<Value>,
     init_forwarded: bool,
     initialized_sent: bool,
@@ -214,13 +214,13 @@ pub(crate) struct ProxyState {
 }
 
 impl ProxyState {
-    pub(crate) const fn on_client_attach(&mut self) {
+    const fn on_client_attach(&mut self) {
         self.client_attached = true;
     }
 
     /// A client vanished: close its docs on the server and answer any
     /// server-to-client requests with null so the server does not hang.
-    pub(crate) fn on_client_detach(&mut self) -> Vec<Action> {
+    fn on_client_detach(&mut self) -> Vec<Action> {
         self.client_attached = false;
         self.generation += 1;
         self.queued_init_ids.clear();
@@ -240,7 +240,7 @@ impl ProxyState {
         actions
     }
 
-    pub(crate) fn on_client(&mut self, mut msg: Value) -> Vec<Action> {
+    fn on_client(&mut self, mut msg: Value) -> Vec<Action> {
         let method = msg
             .get("method")
             .and_then(|m| m.as_str())
@@ -319,7 +319,7 @@ impl ProxyState {
         }
     }
 
-    pub(crate) fn on_server(&mut self, mut msg: Value) -> Vec<Action> {
+    fn on_server(&mut self, mut msg: Value) -> Vec<Action> {
         let has_method = msg.get("method").and_then(|m| m.as_str()).is_some();
         let id = msg.get("id").cloned();
         match (has_method, id) {
@@ -374,10 +374,10 @@ impl ProxyState {
 
 // --- Broker runtime ---
 
-pub(crate) struct BrokerParams {
-    pub(crate) key: String,
-    pub(crate) dir: PathBuf,
-    pub(crate) idle_timeout: Duration,
+struct BrokerParams {
+    key: String,
+    dir: PathBuf,
+    idle_timeout: Duration,
 }
 
 /// Entry point for `rift --lsp-broker <key>`; the result is the process exit status.
@@ -467,7 +467,7 @@ fn descriptor_owned_by_other(desc_path: &std::path::Path) -> bool {
 ///
 /// # Panics
 /// Panics if the spawned server does not expose piped stdin and stdout.
-pub(crate) fn serve(params: &BrokerParams) -> anyhow::Result<()> {
+fn serve(params: &BrokerParams) -> anyhow::Result<()> {
     let req_path = params.dir.join(format!("{}.req.json", params.key));
     let desc_path = params.dir.join(format!("{}.json", params.key));
     let req: BrokerRequest = serde_json::from_str(&std::fs::read_to_string(&req_path)?)?;

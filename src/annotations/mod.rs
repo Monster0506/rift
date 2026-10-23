@@ -1,6 +1,6 @@
-pub(crate) mod action;
-pub(crate) mod kind;
-pub(crate) mod marker;
+mod action;
+mod kind;
+mod marker;
 pub(crate) mod payload;
 pub(crate) mod presentation;
 pub(crate) mod registry;
@@ -60,7 +60,7 @@ impl AnnotationId {
         self.0
     }
 
-    pub(crate) const fn next(self) -> Self {
+    const fn next(self) -> Self {
         Self(self.0 + 1)
     }
 }
@@ -82,7 +82,7 @@ pub enum AnnotationOwner {
 
 impl AnnotationOwner {
     #[must_use]
-    pub(crate) const fn rank(&self) -> u8 {
+    const fn rank(&self) -> u8 {
         match self {
             Self::System => 0,
             Self::Lsp => 1,
@@ -139,10 +139,10 @@ pub struct Annotation {
     pub(crate) owner: AnnotationOwner,
     pub(crate) payload: Value,
     pub(crate) presentation: Option<Presentation>,
-    pub(crate) actions: Vec<Action>,
-    pub(crate) stickiness: Stickiness,
+    actions: Vec<Action>,
+    stickiness: Stickiness,
     pub(crate) visible: bool,
-    pub(crate) read_only: bool,
+    read_only: bool,
 }
 
 impl Annotation {
@@ -181,7 +181,7 @@ impl Annotation {
     }
 
     #[must_use]
-    pub(crate) const fn with_read_only(mut self, read_only: bool) -> Self {
+    const fn with_read_only(mut self, read_only: bool) -> Self {
         self.read_only = read_only;
         self
     }
@@ -405,7 +405,7 @@ impl AnnotationStore {
         self.invalidate_index();
     }
 
-    pub(crate) fn clear_by_owner(&mut self, owner: &AnnotationOwner) {
+    fn clear_by_owner(&mut self, owner: &AnnotationOwner) {
         self.annotations.retain(|a| &a.owner != owner);
         self.invalidate_index();
     }

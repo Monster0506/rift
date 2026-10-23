@@ -1,27 +1,22 @@
 //! Shared input handling logic
 //! translates raw keys into abstract input intents (Type, Move, Delete, etc.)
 
-#[cfg(test)]
 use crate::key::Key;
-#[cfg(test)]
 use crate::key::KeyCode;
-#[cfg(test)]
 use crate::key::Mods;
 
-#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Direction {
+enum Direction {
     Left,
     Right,
     Up,
     Down,
 }
 
-#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// How much content move/select/delete/change applies to, independent of
 /// direction. Ordered conceptually finest (`Character`) to coarsest (`Document`).
-pub(crate) enum Granularity {
+enum Granularity {
     /// A single Unicode scalar value; does not correspond to grapheme
     /// clusters, so combined characters count as multiple.
     Character,
@@ -40,10 +35,9 @@ pub(crate) enum Granularity {
     Document,
 }
 
-#[cfg(test)]
 /// Abstract intent for text input
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum InputIntent {
+enum InputIntent {
     /// Type a character
     Type(char),
     /// Move cursor
@@ -56,10 +50,9 @@ pub(crate) enum InputIntent {
     Cancel,
 }
 
-#[cfg(test)]
 /// Resolve a key into an input intent
 #[must_use]
-pub(crate) fn resolve_input(key: Key) -> Option<InputIntent> {
+fn resolve_input(key: Key) -> Option<InputIntent> {
     let ctrl = key.mods.contains(Mods::CTRL);
     let move_by = |direction, plain, ctrl_unit| {
         let unit = if ctrl { ctrl_unit } else { plain };
@@ -94,7 +87,6 @@ pub(crate) fn resolve_input(key: Key) -> Option<InputIntent> {
     }
 }
 
-#[cfg(test)]
 fn resolve_char(key: Key, ch: char) -> Option<InputIntent> {
     if let Some(text) = key.text() {
         return Some(InputIntent::Type(text));

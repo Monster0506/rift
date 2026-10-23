@@ -34,7 +34,10 @@ fn test_iterator_complex_inserts() {
     let world: Vec<Character> = " World".chars().map(Character::from).collect();
     pt.insert(5, &world);
 
-    let collected: String = pt.iter().map(|c| c.to_char_lossy()).collect();
+    let collected: String = pt
+        .iter()
+        .map(crate::character::Character::to_char_lossy)
+        .collect();
     assert_eq!(collected, "Hello World");
 }
 
@@ -44,7 +47,10 @@ fn test_iterator_with_deletes() {
     let mut pt = create_table("Hello World");
     pt.delete(5..11);
 
-    let collected: String = pt.iter().map(|c| c.to_char_lossy()).collect();
+    let collected: String = pt
+        .iter()
+        .map(crate::character::Character::to_char_lossy)
+        .collect();
     assert_eq!(collected, "Hello");
 }
 

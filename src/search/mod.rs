@@ -454,7 +454,7 @@ pub enum RiftRegex {
 
 impl RiftRegex {
     #[must_use]
-    pub(crate) fn find_all<'a>(
+    fn find_all<'a>(
         &'a self,
         text: &'a str,
     ) -> Box<dyn Iterator<Item = monster_regex::Match> + 'a> {
@@ -465,7 +465,7 @@ impl RiftRegex {
     }
 
     #[cfg(test)]
-    pub(crate) fn find_from_at<H: Haystack + Clone>(
+    fn find_from_at<H: Haystack + Clone>(
         &self,
         haystack: H,
         start: usize,
@@ -486,7 +486,7 @@ impl RiftRegex {
 #[cfg(test)]
 /// Iterator for incremental search.
 /// Owns the Regex (via Arc) and the Haystack Context keeps buffer alive.
-pub(crate) struct IncrementalSearch<'a, B: BufferView + ?Sized> {
+struct IncrementalSearch<'a, B: BufferView + ?Sized> {
     regex: RiftRegex,
     haystack: BufferHaystack<'a, B>,
     pos: usize,
@@ -495,7 +495,7 @@ pub(crate) struct IncrementalSearch<'a, B: BufferView + ?Sized> {
 #[cfg(test)]
 impl<'a, B: BufferView + ?Sized> IncrementalSearch<'a, B> {
     #[must_use]
-    pub(crate) const fn new(regex: RiftRegex, haystack: BufferHaystack<'a, B>) -> Self {
+    const fn new(regex: RiftRegex, haystack: BufferHaystack<'a, B>) -> Self {
         Self {
             regex,
             haystack,
@@ -526,7 +526,7 @@ impl<B: BufferView + ?Sized> Iterator for IncrementalSearch<'_, B> {
 ///
 /// # Errors
 /// Returns an error if `query` does not compile as a pattern.
-pub(crate) fn find_iter<'c, B: BufferView + ?Sized>(
+fn find_iter<'c, B: BufferView + ?Sized>(
     context: &'c BufferHaystackContext<'_, B>,
     query: &str,
 ) -> Result<IncrementalSearch<'c, B>, RiftError> {

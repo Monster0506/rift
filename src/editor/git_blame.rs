@@ -11,7 +11,7 @@ impl<T: TerminalBackend> Editor<T> {
     ///
     /// # Panics
     /// Panics if the focused window is not a leaf of the split tree.
-    pub(crate) fn open_git_blame(
+    pub(super) fn open_git_blame(
         &mut self,
         path: std::path::PathBuf,
         repo_root: std::path::PathBuf,
@@ -82,7 +82,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    pub(super) fn git_blame_walk_back(&mut self) {
+    fn git_blame_walk_back(&mut self) {
         let (repo_root, path, sha, linked_doc_id, linked_window_id) = {
             let doc = self.active_document();
             if doc.buffer_kind_id() != BufferKindId::GIT_BLAME {
@@ -142,7 +142,7 @@ impl<T: TerminalBackend> Editor<T> {
             ));
     }
 
-    pub(super) fn git_blame_walk_forward(&mut self) {
+    fn git_blame_walk_forward(&mut self) {
         let (repo_root, path, linked_doc_id, linked_window_id, previous) = {
             let doc = self.active_document();
             if doc.buffer_kind_id() != BufferKindId::GIT_BLAME {
@@ -173,9 +173,7 @@ impl<T: TerminalBackend> Editor<T> {
         let doc_id = self.active_document_id();
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             if doc.buffer_kind_id() == BufferKindId::GIT_BLAME {
-                if let Some(previous_commit) = doc.pop_git_blame_history() {
-                    doc.set_git_blame_at_commit(previous_commit);
-                }
+                doc.rewind_git_blame_history();
             }
         }
         self.job_manager
@@ -324,7 +322,7 @@ impl<T: TerminalBackend> Editor<T> {
             })
     }
     /// `Escape` in a blame buffer: close it and return focus to the linked file.
-    pub(super) fn close_git_blame(&mut self) {
+    fn close_git_blame(&mut self) {
         let (doc_id, linked_doc_id, linked_window_id) = {
             let doc = self.active_document();
             if doc.buffer_kind_id() != BufferKindId::GIT_BLAME {

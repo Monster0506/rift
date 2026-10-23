@@ -4,11 +4,11 @@
 mod assert;
 pub(crate) mod backend;
 #[cfg(test)]
-pub(crate) mod fuzz;
-pub(crate) mod ops;
-pub(crate) mod runner;
+mod fuzz;
+mod ops;
+mod runner;
 #[cfg(test)]
-pub(crate) mod shrink;
+mod shrink;
 
 #[cfg(test)]
 pub(crate) use backend::ReplayBackend;
