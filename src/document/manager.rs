@@ -1,4 +1,5 @@
-use crate::document::{Document, DocumentHandle, DocumentId};
+use crate::document::runtime::DocumentHandle;
+use crate::document::{Document, DocumentId};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -395,7 +396,7 @@ impl DocumentManager {
         }
 
         if intent == RemovalIntent::Normal
-            && doc.policies().close == crate::document::ClosePolicy::ConfirmDirty
+            && doc.policies().close == crate::document::runtime::ClosePolicy::ConfirmDirty
             && doc.is_dirty()
         {
             return Err(RiftError::warning(

@@ -1,4 +1,5 @@
-use crate::color::{Color, Theme};
+use crate::color::theme::Theme;
+use crate::color::Color;
 use crate::command::Command;
 use crate::command_line::commands::completion::CompletionCandidate;
 use crate::document::LineEnding;

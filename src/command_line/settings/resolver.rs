@@ -1,6 +1,6 @@
 use super::descriptor::SettingValue;
 use super::registry::SettingsRegistry;
-use crate::command_line::commands::ExecutionResult;
+use crate::command_line::commands::executor::ExecutionResult;
 use crate::error::RiftError;
 
 #[derive(Clone, Copy)]

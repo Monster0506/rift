@@ -908,7 +908,7 @@ fn git_blame_replay_renders_metadata_to_the_left_of_source() {
     let mut editor = Editor::with_file(backend, Some(&path.display().to_string())).unwrap();
     drain_jobs_replay(&mut editor);
 
-    let keys = crate::key::parse_key_sequence(":G blame<CR>").unwrap();
+    let keys = crate::key::notation::parse_key_sequence(":G blame<CR>").unwrap();
     editor.term.push_keys(keys.clone());
     for _ in keys {
         editor.tick().unwrap();
@@ -1427,7 +1427,8 @@ fn status_buffer_shows_head_summary_line_and_enter_opens_log() {
 fn space_g_key_resolves_to_git_status_with_no_prefix_ambiguity() {
     use crate::action::{Action, EditorAction};
     use crate::key::Key;
-    use crate::keymap::{KeyContext, MatchResult};
+    use crate::keymap::trie::MatchResult;
+    use crate::keymap::KeyContext;
 
     let editor = create_editor();
     match editor
@@ -1594,14 +1595,15 @@ fn g_question_mark_opens_a_read_only_help_buffer_for_each_git_buffer_kind() {
 fn g_question_mark_key_sequence_resolves_to_git_help() {
     use crate::action::{Action, EditorAction};
     use crate::key::Key;
-    use crate::keymap::{KeyContext, MatchResult};
+    use crate::keymap::trie::MatchResult;
+    use crate::keymap::KeyContext;
 
     let editor = create_editor();
     for ctx in [
-        KeyContext::Buffer(crate::document::BufferKindId::GIT_STATUS),
-        KeyContext::Buffer(crate::document::BufferKindId::GIT_BLAME),
-        KeyContext::Buffer(crate::document::BufferKindId::GIT_LOG),
-        KeyContext::Buffer(crate::document::BufferKindId::GIT_REBASE_TODO),
+        KeyContext::Buffer(crate::document::runtime::BufferKindId::GIT_STATUS),
+        KeyContext::Buffer(crate::document::runtime::BufferKindId::GIT_BLAME),
+        KeyContext::Buffer(crate::document::runtime::BufferKindId::GIT_LOG),
+        KeyContext::Buffer(crate::document::runtime::BufferKindId::GIT_REBASE_TODO),
     ] {
         let result = editor.keymap.lookup(ctx, &[Key::char('g'), Key::char('?')]);
         match result {
@@ -1616,7 +1618,7 @@ fn expanding_a_hunk_via_real_keys_lets_one_j_reach_the_first_hunk_line() {
     use crate::replay::backend::ReplayBackend;
 
     fn send<W: std::io::Write>(editor: &mut Editor<ReplayBackend<W>>, seq: &str) {
-        let keys = crate::key::parse_key_sequence(seq).unwrap();
+        let keys = crate::key::notation::parse_key_sequence(seq).unwrap();
         editor.term.push_keys(keys.clone());
         for _ in &keys {
             editor.tick().unwrap();

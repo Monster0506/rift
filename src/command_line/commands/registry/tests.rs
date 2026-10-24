@@ -1,4 +1,4 @@
-use crate::command_line::commands::{CommandDef, CommandRegistry, MatchResult};
+use crate::command_line::commands::registry::{CommandDef, CommandRegistry, MatchResult};
 
 #[test]
 fn test_empty_registry() {

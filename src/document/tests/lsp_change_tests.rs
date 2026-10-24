@@ -240,7 +240,8 @@ fn test_incremental_lsp_change_falls_back_for_multiline_delete() {
 
 #[test]
 fn test_undo_redo_keep_current_lsp_diagnostics() {
-    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+    use crate::annotations::kind::Kind;
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("aaa\nbbb\nccc").unwrap();
     let user = doc.annotations.add(Annotation::new(

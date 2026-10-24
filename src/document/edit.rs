@@ -294,7 +294,8 @@ impl Document {
             .char_at(cursor - 1)
             .unwrap_or_else(|| Character::from('\0'));
 
-        if self.policies().structural_edit == crate::document::StructuralEditPolicy::PreserveRows
+        if self.policies().structural_edit
+            == crate::document::runtime::StructuralEditPolicy::PreserveRows
             && deleted_char == Character::Newline
         {
             return false;
@@ -359,7 +360,8 @@ impl Document {
             .char_at(cursor)
             .unwrap_or_else(|| Character::from('\0'));
 
-        if self.policies().structural_edit == crate::document::StructuralEditPolicy::PreserveRows
+        if self.policies().structural_edit
+            == crate::document::runtime::StructuralEditPolicy::PreserveRows
             && deleted_char == Character::Newline
         {
             return false;

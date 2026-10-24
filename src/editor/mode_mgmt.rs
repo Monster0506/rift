@@ -355,7 +355,7 @@ impl<T: TerminalBackend> Editor<T> {
         if old_mode != mode {
             self.update_lua_state();
             self.plugin_host
-                .dispatch(&crate::plugin::EditorEvent::ModeChanged {
+                .dispatch(&crate::plugin::events::EditorEvent::ModeChanged {
                     from: old_mode,
                     to: mode,
                 });
@@ -378,5 +378,5 @@ impl<T: TerminalBackend> Editor<T> {
 }
 
 mod history {
-    pub(crate) const INSERT_LABEL: &str = "Insert";
+    pub(super) const INSERT_LABEL: &str = "Insert";
 }

@@ -1,4 +1,4 @@
-use crate::command_line::settings::create_settings_registry;
+use crate::command_line::settings::definitions::create_settings_registry;
 use crate::command_line::settings::descriptor::{
     SettingDescriptor, SettingError, SettingType, SettingValue,
 };
@@ -334,7 +334,7 @@ fn test_parse_enum_invalid() {
 
 #[test]
 fn test_build_option_registry() {
-    use crate::command_line::commands::MatchResult;
+    use crate::command_line::commands::registry::MatchResult;
     let registry = create_test_registry();
     let option_registry = registry.build_option_registry();
 
@@ -379,7 +379,7 @@ fn test_execute_setting_boolean() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Success
+        crate::command_line::commands::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
     assert!(!settings.editing.expand_tabs);
@@ -392,7 +392,7 @@ fn test_execute_setting_boolean() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Success
+        crate::command_line::commands::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
     assert!(settings.editing.expand_tabs);
@@ -401,7 +401,7 @@ fn test_execute_setting_boolean() {
         registry.execute_setting("et", Some("false"), &mut state.settings, &mut error_handler);
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Success
+        crate::command_line::commands::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
     assert!(!settings.editing.expand_tabs);
@@ -422,7 +422,7 @@ fn test_execute_setting_integer() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Success
+        crate::command_line::commands::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
     assert_eq!(settings.tab_width, 4);
@@ -430,7 +430,7 @@ fn test_execute_setting_integer() {
     let result = registry.execute_setting("tw", Some("8"), &mut state.settings, &mut error_handler);
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Success
+        crate::command_line::commands::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
     assert_eq!(settings.tab_width, 8);
@@ -439,7 +439,7 @@ fn test_execute_setting_integer() {
         registry.execute_setting("tabw", Some("2"), &mut state.settings, &mut error_handler);
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Success
+        crate::command_line::commands::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
     assert_eq!(settings.tab_width, 2);
@@ -460,7 +460,7 @@ fn test_execute_setting_float() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Success
+        crate::command_line::commands::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
     assert!((settings.command_line_window.width_ratio - 0.6).abs() < f64::EPSILON);
@@ -473,7 +473,7 @@ fn test_execute_setting_float() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Success
+        crate::command_line::commands::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
     assert!((settings.command_line_window.width_ratio - 0.8).abs() < f64::EPSILON);
@@ -494,7 +494,7 @@ fn test_execute_setting_enum() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Success
+        crate::command_line::commands::executor::ExecutionResult::Success
     ));
 
     let result = registry.execute_setting(
@@ -505,14 +505,14 @@ fn test_execute_setting_enum() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Success
+        crate::command_line::commands::executor::ExecutionResult::Success
     ));
 
     let result =
         registry.execute_setting("bs", Some("none"), &mut state.settings, &mut error_handler);
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Success
+        crate::command_line::commands::executor::ExecutionResult::Success
     ));
 }
 
@@ -527,7 +527,7 @@ fn test_execute_setting_missing_value() {
         registry.execute_setting("expandtabs", None, &mut state.settings, &mut error_handler);
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Failure
+        crate::command_line::commands::executor::ExecutionResult::Failure
     ));
 }
 
@@ -546,7 +546,7 @@ fn test_execute_setting_unknown_option() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Failure
+        crate::command_line::commands::executor::ExecutionResult::Failure
     ));
 }
 
@@ -566,7 +566,7 @@ fn test_execute_setting_invalid_value() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Failure
+        crate::command_line::commands::executor::ExecutionResult::Failure
     ));
 
     let result = registry.execute_setting(
@@ -577,7 +577,7 @@ fn test_execute_setting_invalid_value() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Failure
+        crate::command_line::commands::executor::ExecutionResult::Failure
     ));
 
     let result = registry.execute_setting(
@@ -588,7 +588,7 @@ fn test_execute_setting_invalid_value() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Failure
+        crate::command_line::commands::executor::ExecutionResult::Failure
     ));
 }
 
@@ -608,7 +608,7 @@ fn test_execute_setting_validation_error() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Failure
+        crate::command_line::commands::executor::ExecutionResult::Failure
     ));
 
     let result = registry.execute_setting(
@@ -619,7 +619,7 @@ fn test_execute_setting_validation_error() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Failure
+        crate::command_line::commands::executor::ExecutionResult::Failure
     ));
 
     let result = registry.execute_setting(
@@ -630,7 +630,7 @@ fn test_execute_setting_validation_error() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Failure
+        crate::command_line::commands::executor::ExecutionResult::Failure
     ));
 }
 
@@ -671,7 +671,7 @@ fn test_execute_setting_ambiguous() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Failure
+        crate::command_line::commands::executor::ExecutionResult::Failure
     ));
 
     let result = registry.execute_setting(
@@ -682,7 +682,7 @@ fn test_execute_setting_ambiguous() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Success
+        crate::command_line::commands::executor::ExecutionResult::Success
     ));
 }
 
@@ -701,17 +701,17 @@ fn test_execute_setting_theme_light() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Redraw
+        crate::command_line::commands::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("light".to_string()));
     assert_eq!(
         settings.editor_bg,
-        Some(crate::color::Theme::light().background)
+        Some(crate::color::theme::Theme::light().background)
     );
     assert_eq!(
         settings.editor_fg,
-        Some(crate::color::Theme::light().foreground)
+        Some(crate::color::theme::Theme::light().foreground)
     );
 }
 
@@ -730,17 +730,17 @@ fn test_execute_setting_theme_dark() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Redraw
+        crate::command_line::commands::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("dark".to_string()));
     assert_eq!(
         settings.editor_bg,
-        Some(crate::color::Theme::dark().background)
+        Some(crate::color::theme::Theme::dark().background)
     );
     assert_eq!(
         settings.editor_fg,
-        Some(crate::color::Theme::dark().foreground)
+        Some(crate::color::theme::Theme::dark().foreground)
     );
 }
 
@@ -759,17 +759,17 @@ fn test_execute_setting_theme_gruvbox() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Redraw
+        crate::command_line::commands::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("gruvbox".to_string()));
     assert_eq!(
         settings.editor_bg,
-        Some(crate::color::Theme::gruvbox().background)
+        Some(crate::color::theme::Theme::gruvbox().background)
     );
     assert_eq!(
         settings.editor_fg,
-        Some(crate::color::Theme::gruvbox().foreground)
+        Some(crate::color::theme::Theme::gruvbox().foreground)
     );
 }
 
@@ -788,17 +788,17 @@ fn test_execute_setting_theme_nordic() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Redraw
+        crate::command_line::commands::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("nordic".to_string()));
     assert_eq!(
         settings.editor_bg,
-        Some(crate::color::Theme::nordic().background)
+        Some(crate::color::theme::Theme::nordic().background)
     );
     assert_eq!(
         settings.editor_fg,
-        Some(crate::color::Theme::nordic().foreground)
+        Some(crate::color::theme::Theme::nordic().foreground)
     );
 }
 
@@ -817,7 +817,7 @@ fn test_execute_setting_theme_case_insensitive() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Redraw
+        crate::command_line::commands::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("light".to_string()));
@@ -830,7 +830,7 @@ fn test_execute_setting_theme_case_insensitive() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Redraw
+        crate::command_line::commands::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("dark".to_string()));
@@ -851,7 +851,7 @@ fn test_execute_setting_theme_unknown() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Failure
+        crate::command_line::commands::executor::ExecutionResult::Failure
     ));
 }
 
@@ -870,7 +870,7 @@ fn test_execute_setting_theme_overwrites_previous() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Redraw
+        crate::command_line::commands::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("light".to_string()));
@@ -884,14 +884,14 @@ fn test_execute_setting_theme_overwrites_previous() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Redraw
+        crate::command_line::commands::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("dark".to_string()));
     assert_ne!(settings.editor_bg, light_bg);
     assert_eq!(
         settings.editor_bg,
-        Some(crate::color::Theme::dark().background)
+        Some(crate::color::theme::Theme::dark().background)
     );
 }
 
@@ -910,7 +910,7 @@ fn test_execute_setting_theme_alias_colorscheme() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Redraw
+        crate::command_line::commands::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("light".to_string()));
@@ -931,7 +931,7 @@ fn test_execute_setting_theme_canonical_name() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Redraw
+        crate::command_line::commands::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("dark".to_string()));
@@ -954,7 +954,7 @@ fn test_execute_setting_undofile_toggles_persistent_undo() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Success
+        crate::command_line::commands::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
     assert!(!settings.undo.persistent);
@@ -963,7 +963,7 @@ fn test_execute_setting_undofile_toggles_persistent_undo() {
         registry.execute_setting("udf", Some("true"), &mut state.settings, &mut error_handler);
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Success
+        crate::command_line::commands::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
     assert!(settings.undo.persistent);
@@ -987,7 +987,7 @@ fn test_execute_setting_undodir_sets_and_expands_path() {
     );
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Success
+        crate::command_line::commands::executor::ExecutionResult::Success
     ));
     assert_eq!(
         state.settings.undo.dir,
@@ -998,7 +998,7 @@ fn test_execute_setting_undodir_sets_and_expands_path() {
         registry.execute_setting("udir", Some(""), &mut state.settings, &mut error_handler);
     assert!(matches!(
         result,
-        crate::command_line::commands::ExecutionResult::Success
+        crate::command_line::commands::executor::ExecutionResult::Success
     ));
     assert_eq!(state.settings.undo.dir, None);
     assert!(errors.is_empty());

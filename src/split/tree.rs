@@ -544,7 +544,7 @@ impl SplitTree {
 
     pub(crate) fn check_invariants(
         &self,
-        document_manager: &crate::document::DocumentManager,
+        document_manager: &crate::document::manager::DocumentManager,
         tier: crate::invariants::InvariantTier,
     ) -> Vec<String> {
         use crate::invariants::InvariantTier;

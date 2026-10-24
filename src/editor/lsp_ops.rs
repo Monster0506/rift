@@ -142,7 +142,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.lsp_status = Some(format!("{server_name}: starting"));
         self.update_lua_state();
         self.plugin_host
-            .dispatch(&crate::plugin::EditorEvent::LspServerConnected {
+            .dispatch(&crate::plugin::events::EditorEvent::LspServerConnected {
                 language,
                 server_name,
             });
@@ -159,7 +159,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.refresh_lsp_diag_status(&language, &name);
         self.update_lua_state();
         self.plugin_host
-            .dispatch(&crate::plugin::EditorEvent::LspServerReady {
+            .dispatch(&crate::plugin::events::EditorEvent::LspServerReady {
                 language,
                 server_name: name,
             });
@@ -179,7 +179,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.lsp_status = Some(status);
         self.update_lua_state();
         self.plugin_host
-            .dispatch(&crate::plugin::EditorEvent::LspProgress {
+            .dispatch(&crate::plugin::events::EditorEvent::LspProgress {
                 language,
                 server_name: name,
             });
@@ -327,7 +327,7 @@ impl<T: TerminalBackend> Editor<T> {
         let warning_count = diagnostics.iter().filter(|d| d.severity == Some(2)).count();
         self.update_lua_state();
         self.plugin_host
-            .dispatch(&crate::plugin::EditorEvent::LspDiagnosticsChanged {
+            .dispatch(&crate::plugin::events::EditorEvent::LspDiagnosticsChanged {
                 uri: key,
                 error_count,
                 warning_count,

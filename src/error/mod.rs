@@ -167,9 +167,9 @@ mod tests;
 
 mod logging {
     #[cfg(test)]
-    pub(crate) const INFO: &str = "INFO";
-    pub(crate) const WARN: &str = "WARN";
-    pub(crate) const ERROR: &str = "ERROR";
+    pub(super) const INFO: &str = "INFO";
+    pub(super) const WARN: &str = "WARN";
+    pub(super) const ERROR: &str = "ERROR";
     #[cfg(test)]
-    pub(crate) const CRITICAL: &str = "CRITICAL";
+    pub(super) const CRITICAL: &str = "CRITICAL";
 }

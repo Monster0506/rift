@@ -1,8 +1,9 @@
 //! Command definitions
 //! Declarative registry of all editor commands
 
-use crate::command_line::commands::{MatchResult, ParsedCommand, SplitSubcommand};
-use crate::command_line::settings::SettingsRegistry;
+use crate::command_line::commands::registry::MatchResult;
+use crate::command_line::commands::types::{ParsedCommand, SplitSubcommand};
+use crate::command_line::settings::registry::SettingsRegistry;
 use crate::split::navigation::Direction;
 use crate::state::UserSettings;
 
@@ -11,7 +12,7 @@ type CommandFactory = fn(&SettingsRegistry<UserSettings>, &[&str], usize) -> Par
 
 /// What kind of argument completion a command supports
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CompletionHint {
+pub(super) enum CompletionHint {
     None,
     /// Both files and directories (e.g. :edit, :write)
     FilePath,
@@ -25,7 +26,7 @@ pub(crate) enum CompletionHint {
 
 /// Descriptor for a command
 #[derive(Clone, Copy)]
-pub(crate) struct CommandDescriptor {
+pub(super) struct CommandDescriptor {
     pub(super) name: &'static str,
     pub(super) aliases: &'static [&'static str],
     pub(super) description: &'static str,
@@ -1194,7 +1195,7 @@ const LSP_SUBS: &[CommandDescriptor] = &[
     },
 ];
 
-pub(crate) const COMMANDS: &[CommandDescriptor] = &[
+pub(super) const COMMANDS: &[CommandDescriptor] = &[
     // Core
     CommandDescriptor {
         name: "quit",

@@ -1,4 +1,5 @@
 use super::*;
+use crate::document::manager::DocumentManager;
 
 pub(super) fn create_manager() -> DocumentManager {
     DocumentManager::new()

@@ -1,10 +1,10 @@
 pub(crate) mod defaults;
-mod trie;
+pub(crate) mod trie;
 
-pub(crate) use self::trie::{MatchResult, Strictness, TrieNode};
 use crate::action::Action;
-use crate::document::BufferKindId;
+use crate::document::runtime::BufferKindId;
 use crate::key::Key;
+use crate::keymap::trie::{MatchResult, Strictness, TrieNode};
 use std::collections::{BTreeMap, HashMap};
 
 /// Trait for resolving the parent context of a given key context.

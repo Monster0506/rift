@@ -337,7 +337,7 @@ fn leading_count_extends_paragraph_across_n_groups() {
 #[cfg(feature = "treesitter")]
 mod treesitter_tests {
     use super::*;
-    use crate::text_objects::SyntaxContext;
+    use crate::text_objects::treesitter::SyntaxContext;
 
     fn rust_tree(src: &str) -> tree_sitter::Tree {
         let mut parser = tree_sitter::Parser::new();

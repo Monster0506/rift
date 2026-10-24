@@ -349,7 +349,7 @@ pub enum EditorAction {
     OpenTerminal(Option<String>),
     SplitWindow {
         direction: crate::split::tree::SplitDirection,
-        subcommand: crate::command_line::commands::SplitSubcommand,
+        subcommand: crate::command_line::commands::types::SplitSubcommand,
     },
     UndoCount(Option<u64>),
     RedoCount(Option<u64>),

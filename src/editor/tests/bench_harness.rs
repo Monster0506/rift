@@ -35,12 +35,12 @@ fn add_harness_annotations(editor: &mut Editor<MockTerminal>) {
     for k in 0..n {
         let start = k * (len / n);
         let ann = Annotation::new(
-            crate::annotations::Kind::new("diag.warning"),
+            crate::annotations::kind::Kind::new("diag.warning"),
             Anchor::range(start, (start + 12).min(len)),
             AnnotationOwner::Lsp,
         )
-        .with_presentation(crate::annotations::Presentation::with_face(
-            crate::annotations::FaceRef::new("diag.warning"),
+        .with_presentation(crate::annotations::presentation::Presentation::with_face(
+            crate::annotations::presentation::FaceRef::new("diag.warning"),
         ));
         doc.annotations.add(ann);
     }

@@ -4,8 +4,6 @@ mod buffer;
 mod styled;
 pub(crate) mod theme;
 
-pub(crate) use theme::Theme;
-
 type ColorPair = (Option<Color>, Option<Color>);
 
 pub(crate) type CellColorSpan = (std::ops::Range<usize>, ColorPair);

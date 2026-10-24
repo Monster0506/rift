@@ -36,24 +36,24 @@ impl<T: TerminalBackend> Editor<T> {
     /// Returns `Err` when the document is unknown, not in tab order, has unsaved changes
     /// on a normal removal, or a replacement buffer cannot be created.
     pub(super) fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
-        self.remove_document_with_intent(id, crate::document::RemovalIntent::Normal)
+        self.remove_document_with_intent(id, crate::document::manager::RemovalIntent::Normal)
     }
 
     pub(super) fn remove_document_force(&mut self, id: DocumentId) -> Result<(), RiftError> {
-        self.remove_document_with_intent(id, crate::document::RemovalIntent::Force)
+        self.remove_document_with_intent(id, crate::document::manager::RemovalIntent::Force)
     }
 
     pub(super) fn remove_private_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
         if self.document_manager.get_document(id).is_none() {
             return Ok(());
         }
-        self.remove_document_with_intent(id, crate::document::RemovalIntent::Force)
+        self.remove_document_with_intent(id, crate::document::manager::RemovalIntent::Force)
     }
 
     fn remove_document_with_intent(
         &mut self,
         id: DocumentId,
-        intent: crate::document::RemovalIntent,
+        intent: crate::document::manager::RemovalIntent,
     ) -> Result<(), RiftError> {
         let plan = self.document_manager.prepare_removal(id, intent)?;
         let (handle, kind_id, descriptor) = {
@@ -73,8 +73,8 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.job_manager.cancel_jobs_for_handle(handle);
         match descriptor.on_close {
-            crate::document::CloseHandler::Native(close) => close(handle),
-            crate::document::CloseHandler::Lua => {
+            crate::document::runtime::CloseHandler::Native(close) => close(handle),
+            crate::document::runtime::CloseHandler::Lua => {
                 self.plugin_host.invoke_buffer_close(id, descriptor.name());
             }
         }
@@ -113,7 +113,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.buffer_kinds.decrement_open_count(kind_id);
         if has_replacement {
             self.buffer_kinds
-                .increment_open_count(crate::document::BufferKindId::FILE);
+                .increment_open_count(crate::document::runtime::BufferKindId::FILE);
         }
         if let Some(doc_id) = self.document_manager.active_document_id() {
             for win_id in self.split_tree.windows_for_document(id) {
@@ -125,7 +125,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.update_lua_state();
         self.plugin_host
-            .dispatch(&crate::plugin::EditorEvent::BufClose { buf: id });
+            .dispatch(&crate::plugin::events::EditorEvent::BufClose { buf: id });
         self.apply_plugin_mutations();
 
         Ok(())
@@ -193,7 +193,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let _ = doc_id;
             }
         } else if let Some(doc) = self.document_manager.active_document() {
-            if doc.buffer_kind_id() == crate::document::BufferKindId::FILE {
+            if doc.buffer_kind_id() == crate::document::runtime::BufferKindId::FILE {
                 let Some(path) = doc.path() else {
                     return Err(RiftError::new(
                         ErrorType::Execution,
@@ -238,11 +238,11 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn reload_native_document(
         &mut self,
-        kind_id: crate::document::BufferKindId,
-        reload_dispatch: crate::document::ReloadDispatch,
+        kind_id: crate::document::runtime::BufferKindId,
+        reload_dispatch: crate::document::runtime::ReloadDispatch,
     ) -> Result<(), RiftError> {
         match reload_dispatch {
-            crate::document::ReloadDispatch::Native => {
+            crate::document::runtime::ReloadDispatch::Native => {
                 let handler = self.native_reload_handlers.get(&kind_id).copied();
                 match handler {
                     Some(NativeReloadHandler::Infallible(handler)) => handler(self),
@@ -256,7 +256,7 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
             }
-            crate::document::ReloadDispatch::Unsupported => {
+            crate::document::runtime::ReloadDispatch::Unsupported => {
                 return Err(RiftError::new(
                     ErrorType::Execution,
                     crate::constants::errors::RELOAD_UNSUPPORTED,
@@ -282,7 +282,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
         self.plugin_host
-            .dispatch(&crate::plugin::EditorEvent::BufOpen {
+            .dispatch(&crate::plugin::events::EditorEvent::BufOpen {
                 buf: id,
                 path: None,
                 filetype: None,
@@ -335,7 +335,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .expect("new terminal document has a handle");
             let token = self.job_manager.next_token(
                 handle,
-                crate::document::BufferKindId::TERMINAL,
+                crate::document::runtime::BufferKindId::TERMINAL,
                 crate::job_manager::AsyncOpDomain::Terminal,
             );
             let job = crate::job_manager::jobs::terminal_job::TerminalInputJob::new(token, rx);

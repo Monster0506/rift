@@ -3,7 +3,8 @@
 
 use crate::character::Character;
 use crate::color::Color;
-use crate::key::{format_key, Key};
+use crate::key::notation::format_key;
+use crate::key::Key;
 use crate::layer::{Cell, Layer};
 use crate::mode::Mode;
 
@@ -299,14 +300,14 @@ impl StatusBar {
 mod tests;
 
 mod modes {
-    pub(crate) const NORMAL: &str = "NORMAL";
-    pub(crate) const INSERT: &str = "INSERT";
-    pub(crate) const COMMAND: &str = "COMMAND";
-    pub(crate) const SEARCH: &str = "SEARCH";
-    pub(crate) const RENAME: &str = "RENAME";
-    pub(crate) const OPERATOR_PENDING: &str = "OPERATOR_PENDING";
-    pub(crate) const REPLACE: &str = "REPLACE";
-    pub(crate) const VISUAL: &str = "VISUAL";
-    pub(crate) const VISUAL_LINE: &str = "VISUAL_LINE";
-    pub(crate) const VISUAL_BLOCK: &str = "VISUAL_BLOCK";
+    pub(super) const NORMAL: &str = "NORMAL";
+    pub(super) const INSERT: &str = "INSERT";
+    pub(super) const COMMAND: &str = "COMMAND";
+    pub(super) const SEARCH: &str = "SEARCH";
+    pub(super) const RENAME: &str = "RENAME";
+    pub(super) const OPERATOR_PENDING: &str = "OPERATOR_PENDING";
+    pub(super) const REPLACE: &str = "REPLACE";
+    pub(super) const VISUAL: &str = "VISUAL";
+    pub(super) const VISUAL_LINE: &str = "VISUAL_LINE";
+    pub(super) const VISUAL_BLOCK: &str = "VISUAL_BLOCK";
 }

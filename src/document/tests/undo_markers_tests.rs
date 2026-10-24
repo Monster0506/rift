@@ -104,7 +104,8 @@ fn test_get_changed_line_for_seq() {
 
 #[test]
 fn test_undo_redo_restores_annotation_marker_positions() {
-    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+    use crate::annotations::kind::Kind;
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("hello world").unwrap();
     let id = doc.annotations.add(Annotation::new(
@@ -129,7 +130,8 @@ fn test_undo_redo_restores_annotation_marker_positions() {
 
 #[test]
 fn test_goto_seq_restores_correctly_via_checkpoint_snapshot() {
-    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+    use crate::annotations::kind::Kind;
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
 
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("hello world").unwrap();
@@ -158,7 +160,8 @@ fn test_goto_seq_restores_correctly_via_checkpoint_snapshot() {
 
 #[test]
 fn test_goto_seq_keeps_annotation_stacks_in_sync() {
-    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+    use crate::annotations::kind::Kind;
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("hello world").unwrap();
     let seq_after_first_edit = doc.history.current_seq();
@@ -194,7 +197,8 @@ fn test_goto_seq_keeps_annotation_stacks_in_sync() {
 
 #[test]
 fn test_diff_undo_matches_snapshot_for_insertions() {
-    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind, Stickiness};
+    use crate::annotations::kind::Kind;
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Stickiness};
 
     fn seed(doc: &mut Document) {
         doc.insert_str("line0\nline1\nline2\nline3").unwrap();
@@ -266,7 +270,8 @@ fn test_diff_undo_matches_snapshot_for_insertions() {
 
 #[test]
 fn test_diff_undo_interleaves_with_delete_snapshot_path() {
-    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+    use crate::annotations::kind::Kind;
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
 
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("hello world").unwrap();
@@ -327,7 +332,8 @@ fn test_line_anchor_tracks_newline_edits_in_normal_buffer() {
 
 #[test]
 fn test_range_anchor_markers_track_edits() {
-    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+    use crate::annotations::kind::Kind;
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("hello world here").unwrap();
     let id = doc.annotations.add(Annotation::new(
@@ -359,7 +365,8 @@ fn test_range_anchor_markers_track_edits() {
 
 #[test]
 fn test_range_anchor_delete_stickiness_removes_annotation() {
-    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+    use crate::annotations::kind::Kind;
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("abcdefgh").unwrap();
     let id = doc.annotations.add(Annotation::new(
@@ -384,7 +391,8 @@ fn test_document_version_increments_per_edit() {
 
 #[test]
 fn test_delete_range_mid_line_merges_line_anchors_into_start_line() {
-    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind, Stickiness};
+    use crate::annotations::kind::Kind;
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Stickiness};
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("aaa\nbbb\nccc\nddd").unwrap();
     let persist = |line| {
@@ -406,7 +414,8 @@ fn test_delete_range_mid_line_merges_line_anchors_into_start_line() {
 
 #[test]
 fn test_delete_range_at_column_zero_removes_whole_line() {
-    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind, Stickiness};
+    use crate::annotations::kind::Kind;
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Stickiness};
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("aaa\nbbb\nccc").unwrap();
     let gone = doc.annotations.add(
@@ -483,7 +492,9 @@ fn test_get_edit_points_multibyte_prefix_diverges_byte_and_char_columns() {
 
 #[test]
 fn test_insert_char_after_multibyte_prefix_shifts_annotation_by_bytes() {
-    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind, Marker};
+    use crate::annotations::kind::Kind;
+    use crate::annotations::marker::Marker;
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
 
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("e\u{301}llo world").unwrap();
@@ -510,7 +521,8 @@ fn test_insert_char_after_multibyte_prefix_shifts_annotation_by_bytes() {
 
 #[test]
 fn test_delete_backward_after_multibyte_prefix_shifts_annotation_by_bytes() {
-    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+    use crate::annotations::kind::Kind;
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
 
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("e\u{301}llo world").unwrap();
@@ -538,7 +550,8 @@ fn test_delete_backward_after_multibyte_prefix_shifts_annotation_by_bytes() {
 
 #[test]
 fn test_delete_forward_after_multibyte_prefix_shifts_annotation_by_bytes() {
-    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+    use crate::annotations::kind::Kind;
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
 
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("e\u{301}llo world").unwrap();
@@ -566,8 +579,9 @@ fn test_delete_forward_after_multibyte_prefix_shifts_annotation_by_bytes() {
 
 #[test]
 fn test_line_adornment_resolves_correct_line_past_multibyte_prefix() {
+    use crate::annotations::kind::Kind;
     use crate::annotations::presentation::{Adornment, Placement, Presentation};
-    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
 
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("ab\u{2014}\nab\u{2014}\nab\u{2014}\n---\nzzzzz\n")

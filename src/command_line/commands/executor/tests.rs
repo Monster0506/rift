@@ -1,7 +1,8 @@
 //! Tests for command executor
 
-use crate::command_line::commands::{CommandExecutor, ExecutionResult, ParsedCommand};
-use crate::command_line::settings::create_settings_registry;
+use crate::command_line::commands::executor::{CommandExecutor, ExecutionResult};
+use crate::command_line::commands::types::ParsedCommand;
+use crate::command_line::settings::definitions::create_settings_registry;
 use crate::document::definitions::create_document_settings_registry;
 use crate::document::Document;
 use crate::state::State;
@@ -1435,7 +1436,7 @@ fn test_execute_file_path_fails() {
 
 #[test]
 fn test_execute_split() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     use crate::split::tree::SplitDirection;
 
     let mut state = State::new();
@@ -1464,7 +1465,7 @@ fn test_execute_split() {
 
 #[test]
 fn test_execute_vsplit_file() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     use crate::split::tree::SplitDirection;
 
     let mut state = State::new();

@@ -1,6 +1,6 @@
 //! Lua <-> `annotations::Value` conversions; round-trip is lossless for the supported set.
 
-use crate::annotations::Value;
+use crate::annotations::value::Value;
 
 /// Lua integers are `i64`; out-of-range values saturate instead of wrapping.
 pub(super) fn lua_int<T: TryInto<i64>>(value: T) -> i64 {

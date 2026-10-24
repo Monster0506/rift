@@ -1,6 +1,7 @@
-use crate::command_line::settings::{
-    SettingDescriptor, SettingError, SettingType, SettingValue, SettingsRegistry,
+use crate::command_line::settings::descriptor::{
+    SettingDescriptor, SettingError, SettingType, SettingValue,
 };
+use crate::command_line::settings::registry::SettingsRegistry;
 use crate::document::LineEnding;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

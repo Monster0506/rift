@@ -1,5 +1,6 @@
 use super::SettingsResolver;
-use crate::command_line::settings::{create_settings_registry, SettingValue};
+use crate::command_line::settings::definitions::create_settings_registry;
+use crate::command_line::settings::descriptor::SettingValue;
 use crate::document::definitions::{create_document_settings_registry, DocumentOptions};
 use crate::state::UserSettings;
 

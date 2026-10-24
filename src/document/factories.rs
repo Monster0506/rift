@@ -1,19 +1,22 @@
 use super::definitions;
-use super::{
-    BufferKind, BufferListState, ClipboardState, DirectoryState, Document, DocumentHandle,
-    FileState, GitBlameState, GitCommitMessageState, GitLogState, GitRebaseTodoState,
-    GitStatusState, LineEnding, MessagesState, ScratchState, StateSlot, TerminalState,
-    UndoTreeState, ViewState, BUFFER_LIST_STATE_KEY, CLIPBOARD_STATE_KEY, DIRECTORY_STATE_KEY,
-    FILE_STATE_KEY, GIT_BLAME_STATE_KEY, GIT_COMMIT_MESSAGE_STATE_KEY, GIT_LOG_STATE_KEY,
-    GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY, MESSAGES_STATE_KEY, SCRATCH_STATE_KEY,
-    TERMINAL_STATE_KEY, UNDO_TREE_STATE_KEY,
-};
+use super::{Document, LineEnding, ViewState};
 use crate::annotations::AnnotationStore;
 use crate::buffer::TextBuffer;
+use crate::document::kind::BufferKind;
+use crate::document::runtime::{
+    BufferListState, ClipboardState, DirectoryState, DocumentHandle, FileState, GitBlameState,
+    GitCommitMessageState, GitLogState, GitRebaseTodoState, GitStatusState, MessagesState,
+    ScratchState, StateSlot, TerminalState, UndoTreeState, BUFFER_LIST_STATE_KEY,
+    CLIPBOARD_STATE_KEY, DIRECTORY_STATE_KEY, FILE_STATE_KEY, GIT_BLAME_STATE_KEY,
+    GIT_COMMIT_MESSAGE_STATE_KEY, GIT_LOG_STATE_KEY, GIT_REBASE_TODO_STATE_KEY,
+    GIT_STATUS_STATE_KEY, MESSAGES_STATE_KEY, SCRATCH_STATE_KEY, TERMINAL_STATE_KEY,
+    UNDO_TREE_STATE_KEY,
+};
 use crate::error::{ErrorType, RiftError};
 use crate::history::UndoTree;
 use crate::split::window::WindowId;
-use crate::term::{Terminal, TerminalEvent};
+use crate::term::terminal::Terminal;
+use crate::term::TerminalEvent;
 use definitions::DocumentOptions;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -227,8 +230,8 @@ impl Document {
             readonly_override: true,
             kind: BufferKind::undo_file_view(),
             state: StateSlot::new(
-                super::UNDO_FILE_VIEW_STATE_KEY,
-                super::UndoFileViewState::default(),
+                crate::document::runtime::UNDO_FILE_VIEW_STATE_KEY,
+                crate::document::runtime::UndoFileViewState::default(),
             ),
             ..Self::skeleton(id, buffer)
         };

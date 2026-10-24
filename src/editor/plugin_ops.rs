@@ -233,8 +233,10 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn lua_buffer_vars(
         &self,
-    ) -> std::collections::HashMap<u64, std::collections::HashMap<String, crate::annotations::Value>>
-    {
+    ) -> std::collections::HashMap<
+        u64,
+        std::collections::HashMap<String, crate::annotations::value::Value>,
+    > {
         self.document_manager
             .documents_iter()
             .map(|doc| (doc.id.get(), doc.vars.clone()))
@@ -402,10 +404,11 @@ impl<T: TerminalBackend> Editor<T> {
                 let mut error_handler = |e: crate::error::RiftError| errors.push(e);
                 match self.document_manager.active_document_mut() {
                     Some(doc) => {
-                        let resolver = crate::command_line::settings::SettingsResolver::new(
-                            self.document_settings_registry,
-                            self.settings_registry,
-                        );
+                        let resolver =
+                            crate::command_line::settings::resolver::SettingsResolver::new(
+                                self.document_settings_registry,
+                                self.settings_registry,
+                            );
                         resolver.set(
                             &name,
                             Some(value.as_str()),
@@ -549,7 +552,7 @@ impl<T: TerminalBackend> Editor<T> {
                 if self.split_tree.move_window(direction, &layouts) {
                     self.render_system.viewport.mark_needs_full_redraw();
                     self.plugin_host
-                        .dispatch(&crate::plugin::EditorEvent::WinMoved {
+                        .dispatch(&crate::plugin::events::EditorEvent::WinMoved {
                             win: moved_id.get(),
                         });
                 }
@@ -566,11 +569,12 @@ impl<T: TerminalBackend> Editor<T> {
                         }
                         self.sync_state_with_active_document();
                         self.render_system.viewport.mark_needs_full_redraw();
-                        self.plugin_host
-                            .dispatch(&crate::plugin::EditorEvent::WinSwapped {
+                        self.plugin_host.dispatch(
+                            &crate::plugin::events::EditorEvent::WinSwapped {
                                 win1: focused_id.get(),
                                 win2: prev_id.get(),
-                            });
+                            },
+                        );
                     }
                 }
             }
@@ -668,7 +672,7 @@ impl<T: TerminalBackend> Editor<T> {
         kind: &str,
         title: Option<&str>,
         lines: &[String],
-        vars: Vec<(String, crate::annotations::Value)>,
+        vars: Vec<(String, crate::annotations::value::Value)>,
     ) {
         let Some(descriptor) = self.buffer_kinds.get_by_name(kind) else {
             self.state.notify(
@@ -686,23 +690,23 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
         document.set_handle(reservation.handle());
-        document.kind = crate::document::BufferKind::new(descriptor.clone());
+        document.kind = crate::document::kind::BufferKind::new(descriptor.clone());
         document.vars = vars.into_iter().collect();
         if let Some(title_str) = title {
             document.vars.insert(
                 "title".to_string(),
-                crate::annotations::Value::Str(title_str.to_string()),
+                crate::annotations::value::Value::Str(title_str.to_string()),
             );
         }
-        document.state = crate::document::StateSlot::new(
-            crate::document::PLUGIN_BUFFER_STATE_KEY,
-            crate::document::PluginBufferState,
+        document.state = crate::document::runtime::StateSlot::new(
+            crate::document::runtime::PLUGIN_BUFFER_STATE_KEY,
+            crate::document::runtime::PluginBufferState,
         );
         let text = lines.join("\n");
         if !text.is_empty() {
             let _ = document.buffer.insert_str(&text);
         }
-        let draft = match crate::document::DocumentDraft::new(reservation, document) {
+        let draft = match crate::document::manager::DocumentDraft::new(reservation, document) {
             Ok(draft) => draft,
             Err(error) => {
                 self.state.handle_error(error);
@@ -715,13 +719,13 @@ impl<T: TerminalBackend> Editor<T> {
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
         self.plugin_host
-            .dispatch(&crate::plugin::EditorEvent::BufOpen {
+            .dispatch(&crate::plugin::events::EditorEvent::BufOpen {
                 buf: handle.doc_id(),
                 path: None,
                 filetype: None,
             });
         self.plugin_host
-            .dispatch(&crate::plugin::EditorEvent::BufEnter {
+            .dispatch(&crate::plugin::events::EditorEvent::BufEnter {
                 buf: handle.doc_id(),
             });
     }
@@ -779,34 +783,35 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
         let result = self.buffer_kinds.register_runtime(&name, |id| {
-            let mut policies = crate::document::BufferPolicies::file_default();
+            let mut policies = crate::document::runtime::BufferPolicies::file_default();
             policies.read_only = read_only_policy;
             policies.close = close_policy;
-            policies.language_services = crate::document::LanguageServicesPolicy::Virtual;
+            policies.language_services = crate::document::runtime::LanguageServicesPolicy::Virtual;
             policies.key_fallback = key_fallback_policy;
-            crate::document::KindDescriptor {
+            crate::document::runtime::KindDescriptor {
                 id,
                 name: name.clone().into_boxed_str(),
                 policies,
                 action_dispatch: if has_on_action {
-                    crate::document::ActionDispatch::Lua
+                    crate::document::runtime::ActionDispatch::Lua
                 } else {
-                    crate::document::ActionDispatch::Disabled
+                    crate::document::runtime::ActionDispatch::Disabled
                 },
                 save_dispatch: if has_on_save {
-                    crate::document::SaveDispatch::Lua
+                    crate::document::runtime::SaveDispatch::Lua
                 } else {
-                    crate::document::SaveDispatch::Disabled
+                    crate::document::runtime::SaveDispatch::Disabled
                 },
-                reload_dispatch: crate::document::ReloadDispatch::Unsupported,
-                display_name: display_name
-                    .clone()
-                    .map_or(crate::document::DisplayNameStrategy::KindName, |label| {
-                        crate::document::DisplayNameStrategy::Label(label.into_boxed_str())
-                    }),
+                reload_dispatch: crate::document::runtime::ReloadDispatch::Unsupported,
+                display_name: display_name.clone().map_or(
+                    crate::document::runtime::DisplayNameStrategy::KindName,
+                    |label| {
+                        crate::document::runtime::DisplayNameStrategy::Label(label.into_boxed_str())
+                    },
+                ),
                 help_lines: help_lines.clone().map(Into::into),
-                on_close: crate::document::CloseHandler::Lua,
-                state_key: crate::document::PLUGIN_BUFFER_STATE_KEY.id(),
+                on_close: crate::document::runtime::CloseHandler::Lua,
+                state_key: crate::document::runtime::PLUGIN_BUFFER_STATE_KEY.id(),
                 owner,
                 tombstone: None,
             }
@@ -823,10 +828,10 @@ impl<T: TerminalBackend> Editor<T> {
         &mut self,
         name: &str,
         origin: Option<PluginGeneration>,
-    ) -> Option<crate::document::DescriptorOwner> {
+    ) -> Option<crate::document::runtime::DescriptorOwner> {
         match origin {
             Some(gen) if self.plugin_host.is_generation_active(gen) => {
-                Some(crate::document::DescriptorOwner::plugin(
+                Some(crate::document::runtime::DescriptorOwner::plugin(
                     gen.plugin_id().as_nonzero(),
                     gen.generation(),
                 ))
@@ -860,7 +865,7 @@ impl<T: TerminalBackend> Editor<T> {
                     _ => return,
                 };
                 if let (Some(key_seq), Ok(act)) = (
-                    crate::key::parse_key_sequence(&keys),
+                    crate::key::notation::parse_key_sequence(&keys),
                     action.parse::<crate::action::Action>(),
                 ) {
                     if let Some(gen) = origin {
@@ -887,7 +892,7 @@ impl<T: TerminalBackend> Editor<T> {
                     "tn" | "terminal_normal" => KeyContext::TerminalNormal,
                     _ => return,
                 };
-                if let Some(key_seq) = crate::key::parse_key_sequence(&keys) {
+                if let Some(key_seq) = crate::key::notation::parse_key_sequence(&keys) {
                     self.keymap.unregister_sequence(ctx, &key_seq);
                 }
             }
@@ -896,7 +901,7 @@ impl<T: TerminalBackend> Editor<T> {
                     return;
                 };
                 if let (Some(key_seq), Ok(action)) = (
-                    crate::key::parse_key_sequence(&keys),
+                    crate::key::notation::parse_key_sequence(&keys),
                     action.parse::<crate::action::Action>(),
                 ) {
                     let ctx = crate::keymap::KeyContext::Buffer(kind_id);
@@ -916,7 +921,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let Some(kind_id) = self.buffer_kinds.id_by_name(&kind) else {
                     return;
                 };
-                if let Some(key_seq) = crate::key::parse_key_sequence(&keys) {
+                if let Some(key_seq) = crate::key::notation::parse_key_sequence(&keys) {
                     self.keymap
                         .unregister_sequence(crate::keymap::KeyContext::Buffer(kind_id), &key_seq);
                 }
@@ -944,37 +949,36 @@ impl<T: TerminalBackend> Editor<T> {
                 self.language_loader
                     .register_injections_query(&lang_name, &query_src);
             }
-            #[cfg(feature = "treesitter")]
             PluginMutation::RegisterGrammar {
                 lang_name,
                 so_path,
                 fn_name,
-            } => {
-                if let Err(e) = self
-                    .language_loader
-                    .register_grammar(&lang_name, &so_path, &fn_name)
-                {
-                    self.state.notify(
-                        crate::notification::NotificationType::Error,
-                        format!("register_grammar '{lang_name}': {e}"),
-                    );
-                }
-            }
-            #[cfg(not(feature = "treesitter"))]
-            PluginMutation::RegisterGrammar {
-                lang_name,
-                so_path,
-                fn_name,
-            } => {
-                self.state.notify(
-                    crate::notification::NotificationType::Error,
-                    format!(
-                        "register_grammar '{lang_name}' ({so_path}:{fn_name}): tree-sitter support is not compiled in"
-                    ),
-                );
-            }
+            } => self.register_grammar(&lang_name, &so_path, &fn_name),
             _ => self.report_misrouted(),
         }
+    }
+
+    #[cfg(feature = "treesitter")]
+    fn register_grammar(&mut self, lang_name: &str, so_path: &str, fn_name: &str) {
+        if let Err(e) = self
+            .language_loader
+            .register_grammar(lang_name, so_path, fn_name)
+        {
+            self.state.notify(
+                crate::notification::NotificationType::Error,
+                format!("register_grammar '{lang_name}': {e}"),
+            );
+        }
+    }
+
+    #[cfg(not(feature = "treesitter"))]
+    fn register_grammar(&mut self, lang_name: &str, so_path: &str, fn_name: &str) {
+        self.state.notify(
+            crate::notification::NotificationType::Error,
+            format!(
+                "register_grammar '{lang_name}' ({so_path}:{fn_name}): tree-sitter support is not compiled in"
+            ),
+        );
     }
 
     fn apply_lsp_mutation(&mut self, mutation: PluginMutation) {
@@ -1066,7 +1070,7 @@ impl<T: TerminalBackend> Editor<T> {
                 stickiness,
                 owner,
             } => {
-                use crate::annotations::{Action, Annotation, Kind, Stickiness};
+                use crate::annotations::{action::Action, kind::Kind, Annotation, Stickiness};
                 let mut ann = Annotation::new(
                     Kind::new(kind),
                     annotation_anchor(&anchor),
@@ -1251,32 +1255,42 @@ fn annotation_owner(owner: Option<&str>) -> crate::annotations::AnnotationOwner 
     }
 }
 
-fn parse_read_only_policy(value: Option<&str>) -> Result<crate::document::ReadOnlyPolicy, &str> {
+fn parse_read_only_policy(
+    value: Option<&str>,
+) -> Result<crate::document::runtime::ReadOnlyPolicy, &str> {
     match value {
         Some("readonly" | "read_only" | "fixed" | "fixed_readonly") => {
-            Ok(crate::document::ReadOnlyPolicy::FixedReadOnly)
+            Ok(crate::document::runtime::ReadOnlyPolicy::FixedReadOnly)
         }
-        Some("writable" | "fixed_writable") => Ok(crate::document::ReadOnlyPolicy::FixedWritable),
+        Some("writable" | "fixed_writable") => {
+            Ok(crate::document::runtime::ReadOnlyPolicy::FixedWritable)
+        }
         Some("override" | "document_override") | None => {
-            Ok(crate::document::ReadOnlyPolicy::DocumentOverride)
+            Ok(crate::document::runtime::ReadOnlyPolicy::DocumentOverride)
         }
         Some(invalid) => Err(invalid),
     }
 }
 
-fn parse_close_policy(value: Option<&str>) -> Result<crate::document::ClosePolicy, &str> {
+fn parse_close_policy(value: Option<&str>) -> Result<crate::document::runtime::ClosePolicy, &str> {
     match value {
-        Some("discard" | "discard_dirty") => Ok(crate::document::ClosePolicy::DiscardDirty),
-        Some("confirm" | "confirm_dirty") | None => Ok(crate::document::ClosePolicy::ConfirmDirty),
+        Some("discard" | "discard_dirty") => {
+            Ok(crate::document::runtime::ClosePolicy::DiscardDirty)
+        }
+        Some("confirm" | "confirm_dirty") | None => {
+            Ok(crate::document::runtime::ClosePolicy::ConfirmDirty)
+        }
         Some(invalid) => Err(invalid),
     }
 }
 
-fn parse_key_fallback_policy(value: Option<&str>) -> Result<crate::document::KeyFallback, &str> {
+fn parse_key_fallback_policy(
+    value: Option<&str>,
+) -> Result<crate::document::runtime::KeyFallback, &str> {
     match value {
-        Some("global") => Ok(crate::document::KeyFallback::Global),
-        Some("none") => Ok(crate::document::KeyFallback::None),
-        Some("normal") | None => Ok(crate::document::KeyFallback::Normal),
+        Some("global") => Ok(crate::document::runtime::KeyFallback::Global),
+        Some("none") => Ok(crate::document::runtime::KeyFallback::None),
+        Some("normal") | None => Ok(crate::document::runtime::KeyFallback::Normal),
         Some(invalid) => Err(invalid),
     }
 }

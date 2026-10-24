@@ -39,7 +39,7 @@ pub(crate) struct AnnotationView {
     pub(crate) start: usize,
     /// Range end byte offset; equals `start` for point/line anchors.
     pub(crate) end: usize,
-    pub(crate) payload: crate::annotations::Value,
+    pub(crate) payload: crate::annotations::value::Value,
     pub(crate) visible: bool,
     pub(crate) interactive: bool,
 }
@@ -102,7 +102,7 @@ pub(crate) struct StateUpdate<'a> {
     pub(crate) lsp_diagnostics: std::collections::HashMap<String, Vec<(u32, u32, u32, String)>>,
     pub(crate) buffer_vars: std::collections::HashMap<
         u64,
-        std::collections::HashMap<String, crate::annotations::Value>,
+        std::collections::HashMap<String, crate::annotations::value::Value>,
     >,
     pub(crate) doc_options: crate::document::definitions::DocumentOptions,
     pub(crate) user_settings: crate::state::UserSettings,

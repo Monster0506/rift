@@ -6,9 +6,10 @@ pub(super) use crate::layer::Cell;
 pub(super) use crate::layer::{CellAttrs, CellStyle};
 pub(super) use crate::layer::{Layer, LayerPriority};
 pub(super) use crate::mode::Mode;
+pub(super) use crate::render::system::RenderSystem;
 pub(super) use crate::render::{
     calculate_cursor_column, calculate_cursor_column_at, scroll_blit_delta, ContentBlitKey,
-    CursorInfo, RenderState, RenderSystem, StatusDrawState,
+    CursorInfo, RenderState, StatusDrawState,
 };
 pub(super) use crate::state::State;
 pub(super) use crate::status::StatusBar;

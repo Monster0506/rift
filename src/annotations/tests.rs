@@ -1,4 +1,5 @@
 use super::*;
+use crate::annotations::presentation::Placement;
 
 impl AnnotationStore {
     /// Whether the interval tree index is currently stale. Test-only.
@@ -201,7 +202,7 @@ fn test_multiple_annotations_same_kind_different_lines() {
 
 #[test]
 fn test_leading_width_in_counts_anchor_at_cursor() {
-    use crate::annotations::{Adornment, Placement, Presentation};
+    use crate::annotations::presentation::{Adornment, Placement, Presentation};
     let mut store = AnnotationStore::new();
     // A 3-wide leading marker anchored at offset 5.
     store.add(
@@ -329,7 +330,7 @@ fn test_next_interactive_rebuilds_after_edit() {
 
 #[test]
 fn test_affordance_line_formats_keys_and_verbs() {
-    use crate::annotations::KeyHint;
+    use crate::annotations::action::KeyHint;
     let ann = Annotation::new(
         Kind::new("vcs.hunk"),
         Anchor::point(0),

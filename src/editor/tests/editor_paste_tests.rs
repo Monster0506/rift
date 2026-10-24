@@ -214,7 +214,7 @@ impl alacritty_terminal::grid::Dimensions for VteDims {
 fn bracketed_paste_reproduced_through_a_real_vte_parser() {
     use crate::action::{Action, EditorAction};
     use crate::key::InputEvent;
-    use crate::replay::ReplayBackend;
+    use crate::replay::backend::ReplayBackend;
     use alacritty_terminal::grid::Dimensions as _;
 
     let sink = SharedBuf::default();

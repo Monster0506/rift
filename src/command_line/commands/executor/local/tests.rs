@@ -1,5 +1,6 @@
 use super::*;
-use crate::command_line::commands::{ExecutionResult, ParsedCommand};
+use crate::command_line::commands::executor::ExecutionResult;
+use crate::command_line::commands::types::ParsedCommand;
 use crate::document::definitions::{create_document_settings_registry, WrapMode};
 use crate::document::Document;
 use crate::state::State;

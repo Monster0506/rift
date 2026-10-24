@@ -136,7 +136,7 @@ fn open_file_on_a_persisted_undo_file_shows_a_readonly_view() {
     let doc = editor.document_manager.active_document().unwrap();
     assert_eq!(
         doc.buffer_kind_id(),
-        crate::document::BufferKindId::UNDO_FILE_VIEW
+        crate::document::runtime::BufferKindId::UNDO_FILE_VIEW
     );
     assert!(doc.is_read_only());
     let text = doc.buffer.to_string();
@@ -204,7 +204,7 @@ fn reloading_an_open_undo_file_view_re_renders_instead_of_showing_raw_bytes() {
     let doc = editor.document_manager.active_document().unwrap();
     assert_eq!(
         doc.buffer_kind_id(),
-        crate::document::BufferKindId::UNDO_FILE_VIEW
+        crate::document::runtime::BufferKindId::UNDO_FILE_VIEW
     );
     let text = doc.buffer.to_string();
     assert!(text.contains("insert 'hi'"), "text was: {text}");

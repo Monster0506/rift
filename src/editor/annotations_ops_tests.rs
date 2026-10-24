@@ -1,5 +1,8 @@
 use super::*;
-use crate::annotations::{Action, Anchor, Annotation, AnnotationOwner, Kind, Value};
+use crate::annotations::action::Action;
+use crate::annotations::kind::Kind;
+use crate::annotations::value::Value;
+use crate::annotations::{Anchor, Annotation, AnnotationOwner};
 use crate::test_utils::MockTerminal;
 
 impl<T: TerminalBackend> Editor<T> {
@@ -107,7 +110,7 @@ fn demo_range(content: &str, s: &str) -> std::ops::Range<usize> {
 }
 
 fn add_style_annotations(e: &mut Editor<MockTerminal>, content: &str) {
-    use crate::annotations::{Presentation, StyleOverride};
+    use crate::annotations::presentation::{Presentation, StyleOverride};
 
     // --- Inline text styles -------------------------------------------
     let styles: &[(&str, StyleOverride)] = &[
@@ -161,7 +164,7 @@ fn add_style_annotations(e: &mut Editor<MockTerminal>, content: &str) {
 }
 
 fn add_link_annotations(e: &mut Editor<MockTerminal>, content: &str) {
-    use crate::annotations::{FaceRef, Presentation, StyleOverride};
+    use crate::annotations::presentation::{FaceRef, Presentation, StyleOverride};
 
     // --- Interactive links (blue + underline, activate -> follow) ------
     for (word, href) in [("docs", "docs.md"), ("repo", "https://example.com")] {
@@ -188,7 +191,7 @@ fn add_link_annotations(e: &mut Editor<MockTerminal>, content: &str) {
 }
 
 fn add_button_annotation(e: &mut Editor<MockTerminal>, content: &str) {
-    use crate::annotations::{Presentation, StyleOverride};
+    use crate::annotations::presentation::{Presentation, StyleOverride};
     use crate::color::Color;
 
     // --- A button (reverse video, interactive run action) -------------
@@ -215,7 +218,7 @@ fn add_checkbox_annotations(
     e: &mut Editor<MockTerminal>,
     content: &str,
 ) -> Vec<crate::annotations::AnnotationId> {
-    use crate::annotations::{Adornment, Placement, Presentation};
+    use crate::annotations::presentation::{Adornment, Placement, Presentation};
 
     // --- Checkboxes (overlay glyph + toggle action) -------------------
     let mut checkbox_ids = Vec::new();
@@ -339,9 +342,9 @@ Search: needle here and another needle over there.";
 
 #[test]
 fn eol_adornment_renders_as_virtual_text() {
-    use crate::annotations::{
-        Adornment, Anchor, Annotation, AnnotationOwner, FaceRef, Kind, Placement, Presentation,
-    };
+    use crate::annotations::kind::Kind;
+    use crate::annotations::presentation::{Adornment, FaceRef, Placement, Presentation};
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     let mut e = editor_with_text("hello\nworld");
     e.active_document().annotations.add(
         Annotation::new(
@@ -395,9 +398,9 @@ fn search_highlight_flows_through_annotations() {
 
 #[test]
 fn overlay_adornment_renders_at_anchor_column() {
-    use crate::annotations::{
-        Adornment, Anchor, Annotation, AnnotationOwner, Kind, Placement, Presentation,
-    };
+    use crate::annotations::kind::Kind;
+    use crate::annotations::presentation::{Adornment, Placement, Presentation};
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     let mut e = editor_with_text("0123456789");
     e.active_document().annotations.add(
         Annotation::new(
@@ -421,9 +424,9 @@ fn overlay_adornment_renders_at_anchor_column() {
 fn text_attributes_emit_sgr_escape_codes() {
     // Confirms attributes reach the terminal as standard ANSI SGR (whether a
     // given terminal/font *renders* them visually is a terminal config matter).
-    use crate::annotations::{
-        Anchor, Annotation, AnnotationOwner, Kind, Presentation, StyleOverride,
-    };
+    use crate::annotations::kind::Kind;
+    use crate::annotations::presentation::{Presentation, StyleOverride};
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     let mut e = editor_with_text("hello");
     e.active_document().annotations.add(
         Annotation::new(
@@ -446,9 +449,9 @@ fn text_attributes_emit_sgr_escape_codes() {
 
 #[test]
 fn cursor_walks_through_leading_marker() {
-    use crate::annotations::{
-        Adornment, Anchor, Annotation, AnnotationOwner, Kind, Placement, Presentation,
-    };
+    use crate::annotations::kind::Kind;
+    use crate::annotations::presentation::{Adornment, Placement, Presentation};
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     let line = "The leadmark here";
     let mut e = editor_with_text(line);
     // ">> " (3 wide) leading at the start of "leadmark" (offset 4), like the demo.
@@ -473,9 +476,9 @@ fn cursor_walks_through_leading_marker() {
 fn visual_cursor_clears_leading_marker_with_softwrap() {
     // Exercises the rendered (soft) cursor through the display-map path; the
     // delta from before->on the anchor must be 1 char + the 3-wide marker = 4.
-    use crate::annotations::{
-        Adornment, Anchor, Annotation, AnnotationOwner, Kind, Placement, Presentation,
-    };
+    use crate::annotations::kind::Kind;
+    use crate::annotations::presentation::{Adornment, Placement, Presentation};
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     let mut e = editor_with_text("The leadmark here");
     e.active_document().annotations.add(
         Annotation::new(Kind::new("ui.x"), Anchor::point(4), AnnotationOwner::User)
@@ -505,9 +508,9 @@ fn visual_cursor_clears_leading_marker_with_softwrap() {
 
 #[test]
 fn cursor_clears_leading_marker() {
-    use crate::annotations::{
-        Adornment, Anchor, Annotation, AnnotationOwner, Kind, Placement, Presentation,
-    };
+    use crate::annotations::kind::Kind;
+    use crate::annotations::presentation::{Adornment, Placement, Presentation};
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     let mut e = editor_with_text("The word here");
     // 2-wide leading marker anchored at the start of "word" (offset 4).
     e.active_document().annotations.add(
@@ -536,9 +539,9 @@ fn cursor_clears_leading_marker() {
 
 #[test]
 fn leading_adornment_inserts_and_shifts_content() {
-    use crate::annotations::{
-        Adornment, Anchor, Annotation, AnnotationOwner, Kind, Placement, Presentation,
-    };
+    use crate::annotations::kind::Kind;
+    use crate::annotations::presentation::{Adornment, Placement, Presentation};
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     let mut e = editor_with_text("The word here");
     // Leading ">>" anchored at the start of "word" (offset 4).
     e.active_document().annotations.add(
@@ -556,9 +559,9 @@ fn leading_adornment_inserts_and_shifts_content() {
 
 #[test]
 fn conceal_hides_markers_except_on_cursor_line() {
-    use crate::annotations::{
-        Adornment, Anchor, Annotation, AnnotationOwner, Kind, Placement, Presentation,
-    };
+    use crate::annotations::kind::Kind;
+    use crate::annotations::presentation::{Adornment, Placement, Presentation};
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     // Each line wraps "bold"/"wide" in "**"; conceal the markers on line 0 only.
     let mut e = editor_with_text("a **bold** x\nb **wide** y");
     for (s, en) in [(2usize, 4usize), (8usize, 10usize)] {
@@ -593,9 +596,9 @@ fn conceal_hides_markers_except_on_cursor_line() {
 
 #[test]
 fn conceal_reveal_unaffected_by_multibyte_chars_on_earlier_lines() {
-    use crate::annotations::{
-        Adornment, Anchor, Annotation, AnnotationOwner, Kind, Placement, Presentation,
-    };
+    use crate::annotations::kind::Kind;
+    use crate::annotations::presentation::{Adornment, Placement, Presentation};
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     // Many 2-byte chars on line 0 push line 1's byte offsets past its char
     // offsets, regressing the cursor-line reveal check (byte vs char-indexed).
     let line0 = "e\u{301}".repeat(20);
@@ -645,9 +648,9 @@ fn conceal_reveal_unaffected_by_multibyte_chars_on_earlier_lines() {
 
 #[test]
 fn overlay_range_conceals_span_padding_and_truncating() {
-    use crate::annotations::{
-        Adornment, Anchor, Annotation, AnnotationOwner, Kind, Placement, Presentation,
-    };
+    use crate::annotations::kind::Kind;
+    use crate::annotations::presentation::{Adornment, Placement, Presentation};
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     let mut e = editor_with_text("0123456789");
     // [0,3) "012" concealed by "X" -> "X  " (padded to the 3-cell span).
     e.active_document().annotations.add(
@@ -680,9 +683,9 @@ fn overlay_range_conceals_span_padding_and_truncating() {
 
 #[test]
 fn presentation_style_renders_fg_and_attrs_to_cells() {
-    use crate::annotations::{
-        Anchor, Annotation, AnnotationOwner, Kind, Presentation, StyleOverride,
-    };
+    use crate::annotations::kind::Kind;
+    use crate::annotations::presentation::{Presentation, StyleOverride};
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     use crate::color::Color;
     let mut e = editor_with_text("hello world");
     let style = StyleOverride {
@@ -798,7 +801,7 @@ fn checkbox_toggle_edits_literal_box_in_buffer() {
 
 #[test]
 fn affordances_render_when_cursor_on_interactive_annotation() {
-    use crate::annotations::KeyHint;
+    use crate::annotations::action::KeyHint;
     let mut e = editor_with_text("hello world");
     e.active_document().annotations.add(
         Annotation::new(

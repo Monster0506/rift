@@ -3,7 +3,7 @@
 
 /// Result of matching a command input
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum MatchResult {
+pub(in crate::command_line) enum MatchResult {
     /// Exact match found (command name or explicit alias)
     Exact(String),
     /// Shortest unambiguous prefix match
@@ -19,7 +19,7 @@ pub(crate) enum MatchResult {
 
 /// Command definition
 #[derive(Debug, Clone)]
-pub(crate) struct CommandDef {
+pub(in crate::command_line) struct CommandDef {
     /// Canonical command name
     name: String,
     /// Explicit aliases for this command
@@ -76,7 +76,7 @@ impl CommandDef {
 
 /// Command registry
 #[derive(Debug, Clone)]
-pub(crate) struct CommandRegistry {
+pub(in crate::command_line) struct CommandRegistry {
     commands: Vec<CommandDef>,
 }
 

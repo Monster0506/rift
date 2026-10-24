@@ -2,36 +2,44 @@ use super::Editor;
 use crate::error::{ErrorType, RiftError};
 use crate::term::TerminalBackend;
 
-pub(super) type NativeSaveHandler<T> = fn(&mut Editor<T>) -> crate::document::SaveResult;
+pub(super) type NativeSaveHandler<T> = fn(&mut Editor<T>) -> crate::document::runtime::SaveResult;
 
-fn save_directory<T: TerminalBackend>(editor: &mut Editor<T>) -> crate::document::SaveResult {
+fn save_directory<T: TerminalBackend>(
+    editor: &mut Editor<T>,
+) -> crate::document::runtime::SaveResult {
     editor.apply_directory_diff();
-    crate::document::SaveResult::Saved
+    crate::document::runtime::SaveResult::Saved
 }
 
-fn save_commit_message<T: TerminalBackend>(editor: &mut Editor<T>) -> crate::document::SaveResult {
+fn save_commit_message<T: TerminalBackend>(
+    editor: &mut Editor<T>,
+) -> crate::document::runtime::SaveResult {
     editor.apply_git_commit_message();
-    crate::document::SaveResult::Saved
+    crate::document::runtime::SaveResult::Saved
 }
 
-fn save_clipboard<T: TerminalBackend>(editor: &mut Editor<T>) -> crate::document::SaveResult {
+fn save_clipboard<T: TerminalBackend>(
+    editor: &mut Editor<T>,
+) -> crate::document::runtime::SaveResult {
     editor.apply_clipboard_diff();
-    crate::document::SaveResult::Saved
+    crate::document::runtime::SaveResult::Saved
 }
 
-fn save_clipboard_entry<T: TerminalBackend>(editor: &mut Editor<T>) -> crate::document::SaveResult {
+fn save_clipboard_entry<T: TerminalBackend>(
+    editor: &mut Editor<T>,
+) -> crate::document::runtime::SaveResult {
     editor.apply_clipboard_entry_save();
-    crate::document::SaveResult::Saved
+    crate::document::runtime::SaveResult::Saved
 }
 
-fn save_rebase<T: TerminalBackend>(editor: &mut Editor<T>) -> crate::document::SaveResult {
+fn save_rebase<T: TerminalBackend>(editor: &mut Editor<T>) -> crate::document::runtime::SaveResult {
     editor.apply_git_rebase_todo();
-    crate::document::SaveResult::Saved
+    crate::document::runtime::SaveResult::Saved
 }
 
 pub(super) fn native_save_handlers<T: TerminalBackend>(
-) -> std::collections::HashMap<crate::document::BufferKindId, NativeSaveHandler<T>> {
-    use crate::document::BufferKindId;
+) -> std::collections::HashMap<crate::document::runtime::BufferKindId, NativeSaveHandler<T>> {
+    use crate::document::runtime::BufferKindId;
 
     let mut handlers = std::collections::HashMap::new();
     handlers.insert(
@@ -145,8 +153,8 @@ fn reload_buffer_list<T: TerminalBackend>(editor: &mut Editor<T>) {
 }
 
 pub(super) fn native_reload_handlers<T: TerminalBackend>(
-) -> std::collections::HashMap<crate::document::BufferKindId, NativeReloadHandler<T>> {
-    use crate::document::BufferKindId;
+) -> std::collections::HashMap<crate::document::runtime::BufferKindId, NativeReloadHandler<T>> {
+    use crate::document::runtime::BufferKindId;
 
     let mut handlers = std::collections::HashMap::new();
     handlers.insert(
@@ -189,7 +197,7 @@ pub(super) fn native_reload_handlers<T: TerminalBackend>(
 }
 
 impl<T: TerminalBackend> Editor<T> {
-    fn dispatch_save_sync(&mut self) -> crate::document::SaveResult {
+    fn dispatch_save_sync(&mut self) -> crate::document::runtime::SaveResult {
         let Some((doc_id, kind_id, kind_name, dispatch)) =
             self.document_manager.active_document().map(|document| {
                 (
@@ -201,25 +209,25 @@ impl<T: TerminalBackend> Editor<T> {
             })
         else {
             self.state.clear_command_line();
-            return crate::document::SaveResult::Rejected;
+            return crate::document::runtime::SaveResult::Rejected;
         };
 
         match dispatch {
-            crate::document::SaveDispatch::Lua => {
+            crate::document::runtime::SaveDispatch::Lua => {
                 let saved = self.plugin_host.invoke_buffer_save(doc_id, &kind_name);
                 self.apply_plugin_mutations();
                 self.state.clear_command_line();
                 if saved {
-                    crate::document::SaveResult::Saved
+                    crate::document::runtime::SaveResult::Saved
                 } else {
-                    crate::document::SaveResult::Failed
+                    crate::document::runtime::SaveResult::Failed
                 }
             }
-            crate::document::SaveDispatch::Disabled => {
+            crate::document::runtime::SaveDispatch::Disabled => {
                 self.state.clear_command_line();
-                crate::document::SaveResult::Rejected
+                crate::document::runtime::SaveResult::Rejected
             }
-            crate::document::SaveDispatch::Reject => {
+            crate::document::runtime::SaveDispatch::Reject => {
                 self.state.handle_error(RiftError::new(
                     ErrorType::Io,
                     "CANT_SAVE",
@@ -232,9 +240,9 @@ impl<T: TerminalBackend> Editor<T> {
                     ),
                 ));
                 self.state.clear_command_line();
-                crate::document::SaveResult::Rejected
+                crate::document::runtime::SaveResult::Rejected
             }
-            crate::document::SaveDispatch::Native(handler) => {
+            crate::document::runtime::SaveDispatch::Native(handler) => {
                 let result = if let Some(handler) = self.native_save_handlers.get(&kind_id).copied()
                 {
                     handler(self)
@@ -245,7 +253,7 @@ impl<T: TerminalBackend> Editor<T> {
                 {
                     handler(handle)
                 } else {
-                    crate::document::SaveResult::Rejected
+                    crate::document::runtime::SaveResult::Rejected
                 };
                 self.state.clear_command_line();
                 result
@@ -254,10 +262,9 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn do_save(&mut self) {
-        let is_plain_file = self
-            .document_manager
-            .active_document()
-            .is_some_and(|doc| doc.buffer_kind_id() == crate::document::BufferKindId::FILE);
+        let is_plain_file = self.document_manager.active_document().is_some_and(|doc| {
+            doc.buffer_kind_id() == crate::document::runtime::BufferKindId::FILE
+        });
         if is_plain_file {
             let save_info = {
                 let document = self.document_manager.active_document_mut().unwrap();
@@ -268,7 +275,7 @@ impl<T: TerminalBackend> Editor<T> {
             };
             if let Some((buf_id, path)) = save_info {
                 self.plugin_host
-                    .dispatch(&crate::plugin::EditorEvent::BufSavePre {
+                    .dispatch(&crate::plugin::events::EditorEvent::BufSavePre {
                         buf: buf_id,
                         path: path.clone(),
                     });
@@ -305,10 +312,9 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn do_save_and_quit(&mut self) {
-        let is_plain_file = self
-            .document_manager
-            .active_document()
-            .is_some_and(|doc| doc.buffer_kind_id() == crate::document::BufferKindId::FILE);
+        let is_plain_file = self.document_manager.active_document().is_some_and(|doc| {
+            doc.buffer_kind_id() == crate::document::runtime::BufferKindId::FILE
+        });
         if is_plain_file {
             if let Some(doc) = self.document_manager.active_document_mut() {
                 doc.commit_pending_ghost();
@@ -370,7 +376,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         let save_result = self.dispatch_save_sync();
-        if save_result != crate::document::SaveResult::Saved {
+        if save_result != crate::document::runtime::SaveResult::Saved {
             return;
         }
 
@@ -424,7 +430,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let doc_id = self.active_document_id();
                 if let Some(doc) = self.document_manager.get_document(doc_id) {
                     let confirm_dirty = doc.kind.descriptor.policies.close
-                        == crate::document::ClosePolicy::ConfirmDirty;
+                        == crate::document::runtime::ClosePolicy::ConfirmDirty;
                     if doc.is_dirty() && (confirm_dirty || !doc.is_special()) {
                         self.state.handle_error(RiftError::warning(
                             ErrorType::Execution,
@@ -449,7 +455,9 @@ impl<T: TerminalBackend> Editor<T> {
                 if let Some(new_doc_id) = self.document_manager.active_document_id() {
                     self.split_tree.set_focused_document(new_doc_id);
                     self.plugin_host
-                        .dispatch(&crate::plugin::EditorEvent::BufEnter { buf: new_doc_id });
+                        .dispatch(&crate::plugin::events::EditorEvent::BufEnter {
+                            buf: new_doc_id,
+                        });
                     self.apply_plugin_mutations();
                 }
                 self.sync_state_with_active_document();
@@ -474,9 +482,9 @@ impl<T: TerminalBackend> Editor<T> {
             if new_buf != old_buf {
                 self.update_lua_state();
                 self.plugin_host
-                    .dispatch(&crate::plugin::EditorEvent::BufLeave { buf: old_buf });
+                    .dispatch(&crate::plugin::events::EditorEvent::BufLeave { buf: old_buf });
                 self.plugin_host
-                    .dispatch(&crate::plugin::EditorEvent::BufEnter { buf: new_buf });
+                    .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: new_buf });
                 self.apply_plugin_mutations();
             }
         }
@@ -499,9 +507,9 @@ impl<T: TerminalBackend> Editor<T> {
             if new_buf != old_buf {
                 self.update_lua_state();
                 self.plugin_host
-                    .dispatch(&crate::plugin::EditorEvent::BufLeave { buf: old_buf });
+                    .dispatch(&crate::plugin::events::EditorEvent::BufLeave { buf: old_buf });
                 self.plugin_host
-                    .dispatch(&crate::plugin::EditorEvent::BufEnter { buf: new_buf });
+                    .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: new_buf });
                 self.apply_plugin_mutations();
             }
         }
@@ -538,9 +546,9 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.clear_command_line();
         self.update_lua_state();
         self.plugin_host
-            .dispatch(&crate::plugin::EditorEvent::BufLeave { buf: old_buf });
+            .dispatch(&crate::plugin::events::EditorEvent::BufLeave { buf: old_buf });
         self.plugin_host
-            .dispatch(&crate::plugin::EditorEvent::BufEnter { buf: target });
+            .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: target });
         self.apply_plugin_mutations();
         if let Err(e) = self.force_full_redraw() {
             self.state.handle_error(e);
@@ -632,9 +640,9 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn do_split_window(
         &mut self,
         direction: crate::split::tree::SplitDirection,
-        subcommand: crate::command_line::commands::SplitSubcommand,
+        subcommand: crate::command_line::commands::types::SplitSubcommand,
     ) {
-        use crate::command_line::commands::SplitSubcommand;
+        use crate::command_line::commands::types::SplitSubcommand;
         match subcommand {
             SplitSubcommand::Current => {
                 let doc_id = self.active_document_id();
@@ -691,7 +699,7 @@ impl<T: TerminalBackend> Editor<T> {
                 if self.split_tree.move_window(dir, &layouts) {
                     self.render_system.viewport.mark_needs_full_redraw();
                     self.plugin_host
-                        .dispatch(&crate::plugin::EditorEvent::WinMoved {
+                        .dispatch(&crate::plugin::events::EditorEvent::WinMoved {
                             win: moved_id.get(),
                         });
                     self.apply_plugin_mutations();
@@ -768,7 +776,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.sync_state_with_active_document();
                 self.render_system.viewport.mark_needs_full_redraw();
                 self.plugin_host
-                    .dispatch(&crate::plugin::EditorEvent::WinSwapped {
+                    .dispatch(&crate::plugin::events::EditorEvent::WinSwapped {
                         win1: focused_id.get(),
                         win2: prev_id.get(),
                     });

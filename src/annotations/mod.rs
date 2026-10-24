@@ -1,20 +1,18 @@
-mod action;
-mod kind;
-mod marker;
+pub(crate) mod action;
+pub(crate) mod kind;
+pub(crate) mod marker;
 pub(crate) mod payload;
 pub(crate) mod presentation;
 pub(crate) mod registry;
 pub(crate) mod value;
 
-pub use action::Action;
-#[cfg(test)]
-pub(crate) use action::KeyHint;
-pub(crate) use kind::well_known;
-pub use kind::Kind;
-pub(crate) use marker::Marker;
-pub(crate) use presentation::{Adornment, FaceRef, Placement};
-pub use presentation::{Presentation, StyleOverride};
-pub(crate) use value::Value;
+use crate::annotations::action::Action;
+use crate::annotations::kind::well_known;
+use crate::annotations::kind::Kind;
+use crate::annotations::marker::Marker;
+use crate::annotations::presentation::{Adornment, FaceRef};
+use crate::annotations::presentation::{Presentation, StyleOverride};
+use crate::annotations::value::Value;
 
 use serde::{Deserialize, Serialize};
 

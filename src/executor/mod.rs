@@ -53,7 +53,7 @@ pub(crate) fn compute_motion_range(
                 doc.syntax
                     .as_ref()
                     .and_then(|s| s.tree.as_ref())
-                    .map(|tree| crate::text_objects::SyntaxContext {
+                    .map(|tree| crate::text_objects::treesitter::SyntaxContext {
                         tree,
                         source: bytes.as_slice(),
                     })

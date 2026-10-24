@@ -5,12 +5,7 @@ mod assert;
 pub(crate) mod backend;
 #[cfg(test)]
 mod fuzz;
-mod ops;
-mod runner;
+pub(crate) mod ops;
+pub(crate) mod runner;
 #[cfg(test)]
 mod shrink;
-
-#[cfg(test)]
-pub(crate) use backend::ReplayBackend;
-pub use ops::parse;
-pub use runner::{run, RunReport};

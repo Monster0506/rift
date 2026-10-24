@@ -223,7 +223,7 @@ fn shift_arrow_moves_like_the_arrow() {
 }
 
 fn keys(seq: &str) -> Vec<Key> {
-    crate::key::parse_key_sequence(seq).unwrap()
+    crate::key::notation::parse_key_sequence(seq).unwrap()
 }
 
 #[test]

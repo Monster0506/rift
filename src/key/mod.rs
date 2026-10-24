@@ -1,9 +1,7 @@
 //! Key representation for editor input
 
-mod notation;
+pub(crate) mod notation;
 mod vt100;
-
-pub(crate) use notation::{format_key, parse_key, parse_key_sequence};
 
 use std::ops::BitOr;
 

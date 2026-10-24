@@ -1,6 +1,6 @@
 use crate::action::{Action, EditorAction, Motion};
 use crate::command::Command;
-use crate::document::BufferKindId;
+use crate::document::runtime::BufferKindId;
 use crate::key::{Key, Mods};
 use crate::keymap::{KeyContext, KeyMap};
 /// Register default keybindings

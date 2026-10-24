@@ -1,6 +1,8 @@
+use crate::command_line::commands::definitions::CommandDescriptor;
 use crate::command_line::commands::definitions::{CompletionHint, COMMANDS};
-use crate::command_line::commands::{CommandDescriptor, MatchResult};
-use crate::command_line::settings::{SettingType, SettingsRegistry};
+use crate::command_line::commands::registry::MatchResult;
+use crate::command_line::settings::descriptor::SettingType;
+use crate::command_line::settings::registry::SettingsRegistry;
 use crate::document::definitions::DocumentOptions;
 use crate::state::UserSettings;
 

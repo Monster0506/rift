@@ -1,5 +1,6 @@
-use crate::command_line::commands::{ExecutionResult, ParsedCommand};
-use crate::command_line::settings::SettingsRegistry;
+use crate::command_line::commands::executor::ExecutionResult;
+use crate::command_line::commands::types::ParsedCommand;
+use crate::command_line::settings::registry::SettingsRegistry;
 use crate::document::definitions::DocumentOptions;
 use crate::document::Document;
 use crate::error::RiftError;

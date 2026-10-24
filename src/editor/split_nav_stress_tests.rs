@@ -2,7 +2,7 @@
 //! navigation, driven through the real `tick()` loop rather than internal APIs.
 
 use super::*;
-use crate::command_line::commands::SplitSubcommand;
+use crate::command_line::commands::types::SplitSubcommand;
 use crate::key::{InputEvent, Key, KeyCode, Mods};
 use crate::split::tree::SplitDirection;
 use crate::split::window::WindowId;

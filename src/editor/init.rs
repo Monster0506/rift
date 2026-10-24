@@ -1,7 +1,7 @@
 use super::Editor;
 use super::{plugin_dirs, user_config_dir};
-use crate::command_line::commands::CommandParser;
-use crate::command_line::settings::create_settings_registry;
+use crate::command_line::commands::parser::CommandParser;
+use crate::command_line::settings::definitions::create_settings_registry;
 use crate::document::{Document, DocumentId};
 use crate::dot_repeat::DotRepeat;
 use crate::error::{ErrorType, RiftError};
@@ -36,8 +36,8 @@ fn startup_language_loader() -> Arc<crate::syntax::loader::LanguageLoader> {
 
 fn open_startup_documents(
     effective_file_path: Option<&str>,
-) -> Result<crate::document::DocumentManager, RiftError> {
-    let mut document_manager = crate::document::DocumentManager::new();
+) -> Result<crate::document::manager::DocumentManager, RiftError> {
+    let mut document_manager = crate::document::manager::DocumentManager::new();
     if let Some(path) = effective_file_path {
         document_manager.open_file(Some(path.to_string()), false)?;
     } else {
@@ -55,7 +55,7 @@ fn open_startup_documents(
 
 fn startup_state(
     effective_file_path: Option<&str>,
-    document_manager: &crate::document::DocumentManager,
+    document_manager: &crate::document::manager::DocumentManager,
 ) -> State {
     let mut state = State::new();
     state.set_file_path(effective_file_path.map(str::to_string));
@@ -82,15 +82,15 @@ impl<T: TerminalBackend> Editor<T> {
         let language_loader = startup_language_loader();
         let document_manager = open_startup_documents(effective_file_path)?;
 
-        let mut buffer_kinds = crate::document::BufferKindRegistry::with_builtins();
-        buffer_kinds.increment_open_count(crate::document::BufferKindId::FILE);
+        let mut buffer_kinds = crate::document::runtime::BufferKindRegistry::with_builtins();
+        buffer_kinds.increment_open_count(crate::document::runtime::BufferKindId::FILE);
 
         terminal.init()?;
 
         let size = terminal.get_size()?;
 
         let render_system =
-            crate::render::RenderSystem::new(size.rows as usize, size.cols as usize);
+            crate::render::system::RenderSystem::new(size.rows as usize, size.cols as usize);
 
         let settings_registry = create_settings_registry();
         let command_parser = CommandParser::new(settings_registry);
@@ -224,7 +224,7 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some((buf, path, filetype)) = buf_info {
                 self.update_lua_state();
                 self.plugin_host
-                    .dispatch(&crate::plugin::EditorEvent::BufOpen {
+                    .dispatch(&crate::plugin::events::EditorEvent::BufOpen {
                         buf,
                         path,
                         filetype,
@@ -237,7 +237,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.update_lua_state();
         self.plugin_host
-            .dispatch(&crate::plugin::EditorEvent::EditorStart);
+            .dispatch(&crate::plugin::events::EditorEvent::EditorStart);
         self.apply_plugin_mutations();
 
         if let Some(dir) = target_dir {
@@ -267,7 +267,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         self.plugin_host
-            .dispatch(&crate::plugin::EditorEvent::WinLeave {
+            .dispatch(&crate::plugin::events::EditorEvent::WinLeave {
                 win: old_win_id.get(),
                 buf: old_doc_id,
             });
@@ -285,7 +285,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.sync_state_with_active_document();
 
         self.plugin_host
-            .dispatch(&crate::plugin::EditorEvent::WinEnter {
+            .dispatch(&crate::plugin::events::EditorEvent::WinEnter {
                 win: target_id.get(),
                 buf: new_doc_id,
             });
@@ -365,9 +365,9 @@ impl<T: TerminalBackend> Editor<T> {
 
                     for doc_id in matching_doc_ids {
                         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                            doc.kind = crate::document::BufferKind::new(std::sync::Arc::clone(
-                                &tombstone_desc,
-                            ));
+                            doc.kind = crate::document::kind::BufferKind::new(
+                                std::sync::Arc::clone(&tombstone_desc),
+                            );
                         }
                     }
                 }
@@ -418,5 +418,5 @@ impl<T: TerminalBackend> Editor<T> {
 }
 
 mod paths {
-    pub(crate) const GRAMMARS_DIR: &str = "grammars";
+    pub(super) const GRAMMARS_DIR: &str = "grammars";
 }

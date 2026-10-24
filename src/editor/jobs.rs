@@ -14,7 +14,7 @@ const SYNTAX_REPARSE_DEBOUNCE: std::time::Duration = std::time::Duration::from_m
 
 #[cfg(feature = "treesitter")]
 fn attach_syntax(
-    docs: &mut crate::document::DocumentManager,
+    docs: &mut crate::document::manager::DocumentManager,
     loader: &std::sync::Arc<crate::syntax::loader::LanguageLoader>,
     doc_id: DocumentId,
 ) {
@@ -1036,7 +1036,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.update_lua_state();
         self.plugin_host
-            .dispatch(&crate::plugin::EditorEvent::BufSavePost {
+            .dispatch(&crate::plugin::events::EditorEvent::BufSavePost {
                 buf: res.document_id,
                 path: res.path.clone(),
             });
@@ -1096,12 +1096,12 @@ impl<T: TerminalBackend> Editor<T> {
         self.update_lua_state();
         if res.is_reload {
             self.plugin_host
-                .dispatch(&crate::plugin::EditorEvent::BufReload {
+                .dispatch(&crate::plugin::events::EditorEvent::BufReload {
                     buf: res.document_id,
                 });
         } else {
             self.plugin_host
-                .dispatch(&crate::plugin::EditorEvent::BufOpen {
+                .dispatch(&crate::plugin::events::EditorEvent::BufOpen {
                     buf: res.document_id,
                     path,
                     filetype,

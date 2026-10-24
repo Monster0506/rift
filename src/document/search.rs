@@ -16,9 +16,9 @@ impl Document {
         // shifts anchors, so an unbounded match count makes keystrokes O(matches).
         const MAX_HIGHLIGHTED_MATCHES: usize = 10_000;
 
-        use crate::annotations::{
-            Anchor, Annotation, AnnotationOwner, Kind, Presentation, StyleOverride,
-        };
+        use crate::annotations::kind::Kind;
+        use crate::annotations::presentation::{Presentation, StyleOverride};
+        use crate::annotations::{Anchor, Annotation, AnnotationOwner};
         use crate::color::Color;
         self.annotations.clear_by_kind_prefix("ui.search");
         let base = StyleOverride {

@@ -1,5 +1,5 @@
 use super::Editor;
-use crate::command_line::commands::CommandExecutor;
+use crate::command_line::commands::executor::CommandExecutor;
 use crate::mode::Mode;
 use crate::term::TerminalBackend;
 

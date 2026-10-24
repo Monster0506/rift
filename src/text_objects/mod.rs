@@ -3,9 +3,9 @@ use crate::character::Character;
 use crate::wrap::{MotionRange, RangeKind};
 
 #[cfg(feature = "treesitter")]
-mod treesitter;
+pub(crate) mod treesitter;
 #[cfg(feature = "treesitter")]
-pub(crate) use treesitter::SyntaxContext;
+use crate::text_objects::treesitter::SyntaxContext;
 
 /// Inert stand-in when tree-sitter is compiled out: text objects that need a
 /// parse tree simply never resolve, so no context value is ever constructed.

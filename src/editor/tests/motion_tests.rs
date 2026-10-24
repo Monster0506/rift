@@ -768,7 +768,8 @@ fn operator_count_and_motion_count_multiply_not_concatenate() {
 #[test]
 fn dd_deletes_the_current_line_via_the_operator_doubling_path_not_a_keymap_sequence() {
     use crate::key::Key;
-    use crate::keymap::{KeyContext, MatchResult};
+    use crate::keymap::trie::MatchResult;
+    use crate::keymap::KeyContext;
 
     let mut editor = create_editor();
     load_text(&mut editor, "first\nsecond\nthird\n");
@@ -802,7 +803,8 @@ fn ambiguous_non_operator_binding_flushes_to_the_short_action_after_timeout() {
     use crate::action::{Action, EditorAction, Motion};
     use crate::buffer::api::BufferView;
     use crate::key::Key;
-    use crate::keymap::{KeyContext, MatchResult};
+    use crate::keymap::trie::MatchResult;
+    use crate::keymap::KeyContext;
 
     let mut editor = create_editor();
     load_text(&mut editor, "line one\nline two\nline three\n");

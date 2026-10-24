@@ -3,7 +3,7 @@ use super::PostPasteState;
 use crate::action::{Action, EditorAction};
 use crate::buffer::api::BufferView;
 use crate::command::Command;
-use crate::document::{ActionDispatch, BufferKindId, NavigationPolicy};
+use crate::document::runtime::{ActionDispatch, BufferKindId, NavigationPolicy};
 use crate::mode::Mode;
 use crate::search::SearchDirection;
 use crate::term::TerminalBackend;

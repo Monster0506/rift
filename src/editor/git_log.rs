@@ -2,7 +2,7 @@
 //! (Phase 8). Pure read/navigate;  no `:w` reconciliation.
 
 use super::Editor;
-use crate::document::BufferKindId;
+use crate::document::runtime::BufferKindId;
 use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {

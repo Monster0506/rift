@@ -1180,7 +1180,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn paint_window_layer(
-        render_system: &mut crate::render::RenderSystem,
+        render_system: &mut crate::render::system::RenderSystem,
         layout: &WindowLayout,
         ctx: &render::DrawContext,
         pass: WindowPass,

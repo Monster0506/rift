@@ -163,7 +163,7 @@ impl<T: TerminalBackend> Editor<T> {
                 crate::perf::PerfFields::default()
             );
             self.plugin_host
-                .dispatch(&crate::plugin::EditorEvent::TextChangedCoarse { buf });
+                .dispatch(&crate::plugin::events::EditorEvent::TextChangedCoarse { buf });
             self.apply_plugin_mutations();
         }
     }
@@ -171,7 +171,7 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn flush_pending_cursor_moved(&mut self) {
         if let Some((buf, row, col)) = self.pending_cursor_moved.take() {
             self.plugin_host
-                .dispatch(&crate::plugin::EditorEvent::CursorMoved { buf, row, col });
+                .dispatch(&crate::plugin::events::EditorEvent::CursorMoved { buf, row, col });
             self.apply_plugin_mutations();
         }
     }
@@ -193,13 +193,17 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn apply_syntax_sync(
         &mut self,
         doc_id: crate::document::DocumentId,
-        outcome: crate::document::SyntaxSync,
+        outcome: crate::document::syntax_sync::SyntaxSync,
     ) {
         match outcome {
             #[cfg(feature = "treesitter")]
-            crate::document::SyntaxSync::Completed => self.cancel_pending_syntax_reparse(doc_id),
-            crate::document::SyntaxSync::Deferred => self.debounce_syntax_reparse(doc_id),
-            crate::document::SyntaxSync::NoSyntax => {}
+            crate::document::syntax_sync::SyntaxSync::Completed => {
+                self.cancel_pending_syntax_reparse(doc_id);
+            }
+            crate::document::syntax_sync::SyntaxSync::Deferred => {
+                self.debounce_syntax_reparse(doc_id);
+            }
+            crate::document::syntax_sync::SyntaxSync::NoSyntax => {}
         }
     }
 }

@@ -26,7 +26,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         self.plugin_host
-            .dispatch(&crate::plugin::EditorEvent::EditorQuit);
+            .dispatch(&crate::plugin::events::EditorEvent::EditorQuit);
         self.apply_plugin_mutations();
 
         Ok(())
@@ -254,8 +254,8 @@ impl<T: TerminalBackend> Editor<T> {
             crate::keymap::KeyContext::Terminal,
             std::slice::from_ref(&key_press),
         );
-        if let crate::keymap::MatchResult::Exact(action)
-        | crate::keymap::MatchResult::Ambiguous(action) = terminal_match
+        if let crate::keymap::trie::MatchResult::Exact(action)
+        | crate::keymap::trie::MatchResult::Ambiguous(action) = terminal_match
         {
             let action = action.clone();
             self.handle_action(&action);
@@ -347,7 +347,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn dispatch_pending_keys(&mut self, key_press: Key) -> Result<(), RiftError> {
-        use crate::keymap::MatchResult;
+        use crate::keymap::trie::MatchResult;
 
         // Push key to pending buffer
         self.pending_keys.push(key_press);
@@ -417,7 +417,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Returns `true` when the loop should re-dispatch without the last key.
     fn retry_without_last_key(&mut self, context: crate::keymap::KeyContext) -> bool {
-        use crate::keymap::MatchResult;
+        use crate::keymap::trie::MatchResult;
 
         let last = self.pending_keys.pop().unwrap();
         match self.lookup_key_sequence(context, &self.pending_keys) {
@@ -513,28 +513,28 @@ impl<T: TerminalBackend> Editor<T> {
                 if let Some(doc) = self.document_manager.active_document() {
                     if doc.buffer_kind_id() == id {
                         return match doc.key_fallback() {
-                            crate::document::KeyFallback::Normal => {
+                            crate::document::runtime::KeyFallback::Normal => {
                                 Some(crate::keymap::KeyContext::Normal)
                             }
-                            crate::document::KeyFallback::Global => {
+                            crate::document::runtime::KeyFallback::Global => {
                                 Some(crate::keymap::KeyContext::Global)
                             }
-                            crate::document::KeyFallback::None => None,
+                            crate::document::runtime::KeyFallback::None => None,
                         };
                     }
                 }
                 if let Some(desc) = self.buffer_kinds.get_by_id(id) {
                     return match desc.policies.key_fallback {
-                        crate::document::KeyFallback::Normal => {
+                        crate::document::runtime::KeyFallback::Normal => {
                             Some(crate::keymap::KeyContext::Normal)
                         }
-                        crate::document::KeyFallback::Global => {
+                        crate::document::runtime::KeyFallback::Global => {
                             Some(crate::keymap::KeyContext::Global)
                         }
-                        crate::document::KeyFallback::None => None,
+                        crate::document::runtime::KeyFallback::None => None,
                     };
                 }
-                if id == crate::document::BufferKindId::TERMINAL {
+                if id == crate::document::runtime::BufferKindId::TERMINAL {
                     None
                 } else {
                     Some(crate::keymap::KeyContext::Normal)
@@ -549,7 +549,7 @@ impl<T: TerminalBackend> Editor<T> {
         &'a self,
         context: crate::keymap::KeyContext,
         keys: &[crate::key::Key],
-    ) -> crate::keymap::MatchResult<'a> {
+    ) -> crate::keymap::trie::MatchResult<'a> {
         self.keymap
             .lookup_with_parent(context, keys, |ctx| self.resolve_parent_key_context(ctx))
     }
@@ -599,7 +599,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn flush_pending_keys_on_timeout(&mut self) -> Result<(), RiftError> {
-        use crate::keymap::MatchResult;
+        use crate::keymap::trie::MatchResult;
 
         let Some(started_at) = self.pending_keys_started_at else {
             return Ok(());
@@ -669,7 +669,7 @@ impl<T: TerminalBackend> Editor<T> {
             KeyAction::Resize(cols, rows) => {
                 self.render_system.resize(rows as usize, cols as usize);
                 self.plugin_host
-                    .dispatch(&crate::plugin::EditorEvent::WindowResized { rows, cols });
+                    .dispatch(&crate::plugin::events::EditorEvent::WindowResized { rows, cols });
                 self.apply_plugin_mutations();
             }
             KeyAction::SkipAndRender | KeyAction::Continue => {}

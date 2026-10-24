@@ -10,7 +10,7 @@ pub(crate) fn tooltip(payload: &Value) -> Option<&str> {
 
 /// Helpers for `fs.*` annotation payloads (the file explorer).
 pub(crate) mod fs {
-    use super::Value;
+    use crate::annotations::value::Value;
 
     /// The stable directory-entry id (`payload.entry_id`).
     pub(in crate::annotations) fn entry_id(payload: &Value) -> Option<u16> {
@@ -33,7 +33,7 @@ pub(crate) mod fs {
 
 /// Helpers for `lsp.*` annotation payloads.
 pub(crate) mod lsp {
-    use super::Value;
+    use crate::annotations::value::Value;
 
     /// Diagnostic severity (`payload.severity`); LSP convention 1=error..4=hint.
     pub(in crate::annotations) fn severity(payload: &Value) -> Option<i64> {
@@ -49,7 +49,7 @@ pub(crate) mod lsp {
 
 /// Helpers for `git.*` annotation payloads (status buffer + hunk blocks).
 pub(in crate::annotations) mod git {
-    use super::Value;
+    use crate::annotations::value::Value;
 
     /// The tracked/untracked path a `git.status_entry`/`git.hunk` line refers to
     /// (`payload.path`).

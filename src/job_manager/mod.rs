@@ -1,4 +1,5 @@
-use crate::document::{BufferKindId, DocumentHandle, DocumentId};
+use crate::document::runtime::{BufferKindId, DocumentHandle};
+use crate::document::DocumentId;
 use crate::error::RiftError;
 use crate::plugin::PluginGeneration;
 use std::collections::{BTreeMap, HashMap};

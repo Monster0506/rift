@@ -14,8 +14,7 @@ mod components;
 mod ecs;
 mod pipeline;
 pub(crate) mod system;
-pub(crate) use pipeline::*;
-pub use system::RenderSystem;
+use crate::render::pipeline::{SyntaxDecorator, TabLayout};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CursorInfo {

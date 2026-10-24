@@ -604,7 +604,8 @@ fn visual_block_renders_and_edits_identically_to_charwise() {
 #[test]
 fn real_keymap_v_then_l_renders_a_visible_highlight_in_the_composited_cells() {
     use crate::key::Key;
-    use crate::keymap::{KeyContext, MatchResult};
+    use crate::keymap::trie::MatchResult;
+    use crate::keymap::KeyContext;
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
@@ -654,7 +655,8 @@ fn real_keymap_v_then_l_renders_a_visible_highlight_in_the_composited_cells() {
 #[test]
 fn visual_highlight_redraws_on_a_frame_after_the_initial_one() {
     use crate::key::Key;
-    use crate::keymap::{KeyContext, MatchResult};
+    use crate::keymap::trie::MatchResult;
+    use crate::keymap::KeyContext;
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");

@@ -1,7 +1,8 @@
 use super::backend::ReplayBackend;
 use crate::editor::Editor;
 use crate::invariants::InvariantTier;
-use crate::key::{format_key, Key};
+use crate::key::notation::format_key;
+use crate::key::Key;
 
 #[must_use]
 pub(super) fn reproduces_area(keys: &[Key], target_area: &'static str) -> bool {

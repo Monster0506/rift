@@ -100,7 +100,7 @@ fn test_explorer_split_select_does_not_follow_swapped_symlink() {
             .unwrap();
         doc.populate_directory_buffer(entries);
         doc.annotations
-            .clear_by_kind_prefix(crate::annotations::well_known::FS_ENTRY);
+            .clear_by_kind_prefix(crate::annotations::kind::well_known::FS_ENTRY);
         doc.annotations.create_directory_entry(1, 1);
     }
 
@@ -254,7 +254,7 @@ fn test_explorer_preview_discards_stale_result() {
 
 #[test]
 fn test_explorer_preview_updates_on_real_j_keypress_navigation() {
-    use crate::replay::ReplayBackend;
+    use crate::replay::backend::ReplayBackend;
 
     let dir = std::env::temp_dir().join(format!("rift_replay_preview_{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -388,7 +388,7 @@ fn test_explorer_preview_renders_a_persisted_undo_file_not_as_binary() {
         .unwrap();
     assert_eq!(
         preview_doc.buffer_kind_id(),
-        crate::document::BufferKindId::UNDO_FILE_VIEW,
+        crate::document::runtime::BufferKindId::UNDO_FILE_VIEW,
         "previewing a .undo file should render it with its custom buffer type"
     );
     let text = preview_doc.buffer.to_string();

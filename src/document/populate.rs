@@ -1,10 +1,11 @@
-use super::{
-    DirEntry, DirectoryDiff, Document, BUFFER_LIST_STATE_KEY, CLIPBOARD_STATE_KEY,
-    DIRECTORY_STATE_KEY, GIT_BLAME_STATE_KEY, GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY,
-    MESSAGES_STATE_KEY, TERMINAL_STATE_KEY, UNDO_FILE_VIEW_STATE_KEY, UNDO_TREE_STATE_KEY,
-};
+use super::{DirEntry, DirectoryDiff, Document};
 use crate::buffer::TextBuffer;
 use crate::character::Character;
+use crate::document::runtime::{
+    BUFFER_LIST_STATE_KEY, CLIPBOARD_STATE_KEY, DIRECTORY_STATE_KEY, GIT_BLAME_STATE_KEY,
+    GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY, MESSAGES_STATE_KEY, TERMINAL_STATE_KEY,
+    UNDO_FILE_VIEW_STATE_KEY, UNDO_TREE_STATE_KEY,
+};
 use std::collections::HashSet;
 use std::fmt::Write as _;
 
@@ -1400,7 +1401,10 @@ impl Document {
     }
 
     pub(crate) fn populate_git_log_buffer(&mut self, commits: Vec<crate::git::log::CommitSummary>) {
-        let Some(state) = self.state.try_get_mut(super::GIT_LOG_STATE_KEY) else {
+        let Some(state) = self
+            .state
+            .try_get_mut(crate::document::runtime::GIT_LOG_STATE_KEY)
+        else {
             return;
         };
         state.commits = commits;
@@ -1411,7 +1415,10 @@ impl Document {
     }
 
     pub(crate) fn set_git_log_expanded(&mut self, sha: Option<String>, body: Option<String>) {
-        let Some(state) = self.state.try_get_mut(super::GIT_LOG_STATE_KEY) else {
+        let Some(state) = self
+            .state
+            .try_get_mut(crate::document::runtime::GIT_LOG_STATE_KEY)
+        else {
             return;
         };
         state.expanded = sha;
@@ -1420,7 +1427,10 @@ impl Document {
     }
 
     fn render_git_log(&mut self) {
-        let Some(state) = self.state.try_get(super::GIT_LOG_STATE_KEY) else {
+        let Some(state) = self
+            .state
+            .try_get(crate::document::runtime::GIT_LOG_STATE_KEY)
+        else {
             return;
         };
         let commits = state.commits.clone();

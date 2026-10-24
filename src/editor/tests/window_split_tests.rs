@@ -124,7 +124,7 @@ fn test_split_file_not_found_emits_error() {
 
     editor.do_split_window(
         SplitDirection::Horizontal,
-        crate::command_line::commands::SplitSubcommand::File(
+        crate::command_line::commands::types::SplitSubcommand::File(
             "nonexistent_file_xyz.txt".to_string(),
         ),
     );

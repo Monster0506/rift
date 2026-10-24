@@ -95,7 +95,7 @@ impl Document {
             return Cow::Owned(format!("[Git Blame] {name}"));
         }
 
-        if let Some(crate::annotations::Value::Str(title)) = self.vars.get("title") {
+        if let Some(crate::annotations::value::Value::Str(title)) = self.vars.get("title") {
             return Cow::Borrowed(title);
         }
 

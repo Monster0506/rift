@@ -38,7 +38,7 @@ pub(super) fn ring_text(editor: &Editor<MockTerminal>, index: usize) -> Option<S
 pub(super) fn do_vsplit(editor: &mut Editor<MockTerminal>) {
     editor.do_split_window(
         crate::split::tree::SplitDirection::Vertical,
-        crate::command_line::commands::SplitSubcommand::Current,
+        crate::command_line::commands::types::SplitSubcommand::Current,
     );
     editor.update_and_render().unwrap();
 }
@@ -46,7 +46,7 @@ pub(super) fn do_vsplit(editor: &mut Editor<MockTerminal>) {
 pub(super) fn do_resize_pane(editor: &mut Editor<MockTerminal>, delta: i32) {
     editor.do_split_window(
         crate::split::tree::SplitDirection::Vertical,
-        crate::command_line::commands::SplitSubcommand::Resize(delta),
+        crate::command_line::commands::types::SplitSubcommand::Resize(delta),
     );
     editor.update_and_render().unwrap();
 }
@@ -80,7 +80,7 @@ pub(super) fn split_current(
 ) {
     editor.do_split_window(
         direction,
-        crate::command_line::commands::SplitSubcommand::Current,
+        crate::command_line::commands::types::SplitSubcommand::Current,
     );
 }
 
@@ -148,9 +148,10 @@ pub(super) fn ensure_syntax_parsed(editor: &mut Editor<MockTerminal>) {
 pub(super) fn feed_keys(editor: &mut Editor<MockTerminal>, seq: &str) {
     use crate::action::{Action, EditorAction};
     use crate::key::Key;
-    use crate::keymap::{KeyContext, MatchResult};
+    use crate::keymap::trie::MatchResult;
+    use crate::keymap::KeyContext;
 
-    let keys = crate::key::parse_key_sequence(seq).expect("valid key sequence");
+    let keys = crate::key::notation::parse_key_sequence(seq).expect("valid key sequence");
     for key in keys {
         if matches!(editor.current_mode, Mode::Search | Mode::Command) {
             if let Some(c) = key.text() {

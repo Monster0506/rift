@@ -1,7 +1,7 @@
 //! Git blame view: open, populate, and walk-back navigation. Read-only; no `:w` reconciliation.
 
 use super::Editor;
-use crate::document::BufferKindId;
+use crate::document::runtime::BufferKindId;
 use crate::term::TerminalBackend;
 
 const BLAME_PANE_WIDTH_RATIO: f64 = 0.33;

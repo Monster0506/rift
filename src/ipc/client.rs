@@ -7,7 +7,8 @@ use crate::ipc::protocol::{
     b64_decode, InitializeParams, InputKeyParams, RenderUpdateParams, ResizeParams,
     SessionEndingParams, Viewport,
 };
-use crate::key::{format_key, InputEvent, Key};
+use crate::key::notation::format_key;
+use crate::key::{InputEvent, Key};
 use crate::term::TerminalBackend;
 use crate::transport::{read_framed, write_framed};
 

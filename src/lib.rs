@@ -65,9 +65,10 @@ mod wrap;
 mod test_utils;
 
 // Entry points for the `rift` and `rift-replay` binaries.
+pub use crate::replay::ops::parse as parse_replay;
+pub use crate::replay::runner::{run as run_replay, RunReport};
 pub use editor::Editor;
 pub use num::u64_to_f64;
-pub use replay::{parse as parse_replay, run as run_replay, RunReport};
 pub use term::crossterm::CrosstermBackend;
 
 #[cfg(feature = "ipc")]
@@ -88,10 +89,10 @@ pub mod bench_api {
         pub use crate::action::{Action, EditorAction, Motion};
     }
     pub mod annotations {
-        pub use crate::annotations::{
-            Action, Anchor, Annotation, AnnotationOwner, AnnotationStore, Kind, Presentation,
-            StyleOverride,
-        };
+        pub use crate::annotations::action::Action;
+        pub use crate::annotations::kind::Kind;
+        pub use crate::annotations::presentation::{Presentation, StyleOverride};
+        pub use crate::annotations::{Anchor, Annotation, AnnotationOwner, AnnotationStore};
     }
     pub mod buffer {
         pub use crate::buffer::line_index::LineIndex;
@@ -123,7 +124,8 @@ pub mod bench_api {
         pub use crate::mode::Mode;
     }
     pub mod render {
-        pub use crate::render::{RenderState, RenderSystem};
+        pub use crate::render::system::RenderSystem;
+        pub use crate::render::RenderState;
     }
     pub mod screen_buffer {
         pub use crate::screen_buffer::DoubleBuffer;

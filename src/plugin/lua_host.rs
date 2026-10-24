@@ -16,7 +16,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 /// Parse a `{ fg, bg, bold, italic, underline, strike, reverse }` style subtable.
-fn parse_style(st: &LuaTable) -> LuaResult<crate::annotations::StyleOverride> {
+fn parse_style(st: &LuaTable) -> LuaResult<crate::annotations::presentation::StyleOverride> {
     let color = |key: &str| -> LuaResult<Option<crate::color::Color>> {
         let s: Option<String> = st.get(key)?;
         Ok(s.and_then(|s| crate::color::Color::parse(&s)))
@@ -27,7 +27,7 @@ fn parse_style(st: &LuaTable) -> LuaResult<crate::annotations::StyleOverride> {
             attrs = attrs.union(flag);
         }
     }
-    Ok(crate::annotations::StyleOverride {
+    Ok(crate::annotations::presentation::StyleOverride {
         fg: color("fg")?,
         bg: color("bg")?,
         attrs,
@@ -36,8 +36,10 @@ fn parse_style(st: &LuaTable) -> LuaResult<crate::annotations::StyleOverride> {
 
 /// Build an optional `Presentation` from an annotation options table's
 /// `face` / `style` / `adornment` / `priority` keys (rift.annotations.add).
-fn build_presentation(opts: &LuaTable) -> LuaResult<Option<crate::annotations::Presentation>> {
-    use crate::annotations::{Adornment, FaceRef, Placement, Presentation};
+fn build_presentation(
+    opts: &LuaTable,
+) -> LuaResult<Option<crate::annotations::presentation::Presentation>> {
+    use crate::annotations::presentation::{Adornment, FaceRef, Placement, Presentation};
 
     let face: Option<String> = opts.get("face")?;
     let style_tbl: Option<LuaTable> = opts.get("style")?;
@@ -82,9 +84,9 @@ fn build_presentation(opts: &LuaTable) -> LuaResult<Option<crate::annotations::P
 
 fn setting_value_to_lua(
     lua: &Lua,
-    value: &crate::command_line::settings::SettingValue,
+    value: &crate::command_line::settings::descriptor::SettingValue,
 ) -> LuaResult<LuaValue> {
-    use crate::command_line::settings::SettingValue;
+    use crate::command_line::settings::descriptor::SettingValue;
     Ok(match value {
         SettingValue::Bool(b) => LuaValue::Boolean(*b),
         SettingValue::Integer(n) => LuaValue::Integer(lua_int(*n)),
@@ -211,7 +213,7 @@ struct LuaSharedState {
     is_active: bool,
     buffer_vars: std::collections::HashMap<
         u64,
-        std::collections::HashMap<String, crate::annotations::Value>,
+        std::collections::HashMap<String, crate::annotations::value::Value>,
     >,
     doc_options: crate::document::definitions::DocumentOptions,
     user_settings: crate::state::UserSettings,
@@ -915,7 +917,7 @@ impl LuaHost {
                 };
                 let payload = match opts.get::<LuaValue>("payload")? {
                     LuaValue::Table(t) => value_from_lua_table(&t)?,
-                    _ => crate::annotations::Value::Null,
+                    _ => crate::annotations::value::Value::Null,
                 };
                 let presentation = build_presentation(&opts)?;
                 let mut actions = Vec::new();
@@ -1565,9 +1567,9 @@ impl LuaHost {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |lua, name: String| {
                 let s = sh.borrow_mut();
-                let resolver = crate::command_line::settings::SettingsResolver::new(
+                let resolver = crate::command_line::settings::resolver::SettingsResolver::new(
                     crate::document::definitions::create_document_settings_registry(),
-                    crate::command_line::settings::create_settings_registry(),
+                    crate::command_line::settings::definitions::create_settings_registry(),
                 );
                 resolver
                     .get(&name, &s.doc_options, &s.user_settings)

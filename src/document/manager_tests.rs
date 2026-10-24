@@ -118,7 +118,7 @@ fn draft_rejects_descriptor_state_mismatch() {
     let mut manager = DocumentManager::new();
     let reservation = manager.reserve_creation();
     let mut document = Document::new(reservation.id()).unwrap();
-    document.kind = crate::document::BufferKind::directory();
+    document.kind = crate::document::kind::BufferKind::directory();
 
     let error = DocumentDraft::new(reservation, document)
         .err()

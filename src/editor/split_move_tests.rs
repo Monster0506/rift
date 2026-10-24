@@ -1,6 +1,6 @@
 use super::*;
 use crate::color::Color;
-use crate::command_line::commands::SplitSubcommand;
+use crate::command_line::commands::types::SplitSubcommand;
 use crate::split::navigation::Direction;
 use crate::split::tree::SplitDirection;
 use crate::test_utils::MockTerminal;

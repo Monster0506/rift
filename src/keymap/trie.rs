@@ -17,7 +17,7 @@ pub(crate) enum MatchResult<'a> {
 
 /// How a lookup treats modifiers that carry no text meaning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Strictness {
+pub(super) enum Strictness {
     /// Only exact keys match.
     Exact,
     /// An unbound key retries as `Key::fallback`.
@@ -26,7 +26,7 @@ pub(crate) enum Strictness {
 
 /// A node in the key sequence trie
 #[derive(Debug, Default, Clone)]
-pub(crate) struct TrieNode {
+pub(super) struct TrieNode {
     /// Children nodes mapped by key
     children: HashMap<Key, Self>,
     /// Action associated with this sequence (if any)

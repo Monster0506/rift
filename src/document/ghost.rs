@@ -1,5 +1,7 @@
 use super::{Document, GhostCut};
-use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind, Presentation, StyleOverride};
+use crate::annotations::kind::Kind;
+use crate::annotations::presentation::{Presentation, StyleOverride};
+use crate::annotations::{Anchor, Annotation, AnnotationOwner};
 use crate::buffer::api::BufferView;
 use crate::character::Character;
 use crate::color::Color;
@@ -56,7 +58,7 @@ impl Document {
         self.pending_ghost.clear();
     }
 
-    pub(crate) fn begin_ghost_paint(&mut self) -> Option<super::SyntaxSync> {
+    pub(crate) fn begin_ghost_paint(&mut self) -> Option<crate::document::syntax_sync::SyntaxSync> {
         if self.pending_ghost.is_empty() {
             return None;
         }
@@ -107,7 +109,7 @@ impl Document {
         Some(self.resync_syntax())
     }
 
-    pub(crate) fn end_ghost_paint(&mut self) -> Option<super::SyntaxSync> {
+    pub(crate) fn end_ghost_paint(&mut self) -> Option<crate::document::syntax_sync::SyntaxSync> {
         let real_cursor = self.ghost_paint_cursor.take()?;
 
         let mut order: Vec<(usize, usize)> = self

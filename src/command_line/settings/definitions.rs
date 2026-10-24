@@ -189,19 +189,20 @@ fn set_editor_fg(settings: &mut UserSettings, value: &SettingValue) -> Result<()
 
 fn set_theme(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
     match value {
-        SettingValue::Enum(theme_name) => crate::color::Theme::by_name(theme_name).map_or_else(
-            || {
-                Err(SettingError::ValidationError(format!(
-                    "Unknown theme: {}. Available themes: {}",
-                    theme_name,
-                    crate::color::Theme::available_themes().join(", ")
-                )))
-            },
-            |theme| {
-                theme.apply_to_settings(settings);
-                Ok(())
-            },
-        ),
+        SettingValue::Enum(theme_name) => crate::color::theme::Theme::by_name(theme_name)
+            .map_or_else(
+                || {
+                    Err(SettingError::ValidationError(format!(
+                        "Unknown theme: {}. Available themes: {}",
+                        theme_name,
+                        crate::color::theme::Theme::available_themes().join(", ")
+                    )))
+                },
+                |theme| {
+                    theme.apply_to_settings(settings);
+                    Ok(())
+                },
+            ),
         _ => Err(SettingError::ValidationError(
             "Expected theme name".to_string(),
         )),

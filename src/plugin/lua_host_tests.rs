@@ -149,7 +149,7 @@ fn test_annotations_add_queues_mutation() {
             assert_eq!(*anchor, crate::plugin::AnnotationAnchorSpec::Line(3));
             assert_eq!(
                 payload.get("checked"),
-                Some(&crate::annotations::Value::Bool(false))
+                Some(&crate::annotations::value::Value::Bool(false))
             );
             assert_eq!(actions, &vec![("toggle".to_string(), true)]);
         }
@@ -186,8 +186,8 @@ fn test_annotations_add_returns_preclaimed_id() {
 #[test]
 fn test_annotations_query_reads_snapshot() {
     let host = make_host();
-    let mut payload = crate::annotations::Value::map();
-    payload.set("checked", crate::annotations::Value::Bool(true));
+    let mut payload = crate::annotations::value::Value::map();
+    payload.set("checked", crate::annotations::value::Value::Bool(true));
     host.set_annotations(
         vec![
             AnnotationView {
@@ -208,7 +208,7 @@ fn test_annotations_query_reads_snapshot() {
                 anchor: "point",
                 start: 10,
                 end: 10,
-                payload: crate::annotations::Value::Null,
+                payload: crate::annotations::value::Value::Null,
                 visible: true,
                 interactive: false,
             },
@@ -293,13 +293,16 @@ fn test_annotations_on_action_registers_and_invokes() {
             if kind == "test.runnable" && verb == "run"
     )));
 
-    let mut payload = crate::annotations::Value::map();
+    let mut payload = crate::annotations::value::Value::map();
     payload.set(
         "cmd",
-        crate::annotations::Value::Str("cargo test foo".into()),
+        crate::annotations::value::Value::Str("cargo test foo".into()),
     );
-    let mut params = crate::annotations::Value::map();
-    params.set("scope", crate::annotations::Value::Str("file".into()));
+    let mut params = crate::annotations::value::Value::map();
+    params.set(
+        "scope",
+        crate::annotations::value::Value::Str("file".into()),
+    );
     let ctx = crate::plugin::AnnotationActionCtx {
         annotation_id: 7,
         kind: "test.runnable".into(),
@@ -367,8 +370,11 @@ fn test_annotations_enter_leave_hooks_invoke() {
         )
         .is_none());
 
-    let mut payload = crate::annotations::Value::map();
-    payload.set("href", crate::annotations::Value::Str("docs.md".into()));
+    let mut payload = crate::annotations::value::Value::map();
+    payload.set(
+        "href",
+        crate::annotations::value::Value::Str("docs.md".into()),
+    );
     let ctx = crate::plugin::AnnotationHoverCtx {
         annotation_id: 42,
         kind: "ui.link".into(),
@@ -386,7 +392,7 @@ fn test_annotations_enter_leave_hooks_invoke() {
     let other = crate::plugin::AnnotationHoverCtx {
         annotation_id: 1,
         kind: "ui.button".into(),
-        payload: crate::annotations::Value::Null,
+        payload: crate::annotations::value::Value::Null,
         position: 0,
         buffer: 1,
     };

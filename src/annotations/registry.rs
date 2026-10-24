@@ -105,7 +105,7 @@ impl DispatchRegistry {
 /// description used as a fallback hover tooltip.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct KindDefaults {
-    presentation: Option<super::Presentation>,
+    presentation: Option<crate::annotations::presentation::Presentation>,
     description: Option<String>,
 }
 
@@ -163,7 +163,7 @@ impl KindRegistry {
     pub(crate) fn set_presentation(
         &mut self,
         key: impl Into<String>,
-        presentation: super::Presentation,
+        presentation: crate::annotations::presentation::Presentation,
     ) {
         self.defaults.entry(key.into()).or_default().presentation = Some(presentation);
         self.generation += 1;
@@ -191,7 +191,10 @@ impl KindRegistry {
 
     /// Default presentation for a kind, with prefix fallback.
     #[must_use]
-    pub(super) fn default_presentation(&self, kind: &Kind) -> Option<&super::Presentation> {
+    pub(super) fn default_presentation(
+        &self,
+        kind: &Kind,
+    ) -> Option<&crate::annotations::presentation::Presentation> {
         self.resolve(kind).and_then(|d| d.presentation.as_ref())
     }
 

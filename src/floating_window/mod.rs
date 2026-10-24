@@ -15,12 +15,29 @@ struct RenderLayout {
 }
 
 /// Border characters for floating windows
-pub(crate) use ui::borders::BorderSet as BorderChars;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BorderChars {
+    pub(crate) top_left: char,
+    pub(crate) top_right: char,
+    pub(crate) bottom_left: char,
+    pub(crate) bottom_right: char,
+    pub(crate) horizontal: char,
+    pub(crate) vertical: char,
+}
+
+const UNICODE_BORDER: BorderChars = BorderChars {
+    top_left: '\u{256d}',
+    top_right: '\u{256e}',
+    bottom_left: '\u{2570}',
+    bottom_right: '\u{256f}',
+    horizontal: '\u{2500}',
+    vertical: '\u{2502}',
+};
 
 impl Default for BorderChars {
     /// Create default border characters (Unicode box drawing)
     fn default() -> Self {
-        ui::borders::UNICODE
+        UNICODE_BORDER
     }
 }
 
@@ -717,26 +734,3 @@ impl FloatingWindow {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
-
-mod ui {
-    pub(crate) mod borders {
-        #[derive(Debug, Clone, PartialEq, Eq)]
-        pub(crate) struct BorderSet {
-            pub(crate) top_left: char,
-            pub(crate) top_right: char,
-            pub(crate) bottom_left: char,
-            pub(crate) bottom_right: char,
-            pub(crate) horizontal: char,
-            pub(crate) vertical: char,
-        }
-
-        pub(crate) const UNICODE: BorderSet = BorderSet {
-            top_left: '╭',
-            top_right: '╮',
-            bottom_left: '╰',
-            bottom_right: '╯',
-            horizontal: '─',
-            vertical: '│',
-        };
-    }
-}

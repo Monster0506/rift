@@ -1,7 +1,8 @@
 //! Parser for the replay script DSL (open/size/keys/wait/mark/assert) used
 //! to drive a scripted `Editor` session for profiling and regression checks.
 
-use crate::key::{parse_key_sequence, Key};
+use crate::key::notation::parse_key_sequence;
+use crate::key::Key;
 
 /// A single check against editor state at the point it appears in a script.
 #[derive(Debug, Clone, PartialEq, Eq)]

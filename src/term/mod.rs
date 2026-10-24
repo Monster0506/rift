@@ -106,12 +106,10 @@ pub trait TerminalBackend {
 pub(crate) mod crossterm;
 
 #[cfg(feature = "terminal_emulation")]
-mod terminal;
+pub(crate) mod terminal;
 #[cfg(not(feature = "terminal_emulation"))]
 #[path = "terminal_stub.rs"]
-mod terminal;
-
-pub(crate) use terminal::Terminal;
+pub(crate) mod terminal;
 
 /// Events raised by a PTY-backed terminal buffer. Available regardless of the
 /// `terminal_emulation` feature so channel plumbing doesn't need its own gate.

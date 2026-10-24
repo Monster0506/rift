@@ -2,7 +2,7 @@
 //!
 //! Invariant: the host never mutates editor state directly; mutations are queued as [`PluginMutation`] and applied via `execute_command`, preserving undo/dot-repeat.
 
-mod events;
+pub(crate) mod events;
 mod lua_state;
 
 #[cfg(feature = "plugins")]
@@ -17,7 +17,7 @@ mod lua_value;
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-pub(crate) use events::EditorEvent;
+use crate::plugin::events::EditorEvent;
 
 use crate::document::DocumentId;
 use crate::notification::NotificationType;
@@ -254,7 +254,7 @@ pub(crate) enum PluginMutation {
     ExecAction(String),
     /// Register a key binding. `mode` is "n", "i", "c", "s", or "g".
     /// `keys` is key notation (e.g. `"<C-p>"`, `"<C-S-Left>"`, `"<F5>"`, `"gg"`; see
-    /// `crate::key::parse_key_sequence`). `action` is an action string.
+    /// `crate::key::notation::parse_key_sequence`). `action` is an action string.
     MapKey {
         mode: String,
         keys: String,
@@ -335,8 +335,8 @@ pub(crate) enum PluginMutation {
         id: u64,
         kind: String,
         anchor: AnnotationAnchorSpec,
-        payload: crate::annotations::Value,
-        presentation: Option<crate::annotations::Presentation>,
+        payload: crate::annotations::value::Value,
+        presentation: Option<crate::annotations::presentation::Presentation>,
         actions: Vec<(String, bool)>,
         visible: bool,
         stickiness: Option<String>,
@@ -345,9 +345,9 @@ pub(crate) enum PluginMutation {
     /// Mutate an existing annotation in place; `None` fields are left unchanged.
     UpdateAnnotation {
         id: u64,
-        payload: Option<crate::annotations::Value>,
+        payload: Option<crate::annotations::value::Value>,
         visible: Option<bool>,
-        presentation: Option<crate::annotations::Presentation>,
+        presentation: Option<crate::annotations::presentation::Presentation>,
     },
     /// Remove an annotation from the active document by id.
     RemoveAnnotation(u64),
@@ -363,7 +363,7 @@ pub(crate) enum PluginMutation {
     /// Register per-kind render/hover defaults into the kind registry (sec 4).
     RegisterKindDefaults {
         kind: String,
-        presentation: Option<crate::annotations::Presentation>,
+        presentation: Option<crate::annotations::presentation::Presentation>,
         description: Option<String>,
     },
     /// Create and activate an in-memory buffer. Fires `BufOpen` after creation.
@@ -387,7 +387,7 @@ pub(crate) enum PluginMutation {
         kind: String,
         title: Option<String>,
         lines: Vec<String>,
-        vars: Vec<(String, crate::annotations::Value)>,
+        vars: Vec<(String, crate::annotations::value::Value)>,
     },
     /// Map a key binding scoped to a specific buffer kind.
     MapKeyKind {
@@ -401,7 +401,7 @@ pub(crate) enum PluginMutation {
     SetBufferVar {
         buf_id: Option<DocumentId>,
         key: String,
-        value: crate::annotations::Value,
+        value: crate::annotations::value::Value,
     },
 }
 
@@ -419,9 +419,9 @@ pub(crate) struct AnnotationActionCtx {
     pub(crate) annotation_id: u64,
     pub(crate) kind: String,
     pub(crate) verb: String,
-    pub(crate) payload: crate::annotations::Value,
+    pub(crate) payload: crate::annotations::value::Value,
     /// The activated action's serializable args.
-    pub(crate) params: crate::annotations::Value,
+    pub(crate) params: crate::annotations::value::Value,
     pub(crate) position: usize,
     pub(crate) buffer: u64,
 }
@@ -431,7 +431,7 @@ pub(crate) struct AnnotationActionCtx {
 pub(crate) struct AnnotationHoverCtx {
     pub(crate) annotation_id: u64,
     pub(crate) kind: String,
-    pub(crate) payload: crate::annotations::Value,
+    pub(crate) payload: crate::annotations::value::Value,
     pub(crate) position: usize,
     pub(crate) buffer: u64,
 }

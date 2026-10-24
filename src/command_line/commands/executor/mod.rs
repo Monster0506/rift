@@ -1,6 +1,6 @@
 use crate::buffer::api::BufferView;
-use crate::command_line::commands::ParsedCommand;
-use crate::command_line::settings::SettingsRegistry;
+use crate::command_line::commands::types::ParsedCommand;
+use crate::command_line::settings::registry::SettingsRegistry;
 use crate::document::{definitions::DocumentOptions, Document};
 use crate::error::{ErrorType, RiftError};
 use crate::state::State;
@@ -79,7 +79,7 @@ pub(crate) enum ExecutionResult {
     },
     SplitWindow {
         direction: crate::split::tree::SplitDirection,
-        subcommand: crate::command_line::commands::SplitSubcommand,
+        subcommand: crate::command_line::commands::types::SplitSubcommand,
     },
     /// Open a directory as a file-explorer buffer
     OpenDirectory {

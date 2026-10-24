@@ -56,8 +56,8 @@ mod git_rebase_tests;
 #[cfg(test)]
 mod git_status_tests;
 
-use crate::command_line::commands::CommandParser;
-use crate::command_line::settings::SettingsRegistry;
+use crate::command_line::commands::parser::CommandParser;
+use crate::command_line::settings::registry::SettingsRegistry;
 use crate::document::{Document, DocumentId};
 use crate::dot_repeat::DotRepeat;
 use crate::keymap::KeyMap;
@@ -102,7 +102,7 @@ fn resolve_wrap_params(
     global_wrap_width: Option<usize>,
 ) -> Option<(usize, usize)> {
     use crate::document::definitions::WrapMode;
-    if doc.projection() != crate::document::TextProjectionPolicy::PlainText {
+    if doc.projection() != crate::document::runtime::TextProjectionPolicy::PlainText {
         return None;
     }
     let w = match &doc.options.wrap {
@@ -131,9 +131,9 @@ fn resolve_display_map(
 
 pub struct Editor<T: TerminalBackend> {
     pub(crate) term: T,
-    document_manager: crate::document::DocumentManager,
-    buffer_kinds: crate::document::BufferKindRegistry,
-    render_system: crate::render::RenderSystem,
+    document_manager: crate::document::manager::DocumentManager,
+    buffer_kinds: crate::document::runtime::BufferKindRegistry,
+    render_system: crate::render::system::RenderSystem,
     current_mode: Mode,
     should_quit: bool,
     state: State,
@@ -146,13 +146,17 @@ pub struct Editor<T: TerminalBackend> {
     keymap: KeyMap,
     split_tree: SplitTree,
     native_action_handlers: std::collections::HashMap<
-        crate::document::BufferKindId,
+        crate::document::runtime::BufferKindId,
         handle_action::NativeActionHandler<T>,
     >,
-    native_save_handlers:
-        std::collections::HashMap<crate::document::BufferKindId, file_ops::NativeSaveHandler<T>>,
-    native_reload_handlers:
-        std::collections::HashMap<crate::document::BufferKindId, file_ops::NativeReloadHandler<T>>,
+    native_save_handlers: std::collections::HashMap<
+        crate::document::runtime::BufferKindId,
+        file_ops::NativeSaveHandler<T>,
+    >,
+    native_reload_handlers: std::collections::HashMap<
+        crate::document::runtime::BufferKindId,
+        file_ops::NativeReloadHandler<T>,
+    >,
     pending_keys: Vec<crate::key::Key>,
     pending_count: usize,
     pending_operator_count: usize,

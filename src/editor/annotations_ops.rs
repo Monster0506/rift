@@ -63,7 +63,7 @@ impl<T: TerminalBackend> Editor<T> {
                     };
                     let params = ann
                         .action_for_verb(&verb)
-                        .map_or(crate::annotations::Value::Null, |a| a.params.clone());
+                        .map_or(crate::annotations::value::Value::Null, |a| a.params.clone());
                     crate::plugin::AnnotationActionCtx {
                         annotation_id: ann_id.get(),
                         kind: kind.as_str().to_string(),
@@ -110,7 +110,8 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = self.document_manager.active_document_mut() {
             doc.annotations.update(ann_id, |a| {
                 let checked = if let Some(c) = buffer_checked {
-                    a.payload.set("checked", crate::annotations::Value::Bool(c));
+                    a.payload
+                        .set("checked", crate::annotations::value::Value::Bool(c));
                     c
                 } else {
                     crate::annotations::registry::toggle_checked(&mut a.payload);

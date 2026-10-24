@@ -1,47 +1,36 @@
 pub(crate) mod definitions;
 mod edit;
-mod factories;
+pub(crate) mod factories;
 mod ghost;
 mod history;
-mod kind;
+pub(crate) mod kind;
 pub(crate) mod manager;
 mod persistence;
 mod populate;
-mod runtime;
+pub(crate) mod runtime;
 mod search;
 mod selection_render;
-mod syntax_sync;
+pub(crate) mod syntax_sync;
 
 use crate::annotations::AnnotationStore;
 #[cfg(feature = "lsp")]
 use crate::buffer::api::BufferView;
 use crate::buffer::TextBuffer;
+use crate::document::kind::BufferKind;
+use crate::document::runtime::{
+    BufferKindId, BufferKindRegistry, BufferPolicies, ClipboardEntryState, DirectoryState,
+    DocumentHandle, FileState, GhostCutPolicy, KeyFallback, KindDescriptor, LocationListState,
+    ReadOnlyPolicy, RegionsState, ScratchState, StateSlot, TextProjection, UndoFileViewState,
+    BUFFER_LIST_STATE_KEY, CLIPBOARD_ENTRY_STATE_KEY, CLIPBOARD_STATE_KEY, DIRECTORY_STATE_KEY,
+    FILE_STATE_KEY, GIT_BLAME_STATE_KEY, GIT_COMMIT_MESSAGE_STATE_KEY, GIT_LOG_STATE_KEY,
+    GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY, LOCATION_LIST_STATE_KEY, REGIONS_STATE_KEY,
+    SCRATCH_STATE_KEY, TERMINAL_STATE_KEY, UNDO_FILE_VIEW_STATE_KEY, UNDO_TREE_STATE_KEY,
+};
 use crate::history::{EditTransaction, UndoTree};
 use crate::syntax::Syntax;
-use crate::term::Terminal;
+use crate::term::terminal::Terminal;
 use definitions::DocumentOptions;
-pub(crate) use factories::{decode_file_bytes, UTF8_BOM};
-pub(crate) use kind::BufferKind;
-pub(crate) use manager::{DocumentDraft, DocumentManager, RemovalIntent};
-#[cfg(test)]
-pub(crate) use runtime::builtin_descriptor;
-pub(crate) use runtime::{
-    ActionDispatch, BufferKindId, BufferKindRegistry, BufferListState, BufferPolicies,
-    ClipboardEntryState, ClipboardState, CloseHandler, ClosePolicy, DescriptorOwner,
-    DirectoryState, DisplayNameStrategy, DocumentHandle, FileState, GhostCutPolicy, GitBlameState,
-    GitCommitMessageState, GitLogState, GitRebaseTodoState, GitStatusState, KeyFallback,
-    KindDescriptor, LanguageServicesPolicy, LocationListState, MessagesState, NavigationPolicy,
-    PluginBufferState, ReadOnlyPolicy, RegionsState, ReloadDispatch, SaveDispatch, SaveResult,
-    ScratchState, StateSlot, StructuralEditPolicy, TerminalState, TextProjection,
-    TextProjectionPolicy, UndoFileViewState, UndoTreeState, BUFFER_LIST_STATE_KEY,
-    CLIPBOARD_ENTRY_STATE_KEY, CLIPBOARD_STATE_KEY, DIRECTORY_STATE_KEY, FILE_STATE_KEY,
-    GIT_BLAME_STATE_KEY, GIT_COMMIT_MESSAGE_STATE_KEY, GIT_LOG_STATE_KEY,
-    GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY, LOCATION_LIST_STATE_KEY, MESSAGES_STATE_KEY,
-    PLUGIN_BUFFER_STATE_KEY, REGIONS_STATE_KEY, SCRATCH_STATE_KEY, TERMINAL_STATE_KEY,
-    UNDO_FILE_VIEW_STATE_KEY, UNDO_TREE_STATE_KEY,
-};
 use std::path::{Path, PathBuf};
-pub(crate) use syntax_sync::SyntaxSync;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct DocumentId(u64);
@@ -189,7 +178,7 @@ pub(crate) struct Document {
     view_state: ViewState,
     pub(crate) kind: BufferKind,
     pub(crate) state: StateSlot,
-    pub(crate) vars: std::collections::HashMap<String, crate::annotations::Value>,
+    pub(crate) vars: std::collections::HashMap<String, crate::annotations::value::Value>,
     pub(crate) custom_highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
     pub(crate) annotations: AnnotationStore,
     pub(crate) selection_set: crate::selection::SelectionSet,
@@ -616,7 +605,7 @@ impl Document {
 
     #[cfg(test)]
     pub(crate) fn is_interface_mode(&self) -> bool {
-        self.policies().navigation == NavigationPolicy::ActionRows
+        self.policies().navigation == runtime::NavigationPolicy::ActionRows
     }
 
     pub(crate) fn is_read_only(&self) -> bool {

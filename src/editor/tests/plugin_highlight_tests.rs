@@ -4,7 +4,8 @@ use crate::test_utils::MockTerminal;
 
 #[test]
 fn plugin_add_highlight_shifts_with_a_real_edit_before_it() {
-    use crate::annotations::{well_known, Anchor};
+    use crate::annotations::kind::well_known;
+    use crate::annotations::Anchor;
     use crate::plugin::PluginMutation;
 
     let mut editor = create_editor();
@@ -50,7 +51,8 @@ fn plugin_add_highlight_shifts_with_a_real_edit_before_it() {
 #[test]
 fn plugin_add_highlight_survives_a_ghost_cut_paint_cycle() {
     use crate::action::{Action, EditorAction, Motion, OperatorType};
-    use crate::annotations::{well_known, Anchor};
+    use crate::annotations::kind::well_known;
+    use crate::annotations::Anchor;
     use crate::plugin::PluginMutation;
 
     let mut editor = create_editor();
@@ -96,7 +98,7 @@ fn plugin_add_highlight_survives_a_ghost_cut_paint_cycle() {
 
 #[test]
 fn plugin_clear_highlights_respects_slot_scoping() {
-    use crate::annotations::well_known;
+    use crate::annotations::kind::well_known;
     use crate::plugin::PluginMutation;
 
     let mut editor = create_editor();

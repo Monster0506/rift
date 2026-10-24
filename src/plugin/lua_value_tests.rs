@@ -1,5 +1,5 @@
 use super::*;
-use crate::annotations::Value;
+use crate::annotations::value::Value;
 
 #[test]
 fn lua_table_round_trips_through_value() {

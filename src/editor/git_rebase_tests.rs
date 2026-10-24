@@ -611,7 +611,8 @@ fn abort_returns_to_the_original_branch_unchanged() {
 fn rebase_todo_key_bindings_resolve_to_the_new_actions() {
     use crate::action::{Action, EditorAction};
     use crate::key::Key;
-    use crate::keymap::{KeyContext, MatchResult};
+    use crate::keymap::trie::MatchResult;
+    use crate::keymap::KeyContext;
 
     let editor = create_editor();
     let cases: &[(Key, EditorAction)] = &[
@@ -628,7 +629,7 @@ fn rebase_todo_key_bindings_resolve_to_the_new_actions() {
     ];
     for (key, expected) in cases {
         let result = editor.keymap.lookup(
-            KeyContext::Buffer(crate::document::BufferKindId::GIT_REBASE_TODO),
+            KeyContext::Buffer(crate::document::runtime::BufferKindId::GIT_REBASE_TODO),
             std::slice::from_ref(key),
         );
         match result {
@@ -639,7 +640,7 @@ fn rebase_todo_key_bindings_resolve_to_the_new_actions() {
         }
     }
     let dd = editor.keymap.lookup(
-        KeyContext::Buffer(crate::document::BufferKindId::GIT_REBASE_TODO),
+        KeyContext::Buffer(crate::document::runtime::BufferKindId::GIT_REBASE_TODO),
         &[Key::char('d'), Key::char('d')],
     );
     match dd {

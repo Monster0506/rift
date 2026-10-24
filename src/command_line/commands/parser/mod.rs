@@ -1,14 +1,13 @@
 //! Command parser
 //! Parses command line input into structured commands using declarative definitions
 
-use crate::command_line::commands::{
-    CommandDef, CommandDescriptor, CommandRegistry, MatchResult, COMMANDS,
-};
-use crate::command_line::settings::SettingsRegistry;
+use crate::command_line::commands::definitions::{CommandDescriptor, COMMANDS};
+use crate::command_line::commands::registry::{CommandDef, CommandRegistry, MatchResult};
+use crate::command_line::settings::registry::SettingsRegistry;
 use crate::state::UserSettings;
 
 // Re-export ParsedCommand for convenience and backward compatibility
-pub(crate) use crate::command_line::commands::ParsedCommand;
+use crate::command_line::commands::types::ParsedCommand;
 
 /// Command parser
 pub(crate) struct CommandParser {

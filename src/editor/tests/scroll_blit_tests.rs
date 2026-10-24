@@ -120,9 +120,9 @@ fn assert_content_grids_match(
 #[cfg(feature = "treesitter")]
 #[test]
 fn non_wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
-    use crate::annotations::{
-        Adornment, Anchor, Annotation, AnnotationOwner, Kind, Placement, Presentation,
-    };
+    use crate::annotations::kind::Kind;
+    use crate::annotations::presentation::{Adornment, Placement, Presentation};
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     use crate::syntax::build_syntax;
     use std::sync::Arc;
 
@@ -356,9 +356,9 @@ fn wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_on_densely_highlighted
 #[cfg(feature = "treesitter")]
 #[test]
 fn scroll_blit_repaints_when_annotations_or_theme_change_mid_scroll() {
-    use crate::annotations::{
-        Anchor, Annotation, AnnotationOwner, Kind, Presentation, StyleOverride,
-    };
+    use crate::annotations::kind::Kind;
+    use crate::annotations::presentation::{Presentation, StyleOverride};
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     use crate::color::theme::SyntaxColors;
     use crate::color::Color;
     use crate::syntax::build_syntax;

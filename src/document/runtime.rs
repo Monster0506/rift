@@ -93,13 +93,13 @@ pub(crate) enum ClosePolicy {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum StructuralEditPolicy {
+pub(super) enum StructuralEditPolicy {
     FreeText,
     PreserveRows,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum GhostCutPolicy {
+pub(super) enum GhostCutPolicy {
     Allow,
     Deny,
 }
@@ -117,7 +117,7 @@ pub(crate) enum TextProjectionPolicy {
     ScreenGrid,
 }
 
-pub(crate) type TextProjection = TextProjectionPolicy;
+pub(super) type TextProjection = TextProjectionPolicy;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum NavigationPolicy {
@@ -381,89 +381,89 @@ impl<T: 'static> StateKey<T> {
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct FileState;
-pub(crate) static FILE_STATE_KEY: StateKey<FileState> = StateKey::new("file");
+pub(super) struct FileState;
+pub(super) static FILE_STATE_KEY: StateKey<FileState> = StateKey::new("file");
 
 #[derive(Debug, Default)]
-pub(crate) struct TerminalState {
-    pub(super) terminal: Option<crate::term::Terminal>,
+pub(super) struct TerminalState {
+    pub(super) terminal: Option<crate::term::terminal::Terminal>,
     pub(super) terminal_cursor: Option<(usize, usize)>,
     pub(super) terminal_cell_colors: crate::color::CellColorSpans,
 }
-pub(crate) static TERMINAL_STATE_KEY: StateKey<TerminalState> = StateKey::new("terminal");
+pub(super) static TERMINAL_STATE_KEY: StateKey<TerminalState> = StateKey::new("terminal");
 
 #[derive(Debug, Clone)]
-pub(crate) struct DirectoryState {
+pub(super) struct DirectoryState {
     pub(super) path: PathBuf,
     pub(super) entries: Vec<DirEntry>,
     pub(super) show_hidden: bool,
 }
-pub(crate) static DIRECTORY_STATE_KEY: StateKey<DirectoryState> = StateKey::new("directory");
+pub(super) static DIRECTORY_STATE_KEY: StateKey<DirectoryState> = StateKey::new("directory");
 
 #[derive(Debug, Clone)]
-pub(crate) struct UndoTreeState {
+pub(super) struct UndoTreeState {
     pub(super) linked_doc_id: DocumentId,
     pub(super) sequences: Vec<crate::history::EditSeq>,
 }
-pub(crate) static UNDO_TREE_STATE_KEY: StateKey<UndoTreeState> = StateKey::new("undotree");
+pub(super) static UNDO_TREE_STATE_KEY: StateKey<UndoTreeState> = StateKey::new("undotree");
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct MessagesState {
+pub(super) struct MessagesState {
     pub(super) show_all: bool,
 }
-pub(crate) static MESSAGES_STATE_KEY: StateKey<MessagesState> = StateKey::new("messages");
+pub(super) static MESSAGES_STATE_KEY: StateKey<MessagesState> = StateKey::new("messages");
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ClipboardState {
+pub(super) struct ClipboardState {
     pub(super) entries: Vec<Vec<crate::character::Character>>,
 }
-pub(crate) static CLIPBOARD_STATE_KEY: StateKey<ClipboardState> = StateKey::new("clipboard");
+pub(super) static CLIPBOARD_STATE_KEY: StateKey<ClipboardState> = StateKey::new("clipboard");
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ClipboardEntryState {
+pub(super) struct ClipboardEntryState {
     pub(super) entry_index: Option<usize>,
 }
-pub(crate) static CLIPBOARD_ENTRY_STATE_KEY: StateKey<ClipboardEntryState> =
+pub(super) static CLIPBOARD_ENTRY_STATE_KEY: StateKey<ClipboardEntryState> =
     StateKey::new("clipboard_entry");
 
 #[derive(Debug, Clone)]
-pub(crate) struct LocationListState {
+pub(super) struct LocationListState {
     pub(super) entries: Vec<LocationEntry>,
 }
-pub(crate) static LOCATION_LIST_STATE_KEY: StateKey<LocationListState> =
+pub(super) static LOCATION_LIST_STATE_KEY: StateKey<LocationListState> =
     StateKey::new("location_list");
 
 #[derive(Debug, Clone)]
-pub(crate) struct RegionsState {
+pub(super) struct RegionsState {
     pub(super) source_doc_id: DocumentId,
 }
-pub(crate) static REGIONS_STATE_KEY: StateKey<RegionsState> = StateKey::new("regions");
+pub(super) static REGIONS_STATE_KEY: StateKey<RegionsState> = StateKey::new("regions");
 
 #[derive(Debug, Clone)]
-pub(crate) struct ScratchState {
+pub(super) struct ScratchState {
     pub(super) title: String,
 }
-pub(crate) static SCRATCH_STATE_KEY: StateKey<ScratchState> = StateKey::new("scratch");
+pub(super) static SCRATCH_STATE_KEY: StateKey<ScratchState> = StateKey::new("scratch");
 
 #[derive(Debug, Clone)]
-pub(crate) struct GitStatusState {
+pub(super) struct GitStatusState {
     pub(super) repo_root: PathBuf,
     pub(super) snapshot: crate::git::status::StatusSnapshot,
     pub(super) expanded_diffs: HashMap<(PathBuf, bool), Vec<crate::git::diff::Hunk>>,
     pub(super) head_subject: Option<String>,
 }
-pub(crate) static GIT_STATUS_STATE_KEY: StateKey<GitStatusState> = StateKey::new("git_status");
+pub(super) static GIT_STATUS_STATE_KEY: StateKey<GitStatusState> = StateKey::new("git_status");
 
 #[derive(Debug, Clone)]
-pub(crate) struct GitCommitMessageState {
+pub(super) struct GitCommitMessageState {
     pub(super) repo_root: PathBuf,
     pub(super) target: GitCommitTarget,
 }
-pub(crate) static GIT_COMMIT_MESSAGE_STATE_KEY: StateKey<GitCommitMessageState> =
+pub(super) static GIT_COMMIT_MESSAGE_STATE_KEY: StateKey<GitCommitMessageState> =
     StateKey::new("git_commit_message");
 
 #[derive(Debug, Clone)]
-pub(crate) struct GitBlameState {
+pub(super) struct GitBlameState {
     pub(super) repo_root: PathBuf,
     pub(super) linked_doc_id: DocumentId,
     pub(super) linked_window_id: crate::split::window::WindowId,
@@ -474,20 +474,20 @@ pub(crate) struct GitBlameState {
     pub(super) wrap_rows: Vec<usize>,
     pub(super) wrap_key: Option<(DocumentId, usize, usize, u64)>,
 }
-pub(crate) static GIT_BLAME_STATE_KEY: StateKey<GitBlameState> = StateKey::new("git_blame");
+pub(super) static GIT_BLAME_STATE_KEY: StateKey<GitBlameState> = StateKey::new("git_blame");
 
 #[derive(Debug, Clone)]
-pub(crate) struct GitLogState {
+pub(super) struct GitLogState {
     pub(super) repo_root: PathBuf,
     pub(super) path: Option<PathBuf>,
     pub(super) commits: Vec<crate::git::log::CommitSummary>,
     pub(super) expanded: Option<String>,
     pub(super) expanded_body: Option<String>,
 }
-pub(crate) static GIT_LOG_STATE_KEY: StateKey<GitLogState> = StateKey::new("git_log");
+pub(super) static GIT_LOG_STATE_KEY: StateKey<GitLogState> = StateKey::new("git_log");
 
 #[derive(Debug, Clone)]
-pub(crate) struct GitRebaseTodoState {
+pub(super) struct GitRebaseTodoState {
     pub(super) repo_root: PathBuf,
     pub(super) base: String,
     pub(super) branch: String,
@@ -497,20 +497,20 @@ pub(crate) struct GitRebaseTodoState {
     pub(super) expanded_bodies: HashSet<String>,
     pub(super) original_bodies: HashMap<String, String>,
 }
-pub(crate) static GIT_REBASE_TODO_STATE_KEY: StateKey<GitRebaseTodoState> =
+pub(super) static GIT_REBASE_TODO_STATE_KEY: StateKey<GitRebaseTodoState> =
     StateKey::new("git_rebase_todo");
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct BufferListState {
+pub(super) struct BufferListState {
     pub(super) entries: Vec<DocumentId>,
 }
-pub(crate) static BUFFER_LIST_STATE_KEY: StateKey<BufferListState> = StateKey::new("buffer_list");
+pub(super) static BUFFER_LIST_STATE_KEY: StateKey<BufferListState> = StateKey::new("buffer_list");
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct UndoFileViewState {
+pub(super) struct UndoFileViewState {
     pub(super) sequences: Vec<crate::history::EditSeq>,
 }
-pub(crate) static UNDO_FILE_VIEW_STATE_KEY: StateKey<UndoFileViewState> =
+pub(super) static UNDO_FILE_VIEW_STATE_KEY: StateKey<UndoFileViewState> =
     StateKey::new("undo_file_view");
 
 #[derive(Debug, Clone, Default)]

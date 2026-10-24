@@ -1,7 +1,9 @@
-use crate::command_line::commands::{
-    CommandDescriptor, CommandParser, CompletionHint, MatchResult, ParsedCommand, COMMANDS,
-};
-use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
+use crate::command_line::commands::definitions::{CommandDescriptor, CompletionHint, COMMANDS};
+use crate::command_line::commands::parser::CommandParser;
+use crate::command_line::commands::registry::MatchResult;
+use crate::command_line::commands::types::ParsedCommand;
+use crate::command_line::settings::definitions::create_settings_registry;
+use crate::command_line::settings::registry::SettingsRegistry;
 use crate::state::UserSettings;
 
 fn parse_quit(_: &SettingsRegistry<UserSettings>, _: &[&str], bangs: usize) -> ParsedCommand {
@@ -480,7 +482,7 @@ fn create_real_parser() -> CommandParser {
 
 #[test]
 fn test_parse_split_no_args() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     let parser = create_real_parser();
     assert_eq!(
         parser.parse(":split"),
@@ -493,7 +495,7 @@ fn test_parse_split_no_args() {
 
 #[test]
 fn test_parse_split_dot() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     let parser = create_real_parser();
     assert_eq!(
         parser.parse(":split ."),
@@ -506,7 +508,7 @@ fn test_parse_split_dot() {
 
 #[test]
 fn test_parse_split_file() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     let parser = create_real_parser();
     assert_eq!(
         parser.parse(":split foo.txt"),
@@ -519,7 +521,7 @@ fn test_parse_split_file() {
 
 #[test]
 fn test_parse_split_navigate() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     use crate::split::navigation::Direction;
     let parser = create_real_parser();
 
@@ -563,7 +565,7 @@ fn test_parse_split_navigate() {
 
 #[test]
 fn test_parse_split_resize() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     let parser = create_real_parser();
 
     assert_eq!(
@@ -584,7 +586,7 @@ fn test_parse_split_resize() {
 
 #[test]
 fn test_parse_vsplit() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     let parser = create_real_parser();
 
     assert_eq!(
@@ -605,7 +607,7 @@ fn test_parse_vsplit() {
 
 #[test]
 fn test_parse_split_aliases() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     let parser = create_real_parser();
 
     assert_eq!(
@@ -626,7 +628,7 @@ fn test_parse_split_aliases() {
 
 #[test]
 fn test_parse_split_unknown_subcommand_errors() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     let parser = create_real_parser();
 
     // Unknown ':' prefixed subcommand produces Unknown
@@ -659,7 +661,7 @@ fn test_parse_split_unknown_subcommand_errors() {
 
 #[test]
 fn test_parse_split_subcommand_prefix_matching() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     use crate::split::navigation::Direction;
     let parser = create_real_parser();
 
@@ -688,7 +690,7 @@ fn test_parse_split_subcommand_prefix_matching() {
 
 #[test]
 fn test_parse_split_with_bang() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     let parser = create_real_parser();
     assert_eq!(
         parser.parse(":split! foo.txt"),
@@ -701,7 +703,7 @@ fn test_parse_split_with_bang() {
 
 #[test]
 fn test_parse_vsplit_navigate_all_directions() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     use crate::split::navigation::Direction;
     let parser = create_real_parser();
 
@@ -723,7 +725,7 @@ fn test_parse_vsplit_navigate_all_directions() {
 
 #[test]
 fn test_parse_vsplit_navigate_aliases() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     use crate::split::navigation::Direction;
     let parser = create_real_parser();
 
@@ -745,7 +747,7 @@ fn test_parse_vsplit_navigate_aliases() {
 
 #[test]
 fn test_parse_vsplit_resize() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     let parser = create_real_parser();
 
     assert_eq!(
@@ -766,7 +768,7 @@ fn test_parse_vsplit_resize() {
 
 #[test]
 fn test_parse_split_resize_default() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     let parser = create_real_parser();
 
     assert_eq!(
@@ -780,7 +782,7 @@ fn test_parse_split_resize_default() {
 
 #[test]
 fn test_parse_split_resize_non_numeric_defaults() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     let parser = create_real_parser();
 
     assert_eq!(
@@ -794,7 +796,7 @@ fn test_parse_split_resize_non_numeric_defaults() {
 
 #[test]
 fn test_parse_split_dot_via_alias() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     let parser = create_real_parser();
     assert_eq!(
         parser.parse(":sp ."),
@@ -807,7 +809,7 @@ fn test_parse_split_dot_via_alias() {
 
 #[test]
 fn test_parse_vsplit_dot() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     let parser = create_real_parser();
     assert_eq!(
         parser.parse(":vsplit ."),
@@ -820,7 +822,7 @@ fn test_parse_vsplit_dot() {
 
 #[test]
 fn test_parse_split_file_with_path() {
-    use crate::command_line::commands::SplitSubcommand;
+    use crate::command_line::commands::types::SplitSubcommand;
     let parser = create_real_parser();
     assert_eq!(
         parser.parse(":split src/main.rs"),

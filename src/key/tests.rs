@@ -1,4 +1,7 @@
 use super::*;
+use crate::key::notation::format_key;
+use crate::key::notation::parse_key;
+use crate::key::notation::parse_key_sequence;
 
 const ALL_MODS: [Mods; 8] = [
     Mods::NONE,

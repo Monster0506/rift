@@ -1,5 +1,6 @@
 use super::descriptor::{SettingDescriptor, SettingError, SettingType, SettingValue};
-use crate::command_line::commands::{CommandDef, CommandRegistry, ExecutionResult, MatchResult};
+use crate::command_line::commands::executor::ExecutionResult;
+use crate::command_line::commands::registry::{CommandDef, CommandRegistry, MatchResult};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};

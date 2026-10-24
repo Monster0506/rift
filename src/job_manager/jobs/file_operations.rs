@@ -85,7 +85,7 @@ impl Job for FileSaveJob {
 
             let mut writer = std::io::BufWriter::new(file);
             if self.has_bom {
-                writer.write_all(&crate::document::UTF8_BOM)?;
+                writer.write_all(&crate::document::factories::UTF8_BOM)?;
             }
 
             for chunk in self.piece_table.chunks() {
@@ -231,7 +231,7 @@ impl Job for FileLoadJob {
                 ));
             }
 
-            let decoded = crate::document::decode_file_bytes(&bytes);
+            let decoded = crate::document::factories::decode_file_bytes(&bytes);
             let piece_table = PieceTable::new(decoded.chars);
             let content_hash = crate::history::persist::sha256(&piece_table.to_logical_bytes());
             let line_index = LineIndex::from_table_with_starts(piece_table, decoded.starts);

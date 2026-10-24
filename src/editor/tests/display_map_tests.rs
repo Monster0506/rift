@@ -175,7 +175,7 @@ fn test_resolve_display_map_cached_detects_placeholder_to_loaded_swap() {
     );
 
     let loaded_text = "line one\nline two\nline three\n";
-    let decoded = crate::document::decode_file_bytes(loaded_text.as_bytes());
+    let decoded = crate::document::factories::decode_file_bytes(loaded_text.as_bytes());
     let piece_table = crate::buffer::rope::PieceTable::new(decoded.chars);
     let line_index =
         crate::buffer::line_index::LineIndex::from_table_with_starts(piece_table, decoded.starts);
@@ -210,7 +210,7 @@ fn test_opening_a_file_shows_its_content_immediately_not_after_a_later_edit() {
     editor.force_full_redraw().unwrap();
 
     let loaded_text = "line one\nline two\nline three\n";
-    let decoded = crate::document::decode_file_bytes(loaded_text.as_bytes());
+    let decoded = crate::document::factories::decode_file_bytes(loaded_text.as_bytes());
     let piece_table = crate::buffer::rope::PieceTable::new(decoded.chars);
     let line_index =
         crate::buffer::line_index::LineIndex::from_table_with_starts(piece_table, decoded.starts);
@@ -431,7 +431,7 @@ fn test_cursor_moved_fires_once_per_render_with_latest_position() {
     let cols: Arc<Mutex<Vec<usize>>> = Arc::new(Mutex::new(Vec::new()));
     let c = cols.clone();
     editor.plugin_host.on("CursorMoved", move |event| {
-        if let crate::plugin::EditorEvent::CursorMoved { col, .. } = event {
+        if let crate::plugin::events::EditorEvent::CursorMoved { col, .. } = event {
             c.lock().unwrap().push(*col);
         }
     });

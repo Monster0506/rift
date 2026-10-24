@@ -432,7 +432,7 @@ fn handle_client_msg(
             if let Some(seq) = msg["params"]["seq"].as_u64() {
                 *last_seq = seq;
             }
-            let key = crate::key::parse_key(msg["params"]["key"].as_str()?)?;
+            let key = crate::key::notation::parse_key(msg["params"]["key"].as_str()?)?;
             if forward_key(input_tx, key) {
                 None
             } else {

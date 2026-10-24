@@ -76,18 +76,20 @@ fn rejected_close_has_no_cleanup_side_effects() {
 
     static CLOSE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
-    fn count_close(_handle: crate::document::DocumentHandle) {
+    fn count_close(_handle: crate::document::runtime::DocumentHandle) {
         CLOSE_COUNT.fetch_add(1, Ordering::SeqCst);
     }
 
     CLOSE_COUNT.store(0, Ordering::SeqCst);
     let mut editor = create_editor();
     let doc_id = editor.active_document_id();
-    let mut descriptor =
-        (*crate::document::builtin_descriptor(crate::document::BufferKindId::FILE)).clone();
-    descriptor.on_close = crate::document::CloseHandler::Native(count_close);
+    let mut descriptor = (*crate::document::runtime::builtin_descriptor(
+        crate::document::runtime::BufferKindId::FILE,
+    ))
+    .clone();
+    descriptor.on_close = crate::document::runtime::CloseHandler::Native(count_close);
     editor.active_document().kind =
-        crate::document::BufferKind::new(std::sync::Arc::new(descriptor));
+        crate::document::kind::BufferKind::new(std::sync::Arc::new(descriptor));
     editor.active_document().insert_char('x').unwrap();
 
     assert!(editor.remove_document(doc_id).is_err());
