@@ -130,7 +130,7 @@ pub(crate) fn capture_text(buf: &TextBuffer, range: &MotionRange) -> Clip {
 
 pub(crate) fn capture_current_line(buf: &TextBuffer, count: usize) -> Clip {
     let line = buf.line_index.get_line_at(buf.cursor());
-    let last_line = (line + count.max(1).saturating_sub(1)).min(buf.get_total_lines() - 1);
+    let last_line = (line + count.max(1).saturating_sub(1)).min(buf.last_real_line());
     capture_lines(buf, line, last_line)
 }
 

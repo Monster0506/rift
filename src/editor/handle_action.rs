@@ -639,9 +639,9 @@ impl<T: TerminalBackend> Editor<T> {
                     if let Some(op) = self.pending_operator {
                         let target_line = {
                             if let Some(doc) = self.document_manager.active_document() {
-                                let total = doc.buffer.line_count();
-                                if target_n == 0 || target_n > total {
-                                    total.saturating_sub(1)
+                                let last = doc.buffer.last_real_line();
+                                if target_n == 0 || target_n > last + 1 {
+                                    last
                                 } else {
                                     target_n - 1
                                 }
@@ -653,9 +653,9 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
                 if let Some(doc) = self.document_manager.active_document_mut() {
-                    let total = doc.buffer.line_count();
-                    let idx = if target_n == 0 || target_n > total {
-                        total.saturating_sub(1)
+                    let last = doc.buffer.last_real_line();
+                    let idx = if target_n == 0 || target_n > last + 1 {
+                        last
                     } else {
                         target_n - 1
                     };

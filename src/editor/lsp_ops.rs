@@ -388,6 +388,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let encoding = self.lsp_manager.position_encoding_for_path(path);
         if let Some(doc) = self.document_manager.active_document_mut() {
+            let line = line.min(doc.buffer.last_real_line());
             let target_col = doc.lsp_char_offset_in_line(line, col_units, encoding);
             let target = doc.buffer.line_start(line) + target_col;
             doc.buffer.clear_desired_col();

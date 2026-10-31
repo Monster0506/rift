@@ -377,11 +377,11 @@ pub(crate) fn move_sentence_backward(buffer: &mut TextBuffer) -> bool {
 /// Returns `true` if the cursor moved, `false` if already at end.
 pub(crate) fn move_paragraph_forward(buffer: &mut TextBuffer) -> bool {
     let current_line = buffer.get_line();
-    let total_lines = buffer.get_total_lines();
+    let last_line = buffer.last_real_line();
     let start_pos = buffer.cursor();
 
     let mut target_line = current_line + 1;
-    while target_line < total_lines {
+    while target_line <= last_line {
         let start = buffer.line_index.get_start(target_line).unwrap_or(0);
         let end = buffer
             .line_index
@@ -396,13 +396,14 @@ pub(crate) fn move_paragraph_forward(buffer: &mut TextBuffer) -> bool {
         target_line += 1;
     }
 
-    // If no empty line found, move to end
-    buffer.move_to_end();
+    let end = buffer
+        .line_index
+        .get_end(last_line, buffer.len())
+        .unwrap_or(buffer.len());
+    let _ = buffer.set_cursor(end.max(start_pos));
     buffer.cursor() != start_pos
 }
 
-/// Move cursor backward to the previous paragraph.
-/// Returns `true` if the cursor moved, `false` if already at beginning.
 pub(crate) fn move_paragraph_backward(buffer: &mut TextBuffer) -> bool {
     let current_line = buffer.get_line();
     let start_pos = buffer.cursor();
@@ -420,7 +421,6 @@ pub(crate) fn move_paragraph_backward(buffer: &mut TextBuffer) -> bool {
             .get_end(target_line, buffer.len())
             .unwrap_or(buffer.len());
 
-        // Check if this is an empty line (paragraph boundary)
         if end <= start {
             let _ = buffer.set_cursor(start);
             return true;
@@ -428,7 +428,6 @@ pub(crate) fn move_paragraph_backward(buffer: &mut TextBuffer) -> bool {
         target_line -= 1;
     }
 
-    // If no empty line found, move to start
     buffer.move_to_start();
     buffer.cursor() != start_pos
 }

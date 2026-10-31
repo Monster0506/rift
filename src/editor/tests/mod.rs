@@ -26,6 +26,7 @@ mod surround_tests;
 mod sweep_counts;
 mod sweep_files;
 mod sweep_jobsterm;
+mod sweep_lines;
 mod sweep_opgrammar;
 #[cfg(feature = "treesitter")]
 mod syntax_treesitter_tests;

@@ -216,7 +216,8 @@ impl<T: TerminalBackend> Editor<T> {
                         let mut reached_last_line = false;
                         for _ in 0..count.max(1) {
                             if !doc.buffer.move_down() {
-                                reached_last_line = true;
+                                reached_last_line =
+                                    doc.buffer.get_line() <= doc.buffer.last_real_line();
                                 break;
                             }
                         }

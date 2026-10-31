@@ -1147,6 +1147,7 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .get_document_by_handle_mut(token.handle)
         {
+            let goto_line = goto_line.min(doc.buffer.last_real_line());
             let char_col = doc.lsp_char_offset_in_line(
                 goto_line,
                 u32::try_from(goto_col).unwrap_or(u32::MAX),

@@ -338,6 +338,15 @@ impl TextBuffer {
         self.line_index.line_count()
     }
 
+    #[must_use]
+    pub(crate) fn last_real_line(&self) -> usize {
+        let last = self.get_total_lines() - 1;
+        if last > 0 && self.line_index.get_line_start(last) == self.len() {
+            return last - 1;
+        }
+        last
+    }
+
     pub(crate) fn byte_to_char(&self, byte_offset: usize) -> usize {
         self.line_index.byte_to_char(byte_offset)
     }

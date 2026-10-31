@@ -323,7 +323,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.set_file_path(file_path);
         self.state.update_dirty(is_dirty);
 
-        let total_lines = self.active_document().buffer.get_total_lines();
+        let total_lines = self.active_document().buffer.last_real_line() + 1;
         let buffer_size = self.active_document().buffer.len();
         self.state
             .update_buffer_stats(total_lines, buffer_size, line_ending);

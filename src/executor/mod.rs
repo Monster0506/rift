@@ -396,7 +396,7 @@ fn delete_line_cmd(doc: &mut Document, count: usize) {
     let mut reached_last_line = false;
     for _ in 0..count.max(1) {
         if !doc.buffer.move_down() {
-            reached_last_line = true;
+            reached_last_line = doc.buffer.get_line() <= doc.buffer.last_real_line();
             break;
         }
     }
@@ -422,6 +422,9 @@ fn change_line_cmd(doc: &mut Document, count: usize) {
     doc.buffer.move_to_line_start();
     let start = doc.buffer.cursor();
     for _ in 0..count.max(1).saturating_sub(1) {
+        if doc.buffer.get_line() >= doc.buffer.last_real_line() {
+            break;
+        }
         doc.buffer.move_down();
     }
     doc.buffer.move_to_line_end();

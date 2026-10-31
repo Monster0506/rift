@@ -173,6 +173,31 @@ fn goto_with_multiple_definitions_opens_a_location_list() {
 
 #[cfg(feature = "lsp")]
 #[test]
+fn goto_past_last_line_lands_on_last_text_line() {
+    use crate::lsp::protocol::{LspLocation, LspPosition, LspRange};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("eof.rs");
+    std::fs::write(&path, "abc\ndef\n").unwrap();
+
+    let mut editor = create_editor();
+    open_and_load(&mut editor, &path);
+    let end = LspPosition {
+        line: 2,
+        character: 0,
+    };
+    editor.handle_goto_result(&[LspLocation {
+        uri: crate::lsp::protocol::path_to_uri(&path),
+        range: LspRange {
+            start: end.clone(),
+            end,
+        },
+    }]);
+
+    assert_eq!(editor.active_document().buffer.cursor(), 4);
+}
+
+#[cfg(feature = "lsp")]
+#[test]
 fn undo_forces_a_full_lsp_resync_instead_of_a_bogus_incremental_delta() {
     use crate::lsp::protocol::PositionEncoding;
     let mut editor = create_editor();

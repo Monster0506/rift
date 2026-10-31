@@ -1714,6 +1714,32 @@ fn drain_jobs_replay<W: std::io::Write>(
 }
 
 #[test]
+fn bug_g_lands_past_trailing_newline() {
+    use crate::replay::backend::ReplayBackend;
+
+    let dir = tempfile::tempdir().unwrap();
+    init_repo_with_commit(dir.path());
+    std::fs::write(dir.path().join("new.txt"), "hello\n").unwrap();
+
+    let backend = ReplayBackend::new(Vec::new(), 24, 80);
+    let path = dir.path().join("tracked.txt").display().to_string();
+    let mut editor = Editor::with_file(backend, Some(&path)).unwrap();
+    drain_jobs_replay(&mut editor);
+    editor.open_git_status();
+    drain_jobs_replay(&mut editor);
+
+    let keys = crate::key::notation::parse_key_sequence("G").unwrap();
+    editor.term.push_keys(keys.clone());
+    for _ in &keys {
+        editor.tick().unwrap();
+    }
+
+    let buf = &editor.active_document().buffer;
+    assert!(buf.to_string().ends_with('\n'));
+    assert_eq!(buf.get_line() + 2, buf.get_total_lines());
+}
+
+#[test]
 fn reload_on_git_status_buffer_refreshes_entries_via_native_dispatch() {
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());

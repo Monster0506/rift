@@ -462,7 +462,7 @@ struct RowGeometry {
     gutter_width: usize,
     visible_rows: usize,
     visible_cols: usize,
-    buf_total_lines: usize,
+    numbered_lines: usize,
     editor_fg: Option<Color>,
     editor_bg: Option<Color>,
 }
@@ -477,7 +477,7 @@ fn render_content_to_paint_frame(
         gutter_width,
         visible_rows: ctx.viewport.visible_rows().saturating_sub(1),
         visible_cols: ctx.viewport.visible_cols(),
-        buf_total_lines: ctx.buf.get_total_lines(),
+        numbered_lines: ctx.buf.last_real_line() + 1,
         editor_fg: ctx.state.settings.editor_fg,
         editor_bg: ctx.state.settings.editor_bg,
     };
@@ -626,7 +626,7 @@ fn paint_display_row(
                     bg: geom.editor_bg,
                 },
                 row_info.logical_line,
-                geom.buf_total_lines,
+                geom.numbered_lines,
                 gutter_scratch,
             );
         } else {
@@ -708,7 +708,7 @@ fn render_plain_rows(
                     bg: geom.editor_bg,
                 },
                 line_num,
-                geom.buf_total_lines,
+                geom.numbered_lines,
                 &mut gutter_scratch,
             );
         }

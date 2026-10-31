@@ -1153,7 +1153,8 @@ impl<T: TerminalBackend> Editor<T> {
         doc: &crate::document::Document,
         state: &crate::state::State,
     ) -> usize {
-        state.doc_gutter_cols(doc.options.show_line_numbers, doc.buffer.get_total_lines())
+        let lines = doc.buffer.last_real_line() + 1;
+        state.doc_gutter_cols(doc.options.show_line_numbers, lines)
     }
 
     fn concealed_outside_cursor_line(

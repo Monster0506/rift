@@ -13,8 +13,7 @@ fn test_g_no_count_goes_to_last_line() {
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
     let doc = editor.active_document();
-    let last_line = doc.buffer.line_count() - 1;
-    assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(last_line));
+    assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(2));
 }
 
 #[test]
@@ -44,8 +43,7 @@ fn test_g_count_beyond_last_line_clamps() {
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
     let doc = editor.active_document();
-    let last_line = doc.buffer.line_count() - 1;
-    assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(last_line));
+    assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(2));
 }
 
 #[test]
@@ -448,8 +446,7 @@ fn test_g_outside_operator_pending_just_moves_cursor() {
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
     let doc = editor.active_document();
-    let last_line = doc.buffer.line_count() - 1;
-    assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(last_line));
+    assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(2));
     assert_eq!(doc.buffer.len(), 18);
 }
 
