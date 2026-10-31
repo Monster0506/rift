@@ -61,8 +61,8 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(layout) = self.panel_layout_of(PanelKind::Clipboard) else {
             return;
         };
-        let entries: std::collections::VecDeque<Vec<crate::character::Character>> =
-            self.clipboard_ring.entries().iter().cloned().collect();
+        let entries: std::collections::VecDeque<crate::clipboard::Clip> =
+            self.clipboard_ring.entries().clone();
         if let Some(doc) = self.document_manager.get_document_mut(layout.dir_doc_id) {
             let cursor = doc.buffer.cursor();
             doc.populate_clipboard_buffer(&entries);
@@ -171,19 +171,20 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             };
             let len = doc.buffer.len();
-            (entry_index, doc.buffer.chars(0..len).collect::<Vec<_>>())
+            let text = doc.buffer.chars(0..len).collect::<Vec<_>>();
+            (entry_index, crate::clipboard::Clip::from_plain(text))
         };
 
         match entry_index {
             None => {
                 // New entry: push to front of ring
-                if !new_text.is_empty() {
+                if !new_text.text().is_empty() {
                     self.clipboard_ring.push(new_text);
                 }
             }
             Some(idx) => {
                 // Replace the entry in the ring at the given index
-                let entries: Vec<Vec<crate::character::Character>> =
+                let entries: Vec<crate::clipboard::Clip> =
                     self.clipboard_ring.entries().iter().cloned().collect();
                 self.clipboard_ring = {
                     let mut ring = crate::clipboard::ClipboardRing::new();

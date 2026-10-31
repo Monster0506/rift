@@ -592,7 +592,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .chars()
                     .map(crate::character::Character::from)
                     .collect();
-                self.insert_text_at_cursor(&chars, false);
+                self.insert_text_at_cursor(&crate::clipboard::Clip::from_plain(chars), false);
                 self.clamp_normal_cursor();
             }
         }

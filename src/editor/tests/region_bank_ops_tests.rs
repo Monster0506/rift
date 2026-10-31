@@ -584,7 +584,7 @@ fn set_aware_put_inserts_same_text_at_every_region() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.clipboard_ring.push_str("X");
+    editor.clipboard_ring.push_str("X", RangeKind::Charwise);
     editor
         .active_document()
         .bank_region(Region::new(0, 0, RangeKind::Charwise));
@@ -610,7 +610,7 @@ fn set_aware_put_before_inserts_ahead_of_every_region() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.clipboard_ring.push_str("X");
+    editor.clipboard_ring.push_str("X", RangeKind::Charwise);
     editor
         .active_document()
         .bank_region(Region::new(0, 0, RangeKind::Charwise));
@@ -635,7 +635,7 @@ fn bare_repeated_p_after_set_aware_put_only_affects_single_cursor() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.clipboard_ring.push_str("X");
+    editor.clipboard_ring.push_str("X", RangeKind::Charwise);
     editor
         .active_document()
         .bank_region(Region::new(0, 0, RangeKind::Charwise));
@@ -747,7 +747,7 @@ fn multi_region_put_is_one_undo_step() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.clipboard_ring.push_str("X");
+    editor.clipboard_ring.push_str("X", RangeKind::Charwise);
     editor
         .active_document()
         .bank_region(Region::new(0, 0, RangeKind::Charwise));
@@ -1010,7 +1010,9 @@ fn every_set_aware_command_clears_the_set_after_acting() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.clipboard_ring.push_str("X");
+    editor
+        .clipboard_ring
+        .push_str("X", crate::wrap::RangeKind::Charwise);
     fresh_set(&mut editor);
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
     assert!(
@@ -1061,7 +1063,9 @@ fn dot_repeat_paste_genuinely_differs_from_bare_repeat() {
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     editor.handle_action(&Action::Editor(EditorAction::RegionBankOccurrenceNext));
 
-    editor.clipboard_ring.push_str("X");
+    editor
+        .clipboard_ring
+        .push_str("X", crate::wrap::RangeKind::Charwise);
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
 
     let _ = editor.active_document().buffer.set_cursor(0);
@@ -1089,8 +1093,8 @@ fn cycle_paste_after_set_clears_only_touches_the_single_most_recent_position() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.clipboard_ring.push_str("Y");
-    editor.clipboard_ring.push_str("X");
+    editor.clipboard_ring.push_str("Y", RangeKind::Charwise);
+    editor.clipboard_ring.push_str("X", RangeKind::Charwise);
     editor
         .active_document()
         .bank_region(Region::new(0, 0, RangeKind::Charwise));
@@ -1211,7 +1215,7 @@ fn multi_region_linewise_put_goes_on_new_lines() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "aa\nbb");
-    editor.clipboard_ring.push_str("X\n");
+    editor.clipboard_ring.push_str("X\n", RangeKind::Linewise);
     editor
         .active_document()
         .bank_region(Region::new(0, 0, RangeKind::Charwise));
@@ -1232,7 +1236,7 @@ fn multi_region_linewise_put_before_goes_above_each_line() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "aa\nbb");
-    editor.clipboard_ring.push_str("X\n");
+    editor.clipboard_ring.push_str("X\n", RangeKind::Linewise);
     editor
         .active_document()
         .bank_region(Region::new(0, 0, RangeKind::Charwise));

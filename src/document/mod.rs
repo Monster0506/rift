@@ -190,6 +190,7 @@ pub(crate) struct Document {
     lsp_synced_revision: u64,
     lsp_full_sync_needed: bool,
     pub(crate) pending_ghost: Vec<GhostCut>,
+    ghost_clip: Option<crate::clipboard::Clip>,
     ghost_paint_active: bool,
     ghost_paint_cursor: Option<usize>,
 }
@@ -649,12 +650,12 @@ impl Document {
 
     state_get!(pub(crate) fn undotree_linked_doc_id(&self) -> DocumentId = UNDO_TREE_STATE_KEY, |s| s.linked_doc_id);
     state_get!(pub(crate) fn undotree_sequences(&self) -> &[crate::history::EditSeq] = UNDO_TREE_STATE_KEY, |s| s.sequences.as_slice());
-    state_get!(pub(crate) fn clipboard_entries(&self) -> &[Vec<crate::character::Character>] = CLIPBOARD_STATE_KEY, |s| s.entries.as_slice());
+    state_get!(pub(crate) fn clipboard_entries(&self) -> &[crate::clipboard::Clip] = CLIPBOARD_STATE_KEY, |s| s.entries.as_slice());
 
     pub(crate) fn clipboard_entry(&self, idx: usize) -> Option<&[crate::character::Character]> {
         self.state
             .try_get(CLIPBOARD_STATE_KEY)
-            .and_then(|s| s.entries.get(idx).map(std::vec::Vec::as_slice))
+            .and_then(|s| s.entries.get(idx).map(crate::clipboard::Clip::text))
     }
 
     state_get!(pub(crate) fn clipboard_entry_index(&self) -> Option<usize> = CLIPBOARD_ENTRY_STATE_KEY, |s| s.entry_index);

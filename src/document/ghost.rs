@@ -4,12 +4,13 @@ use crate::annotations::presentation::{Presentation, StyleOverride};
 use crate::annotations::{Anchor, Annotation, AnnotationOwner};
 use crate::buffer::api::BufferView;
 use crate::character::Character;
+use crate::clipboard::Clip;
 use crate::color::Color;
 
 const GHOST_PRIORITY: i32 = 8;
 
 impl Document {
-    pub(crate) fn create_ghosts(&mut self, ranges: &[(usize, usize)]) {
+    pub(crate) fn create_ghosts(&mut self, ranges: &[(usize, usize)], clip: Clip) {
         self.commit_pending_ghost();
 
         let mut ranges: Vec<(usize, usize)> =
@@ -43,11 +44,13 @@ impl Document {
 
         ghosts.sort_unstable_by_key(|g| g.at);
         self.pending_ghost = ghosts;
+        self.ghost_clip = Some(clip);
     }
 
-    pub(crate) fn most_recent_ghost(&self) -> Option<(&[Character], usize)> {
+    pub(crate) fn most_recent_ghost(&self) -> Option<(&[Character], usize, &Clip)> {
         let ghost = self.pending_ghost.first()?;
-        Some((&ghost.text, ghost.at))
+        let clip = self.ghost_clip.as_ref()?;
+        Some((&ghost.text, ghost.at, clip))
     }
 
     pub(crate) fn commit_pending_ghost(&mut self) {
@@ -56,6 +59,7 @@ impl Document {
         }
         self.end_ghost_paint();
         self.pending_ghost.clear();
+        self.ghost_clip = None;
     }
 
     pub(crate) fn begin_ghost_paint(&mut self) -> Option<crate::document::syntax_sync::SyntaxSync> {

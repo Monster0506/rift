@@ -1,6 +1,3 @@
-//! Clipboard ring buffer and tooltip. `ClipboardRing` is pure storage with
-//! the most recent entry at index 0 (default capacity 10, via `clipboard.size`); `ClipboardTooltip` is a stateless renderer.
-
 use std::collections::VecDeque;
 
 use crate::buffer::api::BufferView;
@@ -13,10 +10,41 @@ use crate::wrap::{MotionRange, RangeKind};
 pub(crate) const DEFAULT_RING_CAPACITY: usize = 10;
 const TOOLTIP_MAX_WIDTH: usize = 42;
 
-/// Stores entries as `Character` sequences, not `String`, so yanked raw
-/// bytes/control chars round-trip through paste instead of becoming U+FFFD.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Clip {
+    text: Vec<Character>,
+    kind: RangeKind,
+}
+
+impl Clip {
+    #[must_use]
+    pub(crate) const fn new(text: Vec<Character>, kind: RangeKind) -> Self {
+        Self { text, kind }
+    }
+
+    #[must_use]
+    pub(crate) fn from_plain(text: Vec<Character>) -> Self {
+        let kind = if text.last() == Some(&Character::Newline) {
+            RangeKind::Linewise
+        } else {
+            RangeKind::Charwise
+        };
+        Self { text, kind }
+    }
+
+    #[must_use]
+    pub(crate) fn text(&self) -> &[Character] {
+        &self.text
+    }
+
+    #[must_use]
+    pub(crate) const fn kind(&self) -> RangeKind {
+        self.kind
+    }
+}
+
 pub(crate) struct ClipboardRing {
-    entries: VecDeque<Vec<Character>>,
+    entries: VecDeque<Clip>,
     capacity: usize,
 }
 
@@ -35,26 +63,21 @@ impl ClipboardRing {
         }
     }
 
-    /// Push a new entry to the front (index 0 = most recent).
-    /// Empty entries are ignored. Oldest entry is dropped when at capacity.
-    pub(crate) fn push(&mut self, text: Vec<Character>) {
-        if text.is_empty() {
+    pub(crate) fn push(&mut self, clip: Clip) {
+        if clip.text.is_empty() {
             return;
         }
-        self.entries.push_front(text);
+        self.entries.push_front(clip);
         while self.entries.len() > self.capacity {
             self.entries.pop_back();
         }
     }
 
     #[cfg(test)]
-    /// Convenience for callers that only have a `String` (e.g. the system
-    /// clipboard, which is plain text and has no byte-faithful representation).
-    pub(crate) fn push_str(&mut self, text: &str) {
-        self.push(text.chars().map(Character::from).collect());
+    pub(crate) fn push_str(&mut self, text: &str, kind: RangeKind) {
+        self.push(Clip::new(text.chars().map(Character::from).collect(), kind));
     }
 
-    /// Update the ring capacity, trimming oldest entries if needed.
     pub(crate) fn set_capacity(&mut self, new_capacity: usize) {
         let cap = new_capacity.max(1);
         self.capacity = cap;
@@ -68,17 +91,17 @@ impl ClipboardRing {
         self.capacity
     }
 
-    pub(crate) fn get(&self, index: usize) -> Option<&[Character]> {
-        self.entries.get(index).map(Vec::as_slice)
+    pub(crate) fn get(&self, index: usize) -> Option<&Clip> {
+        self.entries.get(index)
     }
 
     #[must_use]
-    pub(crate) fn most_recent(&self) -> Option<&[Character]> {
+    pub(crate) fn most_recent(&self) -> Option<&Clip> {
         self.get(0)
     }
 
     #[must_use]
-    pub(crate) const fn entries(&self) -> &VecDeque<Vec<Character>> {
+    pub(crate) const fn entries(&self) -> &VecDeque<Clip> {
         &self.entries
     }
 
@@ -93,46 +116,37 @@ impl ClipboardRing {
     }
 }
 
-/// Extract the text covered by a `MotionRange` from the buffer, preserving
-/// raw bytes/control chars so it round-trips through the clipboard ring.
-pub(crate) fn capture_text(buf: &TextBuffer, range: &MotionRange) -> Vec<Character> {
-    let (start, end) = match range.kind {
-        RangeKind::Linewise => {
-            let first = range.anchor.min(range.new_cursor);
-            let last = range.anchor.max(range.new_cursor);
-            let first_line = buf.line_index.get_line_at(first);
-            let last_line = buf.line_index.get_line_at(last);
-            let s = buf.line_index.get_start(first_line).unwrap_or(0);
-            let e = if last_line + 1 < buf.get_total_lines() {
-                buf.line_index.get_start(last_line + 1).unwrap_or(buf.len())
-            } else {
-                buf.len()
-            };
-            (s, e)
-        }
-        RangeKind::Charwise | RangeKind::Blockwise => {
-            let end_offset = usize::from(range.inclusive);
-            (
-                range.anchor.min(range.new_cursor),
-                (range.anchor.max(range.new_cursor) + end_offset).min(buf.len()),
-            )
-        }
-    };
-    buf.chars(start..end).collect()
+pub(crate) fn capture_text(buf: &TextBuffer, range: &MotionRange) -> Clip {
+    let first = range.anchor.min(range.new_cursor);
+    let last = range.anchor.max(range.new_cursor);
+    if range.kind == RangeKind::Linewise {
+        let first_line = buf.line_index.get_line_at(first);
+        return capture_lines(buf, first_line, buf.line_index.get_line_at(last));
+    }
+
+    let end = (last + usize::from(range.inclusive)).min(buf.len());
+    Clip::new(buf.chars(first..end).collect(), range.kind)
 }
 
-/// Capture `count` lines (including newlines) starting at the cursor's line.
-pub(crate) fn capture_current_line(buf: &TextBuffer, count: usize) -> Vec<Character> {
-    let cursor = buf.cursor();
-    let line = buf.line_index.get_line_at(cursor);
+pub(crate) fn capture_current_line(buf: &TextBuffer, count: usize) -> Clip {
+    let line = buf.line_index.get_line_at(buf.cursor());
     let last_line = (line + count.max(1).saturating_sub(1)).min(buf.get_total_lines() - 1);
-    let start = buf.line_index.get_start(line).unwrap_or(0);
-    let end = if last_line + 1 < buf.get_total_lines() {
-        buf.line_index.get_start(last_line + 1).unwrap_or(buf.len())
-    } else {
+    capture_lines(buf, line, last_line)
+}
+
+fn capture_lines(buf: &TextBuffer, first_line: usize, last_line: usize) -> Clip {
+    let start = buf.line_index.get_start(first_line).unwrap_or(0);
+    let is_final = last_line + 1 >= buf.get_total_lines();
+    let end = if is_final {
         buf.len()
+    } else {
+        buf.line_index.get_start(last_line + 1).unwrap_or(buf.len())
     };
-    buf.chars(start..end).collect()
+    let text = buf
+        .chars(start..end)
+        .chain(is_final.then_some(Character::Newline))
+        .collect();
+    Clip::new(text, RangeKind::Linewise)
 }
 
 #[must_use]
@@ -147,17 +161,12 @@ pub(crate) fn normalize_newlines(text: &str) -> std::borrow::Cow<'_, str> {
 const SYSTEM_CLIPBOARD_REFRESH_INTERVAL: std::time::Duration =
     std::time::Duration::from_millis(250);
 
-/// Upper bound on how long a single clipboard read may block the caller.
-/// A hung clipboard owner stalls the worker thread, not the caller, past this.
 #[cfg(feature = "system_clipboard")]
 const CLIPBOARD_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(200);
 
-/// Request sent to the clipboard worker thread.
 #[cfg(feature = "system_clipboard")]
 struct ReadRequest(std::sync::mpsc::Sender<Option<String>>);
 
-/// Owns a single long-lived `arboard::Clipboard` connection on a dedicated
-/// worker thread, so callers never reconnect on every read.
 #[cfg(feature = "system_clipboard")]
 struct ClipboardWorker {
     requests: std::sync::mpsc::Sender<ReadRequest>,
@@ -177,8 +186,6 @@ impl ClipboardWorker {
         Self { requests }
     }
 
-    /// Ask the worker to read the clipboard, waiting at most
-    /// [`CLIPBOARD_READ_TIMEOUT`] for a reply.
     fn read(&self) -> Option<String> {
         let (reply_tx, reply_rx) = std::sync::mpsc::channel();
         if self.requests.send(ReadRequest(reply_tx)).is_err() {
@@ -188,8 +195,6 @@ impl ClipboardWorker {
     }
 }
 
-/// Read the system clipboard text without blocking the caller past
-/// `CLIPBOARD_READ_TIMEOUT`, reusing a single shared connection.
 #[cfg(feature = "system_clipboard")]
 pub(crate) fn read_system_clipboard_text() -> Option<String> {
     use std::sync::OnceLock;
@@ -197,7 +202,6 @@ pub(crate) fn read_system_clipboard_text() -> Option<String> {
     WORKER.get_or_init(ClipboardWorker::new).read()
 }
 
-/// Returns None when system clipboard support is disabled.
 #[cfg(not(feature = "system_clipboard"))]
 #[must_use]
 pub(crate) const fn read_system_clipboard_text() -> Option<String> {
@@ -208,7 +212,6 @@ pub(crate) const fn read_system_clipboard_text() -> Option<String> {
 pub(crate) struct SystemClipboardCache {
     text: Option<String>,
     last_refreshed: Option<crate::time::Instant>,
-    /// Number of completed reads, for tests to observe refresh behavior.
     read_count: u32,
 }
 
@@ -245,8 +248,6 @@ impl SystemClipboardCache {
 pub(crate) struct ClipboardTooltip;
 
 impl ClipboardTooltip {
-    /// Renders the tooltip near the cursor. `selected` is the ring index staged
-    /// for paste; `sys_clip` is the last [`SystemClipboardCache`] read, not read live here.
     pub(crate) fn render(
         ring: &ClipboardRing,
         selected: usize,
@@ -285,6 +286,7 @@ impl ClipboardTooltip {
         for (i, entry) in ring.entries().iter().enumerate() {
             let is_selected = i == selected;
             let text: String = entry
+                .text()
                 .iter()
                 .copied()
                 .map(Character::to_char_lossy)
@@ -308,7 +310,6 @@ impl ClipboardTooltip {
             .collect::<Vec<_>>();
             content.push(sep);
 
-            // System clipboard entry (never highlighted as selected)
             let label = format!(
                 "sys: {}",
                 clip_text.replace('\n', "\\n").replace('\t', "\\t")

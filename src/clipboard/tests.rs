@@ -24,7 +24,7 @@ fn capture_text_preserves_byte_and_control_chars() {
     };
     let captured = capture_text(&buf, &range);
     assert_eq!(
-        captured,
+        captured.text(),
         vec![
             Character::Unicode('a'),
             Character::Byte(0xFF),

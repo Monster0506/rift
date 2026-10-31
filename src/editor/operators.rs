@@ -62,17 +62,11 @@ impl<T: TerminalBackend> Editor<T> {
                 .map(|doc| crate::clipboard::capture_text(&doc.buffer, &range))
         });
         let has_range = captured.is_some();
-        let in_clipboard = self.active_doc_is(super::super::document::Document::is_any_clipboard);
-        if let Some(text) = captured.filter(|s| !s.is_empty()) {
-            if !in_clipboard {
-                self.clipboard_ring.push(text);
-                self.refresh_clipboard_buffer_if_open();
-            }
-        }
+        let cut = self.push_clip(captured, op);
 
         match op {
             crate::action::OperatorType::Delete => {
-                self.execute_delete_operator(motion, count, motion_range)
+                self.execute_delete_operator(motion, count, motion_range.zip(cut))
             }
             crate::action::OperatorType::Change => {
                 if self.active_doc_is(super::super::document::Document::is_read_only) {
@@ -121,6 +115,21 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    fn push_clip(
+        &mut self,
+        clip: Option<crate::clipboard::Clip>,
+        op: crate::action::OperatorType,
+    ) -> Option<crate::clipboard::Clip> {
+        let clip = clip?;
+        let cut = (op == crate::action::OperatorType::Delete).then(|| clip.clone());
+        let in_clipboard = self.active_doc_is(super::super::document::Document::is_any_clipboard);
+        if !in_clipboard && !clip.text().is_empty() {
+            self.clipboard_ring.push(clip);
+            self.refresh_clipboard_buffer_if_open();
+        }
+        cut
+    }
+
     fn begin_surround_add(&mut self, motion: Motion, delim_count: usize) {
         let count = self
             .pending_operator_count
@@ -139,7 +148,7 @@ impl<T: TerminalBackend> Editor<T> {
         &mut self,
         motion: Motion,
         count: usize,
-        motion_range: Option<crate::wrap::MotionRange>,
+        cut: Option<(crate::wrap::MotionRange, crate::clipboard::Clip)>,
     ) -> bool {
         let command = crate::command::Command::Delete(motion, count);
         self.set_mode(Mode::Normal);
@@ -149,11 +158,11 @@ impl<T: TerminalBackend> Editor<T> {
             .is_some_and(super::super::document::Document::ghost_cut_allowed);
         let result = if self.state.settings.editing.ghost_cut && ghost_allowed {
             let mut ghosted_doc = None;
-            if let Some(range) = motion_range {
+            if let Some((range, clip)) = cut {
                 if let Some(doc) = self.document_manager.active_document_mut() {
                     let (start, end) = crate::executor::range_to_offsets(&range, doc, true);
                     if end > start {
-                        doc.create_ghosts(&[(start, end)]);
+                        doc.create_ghosts(&[(start, end)], clip);
                         let _ = doc.buffer.set_cursor(start);
                         ghosted_doc = Some(doc.id);
                     }
@@ -188,13 +197,7 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .active_document()
             .map(|doc| crate::clipboard::capture_current_line(&doc.buffer, count));
-        let in_clipboard = self.active_doc_is(super::super::document::Document::is_any_clipboard);
-        if let Some(text) = captured.filter(|s| !s.is_empty()) {
-            if !in_clipboard {
-                self.clipboard_ring.push(text);
-                self.refresh_clipboard_buffer_if_open();
-            }
-        }
+        let cut = self.push_clip(captured, op);
 
         match op {
             crate::action::OperatorType::Delete => {
@@ -206,7 +209,8 @@ impl<T: TerminalBackend> Editor<T> {
                     .is_some_and(super::super::document::Document::ghost_cut_allowed);
                 let result = if self.state.settings.editing.ghost_cut && ghost_allowed {
                     let mut ghosted_doc = None;
-                    if let Some(doc) = self.document_manager.active_document_mut() {
+                    if let Some((doc, clip)) = self.document_manager.active_document_mut().zip(cut)
+                    {
                         doc.buffer.move_to_line_start();
                         let start = doc.buffer.cursor();
                         let mut reached_last_line = false;
@@ -229,7 +233,7 @@ impl<T: TerminalBackend> Editor<T> {
                         };
                         let _ = doc.buffer.set_cursor(ghost_start);
                         if ghost_end > ghost_start {
-                            doc.create_ghosts(&[(ghost_start, ghost_end)]);
+                            doc.create_ghosts(&[(ghost_start, ghost_end)], clip);
                             ghosted_doc = Some(doc.id);
                         }
                     }

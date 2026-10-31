@@ -26,8 +26,8 @@ pub(super) fn render_ascii(editor: &mut Editor<MockTerminal>) -> String {
 }
 
 pub(super) fn ring_text(editor: &Editor<MockTerminal>, index: usize) -> Option<String> {
-    editor.clipboard_ring.get(index).map(|chars| {
-        chars
+    editor.clipboard_ring.get(index).map(|clip| {
+        clip.text()
             .iter()
             .copied()
             .map(crate::character::Character::to_char_lossy)

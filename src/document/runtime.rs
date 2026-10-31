@@ -415,7 +415,7 @@ pub(super) static MESSAGES_STATE_KEY: StateKey<MessagesState> = StateKey::new("m
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct ClipboardState {
-    pub(super) entries: Vec<Vec<crate::character::Character>>,
+    pub(super) entries: Vec<crate::clipboard::Clip>,
 }
 pub(super) static CLIPBOARD_STATE_KEY: StateKey<ClipboardState> = StateKey::new("clipboard");
 

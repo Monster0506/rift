@@ -2,6 +2,7 @@ use super::Editor;
 use super::PostPasteState;
 use crate::action::{Action, EditorAction};
 use crate::buffer::api::BufferView;
+use crate::clipboard::Clip;
 use crate::command::Command;
 use crate::document::runtime::{ActionDispatch, BufferKindId, NavigationPolicy};
 use crate::mode::Mode;
@@ -394,7 +395,7 @@ impl<T: TerminalBackend> Editor<T> {
                     });
                     let in_clipboard =
                         self.active_doc_is(super::super::document::Document::is_any_clipboard);
-                    if let Some(text) = captured.filter(|s| !s.is_empty()) {
+                    if let Some(text) = captured.filter(|c| !c.text().is_empty()) {
                         if !in_clipboard {
                             self.clipboard_ring.push(text);
                             self.refresh_clipboard_buffer_if_open();
@@ -820,29 +821,30 @@ impl<T: TerminalBackend> Editor<T> {
                     .document_manager
                     .active_document()
                     .map(|d| d.buffer.cursor());
-                let ghost_move = self
+                let ghost_put = self
                     .document_manager
                     .most_recent_ghost_doc()
                     .and_then(|doc_id| {
                         let doc = self.document_manager.get_document(doc_id)?;
-                        let (text, live_start) = doc.most_recent_ghost()?;
-                        Some((doc_id, text.to_vec(), live_start))
+                        let (text, live_start, clip) = doc.most_recent_ghost()?;
+                        let same_location = Some(doc_id) == active_doc_id
+                            && cursor_before_resolve == Some(live_start);
+                        if same_location {
+                            return Some((Clip::from_plain(text.to_vec()), Some(live_start)));
+                        }
+                        Some((clip.clone(), None))
                     });
                 self.commit_all_pending_ghosts();
 
-                let (text, same_location_origin) = match &ghost_move {
-                    Some((doc_id, text, live_start)) => {
-                        let same_location = Some(*doc_id) == active_doc_id
-                            && cursor_before_resolve == Some(*live_start);
-                        (text.clone(), same_location.then_some(*live_start))
-                    }
+                let (clip, same_location_origin) = match ghost_put {
+                    Some(put) => put,
                     None => match self.clipboard_ring.most_recent() {
-                        Some(t) => (t.to_owned(), None),
+                        Some(clip) => (clip.clone(), None),
                         None => return false,
                     },
                 };
 
-                if self.try_run_set_aware_put(*before, &text) {
+                if self.try_run_set_aware_put(*before, &clip) {
                     self.finish_region_build(Some(action.clone()));
                     return true;
                 }
@@ -851,9 +853,9 @@ impl<T: TerminalBackend> Editor<T> {
                     .active_document()
                     .map_or(0, |d| d.buffer.cursor());
                 let result = if let Some(origin) = same_location_origin {
-                    self.insert_ghost_text_verbatim(&text, origin)
+                    self.insert_ghost_text_verbatim(clip.text(), origin)
                 } else {
-                    self.insert_text_at_cursor(&text, *before)
+                    self.insert_text_at_cursor(&clip, *before)
                 };
                 if result {
                     self.post_paste_state = Some(PostPasteState {
@@ -873,16 +875,12 @@ impl<T: TerminalBackend> Editor<T> {
                     } else {
                         (state.ring_index + len - 1) % len
                     };
-                    if let Some(text) = self
-                        .clipboard_ring
-                        .get(next)
-                        .map(std::borrow::ToOwned::to_owned)
-                    {
+                    if let Some(clip) = self.clipboard_ring.get(next).cloned() {
                         if let Some(doc) = self.document_manager.active_document_mut() {
                             doc.undo();
                             let _ = doc.buffer.set_cursor(state.original_cursor);
                         }
-                        let result = self.insert_text_at_cursor(&text, state.before);
+                        let result = self.insert_text_at_cursor(&clip, state.before);
                         if result {
                             self.post_paste_state = Some(PostPasteState {
                                 ring_index: next,
@@ -913,11 +911,12 @@ impl<T: TerminalBackend> Editor<T> {
                         .chars()
                         .map(crate::character::Character::from)
                         .collect();
-                    if self.try_run_set_aware_put(*before, &text) {
+                    let clip = Clip::from_plain(text);
+                    if self.try_run_set_aware_put(*before, &clip) {
                         self.finish_region_build(Some(action.clone()));
                         return true;
                     }
-                    self.insert_text_at_cursor(&text, *before)
+                    self.insert_text_at_cursor(&clip, *before)
                 } else {
                     false
                 }
@@ -1379,12 +1378,9 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    pub(super) fn insert_text_at_cursor(
-        &mut self,
-        text: &[crate::character::Character],
-        before: bool,
-    ) -> bool {
-        let is_linewise = matches!(text.last(), Some(crate::character::Character::Newline));
+    pub(super) fn insert_text_at_cursor(&mut self, clip: &Clip, before: bool) -> bool {
+        let text = clip.text();
+        let is_linewise = clip.kind() == crate::wrap::RangeKind::Linewise;
 
         let Some(doc) = self.document_manager.active_document_mut() else {
             return false;
@@ -1417,15 +1413,12 @@ impl<T: TerminalBackend> Editor<T> {
             doc.buffer.move_right();
         }
 
-        let linewise_start = if is_linewise {
-            if needs_leading_newline {
-                Some(doc.buffer.cursor() + 1)
-            } else {
-                Some(doc.buffer.cursor())
-            }
+        let start = if needs_leading_newline {
+            doc.buffer.cursor() + 1
         } else {
-            None
+            doc.buffer.cursor()
         };
+        let cursor_at_start = is_linewise || text.contains(&crate::character::Character::Newline);
 
         doc.begin_transaction("Put");
         if needs_leading_newline {
@@ -1439,7 +1432,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
         doc.commit_transaction();
 
-        if let Some(start) = linewise_start {
+        if cursor_at_start {
             let _ = doc.buffer.set_cursor(start);
         }
 

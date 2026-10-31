@@ -560,7 +560,7 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let Some(entries) = doc
                 .clipboard_entries()
-                .map(<[Vec<crate::character::Character>]>::to_vec)
+                .map(<[crate::clipboard::Clip]>::to_vec)
             else {
                 return;
             };
@@ -568,7 +568,7 @@ impl<T: TerminalBackend> Editor<T> {
             (entries, order)
         };
 
-        let new_entries: std::collections::VecDeque<Vec<crate::character::Character>> = order
+        let new_entries: std::collections::VecDeque<crate::clipboard::Clip> = order
             .into_iter()
             .filter_map(|i| entries_snapshot.get(i).cloned())
             .collect();

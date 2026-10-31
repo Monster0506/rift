@@ -1,5 +1,6 @@
 use super::Editor;
 use crate::character::Character;
+use crate::clipboard::Clip;
 use crate::document::Document;
 use crate::selection::Region;
 use crate::term::TerminalBackend;
@@ -61,6 +62,16 @@ fn put_lines(doc: &mut Document, offset: usize, before: bool, text: &[Character]
     let trimmed = text.strip_suffix(&[Character::Newline]).unwrap_or(text);
     doc.insert_characters(&[Character::Newline]);
     doc.insert_characters(trimmed);
+}
+
+fn region_clip(buf: &crate::buffer::TextBuffer, region: &Region) -> Clip {
+    let range = crate::wrap::MotionRange {
+        anchor: region.anchor,
+        new_cursor: region.cursor,
+        kind: region.kind,
+        inclusive: true,
+    };
+    crate::clipboard::capture_text(buf, &range)
 }
 
 fn merge_spans(mut spans: Vec<(usize, usize, bool)>) -> Vec<(usize, usize)> {
@@ -329,7 +340,6 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn try_run_set_aware_operator(&mut self, op: crate::action::OperatorType) -> bool {
         use crate::action::OperatorType;
-        use crate::buffer::api::BufferView;
 
         let is_empty = self
             .document_manager
@@ -345,11 +355,9 @@ impl<T: TerminalBackend> Editor<T> {
                 let Some(doc) = editor.document_manager.active_document() else {
                     return false;
                 };
-                let (start, end) = region.buffer_span(&doc.buffer);
-                let text: Vec<Character> = doc.buffer.chars(start..end).collect();
-                if !text.is_empty() {
-                    editor.clipboard_ring.push(text);
-                }
+                editor
+                    .clipboard_ring
+                    .push(region_clip(&doc.buffer, &region));
                 true
             }),
             OperatorType::Change => {
@@ -364,8 +372,6 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn run_set_delete(&mut self) -> bool {
-        use crate::buffer::api::BufferView;
-
         let batch = {
             let Some(doc) = self.document_manager.active_document_mut() else {
                 return false;
@@ -375,7 +381,7 @@ impl<T: TerminalBackend> Editor<T> {
         if batch.is_empty() {
             return false;
         }
-        let (clips, ranges): (Vec<Vec<Character>>, Vec<(usize, usize)>) = {
+        let (clips, ranges): (Vec<Clip>, Vec<(usize, usize)>) = {
             let Some(doc) = self.document_manager.active_document() else {
                 return false;
             };
@@ -386,13 +392,7 @@ impl<T: TerminalBackend> Editor<T> {
                     s < e
                 })
                 .collect();
-            let clips = live
-                .iter()
-                .map(|r| {
-                    let (s, e) = r.buffer_span(&doc.buffer);
-                    doc.buffer.chars(s..e).collect()
-                })
-                .collect();
+            let clips = live.iter().map(|r| region_clip(&doc.buffer, r)).collect();
             let spans = live
                 .iter()
                 .map(|r| {
@@ -405,18 +405,20 @@ impl<T: TerminalBackend> Editor<T> {
         if ranges.is_empty() {
             return false;
         }
-        for text in clips {
-            self.clipboard_ring.push(text);
-        }
-        self.refresh_clipboard_buffer_if_open();
         let ghost_allowed = self
             .document_manager
             .active_document()
             .is_some_and(super::super::document::Document::ghost_cut_allowed);
-        if self.state.settings.editing.ghost_cut && ghost_allowed {
+        let ghost_cut = self.state.settings.editing.ghost_cut && ghost_allowed;
+        let ghost_clip = clips.last().filter(|_| ghost_cut).cloned();
+        for clip in clips {
+            self.clipboard_ring.push(clip);
+        }
+        self.refresh_clipboard_buffer_if_open();
+        if let Some(ghost_clip) = ghost_clip {
             let cursor_target = ranges.iter().map(|&(s, _)| s).min();
             let ghosted_doc = self.document_manager.active_document_mut().map(|doc| {
-                doc.create_ghosts(&ranges);
+                doc.create_ghosts(&ranges, ghost_clip);
                 if let Some(pos) = cursor_target {
                     let _ = doc.buffer.set_cursor(pos);
                 }
@@ -562,7 +564,7 @@ impl<T: TerminalBackend> Editor<T> {
         })
     }
 
-    pub(super) fn try_run_set_aware_put(&mut self, before: bool, text: &[Character]) -> bool {
+    pub(super) fn try_run_set_aware_put(&mut self, before: bool, clip: &Clip) -> bool {
         let is_empty = self
             .document_manager
             .active_document()
@@ -570,8 +572,8 @@ impl<T: TerminalBackend> Editor<T> {
         if is_empty {
             return false;
         }
-        let text = text.to_vec();
-        let is_linewise = matches!(text.last(), Some(Character::Newline));
+        let text = clip.text().to_vec();
+        let is_linewise = clip.kind() == RangeKind::Linewise;
         self.apply_to_each_region(|editor, region| {
             let Some(doc) = editor.document_manager.active_document_mut() else {
                 return false;

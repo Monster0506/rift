@@ -381,7 +381,7 @@ impl Document {
 
     pub(crate) fn populate_clipboard_buffer(
         &mut self,
-        entries: &std::collections::VecDeque<Vec<crate::character::Character>>,
+        entries: &std::collections::VecDeque<crate::clipboard::Clip>,
     ) {
         use crate::color::Color;
 
