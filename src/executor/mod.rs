@@ -66,16 +66,15 @@ pub(crate) fn compute_motion_range(
         }
     }
 
-    let is_linewise = matches!(
+    let is_jump = matches!(
         motion,
-        Motion::Up
-            | Motion::Down
-            | Motion::PageUp
-            | Motion::PageDown
-            | Motion::ToLine(_)
-            | Motion::StartOfFile
-            | Motion::EndOfFile
+        Motion::ToLine(_) | Motion::StartOfFile | Motion::EndOfFile
     );
+    let is_linewise = is_jump
+        || matches!(
+            motion,
+            Motion::Up | Motion::Down | Motion::PageUp | Motion::PageDown
+        );
     let is_inclusive = matches!(motion, Motion::FindCharForward(_) | Motion::WordEnd);
 
     let anchor = doc.buffer.cursor();
@@ -101,7 +100,7 @@ pub(crate) fn compute_motion_range(
     let new_cursor = doc.buffer.cursor();
     let _ = doc.buffer.set_cursor(anchor);
 
-    if anchor == new_cursor {
+    if anchor == new_cursor && !is_jump {
         return None;
     }
 
