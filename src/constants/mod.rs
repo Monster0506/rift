@@ -11,6 +11,7 @@ pub(crate) mod errors {
     pub(crate) const PARENT_DIR_MISSING: &str = "PARENT_DIR_MISSING";
     pub(crate) const UNDOFILE_CORRUPT: &str = "UNDOFILE_CORRUPT";
     pub(crate) const RELOAD_UNSUPPORTED: &str = "RELOAD_UNSUPPORTED";
+    pub(crate) const FILE_EXISTS: &str = "FILE_EXISTS";
 
     pub(crate) const MSG_UNSAVED_CHANGES: &str = "No write since last change (add ! to override)";
     pub(crate) const MSG_NO_FILE_NAME: &str = "No file name";
@@ -19,6 +20,7 @@ pub(crate) mod errors {
     pub(crate) const MSG_PARENT_DIR_MISSING: &str =
         "No such directory; create the parent directory first";
     pub(crate) const MSG_RELOAD_UNSUPPORTED: &str = "This buffer cannot be reloaded";
+    pub(crate) const MSG_FILE_EXISTS: &str = "File exists (add ! to override)";
 }
 
 pub(crate) mod error_types {

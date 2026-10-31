@@ -11,21 +11,25 @@ use crate::state::UserSettings;
 pub(crate) enum ExecutionResult {
     /// Command executed successfully
     Success,
-    /// Quit command - editor should exit
+    /// Quit command
     Quit {
         bangs: usize,
     },
-    /// Write command - editor should save
-    Write,
-    /// Write and quit - editor should save then exit
-    WriteAndQuit,
-    /// Error occurred during execution (already reported to manager)
+    /// Write command
+    Write {
+        path: Option<std::path::PathBuf>,
+    },
+    /// Write and quit
+    WriteAndQuit {
+        path: Option<std::path::PathBuf>,
+    },
+    /// Error occurred during execution
     Failure,
     /// Force a full redraw
     Redraw,
     /// Reload the plugins
     Reload,
-    /// Edit command - editor should open the specified file
+    /// Edit command
     Edit {
         path: Option<String>,
         bangs: usize,
@@ -53,16 +57,15 @@ pub(crate) enum ExecutionResult {
     NotificationClear {
         bangs: usize,
     },
-
-    /// Undo command - editor should undo changes
+    /// Undo command
     Undo {
         count: Option<u64>,
     },
-    /// Redo command - editor should redo changes
+    /// Redo command
     Redo {
         count: Option<u64>,
     },
-    /// Undo goto sequence - editor should jump to specific edit
+    /// Undo goto sequence
     UndoGoto {
         seq: u64,
     },
@@ -73,7 +76,7 @@ pub(crate) enum ExecutionResult {
         cmd: Option<String>,
         bangs: usize,
     },
-    /// Run a git subcommand and show its output (`:Git <args>`).
+    /// Run a git subcommand and show its output
     RunGit {
         args: String,
     },
@@ -93,7 +96,6 @@ pub(crate) enum ExecutionResult {
     },
     /// Open the clipboard ring index buffer
     OpenClipboard,
-    /// An unknown command that may be handled by a plugin.
     /// The editor checks the plugin host before reporting an error.
     PluginCommand {
         name: String,
@@ -106,8 +108,10 @@ impl std::fmt::Debug for ExecutionResult {
         match self {
             Self::Success => write!(f, "Success"),
             Self::Quit { bangs } => f.debug_struct("Quit").field("bangs", bangs).finish(),
-            Self::Write => write!(f, "Write"),
-            Self::WriteAndQuit => write!(f, "WriteAndQuit"),
+            Self::Write { path } => f.debug_struct("Write").field("path", path).finish(),
+            Self::WriteAndQuit { path } => {
+                f.debug_struct("WriteAndQuit").field("path", path).finish()
+            }
             Self::Failure => write!(f, "Failure"),
             Self::Redraw => write!(f, "Redraw"),
             Self::Reload => write!(f, "Reload"),
@@ -172,8 +176,6 @@ impl std::fmt::Debug for ExecutionResult {
 pub(crate) struct CommandExecutor;
 
 impl CommandExecutor {
-    /// Execute a parsed command. Write commands do NOT perform file I/O here --
-    /// they return Success/WriteAndQuit, and the editor calls `Document::save`[_as]().
     pub(crate) fn execute(
         command: ParsedCommand,
         state: &mut State,
@@ -208,20 +210,17 @@ impl CommandExecutor {
                 value: _,
                 bangs: _,
             } => local::execute_local_command(command, state, document, document_settings_registry),
-            ParsedCommand::Write { path, bangs: _ } => {
-                set_write_path(state, document, path.as_deref());
-                // Editor will check if path exists and call Document::save()
-                ExecutionResult::Write
+            ParsedCommand::Write { path, bangs } => {
+                execute_write(state, document, path, bangs, |path| {
+                    ExecutionResult::Write { path }
+                })
             }
-            ParsedCommand::WriteQuit { path, bangs: _ } => {
-                set_write_path(state, document, path.as_deref());
-                // Editor will check if path exists, call Document::save(), then quit
-                ExecutionResult::WriteAndQuit
+            ParsedCommand::WriteQuit { path, bangs } => {
+                execute_write(state, document, path, bangs, |path| {
+                    ExecutionResult::WriteAndQuit { path }
+                })
             }
-            ParsedCommand::Unknown { name, args } => {
-                // Pass to the plugin host; the editor will error if no plugin handles it.
-                ExecutionResult::PluginCommand { name, args }
-            }
+            ParsedCommand::Unknown { name, args } => ExecutionResult::PluginCommand { name, args },
             ParsedCommand::Ambiguous { prefix, matches } => {
                 report_ambiguous(state, &prefix, &matches)
             }
@@ -287,7 +286,6 @@ impl CommandExecutor {
 }
 
 fn create_checkpoint(state: &mut State, document: &mut Document) -> ExecutionResult {
-    // Create checkpoint at current position
     document.checkpoint();
     state.notify(
         crate::notification::NotificationType::Info,
@@ -302,11 +300,42 @@ fn clear_highlight(state: &mut State) -> ExecutionResult {
     ExecutionResult::Redraw
 }
 
-fn set_write_path(state: &mut State, document: &mut Document, path: Option<&str>) {
-    if let Some(file_path) = path {
-        document.set_path(file_path);
-        state.set_file_path(Some(file_path.to_string()));
+fn execute_write(
+    state: &mut State,
+    document: &Document,
+    path: Option<String>,
+    bangs: usize,
+    result: impl FnOnce(Option<std::path::PathBuf>) -> ExecutionResult,
+) -> ExecutionResult {
+    let path = path.map(|p| crate::fs_backend::backend().canonicalize(std::path::Path::new(&p)));
+    if overwrite_refused(state, document, path.as_deref(), bangs) {
+        return ExecutionResult::Failure;
     }
+    result(path)
+}
+
+fn overwrite_refused(
+    state: &mut State,
+    document: &Document,
+    target: Option<&std::path::Path>,
+    bangs: usize,
+) -> bool {
+    let Some(target) = target else {
+        return false;
+    };
+    if bangs > 0 || document.path() == Some(target) {
+        return false;
+    }
+    if !crate::fs_backend::backend().path_exists(target) {
+        return false;
+    }
+
+    state.handle_error(RiftError::new(
+        ErrorType::Execution,
+        crate::constants::errors::FILE_EXISTS,
+        crate::constants::errors::MSG_FILE_EXISTS.to_string(),
+    ));
+    true
 }
 
 fn report_ambiguous(state: &mut State, prefix: &str, matches: &[String]) -> ExecutionResult {
@@ -405,8 +434,6 @@ fn execute_substitute(
             let whole_file = range == Some("%");
             let has_selection = !document.selection_set.is_empty();
 
-            // A non-empty SelectionSet takes priority over %/current-line;
-            // each banked region is its own miniature substitution scope.
             if has_selection {
                 let region_spans: Vec<(usize, usize)> = document
                     .selection_set
@@ -420,13 +447,11 @@ fn execute_substitute(
                         .any(|(s, e)| m.range.start >= *s && m.range.end <= *e)
                 });
             } else if !whole_file {
-                // Filter matches that intersect with current line
                 let current_line_idx = document
                     .buffer
                     .line_index
                     .get_line_at(document.buffer.cursor());
                 let start_byte = document.buffer.line_start(current_line_idx);
-                // Use get_end from LineIndex, passing total length
                 let end_byte = document
                     .buffer
                     .line_index
@@ -445,7 +470,6 @@ fn execute_substitute(
                 return ExecutionResult::Failure;
             }
 
-            // Filter matches based on global flag
             let mut valid_matches = Vec::new();
             let mut last_line_idx = None;
 
@@ -453,7 +477,7 @@ fn execute_substitute(
                 let line_idx = document.buffer.line_index.get_line_at(m.range.start);
                 if !is_global_subst {
                     if Some(line_idx) == last_line_idx {
-                        continue; // Already processed first match on this line
+                        continue;
                     }
                     last_line_idx = Some(line_idx);
                 }
@@ -469,10 +493,8 @@ fn execute_substitute(
                 return ExecutionResult::Failure;
             }
 
-            // Begin transaction to group all substitutions
             document.begin_transaction(format!("Substitute: {pattern} -> {replacement}"));
 
-            // Sort reverse for application (to maintain offsets)
             valid_matches.sort_by_key(|m| std::cmp::Reverse(m.range.start));
 
             let mut changes_made = 0;
@@ -485,7 +507,6 @@ fn execute_substitute(
                 changes_made += 1;
             }
 
-            // Commit transaction
             document.commit_transaction();
             if has_selection {
                 document.selection_set.clear();
@@ -494,7 +515,6 @@ fn execute_substitute(
             if changes_made > 0 {
                 state.last_search_query = Some(pattern.to_string());
 
-                // Re-run search to update highlights
                 match crate::search::find_all(&document.buffer, pattern) {
                     Ok((new_matches, _)) => state.search_matches = new_matches,
                     Err(_) => state.search_matches.clear(),

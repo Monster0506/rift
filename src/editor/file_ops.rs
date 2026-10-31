@@ -262,6 +262,10 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn do_save(&mut self) {
+        self.save_to(None);
+    }
+
+    pub(super) fn save_to(&mut self, target: Option<std::path::PathBuf>) {
         let is_plain_file = self.document_manager.active_document().is_some_and(|doc| {
             doc.buffer_kind_id() == crate::document::runtime::BufferKindId::FILE
         });
@@ -269,9 +273,9 @@ impl<T: TerminalBackend> Editor<T> {
             let save_info = {
                 let document = self.document_manager.active_document_mut().unwrap();
                 document.commit_pending_ghost();
-                document
-                    .path()
-                    .map(|path| (document.id, path.to_path_buf()))
+                target
+                    .or_else(|| document.path().map(std::path::Path::to_path_buf))
+                    .map(|path| (document.id, path))
             };
             if let Some((buf_id, path)) = save_info {
                 self.plugin_host
@@ -307,11 +311,25 @@ impl<T: TerminalBackend> Editor<T> {
             }
             self.state.clear_command_line();
         } else {
+            self.set_active_path(target);
             self.dispatch_save_sync();
         }
     }
 
+    fn set_active_path(&mut self, target: Option<std::path::PathBuf>) {
+        let Some(path) = target else {
+            return;
+        };
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            doc.set_path(path);
+        }
+    }
+
     pub(super) fn do_save_and_quit(&mut self) {
+        self.save_quit_to(None);
+    }
+
+    pub(super) fn save_quit_to(&mut self, target: Option<std::path::PathBuf>) {
         let is_plain_file = self.document_manager.active_document().is_some_and(|doc| {
             doc.buffer_kind_id() == crate::document::runtime::BufferKindId::FILE
         });
@@ -321,27 +339,20 @@ impl<T: TerminalBackend> Editor<T> {
             }
             let res = {
                 let doc = self.document_manager.active_document().unwrap();
-                if doc.has_path() {
-                    Ok((
+                let path = target
+                    .or_else(|| doc.path().map(std::path::Path::to_path_buf))
+                    .or_else(|| self.state.file_path.as_ref().map(std::path::PathBuf::from));
+                path.map(|path| {
+                    (
                         doc.id,
-                        doc.path().unwrap().to_path_buf(),
+                        path,
                         doc.buffer.line_index.table.clone(),
                         doc.options.line_ending,
                         doc.options.has_bom,
                         doc.history.current_seq(),
-                    ))
-                } else if let Some(path) = &self.state.file_path {
-                    Ok((
-                        doc.id,
-                        std::path::PathBuf::from(path),
-                        doc.buffer.line_index.table.clone(),
-                        doc.options.line_ending,
-                        doc.options.has_bom,
-                        doc.history.current_seq(),
-                    ))
-                } else {
-                    Err(RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"))
-                }
+                    )
+                })
+                .ok_or_else(|| RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"))
             };
             match res {
                 Ok((doc_id, path, table, line_ending, has_bom, saved_seq)) => {
@@ -366,6 +377,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
+        self.set_active_path(target);
         let Some(handle) = self
             .document_manager
             .active_document()

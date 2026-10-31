@@ -47,21 +47,21 @@ const fn parse_quit(
     ParsedCommand::Quit { bangs }
 }
 
+fn path_arg(args: &[&str]) -> Option<String> {
+    if args.is_empty() {
+        return None;
+    }
+    Some(args.join(" "))
+}
+
 fn parse_write(
     _registry: &SettingsRegistry<UserSettings>,
     args: &[&str],
     bangs: usize,
 ) -> ParsedCommand {
-    match args.len() {
-        0 => ParsedCommand::Write { path: None, bangs },
-        1 => ParsedCommand::Write {
-            path: Some(args[0].to_string()),
-            bangs,
-        },
-        _ => ParsedCommand::Unknown {
-            name: "write (too many arguments)".to_string(),
-            args: vec![],
-        },
+    ParsedCommand::Write {
+        path: path_arg(args),
+        bangs,
     }
 }
 
@@ -70,16 +70,9 @@ fn parse_write_quit(
     args: &[&str],
     bangs: usize,
 ) -> ParsedCommand {
-    match args.len() {
-        0 => ParsedCommand::WriteQuit { path: None, bangs },
-        1 => ParsedCommand::WriteQuit {
-            path: Some(args[0].to_string()),
-            bangs,
-        },
-        _ => ParsedCommand::Unknown {
-            name: "wq (too many arguments)".to_string(),
-            args: vec![],
-        },
+    ParsedCommand::WriteQuit {
+        path: path_arg(args),
+        bangs,
     }
 }
 
@@ -88,16 +81,9 @@ fn parse_edit(
     args: &[&str],
     bangs: usize,
 ) -> ParsedCommand {
-    match args.len() {
-        0 => ParsedCommand::Edit { path: None, bangs },
-        1 => ParsedCommand::Edit {
-            path: Some(args[0].to_string()),
-            bangs,
-        },
-        _ => ParsedCommand::Unknown {
-            name: "edit (too many arguments)".to_string(),
-            args: vec![],
-        },
+    ParsedCommand::Edit {
+        path: path_arg(args),
+        bangs,
     }
 }
 

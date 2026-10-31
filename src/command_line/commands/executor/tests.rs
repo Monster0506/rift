@@ -738,7 +738,7 @@ fn test_execute_write_no_path() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Write);
+    assert_eq!(result, ExecutionResult::Write { path: None });
     assert!(state.file_path.is_none());
 }
 
@@ -760,13 +760,15 @@ fn test_execute_write_with_path() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Write);
-    assert_eq!(state.file_path, Some("test.txt".to_string()));
-    assert!(document.path().unwrap().ends_with("test.txt"));
+    let ExecutionResult::Write { path: Some(path) } = result else {
+        panic!("expected Write with path, got {result:?}");
+    };
+    assert!(path.ends_with("test.txt"));
+    assert!(document.path().is_none());
 }
 
 #[test]
-fn test_execute_write_updates_path() {
+fn test_execute_write_keeps_path_until_saved() {
     let mut state = State::new();
     state.set_file_path(Some("old.txt".to_string()));
 
@@ -786,9 +788,8 @@ fn test_execute_write_updates_path() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Write);
-    assert_eq!(state.file_path, Some("new.txt".to_string()));
-    assert!(document.path().unwrap().ends_with("new.txt"));
+    assert!(matches!(result, ExecutionResult::Write { path: Some(_) }));
+    assert!(document.path().unwrap().ends_with("old.txt"));
 }
 
 #[test]
@@ -809,7 +810,7 @@ fn test_execute_write_quit_no_path() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::WriteAndQuit);
+    assert_eq!(result, ExecutionResult::WriteAndQuit { path: None });
     assert!(state.file_path.is_none());
 }
 
@@ -831,13 +832,15 @@ fn test_execute_write_quit_with_path() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::WriteAndQuit);
-    assert_eq!(state.file_path, Some("test.txt".to_string()));
-    assert!(document.path().unwrap().ends_with("test.txt"));
+    let ExecutionResult::WriteAndQuit { path: Some(path) } = result else {
+        panic!("expected WriteAndQuit with path, got {result:?}");
+    };
+    assert!(path.ends_with("test.txt"));
+    assert!(document.path().is_none());
 }
 
 #[test]
-fn test_execute_write_quit_updates_path() {
+fn test_execute_write_quit_keeps_path_until_saved() {
     let mut state = State::new();
     state.set_file_path(Some("old.txt".to_string()));
 
@@ -857,9 +860,11 @@ fn test_execute_write_quit_updates_path() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::WriteAndQuit);
-    assert_eq!(state.file_path, Some("new.txt".to_string()));
-    assert!(document.path().unwrap().ends_with("new.txt"));
+    assert!(matches!(
+        result,
+        ExecutionResult::WriteAndQuit { path: Some(_) }
+    ));
+    assert!(document.path().unwrap().ends_with("old.txt"));
 }
 
 #[test]
