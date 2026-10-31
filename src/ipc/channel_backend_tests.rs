@@ -62,6 +62,42 @@ fn read_event_returns_pending_and_clears() {
 }
 
 #[test]
+fn repeated_poll_keeps_unread_event() {
+    let (mut backend, input_tx, _, _) = make_backend(24, 80);
+    input_tx.send(InputEvent::Key(Key::char('a'))).unwrap();
+    input_tx.send(InputEvent::Key(Key::char('b'))).unwrap();
+
+    assert!(backend.poll(Duration::from_millis(100)).unwrap());
+    assert!(backend.poll(Duration::ZERO).unwrap());
+
+    assert_eq!(
+        backend.read_event().unwrap(),
+        Some(InputEvent::Key(Key::char('a')))
+    );
+    assert!(backend.poll(Duration::from_millis(100)).unwrap());
+    assert_eq!(
+        backend.read_event().unwrap(),
+        Some(InputEvent::Key(Key::char('b')))
+    );
+}
+
+#[test]
+fn editor_receives_all_keys_typed_over_channel() {
+    let (backend, input_tx, _output_rx, _detach_rx) = make_backend(24, 80);
+    let mut editor = crate::editor::Editor::with_file(backend, None).unwrap();
+    let keys = ['i', 'a', 'b', 'c'];
+    for c in keys {
+        input_tx.send(InputEvent::Key(Key::char(c))).unwrap();
+    }
+
+    for _ in keys {
+        editor.tick().unwrap();
+    }
+
+    assert_eq!(editor.active_document().buffer.to_string(), "abc");
+}
+
+#[test]
 fn write_and_flush_sends_frame() {
     let (mut backend, _, output_rx, _) = make_backend(24, 80);
     backend.write(b"hello").unwrap();

@@ -41,6 +41,10 @@ impl TerminalBackend for ChannelBackend {
     fn deinit(&mut self) {}
 
     fn poll(&mut self, duration: Duration) -> Result<bool, RiftError> {
+        if self.pending_event.is_some() {
+            return Ok(true);
+        }
+
         match self.input_rx.recv_timeout(duration) {
             Ok(InputEvent::Resize(cols, rows)) => {
                 self.size = Size { rows, cols };
