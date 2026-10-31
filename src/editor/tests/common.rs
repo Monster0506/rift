@@ -25,7 +25,10 @@ pub(super) fn render_ascii(editor: &mut Editor<MockTerminal>) -> String {
         .join("\n")
 }
 
-pub(super) fn ring_text(editor: &Editor<MockTerminal>, index: usize) -> Option<String> {
+pub(super) fn ring_text<T: crate::term::TerminalBackend>(
+    editor: &Editor<T>,
+    index: usize,
+) -> Option<String> {
     editor.clipboard_ring.get(index).map(|clip| {
         clip.text()
             .iter()
@@ -227,4 +230,77 @@ pub(super) fn compositor_ascii<T: crate::term::TerminalBackend>(editor: &mut Edi
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+pub(super) struct KeyQueue {
+    inner: MockTerminal,
+    queue: std::collections::VecDeque<crate::key::Key>,
+}
+
+impl crate::term::TerminalBackend for KeyQueue {
+    fn init(&mut self) -> Result<(), crate::error::RiftError> {
+        self.inner.init()
+    }
+    fn deinit(&mut self) {
+        self.inner.deinit();
+    }
+    fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, crate::error::RiftError> {
+        Ok(!self.queue.is_empty())
+    }
+    fn read_event(&mut self) -> Result<Option<crate::key::InputEvent>, crate::error::RiftError> {
+        Ok(self.queue.pop_front().map(crate::key::InputEvent::Key))
+    }
+    fn write(&mut self, bytes: &[u8]) -> Result<(), crate::error::RiftError> {
+        self.inner.write(bytes)
+    }
+    fn flush(&mut self) -> Result<(), crate::error::RiftError> {
+        self.inner.flush()
+    }
+    fn get_size(&self) -> Result<crate::term::Size, crate::error::RiftError> {
+        self.inner.get_size()
+    }
+    fn clear_screen(&mut self) -> Result<(), crate::error::RiftError> {
+        self.inner.clear_screen()
+    }
+    fn move_cursor(&mut self, row: u16, col: u16) -> Result<(), crate::error::RiftError> {
+        self.inner.move_cursor(row, col)
+    }
+    fn hide_cursor(&mut self) -> Result<(), crate::error::RiftError> {
+        self.inner.hide_cursor()
+    }
+    fn show_cursor(&mut self) -> Result<(), crate::error::RiftError> {
+        self.inner.show_cursor()
+    }
+    fn clear_to_end_of_line(&mut self) -> Result<(), crate::error::RiftError> {
+        self.inner.clear_to_end_of_line()
+    }
+    fn set_cursor_shape(
+        &mut self,
+        shape: crate::term::CursorShape,
+    ) -> Result<(), crate::error::RiftError> {
+        self.inner.set_cursor_shape(shape)
+    }
+}
+
+pub(super) fn editor_with_text(text: &str) -> Editor<KeyQueue> {
+    let term = KeyQueue {
+        inner: MockTerminal::new(24, 80),
+        queue: std::collections::VecDeque::new(),
+    };
+    let mut editor = Editor::new(term).unwrap();
+    let doc = editor.active_document();
+    doc.buffer.insert_str(text).unwrap();
+    doc.buffer.move_to_start();
+    editor
+}
+
+pub(super) fn press(editor: &mut Editor<KeyQueue>, keys: &[crate::key::Key]) {
+    editor.term.queue.extend(keys.iter().copied());
+    while editor.term.poll(std::time::Duration::ZERO).unwrap() {
+        editor.tick().unwrap();
+    }
+}
+
+pub(super) fn keys(seq: &str) -> Vec<crate::key::Key> {
+    crate::key::notation::parse_key_sequence(seq).unwrap()
 }

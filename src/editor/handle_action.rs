@@ -380,6 +380,9 @@ impl<T: TerminalBackend> Editor<T> {
                         return true;
                     }
                 }
+                if self.active_doc_is(crate::document::Document::is_read_only) {
+                    return false;
+                }
                 let count = if self.pending_count > 0 {
                     self.pending_count
                 } else {
@@ -873,6 +876,25 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_paste_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
             EditorAction::Put { before } => {
+                if self.active_doc_is(crate::document::Document::is_clipboard_index) {
+                    let Some(register) = self.clipboard_panel_register.clone() else {
+                        return false;
+                    };
+                    if let Some(rows) = register.rows {
+                        use crate::document::clipboard::ClipboardSide;
+                        let side = if *before {
+                            ClipboardSide::Before
+                        } else {
+                            ClipboardSide::After
+                        };
+                        return self
+                            .document_manager
+                            .active_document_mut()
+                            .is_some_and(|doc| doc.put_clipboard_rows(&rows, side));
+                    }
+                    return self.insert_text_at_cursor(&register.clip, *before);
+                }
+
                 if self.current_mode.is_visual() {
                     let register = if *before {
                         PutRegister::Preserve
@@ -881,7 +903,6 @@ impl<T: TerminalBackend> Editor<T> {
                     };
                     return self.replace_visual_selection(register);
                 }
-
                 let active_doc_id = self.document_manager.active_document_id();
                 let cursor_before_resolve = self
                     .document_manager

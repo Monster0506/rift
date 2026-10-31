@@ -1,3 +1,4 @@
+pub(crate) mod clipboard;
 pub(crate) mod definitions;
 mod edit;
 pub(crate) mod factories;
@@ -571,6 +572,9 @@ impl Document {
         self.buffer_kind_id() == BufferKindId::CLIPBOARD_ENTRY
     }
 
+    pub(crate) fn is_clipboard_index(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::CLIPBOARD
+    }
     pub(crate) fn is_any_clipboard(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::CLIPBOARD
             || self.buffer_kind_id() == BufferKindId::CLIPBOARD_ENTRY
@@ -653,9 +657,7 @@ impl Document {
     state_get!(pub(crate) fn clipboard_entries(&self) -> &[crate::clipboard::Clip] = CLIPBOARD_STATE_KEY, |s| s.entries.as_slice());
 
     pub(crate) fn clipboard_entry(&self, idx: usize) -> Option<&[crate::character::Character]> {
-        self.state
-            .try_get(CLIPBOARD_STATE_KEY)
-            .and_then(|s| s.entries.get(idx).map(crate::clipboard::Clip::text))
+        self.clipboard_clip(idx).map(crate::clipboard::Clip::text)
     }
 
     state_get!(pub(crate) fn clipboard_entry_index(&self) -> Option<usize> = CLIPBOARD_ENTRY_STATE_KEY, |s| s.entry_index);

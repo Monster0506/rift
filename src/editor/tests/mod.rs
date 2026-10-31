@@ -5,6 +5,7 @@ mod common;
 #[cfg(feature = "treesitter")]
 mod bench_harness;
 mod buffer_nav_tests;
+mod clipboard_preview_tests;
 mod directory_target_tests;
 mod display_map_tests;
 mod editor_lsp_tests;
@@ -29,6 +30,7 @@ mod sweep_jobsterm;
 mod sweep_lines;
 mod sweep_modes_found;
 mod sweep_opgrammar;
+mod sweep_panels;
 mod sweep_registers;
 #[cfg(feature = "treesitter")]
 mod syntax_treesitter_tests;

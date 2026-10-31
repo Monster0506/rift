@@ -383,6 +383,15 @@ impl Document {
 
     /// # Errors
     /// Propagates the error from `TextBuffer::new`.
+    pub(crate) fn new_clipboard_preview(id: super::DocumentId) -> Result<Self, RiftError> {
+        let mut doc = Self::new_scratch(id, "[Clipboard:preview]".to_string(), &[])?;
+        doc.options.show_line_numbers = false;
+        doc.set_read_only(true);
+        Ok(doc)
+    }
+
+    /// # Errors
+    /// Propagates the error from `TextBuffer::new`.
     pub(crate) fn new_git_status(
         id: super::DocumentId,
         repo_root: PathBuf,

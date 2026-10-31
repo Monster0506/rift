@@ -383,32 +383,38 @@ impl Document {
         &mut self,
         entries: &std::collections::VecDeque<crate::clipboard::Clip>,
     ) {
-        use crate::color::Color;
-
         let mut content = String::new();
-        let mut highlights: Vec<(std::ops::Range<usize>, Color)> = Vec::new();
-
+        let mut closings = Vec::with_capacity(entries.len());
+        let mut highlights = Vec::with_capacity(entries.len());
         if entries.is_empty() {
-            content.push_str("(empty)");
+            content.push_str(super::clipboard::EMPTY_LABEL);
         } else {
-            for (i, _) in entries.iter().enumerate() {
-                let label = format!("[{i}]");
+            for (index, _) in entries.iter().enumerate() {
                 let start = content.len();
-                content.push_str(&label);
-                highlights.push((start..content.len(), Color::Cyan));
+                let _ = write!(content, "[{index}]");
+                highlights.push((start..content.len(), crate::color::Color::Cyan));
+                closings.push(content.len() - 1);
                 content.push('\n');
             }
-            if content.ends_with('\n') {
-                content.pop();
-            }
+            content.pop();
         }
 
         self.replace_buffer_content(&content);
         self.custom_highlights = highlights;
+        self.annotations
+            .clear_by_kind_prefix(super::clipboard::ROW_KIND);
+        for (source, closing) in closings.into_iter().enumerate() {
+            self.track_clipboard_row(closing, source, source);
+        }
         let Some(state) = self.state.try_get_mut(CLIPBOARD_STATE_KEY) else {
             return;
         };
         state.entries = entries.iter().cloned().collect();
+        state.inserted.clear();
+        self.history = crate::history::UndoTree::new();
+        self.annotation_undo_stack.clear();
+        self.annotation_redo_stack.clear();
+        self.pending_annotation_snapshot = None;
         self.history.mark_saved();
     }
 
@@ -498,32 +504,6 @@ impl Document {
         }
         self.replace_buffer_content(&content);
         self.history.mark_saved();
-    }
-
-    pub(crate) fn parse_clipboard_order(&self) -> Vec<usize> {
-        let Some(entries_len) = self
-            .state
-            .try_get(CLIPBOARD_STATE_KEY)
-            .map(|state| state.entries.len())
-        else {
-            return Vec::new();
-        };
-
-        let content = self.buffer.to_string();
-        let mut order = Vec::new();
-
-        for line in content.lines() {
-            let line = line.trim();
-            if let Some(inner) = line.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
-                if let Ok(idx) = inner.parse::<usize>() {
-                    if idx < entries_len {
-                        order.push(idx);
-                    }
-                }
-            }
-        }
-
-        order
     }
 
     pub(crate) fn parse_directory_diff(&self) -> DirectoryDiff {

@@ -200,6 +200,22 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn close_split_panel(&mut self) {
+        if self.panel_layout.as_ref().is_some_and(|layout| {
+            layout.kind == PanelKind::Clipboard
+                && [layout.dir_doc_id, layout.preview_doc_id]
+                    .into_iter()
+                    .any(|id| {
+                        self.document_manager
+                            .get_document(id)
+                            .is_some_and(crate::document::Document::is_dirty)
+                    })
+        }) {
+            self.state.notify(
+                crate::notification::NotificationType::Error,
+                "Clipboard has unsaved edits; save or undo them before closing".to_string(),
+            );
+            return;
+        }
         let Some(layout) = self.panel_layout.take() else {
             return;
         };
@@ -299,7 +315,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.document_manager.add_private_document(index_doc);
 
         let preview_doc_id = self.document_manager.next_id();
-        let preview_doc = match crate::document::Document::new_clipboard(preview_doc_id) {
+        let preview_doc = match crate::document::Document::new_clipboard_preview(preview_doc_id) {
             Ok(d) => d,
             Err(e) => {
                 self.state.handle_error(e);
@@ -522,14 +538,7 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let cursor = doc.buffer.cursor();
             let line_num = doc.buffer.line_index.get_line_at(cursor);
-            let line_bytes = doc.buffer.get_line_bytes(line_num);
-            let line_text = String::from_utf8_lossy(&line_bytes);
-            let line_text = line_text.trim();
-
-            let idx = line_text
-                .strip_prefix('[')
-                .and_then(|r| r.strip_suffix(']'))
-                .and_then(|inner| inner.parse::<usize>().ok());
+            let idx = doc.clipboard_source_at(line_num);
 
             let text = idx
                 .and_then(|index| doc.clipboard_entry(index))
@@ -540,6 +549,13 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         if let Some(preview) = self.document_manager.get_document_mut(preview_doc_id) {
+            if preview.is_dirty() {
+                return;
+            }
+            preview.convert_to_scratch("[Clipboard:preview]".to_string());
+            preview.set_read_only(true);
+            preview.selection_set.clear();
+            preview.history = crate::history::UndoTree::new();
             let old_revision = preview.buffer.revision;
             if let Ok(mut new_buf) = crate::buffer::TextBuffer::new(entry_text.len().max(64)) {
                 new_buf.insert_chars(&entry_text);
@@ -553,45 +569,61 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    pub(super) fn apply_clipboard_diff(&mut self) {
-        let (entries_snapshot, order) = {
-            let Some(doc) = self.document_manager.active_document() else {
-                return;
-            };
-            let Some(entries) = doc
-                .clipboard_entries()
-                .map(<[crate::clipboard::Clip]>::to_vec)
-            else {
-                return;
-            };
-            let order = doc.parse_clipboard_order();
-            (entries, order)
+    pub(super) fn apply_clipboard_diff(&mut self) -> crate::document::runtime::SaveResult {
+        use crate::document::runtime::SaveResult;
+
+        if self.panel_layout.as_ref().is_some_and(|layout| {
+            layout.kind == PanelKind::Clipboard
+                && self
+                    .document_manager
+                    .get_document(layout.preview_doc_id)
+                    .is_some_and(|preview| preview.is_clipboard_entry() && preview.is_dirty())
+        }) {
+            self.state.notify(
+                crate::notification::NotificationType::Error,
+                "Save clipboard entry edits before changing stack order".to_string(),
+            );
+            return SaveResult::Failed;
+        }
+        let Some(doc) = self.document_manager.active_document() else {
+            return SaveResult::Rejected;
+        };
+        let snapshot_matches = doc
+            .clipboard_entries()
+            .is_some_and(|entries| entries.iter().eq(self.clipboard_ring.entries().iter()));
+        let parsed = doc.parse_clipboard_entries();
+        let cursor_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
+        let capacity = self.clipboard_ring.capacity();
+        let Some(entries) = parsed.filter(|entries| snapshot_matches && entries.len() <= capacity)
+        else {
+            self.state.notify(
+                crate::notification::NotificationType::Error,
+                "Clipboard index is invalid, stale, or exceeds capacity; nothing changed"
+                    .to_string(),
+            );
+            return SaveResult::Failed;
         };
 
-        let new_entries: std::collections::VecDeque<crate::clipboard::Clip> = order
-            .into_iter()
-            .filter_map(|i| entries_snapshot.get(i).cloned())
-            .collect();
-
-        self.clipboard_ring = {
-            let mut ring = crate::clipboard::ClipboardRing::new();
-            for entry in new_entries.into_iter().rev() {
-                ring.push(entry);
-            }
-            ring
-        };
-
+        let mut ring = crate::clipboard::ClipboardRing::new();
+        ring.set_capacity(capacity);
+        for entry in entries.into_iter().rev() {
+            ring.push(entry);
+        }
+        self.clipboard_ring = ring;
         if let Some(doc) = self.document_manager.active_document_mut() {
             doc.populate_clipboard_buffer(self.clipboard_ring.entries());
+            let line = cursor_line.min(doc.buffer.get_total_lines().saturating_sub(1));
+            let cursor = doc.buffer.line_index.get_start(line).unwrap_or(0);
+            let _ = doc.buffer.set_cursor(cursor);
         }
 
         self.state.notify(
             crate::notification::NotificationType::Info,
             format!("{} clipboard entries", self.clipboard_ring.len()),
         );
-
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
+        SaveResult::Saved
     }
 
     pub(super) fn open_undotree_split(&mut self) {

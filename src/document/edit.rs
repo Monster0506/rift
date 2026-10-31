@@ -66,7 +66,9 @@ impl Document {
     /// # Errors
     /// Propagates any error from the text buffer insert.
     pub(crate) fn insert_char(&mut self, ch: char) -> Result<(), RiftError> {
-        if self.is_read_only() {
+        if self.is_read_only()
+            || !self.clipboard_insert_allowed(self.buffer.cursor(), std::iter::once(ch))
+        {
             return Ok(());
         }
         let inserting_newline = ch == '\n';
@@ -131,6 +133,9 @@ impl Document {
     /// # Errors
     /// Propagates any error from the text buffer insert.
     pub(crate) fn insert_str(&mut self, s: &str) -> Result<(), RiftError> {
+        if !self.clipboard_insert_allowed(self.buffer.cursor(), s.chars()) {
+            return Ok(());
+        }
         let newline_count = s.chars().filter(|&c| c == '\n').count();
         let line_before_insert = if newline_count > 0 {
             Some(self.buffer.get_line())
@@ -195,7 +200,12 @@ impl Document {
     }
 
     pub(crate) fn insert_characters(&mut self, chars: &[Character]) {
-        if self.is_read_only() {
+        if self.is_read_only()
+            || !self.clipboard_insert_allowed(
+                self.buffer.cursor(),
+                chars.iter().copied().map(Character::to_char_lossy),
+            )
+        {
             return;
         }
         let newline_count = chars
@@ -285,7 +295,7 @@ impl Document {
             return false;
         }
         let cursor = self.buffer.cursor();
-        if cursor == 0 {
+        if cursor == 0 || !self.clipboard_delete_allowed(cursor - 1, cursor) {
             return false;
         }
 
@@ -351,7 +361,7 @@ impl Document {
             return false;
         }
         let cursor = self.buffer.cursor();
-        if cursor >= self.buffer.len() {
+        if cursor >= self.buffer.len() || !self.clipboard_delete_allowed(cursor, cursor + 1) {
             return false;
         }
 
@@ -421,7 +431,13 @@ impl Document {
         new_chars: &[Character],
     ) -> Result<(), RiftError> {
         use crate::buffer::api::BufferView;
-        if self.is_read_only() {
+        if self.is_read_only()
+            || !self.clipboard_delete_allowed(pos, pos.saturating_add(count))
+            || !self.clipboard_insert_allowed(
+                pos,
+                new_chars.iter().copied().map(Character::to_char_lossy),
+            )
+        {
             return Ok(());
         }
         let end = pos + count;
@@ -505,7 +521,7 @@ impl Document {
     /// Returns an `Internal` error when `end` is past the end of the buffer.
     pub(crate) fn delete_range(&mut self, start: usize, end: usize) -> Result<(), RiftError> {
         use crate::buffer::api::BufferView;
-        if start >= end {
+        if start >= end || !self.clipboard_delete_allowed(start, end) {
             return Ok(());
         }
 

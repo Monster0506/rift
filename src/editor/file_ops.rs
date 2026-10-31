@@ -21,15 +21,13 @@ fn save_commit_message<T: TerminalBackend>(
 fn save_clipboard<T: TerminalBackend>(
     editor: &mut Editor<T>,
 ) -> crate::document::runtime::SaveResult {
-    editor.apply_clipboard_diff();
-    crate::document::runtime::SaveResult::Saved
+    editor.apply_clipboard_diff()
 }
 
 fn save_clipboard_entry<T: TerminalBackend>(
     editor: &mut Editor<T>,
 ) -> crate::document::runtime::SaveResult {
-    editor.apply_clipboard_entry_save();
-    crate::document::runtime::SaveResult::Saved
+    editor.apply_clipboard_entry_save()
 }
 
 fn save_rebase<T: TerminalBackend>(editor: &mut Editor<T>) -> crate::document::runtime::SaveResult {

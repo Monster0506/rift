@@ -118,6 +118,12 @@ fn resolve_wrap_params(
     Some((w, doc.options.tab_width))
 }
 
+#[derive(Clone)]
+struct ClipboardPanelRegister {
+    clip: crate::clipboard::Clip,
+    rows: Option<Vec<crate::clipboard::Clip>>,
+}
+
 fn resolve_display_map(
     doc: &Document,
     content_width: usize,
@@ -177,6 +183,7 @@ pub struct Editor<T: TerminalBackend> {
     plugin_host: crate::plugin::PluginHost,
     clipboard_ring: crate::clipboard::ClipboardRing,
     system_clipboard_cache: crate::clipboard::SystemClipboardCache,
+    clipboard_panel_register: Option<ClipboardPanelRegister>,
     post_paste_state: Option<PostPasteState>,
     pending_cursor_entry: Option<String>,
     file_load_jobs: std::collections::HashMap<usize, crate::document::DocumentId>,

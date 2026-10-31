@@ -38,6 +38,12 @@ impl<T: TerminalBackend> Editor<T> {
         self.pending_operator = None;
         self.pending_operator_count = 0;
         self.pending_count = 0;
+        if op != crate::action::OperatorType::Yank
+            && self.active_doc_is(crate::document::Document::is_read_only)
+        {
+            self.set_mode(Mode::Normal);
+            return false;
+        }
 
         let viewport_height = self.render_system.viewport.visible_rows();
         let last_search_query = self.state.last_search_query.clone();
@@ -123,7 +129,19 @@ impl<T: TerminalBackend> Editor<T> {
         let clip = clip?;
         let cut = (op == crate::action::OperatorType::Delete).then(|| clip.clone());
         let in_clipboard = self.active_doc_is(super::super::document::Document::is_any_clipboard);
-        if !in_clipboard && !clip.text().is_empty() {
+        if self.active_doc_is(super::super::document::Document::is_clipboard_index) {
+            let rows = if clip.kind() == crate::wrap::RangeKind::Linewise {
+                self.document_manager
+                    .active_document()
+                    .and_then(|doc| doc.clipboard_row_clips(&clip))
+            } else {
+                None
+            };
+            self.clipboard_panel_register = Some(super::ClipboardPanelRegister {
+                clip: clip.clone(),
+                rows,
+            });
+        } else if !in_clipboard && !clip.text().is_empty() {
             self.clipboard_ring.push(clip);
             self.refresh_clipboard_buffer_if_open();
         }
@@ -192,6 +210,12 @@ impl<T: TerminalBackend> Editor<T> {
             .saturating_mul(self.pending_count.max(1));
         self.pending_operator_count = 0;
         self.pending_count = 0;
+        if op != crate::action::OperatorType::Yank
+            && self.active_doc_is(crate::document::Document::is_read_only)
+        {
+            self.set_mode(Mode::Normal);
+            return false;
+        }
 
         let captured = self
             .document_manager

@@ -141,6 +141,7 @@ impl<T: TerminalBackend> Editor<T> {
             plugin_host: crate::plugin::PluginHost::new(25),
             clipboard_ring: crate::clipboard::ClipboardRing::new(),
             system_clipboard_cache: crate::clipboard::SystemClipboardCache::new(),
+            clipboard_panel_register: None,
             post_paste_state: None,
             pending_cursor_entry: None,
             file_load_jobs: std::collections::HashMap::new(),

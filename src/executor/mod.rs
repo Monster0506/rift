@@ -390,6 +390,10 @@ fn change_motion_cmd(
 
 /// Delete `count` whole lines (`DeleteLine`).
 fn delete_line_cmd(doc: &mut Document, count: usize) {
+    if doc.is_clipboard_index() {
+        doc.delete_clipboard_rows(count);
+        return;
+    }
     doc.begin_transaction("DeleteLine");
     doc.buffer.move_to_line_start();
     let start = doc.buffer.cursor();
