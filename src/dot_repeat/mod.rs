@@ -8,10 +8,11 @@ use crate::command::Command;
 pub(crate) enum DotRegister {
     /// A single normal-mode command (e.g. `x`, `dd`, `dw`)
     Single(Command),
-    /// An insert session: entry command + all commands typed during the session
+    /// An insert session, optionally entered by rebuilding and changing regions.
     InsertSession {
         entry: Command,
         commands: Vec<Command>,
+        region_actions: Vec<crate::action::Action>,
     },
     /// Selection-building actions (`v`/motion/`Esc`, `m`/`M`) that built a `SelectionSet`,
     /// plus a follow-up: `Some` re-runs that action; `None` stops with the set banked.
@@ -25,6 +26,7 @@ pub(crate) enum DotRegister {
 struct InsertRecording {
     entry: Command,
     commands: Vec<Command>,
+    region_actions: Vec<crate::action::Action>,
 }
 
 /// Owns all dot-repeat state: the saved register, any in-progress
@@ -69,9 +71,18 @@ impl DotRepeat {
 
     pub(crate) fn record_region_build_session(
         &mut self,
-        actions: Vec<crate::action::Action>,
+        mut actions: Vec<crate::action::Action>,
         follow_up: Option<crate::action::Action>,
     ) {
+        if let Some(recording) = &mut self.recording {
+            if let Some(follow_up) = follow_up {
+                if actions.last() != Some(&follow_up) {
+                    actions.push(follow_up);
+                }
+            }
+            recording.region_actions = actions;
+            return;
+        }
         self.register = Some(DotRegister::RegionBuildSession { actions, follow_up });
     }
 
@@ -79,6 +90,7 @@ impl DotRepeat {
         self.recording = Some(InsertRecording {
             entry,
             commands: Vec::new(),
+            region_actions: Vec::new(),
         });
     }
 
@@ -96,10 +108,11 @@ impl DotRepeat {
 
     pub(crate) fn finish_insert_recording(&mut self) {
         if let Some(rec) = self.recording.take() {
-            if !rec.commands.is_empty() {
+            if !rec.commands.is_empty() || !rec.region_actions.is_empty() {
                 self.register = Some(DotRegister::InsertSession {
                     entry: rec.entry,
                     commands: rec.commands,
+                    region_actions: rec.region_actions,
                 });
             }
         }

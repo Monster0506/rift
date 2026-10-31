@@ -25,9 +25,8 @@ fn fill_runs(buf: &crate::buffer::TextBuffer, region: &Region) -> Vec<(usize, us
     use crate::buffer::api::BufferView;
 
     let (start, end) = region.buffer_span(buf);
-    if region.kind != RangeKind::Linewise {
-        return vec![(start, end.saturating_sub(start))];
-    }
+    let start = start.min(buf.len());
+    let end = end.min(buf.len());
 
     let mut runs = Vec::new();
     let mut run_start = start;
@@ -227,6 +226,9 @@ impl<T: TerminalBackend> Editor<T> {
     where
         F: FnMut(&mut crate::document::Document, crate::selection::Region) -> usize,
     {
+        if self.active_doc_is(Document::is_read_only) {
+            return false;
+        }
         let anchors: Vec<usize> = {
             let Some(doc) = self.document_manager.active_document_mut() else {
                 return false;
@@ -348,25 +350,52 @@ impl<T: TerminalBackend> Editor<T> {
         if is_empty {
             return false;
         }
+        if op != OperatorType::Yank && self.active_doc_is(Document::is_read_only) {
+            return true;
+        }
 
         match op {
             OperatorType::Delete => self.run_set_delete(),
-            OperatorType::Yank => self.apply_to_each_region(|editor, region| {
-                let Some(doc) = editor.document_manager.active_document() else {
-                    return false;
-                };
-                editor
-                    .clipboard_ring
-                    .push(region_clip(&doc.buffer, &region));
-                true
-            }),
+            OperatorType::Yank => {
+                let handled = self.apply_to_each_region(|editor, region| {
+                    let Some(doc) = editor.document_manager.active_document() else {
+                        return false;
+                    };
+                    editor
+                        .clipboard_ring
+                        .push(region_clip(&doc.buffer, &region));
+                    true
+                });
+                self.refresh_clipboard_buffer_if_open();
+                handled
+            }
             OperatorType::Change => {
                 use crate::command::Command;
-                self.enter_multi_insert(Command::EnterInsertMode, |doc, region| {
+                let mut clips = Vec::new();
+                let handled = self.enter_multi_insert(Command::EnterInsertMode, |doc, region| {
+                    clips.push(region_clip(&doc.buffer, &region));
                     let (start, end) = region.buffer_span(&doc.buffer);
-                    let _ = doc.delete_range(start, end);
+                    let start = start.min(doc.buffer.len());
+                    let mut end = end.min(doc.buffer.len());
+                    if region.kind == RangeKind::Linewise {
+                        let last_line = doc
+                            .buffer
+                            .line_index
+                            .get_line_at(region.anchor.max(region.cursor));
+                        if last_line + 1 < doc.buffer.get_total_lines() {
+                            end = end.saturating_sub(1).max(start);
+                        }
+                    }
+                    if start < end {
+                        let _ = doc.delete_range(start, end);
+                    }
                     start
-                })
+                });
+                for clip in clips {
+                    self.clipboard_ring.push(clip);
+                }
+                self.refresh_clipboard_buffer_if_open();
+                handled
             }
         }
     }
@@ -381,7 +410,7 @@ impl<T: TerminalBackend> Editor<T> {
         if batch.is_empty() {
             return false;
         }
-        let (clips, ranges): (Vec<Clip>, Vec<(usize, usize)>) = {
+        let (clips, mut ranges): (Vec<Clip>, Vec<(usize, usize)>) = {
             let Some(doc) = self.document_manager.active_document() else {
                 return false;
             };
@@ -389,7 +418,8 @@ impl<T: TerminalBackend> Editor<T> {
                 .iter()
                 .filter(|r| {
                     let (s, e) = r.buffer_span(&doc.buffer);
-                    s < e
+                    r.kind == RangeKind::Linewise
+                        || s.min(doc.buffer.len()) < e.min(doc.buffer.len())
                 })
                 .collect();
             let clips = live.iter().map(|r| region_clip(&doc.buffer, r)).collect();
@@ -397,14 +427,16 @@ impl<T: TerminalBackend> Editor<T> {
                 .iter()
                 .map(|r| {
                     let (start, end) = r.delete_span(&doc.buffer);
-                    (start, end, start < r.buffer_span(&doc.buffer).0)
+                    (
+                        start.min(doc.buffer.len()),
+                        end.min(doc.buffer.len()),
+                        start < r.buffer_span(&doc.buffer).0,
+                    )
                 })
                 .collect();
             (clips, merge_spans(spans))
         };
-        if ranges.is_empty() {
-            return false;
-        }
+        ranges.retain(|&(start, end)| start < end);
         let ghost_allowed = self
             .document_manager
             .active_document()
@@ -415,6 +447,9 @@ impl<T: TerminalBackend> Editor<T> {
             self.clipboard_ring.push(clip);
         }
         self.refresh_clipboard_buffer_if_open();
+        if ranges.is_empty() {
+            return true;
+        }
         if let Some(ghost_clip) = ghost_clip {
             let cursor_target = ranges.iter().map(|&(s, _)| s).min();
             let ghosted_doc = self.document_manager.active_document_mut().map(|doc| {
@@ -598,6 +633,7 @@ impl<T: TerminalBackend> Editor<T> {
         else {
             return;
         };
+        let was_replaying = self.dot_repeat.is_replaying();
         self.dot_repeat.set_replaying(true);
         for anchor in anchors {
             if let Some(doc) = self.document_manager.active_document_mut() {
@@ -607,7 +643,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.execute_buffer_command(cmd);
             }
         }
-        self.dot_repeat.set_replaying(false);
+        self.dot_repeat.set_replaying(was_replaying);
     }
 
     pub(super) fn finish_region_build(&mut self, follow_up: Option<crate::action::Action>) {

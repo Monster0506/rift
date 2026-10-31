@@ -383,6 +383,8 @@ pub enum EditorAction {
     },
     /// Enter char-pending state for r (next keypress replaces count chars at cursor)
     ReplaceCharPending,
+    /// Replace the selected characters with a resolved Visual `r` argument.
+    ReplaceSelection(char),
     /// Enter Replace mode (R: each char overwrites instead of inserting)
     EnterReplaceMode,
     /// LSP: go to definition under cursor (gd)
@@ -424,6 +426,8 @@ pub enum EditorAction {
     EnterVisualBlock,
     /// `o`/`O` in Visual: swap which end (anchor vs cursor) is active.
     VisualSwapEnds,
+    /// Visual uppercase operator: apply to whole selected lines.
+    VisualLineOp(OperatorType),
     /// `m` (Normal): bank the next occurrence of the last-banked region's text.
     RegionBankOccurrenceNext,
     /// `M` (Normal): bank the previous occurrence of the last-banked region's text.

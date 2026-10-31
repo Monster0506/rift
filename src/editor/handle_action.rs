@@ -9,6 +9,11 @@ use crate::mode::Mode;
 use crate::search::SearchDirection;
 use crate::term::TerminalBackend;
 
+enum PutRegister {
+    Replace,
+    Preserve,
+}
+
 pub(super) type NativeActionHandler<T> = fn(&mut Editor<T>, &str);
 
 pub(super) fn native_action_handlers<T: TerminalBackend>(
@@ -670,6 +675,13 @@ impl<T: TerminalBackend> Editor<T> {
                 self.perform_search(&pattern, SearchDirection::Forward, false);
                 true
             }
+            EditorAction::VisualLineOp(op) => {
+                if !self.current_mode.is_visual() {
+                    return false;
+                }
+                self.set_mode(Mode::VisualLine);
+                self.handle_operator_action(action, &EditorAction::Operator(*op))
+            }
             EditorAction::Operator(op) => {
                 if let Some(layout) = self.panel_layout.clone() {
                     if layout.kind == crate::editor::PanelKind::Regions {
@@ -679,11 +691,56 @@ impl<T: TerminalBackend> Editor<T> {
                         self.close_split_panel();
                     }
                 }
+                let visual_yank_start = if *op == crate::action::OperatorType::Yank {
+                    self.current_mode.visual_range_kind().and_then(|kind| {
+                        let anchor = self.visual_anchor?;
+                        let doc = self.document_manager.active_document()?;
+                        Some(
+                            crate::selection::Region::new(anchor, doc.buffer.cursor(), kind)
+                                .buffer_span(&doc.buffer)
+                                .0,
+                        )
+                    })
+                } else {
+                    None
+                };
+                let visual_line_delete = self.current_mode == Mode::VisualLine
+                    && *op == crate::action::OperatorType::Delete
+                    && self
+                        .document_manager
+                        .active_document()
+                        .is_some_and(|doc| !doc.is_read_only());
                 if self.current_mode.is_visual() {
                     self.set_mode(Mode::Normal);
                 }
                 if self.try_run_set_aware_operator(*op) {
-                    self.finish_region_build(None);
+                    if let Some(start) = visual_yank_start {
+                        if let Some(doc) = self.document_manager.active_document_mut() {
+                            let _ = doc.buffer.set_cursor(start.min(doc.buffer.len()));
+                        }
+                    }
+                    if visual_line_delete {
+                        if let Some(doc) = self.document_manager.active_document_mut() {
+                            let line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
+                            let start = doc.buffer.line_start(line);
+                            let column = doc
+                                .buffer
+                                .chars(start..doc.buffer.len())
+                                .take_while(|&ch| ch != crate::character::Character::Newline)
+                                .position(|ch| {
+                                    !matches!(
+                                        ch,
+                                        crate::character::Character::Unicode(' ')
+                                            | crate::character::Character::Tab
+                                    )
+                                })
+                                .unwrap_or(0);
+                            let _ = doc.buffer.set_cursor(start + column);
+                        }
+                    }
+                    let follow_up =
+                        (*op == crate::action::OperatorType::Change).then(|| action.clone());
+                    self.finish_region_build(follow_up);
                     return true;
                 }
                 if self.current_mode == Mode::OperatorPending {
@@ -816,6 +873,15 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_paste_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
             EditorAction::Put { before } => {
+                if self.current_mode.is_visual() {
+                    let register = if *before {
+                        PutRegister::Preserve
+                    } else {
+                        PutRegister::Replace
+                    };
+                    return self.replace_visual_selection(register);
+                }
+
                 let active_doc_id = self.document_manager.active_document_id();
                 let cursor_before_resolve = self
                     .document_manager
@@ -901,6 +967,113 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    fn replace_visual_selection(&mut self, register: PutRegister) -> bool {
+        use crate::character::Character;
+        use crate::wrap::RangeKind;
+
+        let Some(anchor) = self.visual_anchor else {
+            return false;
+        };
+        let Some(kind) = self.current_mode.visual_range_kind() else {
+            return false;
+        };
+        let Some(doc) = self.document_manager.active_document() else {
+            return false;
+        };
+        if doc.is_read_only() {
+            return false;
+        }
+        let clip = self
+            .document_manager
+            .most_recent_ghost_doc()
+            .and_then(|id| self.document_manager.get_document(id))
+            .and_then(|doc| doc.most_recent_ghost())
+            .map(|(_, _, clip)| clip)
+            .or_else(|| self.clipboard_ring.most_recent())
+            .cloned();
+        let Some(clip) = clip else {
+            return false;
+        };
+        self.commit_all_pending_ghosts();
+
+        let count = self.pending_count.max(1);
+        let Some(doc) = self.document_manager.active_document_mut() else {
+            return false;
+        };
+        let cursor = doc.buffer.cursor();
+        let region = crate::selection::Region::new(anchor, cursor, kind);
+        // Replacement keeps the separator before a final line, unlike a line deletion.
+        let (start, end) = region.buffer_span(&doc.buffer);
+        let start = start.min(doc.buffer.len());
+        let end = end.min(doc.buffer.len());
+        let selected = matches!(register, PutRegister::Replace).then(|| {
+            crate::clipboard::capture_text(
+                &doc.buffer,
+                &crate::wrap::MotionRange {
+                    anchor,
+                    new_cursor: cursor,
+                    kind,
+                    inclusive: true,
+                },
+            )
+        });
+        let target_linewise = kind == RangeKind::Linewise;
+        let source_linewise = clip.kind() == RangeKind::Linewise;
+        let last_selected_line = doc.buffer.line_index.get_line_at(anchor.max(cursor));
+        let has_following_line = last_selected_line + 1 < doc.buffer.get_total_lines();
+        let text = if target_linewise && source_linewise && !has_following_line {
+            clip.text()
+                .strip_suffix(&[Character::Newline])
+                .unwrap_or_else(|| clip.text())
+        } else {
+            clip.text()
+        };
+
+        let _ = doc.buffer.set_cursor(start);
+        doc.begin_transaction("Put");
+        let _ = doc.delete_range(start, end);
+        if source_linewise && !target_linewise {
+            doc.insert_characters(&[Character::Newline]);
+        }
+        let inserted_start = doc.buffer.cursor();
+        for _ in 1..count {
+            doc.insert_characters(clip.text());
+        }
+        doc.insert_characters(text);
+        if target_linewise && !source_linewise && has_following_line {
+            doc.insert_characters(&[Character::Newline]);
+        }
+        let inserted_cursor = if target_linewise || source_linewise {
+            let first_line_end = text
+                .iter()
+                .position(|&ch| ch == Character::Newline)
+                .unwrap_or(text.len());
+            let first_nonblank = text[..first_line_end]
+                .iter()
+                .position(|&ch| !matches!(ch, Character::Unicode(' ') | Character::Tab))
+                .unwrap_or_else(|| first_line_end.saturating_sub(1));
+            inserted_start + first_nonblank
+        } else if text.contains(&Character::Newline) {
+            inserted_start
+        } else {
+            doc.buffer.cursor().saturating_sub(1)
+        };
+        let _ = doc.buffer.set_cursor(inserted_cursor.min(doc.buffer.len()));
+        doc.buffer.clear_desired_col();
+        doc.selection_set.clear();
+        doc.commit_transaction();
+
+        if let Some(selected) = selected {
+            self.clipboard_ring.push(selected);
+            self.refresh_clipboard_buffer_if_open();
+        }
+        self.post_paste_state = None;
+        self.visual_anchor = None;
+        self.set_mode(Mode::Normal);
+        self.do_incremental_syntax_parse();
+        true
+    }
+
     fn handle_misc_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
             EditorAction::PutSystemClipboard { before } => {
@@ -947,6 +1120,8 @@ impl<T: TerminalBackend> Editor<T> {
                 });
                 true
             }
+
+            EditorAction::ReplaceSelection(ch) => self.replace_selection(*ch),
 
             EditorAction::ReplaceCharPending => {
                 self.pending_grammar = Some(super::pending_grammar::PendingGrammar::ReplaceChar);

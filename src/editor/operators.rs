@@ -306,18 +306,37 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
             }
-            DotRegister::InsertSession { entry, commands } => {
+            DotRegister::InsertSession {
+                entry,
+                commands,
+                region_actions,
+            } => {
                 for _ in 0..count {
-                    self.handle_mode_management(entry);
+                    if region_actions.is_empty() {
+                        self.handle_mode_management(entry);
+                    } else {
+                        for action in &region_actions {
+                            self.handle_action(action);
+                        }
+                        if self.current_mode != Mode::Insert {
+                            continue;
+                        }
+                    }
 
                     for &cmd in &commands {
                         self.execute_buffer_command(cmd);
                     }
 
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        doc.commit_transaction();
+                    if region_actions.is_empty() {
+                        if let Some(doc) = self.document_manager.active_document_mut() {
+                            doc.commit_transaction();
+                        }
+                        self.set_mode(Mode::Normal);
+                    } else {
+                        self.handle_action(&crate::action::Action::Editor(
+                            crate::action::EditorAction::EnterNormalMode,
+                        ));
                     }
-                    self.set_mode(Mode::Normal);
                 }
             }
             DotRegister::RegionBuildSession { actions, follow_up } => {

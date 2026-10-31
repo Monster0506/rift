@@ -835,6 +835,54 @@ fn register_visual_defaults(keymap: &mut KeyMap) {
     );
     keymap.register(
         KeyContext::Visual,
+        Key::char('x'),
+        Action::Editor(EditorAction::Operator(crate::action::OperatorType::Delete)),
+    );
+    keymap.register(
+        KeyContext::Visual,
+        Key::char('X'),
+        Action::Editor(EditorAction::VisualLineOp(
+            crate::action::OperatorType::Delete,
+        )),
+    );
+    keymap.register(
+        KeyContext::Visual,
+        Key::char('r'),
+        Action::Editor(EditorAction::ReplaceCharPending),
+    );
+    keymap.register(
+        KeyContext::Visual,
+        Key::char('D'),
+        Action::Editor(EditorAction::VisualLineOp(
+            crate::action::OperatorType::Delete,
+        )),
+    );
+    keymap.register(
+        KeyContext::Visual,
+        Key::char('C'),
+        Action::Editor(EditorAction::VisualLineOp(
+            crate::action::OperatorType::Change,
+        )),
+    );
+    keymap.register(
+        KeyContext::Visual,
+        Key::char('Y'),
+        Action::Editor(EditorAction::VisualLineOp(
+            crate::action::OperatorType::Yank,
+        )),
+    );
+    keymap.register(
+        KeyContext::Visual,
+        Key::char('p'),
+        Action::Editor(EditorAction::Put { before: false }),
+    );
+    keymap.register(
+        KeyContext::Visual,
+        Key::char('P'),
+        Action::Editor(EditorAction::Put { before: true }),
+    );
+    keymap.register(
+        KeyContext::Visual,
         Key::char(' '),
         Action::Editor(EditorAction::ExpandRegion),
     );

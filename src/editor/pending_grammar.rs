@@ -49,12 +49,25 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn advance_pending_grammar(&mut self, grammar: PendingGrammar, key: Key) {
         match grammar {
             PendingGrammar::ReplaceChar => {
-                if let Some(ch) = key.text() {
-                    if self.try_run_set_aware_replace_char(ch) {
-                        self.finish_region_build(Some(Action::Editor(
-                            EditorAction::ReplaceCharPending,
-                        )));
-                    } else {
+                if matches!(
+                    self.region_build_recording.last(),
+                    Some(Action::Editor(EditorAction::ReplaceCharPending))
+                ) {
+                    self.region_build_recording.pop();
+                }
+
+                let ch = key.text().or_else(|| {
+                    if !self.current_mode.is_visual() {
+                        return None;
+                    }
+                    match key {
+                        Key::TAB => Some('\t'),
+                        Key::ENTER => Some('\r'),
+                        _ => None,
+                    }
+                });
+                if let Some(ch) = ch {
+                    if !self.handle_action(&Action::Editor(EditorAction::ReplaceSelection(ch))) {
                         let count = if self.pending_count > 0 {
                             self.pending_count
                         } else {
@@ -140,6 +153,43 @@ impl<T: TerminalBackend> Editor<T> {
                 self.pending_count = 0;
             }
         }
+    }
+
+    pub(super) fn replace_selection(&mut self, ch: char) -> bool {
+        let was_visual = self.current_mode.is_visual();
+        let has_regions = self
+            .document_manager
+            .active_document()
+            .is_some_and(|doc| !doc.selection_set.is_empty());
+        if !was_visual && !has_regions {
+            return false;
+        }
+        if self.active_doc_is(crate::document::Document::is_read_only) {
+            return true;
+        }
+
+        let start = self.visual_anchor.and_then(|anchor| {
+            self.document_manager
+                .active_document()
+                .map(|doc| anchor.min(doc.buffer.cursor()).min(doc.buffer.len()))
+        });
+        if was_visual {
+            self.set_mode(Mode::Normal);
+        }
+        if let Some(start) = start {
+            if let Some(doc) = self.document_manager.active_document_mut() {
+                let _ = doc.buffer.set_cursor(start);
+            }
+        }
+        let result = self.try_run_set_aware_replace_char(ch);
+        if let Some(start) = start {
+            if let Some(doc) = self.document_manager.active_document_mut() {
+                let _ = doc.buffer.set_cursor(start);
+            }
+        }
+        let follow_up = (!was_visual).then(|| Action::Editor(EditorAction::ReplaceSelection(ch)));
+        self.finish_region_build(follow_up);
+        result || was_visual
     }
 
     fn advance_surround_verb(&mut self, count: usize, key: Key) {
