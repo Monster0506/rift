@@ -333,7 +333,10 @@ fn move_cmd(
     last_search_query: Option<&str>,
 ) {
     let buf = &mut doc.buffer;
+    let count = count.min(buf.len().max(1));
+
     for _ in 0..count {
+        let before = buf.cursor();
         motion.apply(
             buf,
             display_map.as_deref_mut(),
@@ -341,6 +344,10 @@ fn move_cmd(
             viewport_height,
             last_search_query,
         );
+
+        if buf.cursor() == before {
+            break;
+        }
     }
 }
 
