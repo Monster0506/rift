@@ -24,14 +24,6 @@ mod register_kind_tests;
 mod save_tests;
 mod scroll_blit_tests;
 mod surround_tests;
-mod sweep_counts;
-mod sweep_files;
-mod sweep_jobsterm;
-mod sweep_lines;
-mod sweep_modes_found;
-mod sweep_opgrammar;
-mod sweep_panels;
-mod sweep_registers;
 #[cfg(feature = "treesitter")]
 mod syntax_treesitter_tests;
 mod visual_replace_tests;

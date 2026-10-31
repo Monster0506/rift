@@ -870,3 +870,191 @@ fn dollar_in_normal_mode_rests_on_the_last_character() {
     feed_keys(&mut editor, "j0D");
     assert_eq!(editor.active_document().buffer.to_string(), "abcQ\n\n");
 }
+
+use crate::action::{Action, EditorAction, Motion, OperatorType};
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::time::Duration;
+
+const HUGE_COUNT_DEADLINE: Duration = Duration::from_secs(5);
+const HUGE_COUNT_TEXT: &str = "alpha beta\ngamma delta\nepsilon\n";
+const HUGE_COUNT: usize = usize::MAX;
+const EXHAUSTING_COUNT: usize = 100;
+
+fn run_bounded<F: FnOnce() + Send + 'static>(scenario: F) {
+    let (done_tx, done_rx) = mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        scenario();
+        let _ = done_tx.send(());
+    });
+
+    if let Err(RecvTimeoutError::Timeout) = done_rx.recv_timeout(HUGE_COUNT_DEADLINE) {
+        panic!("scenario did not finish within {HUGE_COUNT_DEADLINE:?}");
+    }
+    if let Err(panic) = handle.join() {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+fn do_act(editor: &mut Editor<crate::test_utils::MockTerminal>, action: EditorAction) {
+    editor.handle_action(&Action::Editor(action));
+}
+
+fn cursor_after_move(motion: Motion, count: usize) -> usize {
+    let mut editor = create_editor();
+    load_text(&mut editor, HUGE_COUNT_TEXT);
+    editor.pending_count = count;
+    do_act(&mut editor, EditorAction::Move(motion));
+    editor.active_document().buffer.cursor()
+}
+
+fn text_after_visual_delete(count: usize) -> String {
+    let mut editor = create_editor();
+    load_text(&mut editor, HUGE_COUNT_TEXT);
+    do_act(&mut editor, EditorAction::EnterVisualChar);
+    editor.pending_count = count;
+    do_act(&mut editor, EditorAction::Move(Motion::Right));
+    do_act(&mut editor, EditorAction::Operator(OperatorType::Delete));
+    editor.active_document().buffer.to_string()
+}
+
+fn text_after_dot_repeat(count: usize) -> String {
+    let mut editor = create_editor();
+    load_text(&mut editor, HUGE_COUNT_TEXT);
+    do_act(&mut editor, EditorAction::Delete(Motion::Right));
+    editor.pending_count = count;
+    do_act(&mut editor, EditorAction::DotRepeat);
+    editor.active_document().buffer.to_string()
+}
+
+#[test]
+fn bug_huge_count_motion_hangs() {
+    run_bounded(|| {
+        for motion in [Motion::Right, Motion::Down, Motion::NextWord] {
+            assert_eq!(
+                cursor_after_move(motion, HUGE_COUNT),
+                cursor_after_move(motion, EXHAUSTING_COUNT),
+                "{motion:?}"
+            );
+        }
+    });
+}
+
+#[test]
+fn bug_huge_count_dot_and_visual_hang() {
+    run_bounded(|| {
+        assert_eq!(
+            text_after_visual_delete(HUGE_COUNT),
+            text_after_visual_delete(EXHAUSTING_COUNT)
+        );
+        assert_eq!(
+            text_after_dot_repeat(HUGE_COUNT),
+            text_after_dot_repeat(EXHAUSTING_COUNT)
+        );
+    });
+}
+
+fn op_text_after(text: &str, op: OperatorType, motion: EditorAction) -> String {
+    let mut editor = create_editor();
+    load_text(&mut editor, text);
+    do_act(&mut editor, EditorAction::Operator(op));
+    do_act(&mut editor, motion);
+    editor.active_document().buffer.to_string()
+}
+
+#[test]
+fn bug_linewise_motion_to_current_line_dropped() {
+    let goto_last = EditorAction::GotoLine(0);
+    let goto_first = EditorAction::Move(Motion::StartOfFile);
+
+    assert_eq!(
+        op_text_after("abc", OperatorType::Delete, goto_last.clone()),
+        ""
+    );
+    assert_eq!(
+        op_text_after("abc\ndef\n", OperatorType::Delete, goto_first),
+        "def\n"
+    );
+    assert_eq!(op_text_after("abc", OperatorType::Change, goto_last), "");
+}
+
+#[test]
+fn failed_vertical_motion_aborts_operator() {
+    let up = EditorAction::Move(Motion::Up);
+    assert_eq!(
+        op_text_after("abc\ndef\n", OperatorType::Delete, up),
+        "abc\ndef\n"
+    );
+}
+
+const LINE_TEXT: &str = "abc\ndef\nghi\n";
+const LAST_LINE_START: usize = 8;
+const LAST_CHAR: usize = 10;
+const TEXT_ROWS: usize = 5;
+
+fn editor_with_line_text(text: &str) -> Editor<crate::test_utils::MockTerminal> {
+    let mut editor = create_editor();
+    load_text(&mut editor, text);
+    editor
+}
+
+fn cursor_after_line_action(text: &str, count: usize, action: EditorAction) -> usize {
+    let mut editor = editor_with_line_text(text);
+    editor.pending_count = count;
+    editor.handle_action(&Action::Editor(action));
+    editor.active_document().buffer.cursor()
+}
+
+fn text_after_line_keys(count: usize, keys: &str) -> String {
+    let mut editor = editor_with_line_text(LINE_TEXT);
+    feed_keys(&mut editor, "G");
+    editor.pending_count = count;
+    feed_keys(&mut editor, keys);
+    editor.active_document().buffer.to_string()
+}
+
+#[test]
+fn bug_trailing_newline_makes_phantom_last_line() {
+    let goto_last = EditorAction::GotoLine(0);
+    let next_paragraph = EditorAction::Move(Motion::NextParagraph);
+
+    assert_eq!(
+        cursor_after_line_action(LINE_TEXT, 0, goto_last.clone()),
+        LAST_LINE_START
+    );
+    assert_eq!(
+        cursor_after_line_action(LINE_TEXT, 99, goto_last),
+        LAST_LINE_START
+    );
+    assert_eq!(
+        cursor_after_line_action(LINE_TEXT, 0, EditorAction::GotoLine(4)),
+        LAST_LINE_START
+    );
+    assert_eq!(
+        cursor_after_line_action(LINE_TEXT, 0, next_paragraph),
+        LAST_CHAR
+    );
+}
+
+#[test]
+fn bug_dd_on_last_line_trailing_newline_deletes_newline_not_text() {
+    assert_eq!(text_after_line_keys(0, "dd"), "abc\ndef\n");
+    assert_eq!(text_after_line_keys(5, "dd"), "abc\ndef\n");
+    assert_eq!(text_after_line_keys(0, "x"), "abc\ndef\nhi\n");
+    assert_eq!(text_after_line_keys(0, "cc"), "abc\ndef\n\n");
+    assert_eq!(text_after_line_keys(5, "cc"), "abc\ndef\n\n");
+}
+
+#[test]
+fn bug_phantom_line_numbered_past_eof() {
+    let mut editor = editor_with_line_text(LINE_TEXT);
+    editor.state.settings.show_line_numbers = true;
+
+    let screen = render_ascii(&mut editor);
+    let numbered: Vec<usize> = screen
+        .lines()
+        .take(TEXT_ROWS)
+        .filter_map(|row| row.split_whitespace().next()?.parse().ok())
+        .collect();
+
+    assert_eq!(numbered, [1, 2, 3], "{screen}");
+}
