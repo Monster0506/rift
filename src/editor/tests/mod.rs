@@ -23,6 +23,8 @@ mod save_tests;
 mod scroll_blit_tests;
 mod surround_tests;
 mod sweep_counts;
+mod sweep_files;
+mod sweep_jobsterm;
 #[cfg(feature = "treesitter")]
 mod syntax_treesitter_tests;
 mod window_split_tests;

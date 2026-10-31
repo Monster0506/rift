@@ -666,7 +666,6 @@ impl DocumentManager {
             .collect()
     }
 
-    #[cfg(test)]
     #[must_use]
     pub(crate) fn has_unsaved_changes(&self) -> bool {
         self.documents.values().any(super::Document::is_dirty)

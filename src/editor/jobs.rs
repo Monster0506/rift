@@ -1045,7 +1045,8 @@ impl<T: TerminalBackend> Editor<T> {
         self.lsp_manager.did_save(&res.path, None);
 
         if self.pending_quit_job_id == Some(id) {
-            self.should_quit = true;
+            self.pending_quit_job_id = None;
+            self.quit_after_save(res.document_id);
         }
 
         self.sync_state_with_active_document();

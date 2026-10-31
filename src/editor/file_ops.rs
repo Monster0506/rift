@@ -366,10 +366,10 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        let Some((doc_id, handle)) = self
+        let Some(handle) = self
             .document_manager
             .active_document()
-            .map(|doc| (doc.id, doc.handle()))
+            .map(crate::document::Document::handle)
         else {
             self.state.clear_command_line();
             return;
@@ -385,13 +385,45 @@ impl<T: TerminalBackend> Editor<T> {
             .get_document_by_handle(handle)
             .is_some()
         {
-            if let Err(e) = self.remove_document(doc_id) {
-                self.state.handle_error(e);
-                return;
-            }
+            self.do_quit(false);
+            return;
+        }
+
+        self.quit_if_alone();
+    }
+
+    fn quit_if_alone(&mut self) {
+        if self.split_tree.window_count() > 1 || self.panel_layout.is_some() {
+            return;
+        }
+
+        if self.document_manager.has_unsaved_changes() {
+            self.state.handle_error(RiftError::warning(
+                ErrorType::Execution,
+                crate::constants::errors::UNSAVED_CHANGES,
+                crate::constants::errors::MSG_UNSAVED_CHANGES,
+            ));
+            return;
         }
 
         self.should_quit = true;
+    }
+
+    pub(super) fn quit_after_save(&mut self, doc_id: crate::document::DocumentId) {
+        let unchanged = self.active_document_id() == doc_id
+            && self
+                .document_manager
+                .get_document(doc_id)
+                .is_some_and(|doc| !doc.is_dirty());
+        if !unchanged {
+            self.state.notify(
+                crate::notification::NotificationType::Warning,
+                "Quit aborted: buffer changed during save".to_string(),
+            );
+            return;
+        }
+
+        self.do_quit(false);
     }
 
     pub(super) fn do_quit(&mut self, force: bool) {

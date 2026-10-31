@@ -91,6 +91,19 @@ pub(super) fn load_text(editor: &mut Editor<MockTerminal>, text: &str) {
     doc.buffer.move_to_start();
 }
 
+pub(super) fn open_and_load(editor: &mut Editor<MockTerminal>, path: &std::path::Path) {
+    editor
+        .open_file(Some(path.display().to_string()), false)
+        .unwrap();
+    drain_jobs(editor);
+}
+
+pub(super) fn type_text(editor: &mut Editor<MockTerminal>, text: &str) {
+    for c in text.chars() {
+        editor.active_document().insert_char(c).unwrap();
+    }
+}
+
 pub(super) fn drain_jobs(editor: &mut Editor<MockTerminal>) {
     use std::time::{Duration, Instant};
     let deadline = Instant::now() + Duration::from_secs(2);
