@@ -280,6 +280,7 @@ impl<T: TerminalBackend> Editor<T> {
             return Ok(false);
         };
         self.advance_pending_grammar(grammar, key_press);
+        self.clamp_normal_cursor();
         self.update_state_and_render(key_press, crate::command::Command::Noop)?;
         Ok(true)
     }
@@ -592,6 +593,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .map(crate::character::Character::from)
                     .collect();
                 self.insert_text_at_cursor(&chars, false);
+                self.clamp_normal_cursor();
             }
         }
 

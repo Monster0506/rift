@@ -40,11 +40,6 @@ impl<T: TerminalBackend> Editor<T> {
             let doc = self.document_manager.active_document_mut().unwrap();
             let expand_tabs = doc.options.expand_tabs;
             let tab_width = doc.options.tab_width;
-            let rests_on_last_char = current_mode == Mode::Normal
-                && matches!(
-                    command,
-                    crate::command::Command::Move(crate::action::Motion::EndOfLine, _)
-                );
 
             if is_mutating {
                 doc.selection_set.clear();
@@ -59,16 +54,6 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.last_search_query.as_deref(),
                 display_map.as_mut().map(std::sync::Arc::make_mut),
             );
-
-            if rests_on_last_char {
-                let cursor = doc.buffer.cursor();
-                let on_newline =
-                    doc.buffer.char_at(cursor) == Some(crate::character::Character::Newline);
-                let line_start = doc.buffer.line_index.get_line_start(doc.buffer.get_line());
-                if on_newline && cursor > line_start {
-                    let _ = doc.buffer.set_cursor(cursor - 1);
-                }
-            }
 
             let records_dot = match self.current_mode {
                 Mode::Insert => is_mutating,

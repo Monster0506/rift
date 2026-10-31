@@ -80,6 +80,21 @@ impl<T: TerminalBackend> Editor<T> {
                 ),
             ));
         }
+
+        if mode != Mode::Normal {
+            return;
+        }
+        let Some(doc) = self.document_manager.active_document() else {
+            return;
+        };
+        let cursor = doc.buffer.cursor();
+        let last = doc.buffer.line_last_char();
+        if cursor > last {
+            out.push(Violation::new(
+                "editor.normal_cursor",
+                format!("Normal-mode cursor {cursor} past last char {last}"),
+            ));
+        }
     }
 
     fn check_command_line_state(&self, out: &mut Vec<Violation>) {

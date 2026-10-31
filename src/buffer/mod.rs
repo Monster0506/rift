@@ -112,6 +112,13 @@ impl TextBuffer {
         self.col_on_line(self.get_line())
     }
 
+    pub(crate) fn line_last_char(&self) -> usize {
+        let line = self.get_line();
+        let start = self.line_index.get_line_start(line);
+        let end = self.line_index.get_end(line, self.len()).unwrap_or(start);
+        end.saturating_sub(1).max(start)
+    }
+
     #[cfg(test)]
     const fn desired_col(&self) -> Option<usize> {
         self.desired_col

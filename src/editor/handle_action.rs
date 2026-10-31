@@ -62,7 +62,22 @@ pub(super) fn native_action_handlers<T: TerminalBackend>(
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn handle_action(&mut self, action: &crate::action::Action) -> bool {
-        self.handle_action_inner(action)
+        let handled = self.handle_action_inner(action);
+        self.clamp_normal_cursor();
+        handled
+    }
+
+    pub(super) fn clamp_normal_cursor(&mut self) {
+        if self.current_mode != Mode::Normal {
+            return;
+        }
+        let Some(doc) = self.document_manager.active_document_mut() else {
+            return;
+        };
+        let last = doc.buffer.line_last_char();
+        if doc.buffer.cursor() > last {
+            let _ = doc.buffer.set_cursor(last);
+        }
     }
 
     fn handle_action_inner(&mut self, action: &crate::action::Action) -> bool {
