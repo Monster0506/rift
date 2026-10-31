@@ -1,6 +1,7 @@
 use super::*;
 use crate::replay::backend::ReplayBackend;
 
+#[derive(Clone, Copy)]
 enum GhostCut {
     On,
     Off,

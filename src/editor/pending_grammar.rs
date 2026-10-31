@@ -48,37 +48,7 @@ pub(super) enum PendingGrammar {
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn advance_pending_grammar(&mut self, grammar: PendingGrammar, key: Key) {
         match grammar {
-            PendingGrammar::ReplaceChar => {
-                if matches!(
-                    self.region_build_recording.last(),
-                    Some(Action::Editor(EditorAction::ReplaceCharPending))
-                ) {
-                    self.region_build_recording.pop();
-                }
-
-                let ch = key.text().or_else(|| {
-                    if !self.current_mode.is_visual() {
-                        return None;
-                    }
-                    match key {
-                        Key::TAB => Some('\t'),
-                        Key::ENTER => Some('\r'),
-                        _ => None,
-                    }
-                });
-                if let Some(ch) = ch {
-                    if !self.handle_action(&Action::Editor(EditorAction::ReplaceSelection(ch))) {
-                        let count = if self.pending_count > 0 {
-                            self.pending_count
-                        } else {
-                            1
-                        };
-                        let command = Command::ReplaceChar(ch, count);
-                        self.execute_and_record(command);
-                    }
-                }
-                self.pending_count = 0;
-            }
+            PendingGrammar::ReplaceChar => self.handle_replace_char_grammar(key),
             PendingGrammar::FindChar { forward, till } => {
                 if let Some(ch) = key.text() {
                     let motion = match (forward, till) {
@@ -155,6 +125,38 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    fn handle_replace_char_grammar(&mut self, key: Key) {
+        if matches!(
+            self.region_build_recording.last(),
+            Some(Action::Editor(EditorAction::ReplaceCharPending))
+        ) {
+            self.region_build_recording.pop();
+        }
+
+        let ch = key.text().or_else(|| {
+            if !self.current_mode.is_visual() {
+                return None;
+            }
+            match key {
+                Key::TAB => Some('\t'),
+                Key::ENTER => Some('\r'),
+                _ => None,
+            }
+        });
+        if let Some(ch) = ch {
+            if !self.handle_action(&Action::Editor(EditorAction::ReplaceSelection(ch))) {
+                let count = if self.pending_count > 0 {
+                    self.pending_count
+                } else {
+                    1
+                };
+                let command = Command::ReplaceChar(ch, count);
+                self.execute_and_record(command);
+            }
+        }
+        self.pending_count = 0;
+    }
+
     pub(super) fn replace_selection(&mut self, ch: char) -> bool {
         let was_visual = self.current_mode.is_visual();
         let has_regions = self
@@ -187,7 +189,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let _ = doc.buffer.set_cursor(start);
             }
         }
-        let follow_up = (!was_visual).then(|| Action::Editor(EditorAction::ReplaceSelection(ch)));
+        let follow_up = (!was_visual).then_some(Action::Editor(EditorAction::ReplaceSelection(ch)));
         self.finish_region_build(follow_up);
         result || was_visual
     }

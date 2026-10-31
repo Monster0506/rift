@@ -9,6 +9,7 @@ use crate::mode::Mode;
 use crate::search::SearchDirection;
 use crate::term::TerminalBackend;
 
+#[derive(Clone, Copy)]
 enum PutRegister {
     Replace,
     Preserve,
@@ -636,43 +637,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_operator_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
-            EditorAction::GotoLine(n) => {
-                use crate::action::Motion;
-                let target_n = if self.pending_count > 0 {
-                    self.pending_count
-                } else {
-                    *n
-                };
-                if self.current_mode == Mode::OperatorPending {
-                    if let Some(op) = self.pending_operator {
-                        let target_line = {
-                            if let Some(doc) = self.document_manager.active_document() {
-                                let last = doc.buffer.last_real_line();
-                                if target_n == 0 || target_n > last + 1 {
-                                    last
-                                } else {
-                                    target_n - 1
-                                }
-                            } else {
-                                return false;
-                            }
-                        };
-                        return self.execute_operator(op, Motion::ToLine(target_line));
-                    }
-                }
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    let last = doc.buffer.last_real_line();
-                    let idx = if target_n == 0 || target_n > last + 1 {
-                        last
-                    } else {
-                        target_n - 1
-                    };
-                    let offset = doc.buffer.line_start(idx);
-                    doc.buffer.clear_desired_col();
-                    let _ = doc.buffer.set_cursor(offset);
-                }
-                true
-            }
+            EditorAction::GotoLine(n) => self.handle_goto_line(*n),
             EditorAction::Search(pattern) => {
                 let pattern = pattern.clone();
                 self.perform_search(&pattern, SearchDirection::Forward, false);
@@ -685,80 +650,119 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::VisualLine);
                 self.handle_operator_action(action, &EditorAction::Operator(*op))
             }
-            EditorAction::Operator(op) => {
-                if let Some(layout) = self.panel_layout.clone() {
-                    if layout.kind == crate::editor::PanelKind::Regions {
-                        let _ = self
-                            .document_manager
-                            .switch_to_document(layout.preview_doc_id);
-                        self.close_split_panel();
-                    }
-                }
-                let visual_yank_start = if *op == crate::action::OperatorType::Yank {
-                    self.current_mode.visual_range_kind().and_then(|kind| {
-                        let anchor = self.visual_anchor?;
-                        let doc = self.document_manager.active_document()?;
-                        Some(
-                            crate::selection::Region::new(anchor, doc.buffer.cursor(), kind)
-                                .buffer_span(&doc.buffer)
-                                .0,
-                        )
-                    })
-                } else {
-                    None
-                };
-                let visual_line_delete = self.current_mode == Mode::VisualLine
-                    && *op == crate::action::OperatorType::Delete
-                    && self
-                        .document_manager
-                        .active_document()
-                        .is_some_and(|doc| !doc.is_read_only());
-                if self.current_mode.is_visual() {
-                    self.set_mode(Mode::Normal);
-                }
-                if self.try_run_set_aware_operator(*op) {
-                    if let Some(start) = visual_yank_start {
-                        if let Some(doc) = self.document_manager.active_document_mut() {
-                            let _ = doc.buffer.set_cursor(start.min(doc.buffer.len()));
-                        }
-                    }
-                    if visual_line_delete {
-                        if let Some(doc) = self.document_manager.active_document_mut() {
-                            let line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
-                            let start = doc.buffer.line_start(line);
-                            let column = doc
-                                .buffer
-                                .chars(start..doc.buffer.len())
-                                .take_while(|&ch| ch != crate::character::Character::Newline)
-                                .position(|ch| {
-                                    !matches!(
-                                        ch,
-                                        crate::character::Character::Unicode(' ')
-                                            | crate::character::Character::Tab
-                                    )
-                                })
-                                .unwrap_or(0);
-                            let _ = doc.buffer.set_cursor(start + column);
-                        }
-                    }
-                    let follow_up =
-                        (*op == crate::action::OperatorType::Change).then(|| action.clone());
-                    self.finish_region_build(follow_up);
-                    return true;
-                }
-                if self.current_mode == Mode::OperatorPending {
-                    if let Some(super::PendingOperator::Op(pending)) = self.pending_operator {
-                        if pending == *op {
-                            return self.execute_operator_linewise(pending);
-                        }
-                    }
-                }
-                self.pending_operator = Some(super::PendingOperator::Op(*op));
-                self.set_mode(Mode::OperatorPending);
-                true
-            }
+            EditorAction::Operator(op) => self.handle_operator(action, *op),
             _ => self.handle_history_action(action, editor_action),
         }
+    }
+
+    fn handle_goto_line(&mut self, n: usize) -> bool {
+        use crate::action::Motion;
+        let target_n = if self.pending_count > 0 {
+            self.pending_count
+        } else {
+            n
+        };
+        if self.current_mode == Mode::OperatorPending {
+            if let Some(op) = self.pending_operator {
+                let target_line = {
+                    if let Some(doc) = self.document_manager.active_document() {
+                        let last = doc.buffer.last_real_line();
+                        if target_n == 0 || target_n > last + 1 {
+                            last
+                        } else {
+                            target_n - 1
+                        }
+                    } else {
+                        return false;
+                    }
+                };
+                return self.execute_operator(op, Motion::ToLine(target_line));
+            }
+        }
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            let last = doc.buffer.last_real_line();
+            let idx = if target_n == 0 || target_n > last + 1 {
+                last
+            } else {
+                target_n - 1
+            };
+            let offset = doc.buffer.line_start(idx);
+            doc.buffer.clear_desired_col();
+            let _ = doc.buffer.set_cursor(offset);
+        }
+        true
+    }
+
+    fn handle_operator(&mut self, action: &Action, op: crate::action::OperatorType) -> bool {
+        if let Some(layout) = self.panel_layout.clone() {
+            if layout.kind == crate::editor::PanelKind::Regions {
+                let _ = self
+                    .document_manager
+                    .switch_to_document(layout.preview_doc_id);
+                self.close_split_panel();
+            }
+        }
+        let visual_yank_start = if op == crate::action::OperatorType::Yank {
+            self.current_mode.visual_range_kind().and_then(|kind| {
+                let anchor = self.visual_anchor?;
+                let doc = self.document_manager.active_document()?;
+                Some(
+                    crate::selection::Region::new(anchor, doc.buffer.cursor(), kind)
+                        .buffer_span(&doc.buffer)
+                        .0,
+                )
+            })
+        } else {
+            None
+        };
+        let visual_line_delete = self.current_mode == Mode::VisualLine
+            && op == crate::action::OperatorType::Delete
+            && self
+                .document_manager
+                .active_document()
+                .is_some_and(|doc| !doc.is_read_only());
+        if self.current_mode.is_visual() {
+            self.set_mode(Mode::Normal);
+        }
+        if self.try_run_set_aware_operator(op) {
+            if let Some(start) = visual_yank_start {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    let _ = doc.buffer.set_cursor(start.min(doc.buffer.len()));
+                }
+            }
+            if visual_line_delete {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    let line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
+                    let start = doc.buffer.line_start(line);
+                    let column = doc
+                        .buffer
+                        .chars(start..doc.buffer.len())
+                        .take_while(|&ch| ch != crate::character::Character::Newline)
+                        .position(|ch| {
+                            !matches!(
+                                ch,
+                                crate::character::Character::Unicode(' ')
+                                    | crate::character::Character::Tab
+                            )
+                        })
+                        .unwrap_or(0);
+                    let _ = doc.buffer.set_cursor(start + column);
+                }
+            }
+            let follow_up = (op == crate::action::OperatorType::Change).then(|| action.clone());
+            self.finish_region_build(follow_up);
+            return true;
+        }
+        if self.current_mode == Mode::OperatorPending {
+            if let Some(super::PendingOperator::Op(pending)) = self.pending_operator {
+                if pending == op {
+                    return self.execute_operator_linewise(pending);
+                }
+            }
+        }
+        self.pending_operator = Some(super::PendingOperator::Op(op));
+        self.set_mode(Mode::OperatorPending);
+        true
     }
 
     fn handle_history_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
@@ -875,117 +879,115 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_paste_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
-            EditorAction::Put { before } => {
-                if self.active_doc_is(crate::document::Document::is_clipboard_index) {
-                    let Some(register) = self.clipboard_panel_register.clone() else {
-                        return false;
-                    };
-                    if let Some(rows) = register.rows {
-                        use crate::document::clipboard::ClipboardSide;
-                        let side = if *before {
-                            ClipboardSide::Before
-                        } else {
-                            ClipboardSide::After
-                        };
-                        return self
-                            .document_manager
-                            .active_document_mut()
-                            .is_some_and(|doc| doc.put_clipboard_rows(&rows, side));
-                    }
-                    return self.insert_text_at_cursor(&register.clip, *before);
-                }
-
-                if self.current_mode.is_visual() {
-                    let register = if *before {
-                        PutRegister::Preserve
-                    } else {
-                        PutRegister::Replace
-                    };
-                    return self.replace_visual_selection(register);
-                }
-                let active_doc_id = self.document_manager.active_document_id();
-                let cursor_before_resolve = self
-                    .document_manager
-                    .active_document()
-                    .map(|d| d.buffer.cursor());
-                let ghost_put = self
-                    .document_manager
-                    .most_recent_ghost_doc()
-                    .and_then(|doc_id| {
-                        let doc = self.document_manager.get_document(doc_id)?;
-                        let (text, live_start, clip) = doc.most_recent_ghost()?;
-                        let same_location = Some(doc_id) == active_doc_id
-                            && cursor_before_resolve == Some(live_start);
-                        if same_location {
-                            return Some((Clip::from_plain(text.to_vec()), Some(live_start)));
-                        }
-                        Some((clip.clone(), None))
-                    });
-                self.commit_all_pending_ghosts();
-
-                let (clip, same_location_origin) = match ghost_put {
-                    Some(put) => put,
-                    None => match self.clipboard_ring.most_recent() {
-                        Some(clip) => (clip.clone(), None),
-                        None => return false,
-                    },
+            EditorAction::Put { before } => self.handle_put(action, *before),
+            EditorAction::CyclePaste { forward } => {
+                let Some(state) = self.post_paste_state.take() else {
+                    return false;
                 };
-
-                if self.try_run_set_aware_put(*before, &clip) {
-                    self.finish_region_build(Some(action.clone()));
-                    return true;
-                }
-                let original_cursor = self
-                    .document_manager
-                    .active_document()
-                    .map_or(0, |d| d.buffer.cursor());
-                let result = if let Some(origin) = same_location_origin {
-                    self.insert_ghost_text_verbatim(clip.text(), origin)
+                let len = self.clipboard_ring.len().max(1);
+                let next = if *forward {
+                    (state.ring_index + 1) % len
                 } else {
-                    self.insert_text_at_cursor(&clip, *before)
+                    (state.ring_index + len - 1) % len
                 };
+                let Some(clip) = self.clipboard_ring.get(next).cloned() else {
+                    return false;
+                };
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    doc.undo();
+                    let _ = doc.buffer.set_cursor(state.original_cursor);
+                }
+                let result = self.insert_text_at_cursor(&clip, state.before);
                 if result {
                     self.post_paste_state = Some(PostPasteState {
-                        ring_index: 0,
-                        before: *before,
-                        original_cursor,
+                        ring_index: next,
+                        before: state.before,
+                        original_cursor: state.original_cursor,
                     });
                 }
                 result
             }
-
-            EditorAction::CyclePaste { forward } => {
-                if let Some(state) = self.post_paste_state.take() {
-                    let len = self.clipboard_ring.len().max(1);
-                    let next = if *forward {
-                        (state.ring_index + 1) % len
-                    } else {
-                        (state.ring_index + len - 1) % len
-                    };
-                    if let Some(clip) = self.clipboard_ring.get(next).cloned() {
-                        if let Some(doc) = self.document_manager.active_document_mut() {
-                            doc.undo();
-                            let _ = doc.buffer.set_cursor(state.original_cursor);
-                        }
-                        let result = self.insert_text_at_cursor(&clip, state.before);
-                        if result {
-                            self.post_paste_state = Some(PostPasteState {
-                                ring_index: next,
-                                before: state.before,
-                                original_cursor: state.original_cursor,
-                            });
-                        }
-                        result
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            }
-
             _ => self.handle_misc_action(action, editor_action),
         }
+    }
+
+    fn handle_put(&mut self, action: &Action, before: bool) -> bool {
+        if self.active_doc_is(crate::document::Document::is_clipboard_index) {
+            let Some(register) = self.clipboard_panel_register.clone() else {
+                return false;
+            };
+            if let Some(rows) = register.rows {
+                use crate::document::clipboard::ClipboardSide;
+                let side = if before {
+                    ClipboardSide::Before
+                } else {
+                    ClipboardSide::After
+                };
+                return self
+                    .document_manager
+                    .active_document_mut()
+                    .is_some_and(|doc| doc.put_clipboard_rows(&rows, side));
+            }
+            return self.insert_text_at_cursor(&register.clip, before);
+        }
+
+        if self.current_mode.is_visual() {
+            let register = if before {
+                PutRegister::Preserve
+            } else {
+                PutRegister::Replace
+            };
+            return self.replace_visual_selection(register);
+        }
+        let active_doc_id = self.document_manager.active_document_id();
+        let cursor_before_resolve = self
+            .document_manager
+            .active_document()
+            .map(|d| d.buffer.cursor());
+        let ghost_put = self
+            .document_manager
+            .most_recent_ghost_doc()
+            .and_then(|doc_id| {
+                let doc = self.document_manager.get_document(doc_id)?;
+                let (text, live_start, clip) = doc.most_recent_ghost()?;
+                let same_location =
+                    Some(doc_id) == active_doc_id && cursor_before_resolve == Some(live_start);
+                if same_location {
+                    return Some((Clip::from_plain(text.to_vec()), Some(live_start)));
+                }
+                Some((clip.clone(), None))
+            });
+        self.commit_all_pending_ghosts();
+
+        let (clip, same_location_origin) = match ghost_put {
+            Some(put) => put,
+            None => match self.clipboard_ring.most_recent() {
+                Some(clip) => (clip.clone(), None),
+                None => return false,
+            },
+        };
+
+        if self.try_run_set_aware_put(before, &clip) {
+            self.finish_region_build(Some(action.clone()));
+            return true;
+        }
+        let original_cursor = self
+            .document_manager
+            .active_document()
+            .map_or(0, |d| d.buffer.cursor());
+        let result = if let Some(origin) = same_location_origin {
+            self.insert_ghost_text_verbatim(clip.text(), origin)
+        } else {
+            self.insert_text_at_cursor(&clip, before)
+        };
+        if result {
+            self.post_paste_state = Some(PostPasteState {
+                ring_index: 0,
+                before,
+                original_cursor,
+            });
+        }
+        result
     }
 
     fn replace_visual_selection(&mut self, register: PutRegister) -> bool {

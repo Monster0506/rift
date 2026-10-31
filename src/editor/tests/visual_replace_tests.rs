@@ -61,7 +61,7 @@ fn replace_enter_is_literal() {
 
 #[test]
 fn replace_empty_buffer() {
-    assert_eq!(run("", "vrX"), ("".to_string(), Mode::Normal, 0));
+    assert_eq!(run("", "vrX"), (String::new(), Mode::Normal, 0));
 }
 
 #[test]
