@@ -12,16 +12,13 @@ use crate::ipc::protocol::{
     b64_encode, InitializeParams, RenderUpdateParams, SessionEndingParams, ERR_UNAUTHORIZED,
 };
 use crate::ipc::session::{data_dir, generate_token, session_path, SessionInfo};
-use crate::key::{InputEvent, Key};
+use crate::key::InputEvent;
 use crate::term::Size;
 use crate::transport::{read_framed, write_framed};
 
 enum ServeResult {
-    /// Client sent session.detach -- editor still running, wait for next connection.
     Detach,
-    /// Editor exited (`:q`) -- client notified; daemon should restart the editor.
     EditorExited,
-    /// TCP error -- client disconnected unexpectedly, editor still running.
     Error,
 }
 
@@ -65,8 +62,6 @@ fn spawn_editor(file: Option<&str>) -> EditorInstance {
     }
 }
 
-/// Bind a local listener, publish the session file, and serve clients until shutdown.
-///
 /// # Errors
 /// Returns `Err` if the listener cannot be bound or configured, or the session file cannot be written.
 pub fn run(file: Option<&str>) -> anyhow::Result<()> {
@@ -355,10 +350,8 @@ fn clamp_dimension(value: u64, default: u16) -> u16 {
         .unwrap_or(default)
 }
 
-/// Forward a key, blocking if the channel is full so a burst never drops a
-/// keystroke. Returns false if the receiver (editor thread) has hung up.
-fn forward_key(input_tx: &SyncSender<InputEvent>, key: Key) -> bool {
-    input_tx.send(InputEvent::Key(key)).is_ok()
+fn forward_input(input_tx: &SyncSender<InputEvent>, event: InputEvent) -> bool {
+    input_tx.send(event).is_ok()
 }
 
 fn parse_resize_params(params: &serde_json::Value) -> InputEvent {
@@ -371,12 +364,8 @@ fn parse_resize_params(params: &serde_json::Value) -> InputEvent {
     InputEvent::Resize(cols, rows)
 }
 
-/// How often the reader checks `shutdown` between blocking reads. Bounds how
-/// long `join()` can take after a shutdown is requested.
 const READER_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
-/// Reads frames from `reader` into `msg_tx` until disconnect or `shutdown`;
-/// a read timeout ensures it notices `shutdown` even with no socket close.
 fn reader_loop(
     reader: &mut BufReader<TcpStream>,
     shutdown: &Arc<AtomicBool>,
@@ -405,7 +394,6 @@ fn reader_loop(
     }
 }
 
-/// Writes a `session.ending` notification; delivery is best-effort.
 fn send_session_ending(stream: &mut TcpStream, reason: &str) {
     let end = serde_json::json!({
         "jsonrpc": "2.0",
@@ -415,7 +403,6 @@ fn send_session_ending(stream: &mut TcpStream, reason: &str) {
     let _ = write_framed(stream, &end);
 }
 
-/// Applies one client message; returns `Some` when the serve loop must end.
 fn handle_client_msg(
     bytes: &[u8],
     input_tx: &SyncSender<InputEvent>,
@@ -433,14 +420,24 @@ fn handle_client_msg(
                 *last_seq = seq;
             }
             let key = crate::key::notation::parse_key(msg["params"]["key"].as_str()?)?;
-            if forward_key(input_tx, key) {
+            if forward_input(input_tx, InputEvent::Key(key)) {
+                None
+            } else {
+                Some(ServeResult::EditorExited)
+            }
+        }
+        "input.paste" => {
+            if let Some(seq) = msg["params"]["seq"].as_u64() {
+                *last_seq = seq;
+            }
+            let text = msg["params"]["text"].as_str()?.to_owned();
+            if forward_input(input_tx, InputEvent::Paste(text)) {
                 None
             } else {
                 Some(ServeResult::EditorExited)
             }
         }
         "resize" => {
-            // Dropping a stale resize is fine; only the latest size matters.
             let resize = parse_resize_params(&msg["params"]);
             if input_tx.try_send(resize).is_err() {
                 eprintln!("rift: dropped resize message");
@@ -451,7 +448,6 @@ fn handle_client_msg(
     }
 }
 
-/// Forwards queued renders; returns `Some` when the serve loop must end.
 fn forward_renders(
     write_stream: &mut TcpStream,
     output_rx: &Receiver<Vec<u8>>,
@@ -489,7 +485,6 @@ fn serve_client(
     output_rx: &Receiver<Vec<u8>>,
     detach_rx: &Receiver<()>,
 ) -> ServeResult {
-    // Timeout on handshake so a stale or malicious client can't block the daemon.
     reader
         .get_ref()
         .set_read_timeout(Some(Duration::from_secs(5)))
@@ -514,13 +509,10 @@ fn serve_client(
         }
     };
 
-    // Drain stale renders and any leftover detach signal, then trigger a fresh draw.
     while output_rx.try_recv().is_ok() {}
     while detach_rx.try_recv().is_ok() {}
     let _ = input_tx.try_send(InputEvent::Resize(size.cols, size.rows));
 
-    // Periodic read timeout lets the reader notice `reader_shutdown` even if
-    // the cross-clone socket shutdown below doesn't interrupt it on this platform.
     let reader_shutdown = Arc::new(AtomicBool::new(false));
     let reader_shutdown_clone = Arc::clone(&reader_shutdown);
     let (msg_tx, msg_rx) = std::sync::mpsc::channel::<std::io::Result<Vec<u8>>>();
@@ -544,7 +536,6 @@ fn serve_client(
             Err(RecvTimeoutError::Timeout) => {}
         }
 
-        // Editor pressed :q in remote mode, so detach the client and keep the editor alive.
         if detach_rx.try_recv().is_ok() {
             send_session_ending(&mut write_stream, "detached");
             break ServeResult::Detach;

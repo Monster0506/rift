@@ -20,6 +20,12 @@ pub(super) struct InputKeyParams {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub(super) struct InputPasteParams {
+    pub(super) text: String,
+    pub(super) seq: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct ResizeParams {
     pub(super) rows: u16,
     pub(super) cols: u16,

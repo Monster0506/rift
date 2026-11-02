@@ -1,5 +1,6 @@
 use super::*;
 use crate::ipc::protocol::b64_decode;
+use crate::key::Key;
 use crate::transport::{read_framed, write_framed};
 use std::io::BufReader;
 use std::net::{TcpListener, TcpStream};
@@ -68,16 +69,16 @@ fn flag_is_published_before_os_handler_is_installed() {
     assert!(shutdown.load(Ordering::Relaxed));
 }
 
-// --- forward_key tests ---
+// --- forward_input tests ---
 
 #[test]
-fn forward_key_blocks_instead_of_dropping_under_burst() {
+fn forward_input_blocks_instead_of_dropping_under_burst() {
     const TOTAL: usize = 100;
     let (input_tx, input_rx) = sync_channel::<InputEvent>(64);
     let sender = std::thread::spawn(move || {
         for i in 0..TOTAL {
             let c = char::from(b'a' + u8::try_from(i % 26).unwrap());
-            assert!(forward_key(&input_tx, Key::char(c)));
+            assert!(forward_input(&input_tx, InputEvent::Key(Key::char(c))));
         }
     });
     let mut received = 0;
@@ -300,6 +301,54 @@ fn serve_input_key_routes_to_editor() {
     .unwrap();
     drop(client);
     handle.join().unwrap();
+}
+
+/// Pastes `text` from a client in Insert mode; returns the daemon buffer.
+fn remote_paste(text: &str) -> String {
+    let (mut client, server) = connected_pair();
+    let (input_tx, input_rx, output_tx, output_rx, detach_tx, detach_rx) = make_channels();
+    let size = Size { rows: 24, cols: 80 };
+    let backend = ChannelBackend::new(input_rx, output_tx, detach_tx, size);
+    let mut editor = crate::editor::Editor::with_file(backend, None).unwrap();
+    let token = "paste_tok";
+
+    // The serve thread owns input_tx, so its exit closes the input channel.
+    let serve = std::thread::spawn(move || {
+        serve_client(
+            BufReader::new(server),
+            token,
+            &input_tx,
+            &output_rx,
+            &detach_rx,
+        );
+        output_rx
+    });
+    do_handshake_client(&mut client, token, 24, 80);
+
+    let insert =
+        serde_json::json!({"jsonrpc":"2.0","method":"input.key","params":{"key":"i","seq":1}});
+    let paste =
+        serde_json::json!({"jsonrpc":"2.0","method":"input.paste","params":{"text":text,"seq":2}});
+    let end = serde_json::json!({"jsonrpc":"2.0","method":"session.detach","params":{}});
+    for msg in [insert, paste, end] {
+        write_framed(&mut client, &msg).unwrap();
+    }
+    let _output_rx = serve.join().unwrap();
+
+    // A closed input channel fails tick() once every queued event is handled.
+    while editor.tick().is_ok() {}
+
+    editor.active_document().buffer.to_string()
+}
+
+#[test]
+fn remote_paste_keeps_newline() {
+    assert_eq!(remote_paste("a\nb"), "a\nb");
+}
+
+#[test]
+fn remote_paste_keeps_tab() {
+    assert_eq!(remote_paste("a\tb"), "a\tb");
 }
 
 #[test]

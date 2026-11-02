@@ -4,8 +4,8 @@ use std::sync::mpsc::TryRecvError;
 use std::time::Duration;
 
 use crate::ipc::protocol::{
-    b64_decode, InitializeParams, InputKeyParams, RenderUpdateParams, ResizeParams,
-    SessionEndingParams, Viewport,
+    b64_decode, InitializeParams, InputKeyParams, InputPasteParams, RenderUpdateParams,
+    ResizeParams, SessionEndingParams, Viewport,
 };
 use crate::key::notation::format_key;
 use crate::key::{InputEvent, Key};
@@ -211,6 +211,16 @@ fn send_key(stream: &mut TcpStream, key: Key, seq: u64) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn send_paste(stream: &mut TcpStream, text: String, seq: u64) -> anyhow::Result<()> {
+    let msg = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "input.paste",
+        "params": InputPasteParams { text, seq },
+    });
+    write_framed(stream, &msg)?;
+    Ok(())
+}
+
 fn event_loop<T: TerminalBackend>(local_term: &mut T, stream: TcpStream) -> anyhow::Result<()> {
     let mut write_stream = stream.try_clone()?;
     let (frame_tx, frame_rx) = std::sync::mpsc::channel::<std::io::Result<Vec<u8>>>();
@@ -246,13 +256,9 @@ fn event_loop<T: TerminalBackend>(local_term: &mut T, stream: TcpStream) -> anyh
                         });
                         write_framed(&mut write_stream, &msg)?;
                     }
-                    // The wire protocol has no paste token, so decompose
-                    // into per-char sends (the un-bracketed local fallback).
                     InputEvent::Paste(text) => {
-                        for ch in text.chars() {
-                            seq += 1;
-                            send_key(&mut write_stream, Key::char(ch), seq)?;
-                        }
+                        seq += 1;
+                        send_paste(&mut write_stream, text, seq)?;
                     }
                     InputEvent::Key(key) => {
                         seq += 1;
