@@ -16,6 +16,7 @@ mod ghost_cut_tests;
 mod key_input_tests;
 mod motion_tests;
 mod normal_cursor_tests;
+mod operator_tests;
 mod plugin_highlight_tests;
 mod plugin_settings_tests;
 mod region_bank_ops_tests;

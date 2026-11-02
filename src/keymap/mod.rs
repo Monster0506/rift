@@ -26,21 +26,13 @@ where
 pub enum KeyContext {
     Global,
     Normal,
-    /// Operator-pending mode: used after d/c/y. Falls through to Normal so
-    /// all motions remain available.
     OperatorPending,
     Insert,
     Command,
     Search,
-    /// Terminal buffer in insert mode: falls through to Global only (no
-    /// Normal bindings should intercept typed characters).
     Terminal,
-    /// Terminal buffer in normal mode: falls through to Normal so all vim motions work.
     TerminalNormal,
-    /// Visual/VisualLine/VisualBlock selection. Falls through to `Normal` so
-    /// every motion remains available without re-registering it.
     Visual,
-    /// Runtime buffer kind context
     Buffer(BufferKindId),
 }
 
@@ -207,14 +199,12 @@ impl KeyMap {
     #[must_use]
     pub(crate) const fn parent_context(context: KeyContext) -> Option<KeyContext> {
         match context {
-            KeyContext::OperatorPending | KeyContext::Visual | KeyContext::TerminalNormal => {
-                Some(KeyContext::Normal)
-            }
+            KeyContext::Visual | KeyContext::TerminalNormal => Some(KeyContext::Normal),
             KeyContext::Terminal => Some(KeyContext::Global),
             KeyContext::Normal | KeyContext::Insert | KeyContext::Command | KeyContext::Search => {
                 Some(KeyContext::Global)
             }
-            KeyContext::Global | KeyContext::Buffer(_) => None,
+            KeyContext::OperatorPending | KeyContext::Global | KeyContext::Buffer(_) => None,
         }
     }
 

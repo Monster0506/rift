@@ -358,30 +358,6 @@ fn test_default_word_end_keybind() {
 }
 
 #[test]
-fn test_operator_pending_text_objects_not_in_trie() {
-    use crate::keymap::trie::MatchResult;
-
-    // Text objects are intercepted before trie lookup, so 'i' has no trie entry.
-    let mut map = KeyMap::new();
-    register_defaults(&mut map);
-
-    assert_eq!(
-        map.lookup(KeyContext::OperatorPending, &[Key::char('i')]),
-        map.lookup(KeyContext::Normal, &[Key::char('i')]),
-        "OperatorPending should fall through to Normal for 'i' (no trie text-object entry)"
-    );
-
-    // OperatorPending falls through to Normal for regular motions.
-    assert!(
-        matches!(
-            map.lookup(KeyContext::OperatorPending, &[Key::char('h')]),
-            MatchResult::Exact(_)
-        ),
-        "'h' should be reachable in OperatorPending via Normal fallthrough"
-    );
-}
-
-#[test]
 fn test_ctrl_w_ctrl_hjkl_match_ctrl_w_hjkl() {
     let mut map = KeyMap::new();
     register_defaults(&mut map);

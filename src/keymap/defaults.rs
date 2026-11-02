@@ -35,6 +35,13 @@ pub(crate) fn register_defaults(keymap: &mut KeyMap) {
     // Text objects are handled by run_loop.rs's pending-grammar state machine, not the trie.
 }
 
+/// Registers a binding that can also complete a pending operator.
+fn register_motion(keymap: &mut KeyMap, keys: &[Key], action: Action) {
+    for context in [KeyContext::Normal, KeyContext::OperatorPending] {
+        keymap.register_sequence(context, keys.to_vec(), action.clone());
+    }
+}
+
 fn register_terminal_defaults(keymap: &mut KeyMap) {
     // Terminal mode Defaults
     keymap.register(
@@ -237,24 +244,24 @@ fn register_normal_defaults(keymap: &mut KeyMap) {
         Key::char('-'),
         Action::Editor(EditorAction::OpenExplorer),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('h'),
+    register_motion(
+        keymap,
+        &[Key::char('h')],
         Action::Editor(EditorAction::Move(Motion::Left)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('j'),
+    register_motion(
+        keymap,
+        &[Key::char('j')],
         Action::Editor(EditorAction::Move(Motion::Down)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('k'),
+    register_motion(
+        keymap,
+        &[Key::char('k')],
         Action::Editor(EditorAction::Move(Motion::Up)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('l'),
+    register_motion(
+        keymap,
+        &[Key::char('l')],
         Action::Editor(EditorAction::Move(Motion::Right)),
     );
     keymap.register(
@@ -262,47 +269,47 @@ fn register_normal_defaults(keymap: &mut KeyMap) {
         Key::char('q'),
         Action::Editor(EditorAction::QuitKey),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('n'),
+    register_motion(
+        keymap,
+        &[Key::char('n')],
         Action::Editor(EditorAction::Move(Motion::RepeatFindForward)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('N'),
+    register_motion(
+        keymap,
+        &[Key::char('N')],
         Action::Editor(EditorAction::Move(Motion::RepeatFindBackward)),
     );
 }
 
 fn register_normal_find_defaults(keymap: &mut KeyMap) {
     // Find-char motion (f / F) and till motion (t / T)
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('f'),
+    register_motion(
+        keymap,
+        &[Key::char('f')],
         Action::Editor(EditorAction::FindCharPending {
             forward: true,
             till: false,
         }),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('F'),
+    register_motion(
+        keymap,
+        &[Key::char('F')],
         Action::Editor(EditorAction::FindCharPending {
             forward: false,
             till: false,
         }),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('t'),
+    register_motion(
+        keymap,
+        &[Key::char('t')],
         Action::Editor(EditorAction::FindCharPending {
             forward: true,
             till: true,
         }),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('T'),
+    register_motion(
+        keymap,
+        &[Key::char('T')],
         Action::Editor(EditorAction::FindCharPending {
             forward: false,
             till: true,
@@ -323,63 +330,63 @@ fn register_normal_find_defaults(keymap: &mut KeyMap) {
 
 fn register_normal_move_defaults(keymap: &mut KeyMap) {
     // Word Motion
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('w'),
+    register_motion(
+        keymap,
+        &[Key::char('w')],
         Action::Editor(EditorAction::Move(Motion::NextWord)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('b'),
+    register_motion(
+        keymap,
+        &[Key::char('b')],
         Action::Editor(EditorAction::Move(Motion::PreviousWord)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('e'),
+    register_motion(
+        keymap,
+        &[Key::char('e')],
         Action::Editor(EditorAction::Move(Motion::WordEnd)),
     );
     // Line Motion
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('0'),
+    register_motion(
+        keymap,
+        &[Key::char('0')],
         Action::Editor(EditorAction::Move(Motion::StartOfLine)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('$'),
+    register_motion(
+        keymap,
+        &[Key::char('$')],
         Action::Editor(EditorAction::Move(Motion::EndOfLine)),
     );
     // Paragraph Motion
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('}'),
+    register_motion(
+        keymap,
+        &[Key::char('}')],
         Action::Editor(EditorAction::Move(Motion::NextParagraph)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('{'),
+    register_motion(
+        keymap,
+        &[Key::char('{')],
         Action::Editor(EditorAction::Move(Motion::PreviousParagraph)),
     );
     // Sentence Motion
-    keymap.register(
-        KeyContext::Normal,
-        Key::char(')'),
+    register_motion(
+        keymap,
+        &[Key::char(')')],
         Action::Editor(EditorAction::Move(Motion::NextSentence)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('('),
+    register_motion(
+        keymap,
+        &[Key::char('(')],
         Action::Editor(EditorAction::Move(Motion::PreviousSentence)),
     );
     // Page Motion
-    keymap.register(
-        KeyContext::Normal,
-        Key::PAGE_UP,
+    register_motion(
+        keymap,
+        &[Key::PAGE_UP],
         Action::Editor(EditorAction::Move(Motion::PageUp)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::PAGE_DOWN,
+    register_motion(
+        keymap,
+        &[Key::PAGE_DOWN],
         Action::Editor(EditorAction::Move(Motion::PageDown)),
     );
 }
@@ -441,64 +448,64 @@ fn register_normal_mode_defaults(keymap: &mut KeyMap) {
 
 fn register_normal_keys_defaults(keymap: &mut KeyMap) {
     // Normal Mode Arrows/Home/End
-    keymap.register(
-        KeyContext::Normal,
-        Key::LEFT,
+    register_motion(
+        keymap,
+        &[Key::LEFT],
         Action::Editor(EditorAction::Move(Motion::Left)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::RIGHT,
+    register_motion(
+        keymap,
+        &[Key::RIGHT],
         Action::Editor(EditorAction::Move(Motion::Right)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::UP,
+    register_motion(
+        keymap,
+        &[Key::UP],
         Action::Editor(EditorAction::Move(Motion::Up)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::DOWN,
+    register_motion(
+        keymap,
+        &[Key::DOWN],
         Action::Editor(EditorAction::Move(Motion::Down)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::HOME,
+    register_motion(
+        keymap,
+        &[Key::HOME],
         Action::Editor(EditorAction::Move(Motion::StartOfLine)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::END,
+    register_motion(
+        keymap,
+        &[Key::END],
         Action::Editor(EditorAction::Move(Motion::EndOfLine)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::LEFT.with(Mods::CTRL),
+    register_motion(
+        keymap,
+        &[Key::LEFT.with(Mods::CTRL)],
         Action::Editor(EditorAction::Move(Motion::PreviousWord)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::RIGHT.with(Mods::CTRL),
+    register_motion(
+        keymap,
+        &[Key::RIGHT.with(Mods::CTRL)],
         Action::Editor(EditorAction::Move(Motion::NextWord)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::UP.with(Mods::CTRL),
+    register_motion(
+        keymap,
+        &[Key::UP.with(Mods::CTRL)],
         Action::Editor(EditorAction::Move(Motion::PreviousParagraph)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::DOWN.with(Mods::CTRL),
+    register_motion(
+        keymap,
+        &[Key::DOWN.with(Mods::CTRL)],
         Action::Editor(EditorAction::Move(Motion::NextParagraph)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::HOME.with(Mods::CTRL),
+    register_motion(
+        keymap,
+        &[Key::HOME.with(Mods::CTRL)],
         Action::Editor(EditorAction::Move(Motion::StartOfFile)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::END.with(Mods::CTRL),
+    register_motion(
+        keymap,
+        &[Key::END.with(Mods::CTRL)],
         Action::Editor(EditorAction::Move(Motion::EndOfFile)),
     );
     keymap.register(
@@ -769,20 +776,19 @@ fn register_history_defaults(keymap: &mut KeyMap) {
 }
 
 fn register_operator_defaults(keymap: &mut KeyMap) {
-    // Operators
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('d'),
+    register_motion(
+        keymap,
+        &[Key::char('d')],
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Delete)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('c'),
+    register_motion(
+        keymap,
+        &[Key::char('c')],
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Change)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('y'),
+    register_motion(
+        keymap,
+        &[Key::char('y')],
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Yank)),
     );
     keymap.register(
@@ -967,14 +973,14 @@ fn register_window_defaults(keymap: &mut KeyMap) {
 }
 
 fn register_normal_goto_defaults(keymap: &mut KeyMap) {
-    keymap.register_sequence(
-        KeyContext::Normal,
-        vec![Key::char('g'), Key::char('g')],
+    register_motion(
+        keymap,
+        &[Key::char('g'), Key::char('g')],
         Action::Editor(EditorAction::Move(Motion::StartOfFile)),
     );
-    keymap.register(
-        KeyContext::Normal,
-        Key::char('G'),
+    register_motion(
+        keymap,
+        &[Key::char('G')],
         Action::Editor(EditorAction::GotoLine(0)),
     );
     // <Space>pd: open the demo floating window
