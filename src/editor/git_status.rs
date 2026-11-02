@@ -21,9 +21,18 @@ fn execute_git_status_actions(repo_root: &Path, actions: &[GitStatusAction]) -> 
                 let p = path.to_string_lossy();
                 run(&["add", "--", &p])
             }
-            GitStatusAction::Unstage(path) => {
+            GitStatusAction::Unstage { path, orig_path } => {
+                let has_head = run(&["rev-parse", "--verify", "--quiet", "HEAD"]).is_ok();
+                let mut args = if has_head {
+                    vec!["restore", "--staged", "--"]
+                } else {
+                    vec!["rm", "--cached", "--quiet", "--force", "--"]
+                };
                 let p = path.to_string_lossy();
-                run(&["restore", "--staged", "--", &p])
+                let orig = orig_path.as_ref().map(|o| o.to_string_lossy());
+                args.push(&p);
+                args.extend(orig.as_deref());
+                run(&args)
             }
             GitStatusAction::Discard {
                 path,
@@ -220,8 +229,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Refresh every open `GitStatus` buffer for `repo_root` (after a commit,
-    /// fixup, or a stage/unstage/discard fast-path action).
     pub(super) fn refresh_git_status_buffers_for(&mut self, repo_root: &Path) {
         let doc_ids: Vec<crate::document::DocumentId> = self
             .document_manager
@@ -232,11 +239,17 @@ impl<T: TerminalBackend> Editor<T> {
         for doc_id in doc_ids {
             let job =
                 crate::job_manager::jobs::git::GitStatusJob::new(doc_id, repo_root.to_path_buf());
-            self.job_manager.spawn(job);
+            let job_id = self.job_manager.spawn(job);
+            self.git_status_refresh_jobs.insert(doc_id, job_id);
         }
     }
 
-    /// Stage/unstage/discard whatever's under the cursor directly (fugitive's `s`/`u`/`-`/`X` fast paths); the buffer is read-only, so this is the only way its state changes. Granularity depends on where the cursor is: a single `+`/`-` diff line stages/unstages/discards just that line (synthesizing a sub-patch via.
+    pub(super) fn is_git_status_refreshing(&self) -> bool {
+        self.git_status_refresh_jobs
+            .get(&self.active_document_id())
+            .is_some_and(|&id| self.job_manager.is_job_running(id))
+    }
+
     pub(super) fn git_status_cursor_action(&mut self, verb: &str) {
         let mut discard_untracked_hunk_blocked = false;
         let (repo_root, action) = {
@@ -293,7 +306,10 @@ impl<T: TerminalBackend> Editor<T> {
                 } else {
                     match verb {
                         "stage" | "toggle" if !is_staged => Some(GitStatusAction::Stage(path)),
-                        "unstage" | "toggle" if is_staged => Some(GitStatusAction::Unstage(path)),
+                        "unstage" | "toggle" if is_staged => Some(GitStatusAction::Unstage {
+                            path,
+                            orig_path: orig_path.map(PathBuf::from),
+                        }),
                         "discard" => Some(GitStatusAction::Discard {
                             path,
                             orig_path: orig_path.map(PathBuf::from),

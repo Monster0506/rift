@@ -105,6 +105,90 @@ fn cursor_stage_action_runs_git_add_and_refreshes_the_buffer() {
     assert!(status.contains("new.txt"), "{status}");
 }
 
+fn cursor_to_entry<T: crate::term::TerminalBackend>(editor: &mut Editor<T>, path: &str) {
+    let doc = editor.document_manager.active_document_mut().unwrap();
+    let line = (0..doc.buffer.get_total_lines())
+        .find(|&l| {
+            doc.annotations
+                .git_status_entry_at_line(l)
+                .is_some_and(|(p, ..)| p == path)
+        })
+        .expect("status entry line");
+    let start = doc.buffer.line_index.get_start(line).unwrap();
+    let _ = doc.buffer.set_cursor(start);
+}
+
+fn porcelain(dir: &std::path::Path) -> String {
+    crate::git::run_checked(dir, &["status", "--porcelain"]).unwrap()
+}
+
+#[test]
+fn unstage_rename_line_unstages_both_paths() {
+    let dir = tempfile::tempdir().unwrap();
+    init_repo_with_commit(dir.path());
+    crate::git::run_checked(dir.path(), &["mv", "tracked.txt", "renamed.txt"]).unwrap();
+
+    let mut editor = create_editor();
+    open_and_load(&mut editor, &dir.path().join("renamed.txt"));
+    editor.open_git_status();
+    drain_jobs(&mut editor);
+    cursor_to_entry(&mut editor, "renamed.txt");
+    editor.git_status_cursor_action("unstage");
+    drain_jobs(&mut editor);
+
+    let status = porcelain(dir.path());
+    assert!(status.contains(" D tracked.txt"), "{status}");
+    assert!(status.contains("?? renamed.txt"), "{status}");
+}
+
+#[test]
+fn unstage_in_repo_without_commits_unstages_file() {
+    let dir = tempfile::tempdir().unwrap();
+    crate::git::run_checked(dir.path(), &["init", "--quiet"]).unwrap();
+    std::fs::write(dir.path().join("new.txt"), "hello\n").unwrap();
+    crate::git::run_checked(dir.path(), &["add", "new.txt"]).unwrap();
+
+    let mut editor = create_editor();
+    open_and_load(&mut editor, &dir.path().join("new.txt"));
+    editor.open_git_status();
+    drain_jobs(&mut editor);
+    cursor_to_entry(&mut editor, "new.txt");
+    editor.git_status_cursor_action("unstage");
+    drain_jobs(&mut editor);
+
+    assert_eq!(porcelain(dir.path()).trim_end(), "?? new.txt");
+}
+
+#[test]
+fn fast_double_toggle_in_status_unstages_file() {
+    use crate::replay::backend::ReplayBackend;
+
+    let dir = tempfile::tempdir().unwrap();
+    init_repo_with_commit(dir.path());
+    std::fs::write(dir.path().join("tracked.txt"), "line one\nline TWO\n").unwrap();
+
+    let backend = ReplayBackend::new(Vec::new(), 24, 80);
+    let path = dir.path().join("tracked.txt").display().to_string();
+    let mut editor = Editor::with_file(backend, Some(&path)).unwrap();
+    drain_jobs_replay(&mut editor);
+    editor.open_git_status();
+    drain_jobs_replay(&mut editor);
+    cursor_to_entry(&mut editor, "tracked.txt");
+
+    let keys = crate::key::notation::parse_key_sequence("--").unwrap();
+    editor.term.push_keys(keys.clone());
+    for _ in &keys {
+        editor.tick().unwrap();
+    }
+    drain_jobs_replay(&mut editor);
+    editor.tick().unwrap();
+    drain_jobs_replay(&mut editor);
+
+    let staged = crate::git::run_checked(dir.path(), &["diff", "--cached", "--name-only"]).unwrap();
+    assert_eq!(staged, "", "second '-' must unstage");
+    assert!(porcelain(dir.path()).contains(" M tracked.txt"));
+}
+
 #[test]
 fn git_status_buffer_is_read_only_and_wq_reports_cannot_be_saved() {
     let dir = tempfile::tempdir().unwrap();

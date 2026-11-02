@@ -93,7 +93,10 @@ pub(crate) struct DirectoryDiff {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum GitStatusAction {
     Stage(PathBuf),
-    Unstage(PathBuf),
+    Unstage {
+        path: PathBuf,
+        orig_path: Option<PathBuf>,
+    },
     Discard {
         path: PathBuf,
         orig_path: Option<PathBuf>,

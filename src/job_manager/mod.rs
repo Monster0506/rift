@@ -503,6 +503,13 @@ impl JobManager {
         self.jobs.get(&id).map_or("job", |h| h.name)
     }
 
+    #[must_use]
+    pub(crate) fn is_job_running(&self, id: usize) -> bool {
+        self.jobs
+            .get(&id)
+            .is_some_and(|h| h.state == JobState::Running)
+    }
+
     #[cfg(test)]
     /// Returns the current state of a job, if it is still tracked.
     #[must_use]

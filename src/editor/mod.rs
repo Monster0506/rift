@@ -209,6 +209,8 @@ pub struct Editor<T: TerminalBackend> {
     git_gutter_repo_cache:
         std::collections::HashMap<crate::document::DocumentId, Option<std::path::PathBuf>>,
     pending_git_status_expand_all: std::collections::HashMap<crate::document::DocumentId, bool>,
+    git_status_refresh_jobs: std::collections::HashMap<crate::document::DocumentId, usize>,
+    deferred_keys: std::collections::VecDeque<crate::key::Key>,
     pending_git_log_expand_head: std::collections::HashSet<crate::document::DocumentId>,
     pending_search_refresh: Option<crate::time::Instant>,
     search_highlights_synced: Option<(crate::document::DocumentId, u64, String)>,

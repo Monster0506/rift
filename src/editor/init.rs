@@ -164,6 +164,8 @@ impl<T: TerminalBackend> Editor<T> {
             pending_git_gutter_diff: std::collections::HashMap::new(),
             git_gutter_repo_cache: std::collections::HashMap::new(),
             pending_git_status_expand_all: std::collections::HashMap::new(),
+            git_status_refresh_jobs: std::collections::HashMap::new(),
+            deferred_keys: std::collections::VecDeque::new(),
             pending_git_log_expand_head: std::collections::HashSet::new(),
             pending_search_refresh: None,
             search_highlights_synced: None,

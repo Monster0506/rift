@@ -52,6 +52,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let jobs_changed = self.drain_job_messages();
+        self.replay_deferred_keys()?;
         self.poll_pending_syntax_reparse();
         self.poll_pending_search_refresh();
         self.poll_git_gutter_diff();
@@ -175,7 +176,23 @@ impl<T: TerminalBackend> Editor<T> {
             }
             InputEvent::Key(key) => key,
         };
+        if self.is_git_status_refreshing() || !self.deferred_keys.is_empty() {
+            self.deferred_keys.push_back(key_press);
+            return Ok(true);
+        }
+
         self.handle_key_press(key_press)
+    }
+
+    fn replay_deferred_keys(&mut self) -> Result<(), RiftError> {
+        while !self.is_git_status_refreshing() {
+            let Some(key) = self.deferred_keys.pop_front() else {
+                return Ok(());
+            };
+            self.handle_key_press(key)?;
+        }
+
+        Ok(())
     }
 
     fn handle_key_press(&mut self, key_press: Key) -> Result<bool, RiftError> {
