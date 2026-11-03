@@ -37,7 +37,7 @@ pub(crate) struct Syntax {
     cached_logical_bytes: Option<Arc<Vec<u8>>>,
     /// Keeps `language`'s backing dynamic library alive for as long as this
     /// `Syntax` (and any `Tree`/`Parser` derived from it) may exist.
-    lib: Option<Arc<super::loader::RawLib>>,
+    lib: Option<Arc<libloading::Library>>,
 
     // --- Static injection support (Svelte, HTML: capture name = language name) ---
     pub(crate) injections_query: Option<Arc<Query>>,
@@ -137,10 +137,10 @@ impl Syntax {
         }
     }
 
-    /// The `Arc<RawLib>` keeping this syntax's `language` alive, if it came
+    /// The library keeping this syntax's `language` alive, if it came
     /// from a dynamically loaded grammar. Clone it into anything that outlives `self`.
     #[must_use]
-    pub(crate) fn lib(&self) -> Option<Arc<super::loader::RawLib>> {
+    pub(crate) fn lib(&self) -> Option<Arc<libloading::Library>> {
         self.lib.clone()
     }
 

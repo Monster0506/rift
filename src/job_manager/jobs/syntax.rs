@@ -2,7 +2,6 @@ use crate::buffer::TextBuffer;
 use crate::document::DocumentId;
 use crate::job_manager::{CancellationSignal, Job, JobMessage};
 use crate::syntax::interval_tree::IntervalTree;
-use crate::syntax::loader::RawLib;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use streaming_iterator::StreamingIterator;
@@ -39,7 +38,7 @@ pub(crate) struct SyntaxParseJob {
     single_edit: Option<InputEdit>,
     /// Keeps `parser`'s language's backing dynamic library alive for the job's
     /// lifetime; runs on a background thread detached from the `Syntax` that spawned it.
-    lib_handle: Option<Arc<RawLib>>,
+    lib_handle: Option<Arc<libloading::Library>>,
     /// Highlights as of `old_tree`, plus the single edit since then (if
     /// exactly one landed); otherwise the highlights query rescans everything.
     old_highlights: Arc<IntervalTree<u32>>,
@@ -95,7 +94,7 @@ impl SyntaxParseJob {
     /// Attach the backing library handle for `parser`'s language, if it was
     /// loaded dynamically, so it stays mapped for the lifetime of this job.
     #[must_use]
-    pub(crate) fn with_lib(mut self, lib: Option<Arc<RawLib>>) -> Self {
+    pub(crate) fn with_lib(mut self, lib: Option<Arc<libloading::Library>>) -> Self {
         self.lib_handle = lib;
         self
     }

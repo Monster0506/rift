@@ -1,31 +1,22 @@
 use super::*;
 
 #[cfg(windows)]
-const ALWAYS_LOADED_LIB: &str = "kernel32.dll";
+const SYSTEM_LIB: &str = "kernel32.dll";
 #[cfg(all(unix, not(target_os = "macos")))]
-const ALWAYS_LOADED_LIB: &str = "libc.so.6";
+const SYSTEM_LIB: &str = "libc.so.6";
 #[cfg(target_os = "macos")]
-const ALWAYS_LOADED_LIB: &str = "libSystem.B.dylib";
+const SYSTEM_LIB: &str = "libSystem.B.dylib";
+
+const MISSING_SYMBOL: &str = "tree_sitter_not_a_language";
 
 #[test]
-fn arc_rawlib_outlives_original_storage_slot() {
-    // SAFETY: the C library is already loaded in this process, so opening it
-    // only bumps its refcount and runs no new initializers.
-    let lib = unsafe { RawLib::open(ALWAYS_LOADED_LIB) }.expect("open a system library");
-    let lib = Arc::new(lib);
+fn missing_symbol_is_reported() {
+    let loader = LanguageLoader::new(PathBuf::new());
 
-    let mut loaded_libs: Vec<Arc<RawLib>> = vec![lib.clone()];
-    let handed_out: Arc<RawLib> = lib.clone();
-    drop(lib);
+    let err = loader
+        .register_grammar("fake", SYSTEM_LIB, MISSING_SYMBOL)
+        .unwrap_err();
 
-    assert_eq!(Arc::strong_count(&handed_out), 2);
-
-    loaded_libs.clear();
-    drop(loaded_libs);
-
-    assert_eq!(
-        Arc::strong_count(&handed_out),
-        1,
-        "the library must still be alive via the outstanding Arc clone"
-    );
+    assert!(err.contains(MISSING_SYMBOL), "{err}");
+    assert!(loader.load_language("fake").is_err());
 }

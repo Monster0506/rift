@@ -1,13 +1,9 @@
 #[cfg(feature = "treesitter")]
 use crate::error::{ErrorType, RiftError};
 use std::collections::HashMap;
-#[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-use std::ffi::CString;
 use std::path::{Path, PathBuf};
-#[cfg(any(feature = "treesitter", test))]
-use std::sync::Arc;
 #[cfg(feature = "treesitter")]
-use std::sync::Mutex;
+use std::sync::Arc;
 use std::sync::RwLock;
 
 #[cfg(feature = "treesitter")]
@@ -18,7 +14,7 @@ type Language = tree_sitter::Language;
 pub(crate) struct LoadedLanguage {
     pub(crate) language: Language,
     pub(crate) name: String,
-    pub(super) lib: Option<Arc<RawLib>>,
+    pub(super) lib: Option<Arc<libloading::Library>>,
 }
 
 #[cfg(feature = "treesitter")]
@@ -47,8 +43,6 @@ struct DynamicRegistry {
 pub(crate) struct LanguageLoader {
     _grammar_dir: PathBuf,
     dynamic: RwLock<DynamicRegistry>,
-    #[cfg(feature = "treesitter")]
-    loaded_libs: Mutex<Vec<Arc<RawLib>>>,
     /// Grammars registered via `register_grammar()`, keyed by language name.
     #[cfg(feature = "treesitter")]
     dynamic_languages: RwLock<HashMap<String, LoadedLanguage>>,
@@ -60,8 +54,6 @@ impl LanguageLoader {
         Self {
             _grammar_dir: grammar_dir,
             dynamic: RwLock::new(DynamicRegistry::default()),
-            #[cfg(feature = "treesitter")]
-            loaded_libs: Mutex::new(Vec::new()),
             #[cfg(feature = "treesitter")]
             dynamic_languages: RwLock::new(HashMap::new()),
         }
@@ -159,29 +151,22 @@ impl LanguageLoader {
             return Ok(());
         }
 
-        // SAFETY: so_path is a user-installed grammar library; dlopen runs its initializers.
-        let lib =
-            unsafe { RawLib::open(so_path) }.map_err(|e| format!("dlopen '{so_path}': {e}"))?;
+        // SAFETY: so_path is a user-installed grammar library; loading runs its initializers.
+        let lib = unsafe { libloading::Library::new(so_path) }
+            .map_err(|e| format!("load '{so_path}': {e}"))?;
 
-        // SAFETY: lib holds a live handle from open; CString rejects interior NULs.
-        let sym = unsafe { lib.sym(fn_name.as_bytes()) }
-            .map_err(|e| format!("symbol '{fn_name}' in '{so_path}': {e}"))?;
-        // SAFETY: tree-sitter grammars export this symbol with the LangFn signature.
-        let f: LangFn = unsafe { std::mem::transmute(sym) };
-        // SAFETY: f is the grammar entry point and lib stays loaded for this call.
-        let ptr = unsafe { f() };
+        let ptr = {
+            // SAFETY: tree-sitter grammars export this symbol with the LangFn signature.
+            let entry = unsafe { lib.get::<LangFn>(fn_name.as_bytes()) }
+                .map_err(|e| format!("symbol '{fn_name}' in '{so_path}': {e}"))?;
+            // SAFETY: entry is the grammar entry point and lib stays loaded for this call.
+            unsafe { entry() }
+        };
         if ptr.is_null() {
             return Err(format!("'{fn_name}' returned a null TSLanguage pointer"));
         }
         // SAFETY: ptr is non-null static grammar data kept alive by lib.
         let language: Language = unsafe { Language::from_raw(ptr) };
-
-        let lib = Arc::new(lib);
-
-        self.loaded_libs
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .push(lib.clone());
 
         self.dynamic_languages
             .write()
@@ -191,7 +176,7 @@ impl LanguageLoader {
                 LoadedLanguage {
                     language,
                     name: lang_name.to_string(),
-                    lib: Some(lib),
+                    lib: Some(Arc::new(lib)),
                 },
             );
 
@@ -506,112 +491,6 @@ fn get_bundled_injections_query(lang_name: &str) -> Option<&'static str> {
     }
 }
 
-#[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-pub(crate) struct RawLib(*mut std::ffi::c_void);
-
-// SAFETY: dlopen/LoadLibrary handles are process-wide; dlsym/dlclose are thread-safe.
-#[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-unsafe impl Send for RawLib {}
-// SAFETY: RawLib is never mutated after open, so shared &self access is sound.
-#[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-unsafe impl Sync for RawLib {}
-
-#[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-impl RawLib {
-    #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-    unsafe fn open(path: &str) -> Result<Self, String> {
-        let c = CString::new(path).map_err(|e| e.to_string())?;
-        let h = sys::open(c.as_ptr());
-        if h.is_null() {
-            Err(format!("could not open '{path}'"))
-        } else {
-            Ok(Self(h))
-        }
-    }
-
-    #[cfg(feature = "treesitter")]
-    unsafe fn sym(&self, name: &[u8]) -> Result<*mut std::ffi::c_void, String> {
-        let c = CString::new(name).map_err(|e| e.to_string())?;
-        let s = sys::sym(self.0, c.as_ptr());
-        if s.is_null() {
-            Err("symbol not found".to_string())
-        } else {
-            Ok(s)
-        }
-    }
-}
-
-#[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-impl Drop for RawLib {
-    fn drop(&mut self) {
-        // SAFETY: self.0 came from a successful open, and Drop runs exactly once.
-        unsafe { sys::close(self.0) };
-    }
-}
-
-#[cfg(unix)]
-mod sys {
-    extern "C" {
-        #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-        fn dlopen(path: *const i8, flags: i32) -> *mut std::ffi::c_void;
-        #[cfg(feature = "treesitter")]
-        fn dlsym(h: *mut std::ffi::c_void, sym: *const i8) -> *mut std::ffi::c_void;
-        #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-        fn dlclose(h: *mut std::ffi::c_void) -> i32;
-    }
-    #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-    unsafe fn open(path: *const i8) -> *mut std::ffi::c_void {
-        dlopen(path, 2)
-    } // RTLD_NOW
-    #[cfg(feature = "treesitter")]
-    unsafe fn sym(h: *mut std::ffi::c_void, s: *const i8) -> *mut std::ffi::c_void {
-        dlsym(h, s)
-    }
-    #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-    unsafe fn close(h: *mut std::ffi::c_void) {
-        dlclose(h);
-    }
-}
-
-#[cfg(windows)]
-mod sys {
-    extern "system" {
-        #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-        fn LoadLibraryA(path: *const i8) -> *mut std::ffi::c_void;
-        #[cfg(feature = "treesitter")]
-        fn GetProcAddress(h: *mut std::ffi::c_void, sym: *const i8) -> *mut std::ffi::c_void;
-        #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-        fn FreeLibrary(h: *mut std::ffi::c_void) -> i32;
-    }
-    #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-    pub(super) unsafe fn open(path: *const i8) -> *mut std::ffi::c_void {
-        LoadLibraryA(path)
-    }
-    #[cfg(feature = "treesitter")]
-    pub(super) unsafe fn sym(h: *mut std::ffi::c_void, s: *const i8) -> *mut std::ffi::c_void {
-        GetProcAddress(h, s)
-    }
-    #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-    pub(super) unsafe fn close(h: *mut std::ffi::c_void) {
-        FreeLibrary(h);
-    }
-}
-
-#[cfg(not(any(unix, windows)))]
-mod sys {
-    #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-    unsafe fn open(_: *const i8) -> *mut std::ffi::c_void {
-        std::ptr::null_mut()
-    }
-    #[cfg(feature = "treesitter")]
-    unsafe fn sym(_: *mut std::ffi::c_void, _: *const i8) -> *mut std::ffi::c_void {
-        std::ptr::null_mut()
-    }
-    #[cfg(any(feature = "treesitter", all(test, any(unix, windows))))]
-    unsafe fn close(_: *mut std::ffi::c_void) {}
-}
-
-#[cfg(test)]
-#[cfg(any(unix, windows))]
+#[cfg(all(test, feature = "treesitter"))]
 #[path = "loader_tests.rs"]
 mod loader_tests;
