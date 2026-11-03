@@ -52,10 +52,21 @@ fn make_channels() -> Channels {
     )
 }
 
-// --- install_sigterm_handler ordering tests ---
+const EVENT_DEADLINE: Duration = Duration::from_secs(5);
 
-// raise() runs the handler synchronously so it can't reproduce the race;
-// this hooks the midpoint between publish and OS-level install instead.
+fn wait_for_input(input_rx: &Receiver<InputEvent>, want: &InputEvent) -> bool {
+    while let Ok(event) = input_rx.recv_timeout(EVENT_DEADLINE) {
+        if event == *want {
+            return true;
+        }
+    }
+    false
+}
+
+fn wait_until_serving(input_rx: &Receiver<InputEvent>) {
+    assert!(wait_for_input(input_rx, &InputEvent::Resize(80, 24)));
+}
+
 #[cfg(unix)]
 #[test]
 fn flag_is_published_before_os_handler_is_installed() {
@@ -68,8 +79,6 @@ fn flag_is_published_before_os_handler_is_installed() {
     sigterm_handler(15);
     assert!(shutdown.load(Ordering::Relaxed));
 }
-
-// --- forward_input tests ---
 
 #[test]
 fn forward_input_blocks_instead_of_dropping_under_burst() {
@@ -93,8 +102,6 @@ fn forward_input_blocks_instead_of_dropping_under_burst() {
     assert_eq!(received, TOTAL);
 }
 
-// --- parse_resize_params tests ---
-
 #[test]
 fn resize_params_wrapping_value_clamped_not_wrapped() {
     let params = serde_json::json!({"cols": 65536, "rows": 65616});
@@ -115,8 +122,6 @@ fn resize_params_valid_value_passed_through() {
     let key = parse_resize_params(&params);
     assert_eq!(key, InputEvent::Resize(120, 40));
 }
-
-// --- do_handshake tests ---
 
 #[test]
 fn handshake_valid_token_returns_viewport_size() {
@@ -207,8 +212,6 @@ fn handshake_viewport_size_passed_through() {
     assert_eq!(size.cols, 24);
 }
 
-// --- serve_client tests ---
-
 #[test]
 fn serve_session_detach_returns_detach() {
     let (mut client, server) = connected_pair();
@@ -286,14 +289,7 @@ fn serve_input_key_routes_to_editor() {
     let msg =
         serde_json::json!({"jsonrpc":"2.0","method":"input.key","params":{"key":"a","seq":1}});
     write_framed(&mut client, &msg).unwrap();
-    std::thread::sleep(Duration::from_millis(20));
-    let mut got_char_a = false;
-    while let Ok(k) = input_rx.try_recv() {
-        if k == InputEvent::Key(Key::char('a')) {
-            got_char_a = true;
-        }
-    }
-    assert!(got_char_a);
+    assert!(wait_for_input(&input_rx, &InputEvent::Key(Key::char('a'))));
     write_framed(
         &mut client,
         &serde_json::json!({"jsonrpc":"2.0","method":"session.detach","params":{}}),
@@ -303,7 +299,6 @@ fn serve_input_key_routes_to_editor() {
     handle.join().unwrap();
 }
 
-/// Pastes `text` from a client in Insert mode; returns the daemon buffer.
 fn remote_paste(text: &str) -> String {
     let (mut client, server) = connected_pair();
     let (input_tx, input_rx, output_tx, output_rx, detach_tx, detach_rx) = make_channels();
@@ -312,7 +307,6 @@ fn remote_paste(text: &str) -> String {
     let mut editor = crate::editor::Editor::with_file(backend, None).unwrap();
     let token = "paste_tok";
 
-    // The serve thread owns input_tx, so its exit closes the input channel.
     let serve = std::thread::spawn(move || {
         serve_client(
             BufReader::new(server),
@@ -335,7 +329,6 @@ fn remote_paste(text: &str) -> String {
     }
     let _output_rx = serve.join().unwrap();
 
-    // A closed input channel fails tick() once every queued event is handled.
     while editor.tick().is_ok() {}
 
     editor.active_document().buffer.to_string()
@@ -372,14 +365,7 @@ fn serve_resize_routes_to_editor() {
     let msg =
         serde_json::json!({"jsonrpc":"2.0","method":"resize","params":{"cols":100,"rows":50}});
     write_framed(&mut client, &msg).unwrap();
-    std::thread::sleep(Duration::from_millis(20));
-    let mut got_resize = false;
-    while let Ok(k) = input_rx.try_recv() {
-        if k == InputEvent::Resize(100, 50) {
-            got_resize = true;
-        }
-    }
-    assert!(got_resize);
+    assert!(wait_for_input(&input_rx, &InputEvent::Resize(100, 50)));
     write_framed(
         &mut client,
         &serde_json::json!({"jsonrpc":"2.0","method":"session.detach","params":{}}),
@@ -407,8 +393,7 @@ fn serve_render_update_sent_to_client() {
         )
     });
     do_handshake_client(&mut client, token, 24, 80);
-    // Let serve_client finish post-handshake drain before sending render data.
-    std::thread::sleep(Duration::from_millis(50));
+    wait_until_serving(&input_rx);
     output_tx.send(b"SCREEN_DATA".to_vec()).unwrap();
     let resp_bytes = read_framed(&mut BufReader::new(&client)).unwrap();
     let resp: serde_json::Value = serde_json::from_slice(&resp_bytes).unwrap();
@@ -439,8 +424,7 @@ fn serve_editor_detach_signal_returns_detach() {
         )
     });
     do_handshake_client(&mut client, token, 24, 80);
-    // Let serve_client complete post-handshake drain before signaling detach.
-    std::thread::sleep(Duration::from_millis(50));
+    wait_until_serving(&input_rx);
     detach_tx.send(()).unwrap();
     let resp_bytes = read_framed(&mut BufReader::new(&client)).unwrap();
     let resp: serde_json::Value = serde_json::from_slice(&resp_bytes).unwrap();
@@ -468,11 +452,11 @@ fn serve_seq_echoed_in_render_update() {
         )
     });
     do_handshake_client(&mut client, token, 24, 80);
-    std::thread::sleep(Duration::from_millis(50));
+    wait_until_serving(&input_rx);
     let key_msg =
         serde_json::json!({"jsonrpc":"2.0","method":"input.key","params":{"key":"a","seq":42}});
     write_framed(&mut client, &key_msg).unwrap();
-    std::thread::sleep(Duration::from_millis(20));
+    assert!(wait_for_input(&input_rx, &InputEvent::Key(Key::char('a'))));
     output_tx.send(b"frame".to_vec()).unwrap();
     let resp_bytes = read_framed(&mut BufReader::new(&client)).unwrap();
     let resp: serde_json::Value = serde_json::from_slice(&resp_bytes).unwrap();
@@ -502,8 +486,7 @@ fn serve_stale_renders_drained_on_connect() {
         )
     });
     do_handshake_client(&mut client, token, 24, 80);
-    // Wait for post-handshake drain to complete before sending fresh render.
-    std::thread::sleep(Duration::from_millis(50));
+    wait_until_serving(&input_rx);
     output_tx.send(b"fresh".to_vec()).unwrap();
     let resp_bytes = read_framed(&mut BufReader::new(&client)).unwrap();
     let resp: serde_json::Value = serde_json::from_slice(&resp_bytes).unwrap();
@@ -554,7 +537,7 @@ fn serve_multiple_render_frames_ordered() {
         )
     });
     do_handshake_client(&mut client, token, 24, 80);
-    std::thread::sleep(Duration::from_millis(50));
+    wait_until_serving(&input_rx);
     for frame in [b"one" as &[u8], b"two", b"three"] {
         output_tx.send(frame.to_vec()).unwrap();
     }
@@ -635,8 +618,6 @@ fn serve_unknown_method_ignored() {
     handle.join().unwrap();
 }
 
-/// Joins `handle` on a watchdog thread so a hung reader thread fails the
-/// test fast instead of blocking the whole suite. Returns None on timeout.
 fn join_with_timeout<T: Send + 'static>(
     handle: std::thread::JoinHandle<T>,
     timeout: Duration,
@@ -648,8 +629,6 @@ fn join_with_timeout<T: Send + 'static>(
     rx.recv_timeout(timeout).ok().map(|r| r.unwrap())
 }
 
-/// Reproduces the reader thread's loop as `serve_client` spawns it, so
-/// shutdown behavior can be verified without a real cross-clone shutdown.
 fn spawn_reader_loop(
     mut reader: BufReader<TcpStream>,
     shutdown: Arc<AtomicBool>,
@@ -658,16 +637,12 @@ fn spawn_reader_loop(
     std::thread::spawn(move || reader_loop(&mut reader, &shutdown, &msg_tx))
 }
 
-/// Without a read timeout, setting only the shutdown flag (no data, no
-/// socket-level shutdown) would leave the reader blocked forever.
 #[test]
 fn reader_thread_exits_on_shutdown_flag_without_socket_shutdown() {
     let (client, server) = connected_pair();
     let shutdown = Arc::new(AtomicBool::new(false));
     let reader_thread = spawn_reader_loop(BufReader::new(server), Arc::clone(&shutdown));
 
-    // Client sends nothing further and the socket itself is never shut
-    // down, simulating the cross-clone signal failing to propagate.
     std::thread::sleep(Duration::from_millis(150));
     shutdown.store(true, Ordering::Relaxed);
 
