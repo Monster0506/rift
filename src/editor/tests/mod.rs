@@ -5,6 +5,7 @@ mod common;
 #[cfg(feature = "treesitter")]
 mod bench_harness;
 mod buffer_nav_tests;
+mod clipboard_panel_tests;
 mod clipboard_preview_tests;
 mod directory_target_tests;
 mod display_map_tests;
@@ -27,5 +28,6 @@ mod scroll_blit_tests;
 mod surround_tests;
 #[cfg(feature = "treesitter")]
 mod syntax_treesitter_tests;
+mod visual_mode_tests;
 mod visual_replace_tests;
 mod window_split_tests;

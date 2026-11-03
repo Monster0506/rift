@@ -312,7 +312,7 @@ fn visual_line_delete_lands_on_first_nonblank_of_remaining_line() {
         ("abc\n  def\n  ghi", "jvkD", "  ghi", 2),
         ("abc\ndef", "GvX", "abc", 0),
         ("abc\ndef", "GvD", "abc", 0),
-        ("abc\n", "GVd", "abc", 0),
+        ("abc\n", "GVd", "", 0),
         ("abc", "Vd", "", 0),
     ] {
         let mut editor = replay_editor(text);
