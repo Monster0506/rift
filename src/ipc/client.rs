@@ -224,7 +224,7 @@ fn send_paste(stream: &mut TcpStream, text: String, seq: u64) -> anyhow::Result<
 fn event_loop<T: TerminalBackend>(local_term: &mut T, stream: TcpStream) -> anyhow::Result<()> {
     let mut write_stream = stream.try_clone()?;
     let (frame_tx, frame_rx) = std::sync::mpsc::channel::<std::io::Result<Vec<u8>>>();
-    let reader_thread = std::thread::spawn(move || {
+    std::thread::spawn(move || {
         let mut net_reader = std::io::BufReader::new(stream);
         loop {
             match read_framed(&mut net_reader) {
@@ -301,7 +301,6 @@ fn event_loop<T: TerminalBackend>(local_term: &mut T, stream: TcpStream) -> anyh
     }
 
     let _ = write_stream.shutdown(std::net::Shutdown::Both);
-    reader_thread.join().ok();
     Ok(())
 }
 

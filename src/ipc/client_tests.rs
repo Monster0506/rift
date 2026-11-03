@@ -77,6 +77,29 @@ fn paste_is_sent_as_one_message() {
 }
 
 #[test]
+fn session_end_exits_promptly() {
+    const EXIT_DEADLINE: Duration = Duration::from_secs(5);
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (mut server, _) = listener.accept().unwrap();
+    let mut term = ScriptedTerminal {
+        inner: MockTerminal::new(24, 80),
+        events: VecDeque::new(),
+    };
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = done_tx.send(event_loop(&mut term, client).is_ok());
+    });
+
+    let end =
+        serde_json::json!({"jsonrpc":"2.0","method":"session.ending","params":{"reason":"test"}});
+    write_framed(&mut server, &end).unwrap();
+
+    assert_eq!(done_rx.recv_timeout(EXIT_DEADLINE), Ok(true));
+    drop(server);
+}
+
+#[test]
 fn read_one_frame_rejects_oversized_content_length_without_allocating() {
     // The daemon side of the handshake is untrusted at this point (no
     // auth yet); a huge claimed length must not reach `vec![0u8; n]`.
