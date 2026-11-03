@@ -37,9 +37,8 @@ pub(crate) fn register_defaults(keymap: &mut KeyMap) {
 
 /// Registers a binding that can also complete a pending operator.
 fn register_motion(keymap: &mut KeyMap, keys: &[Key], action: Action) {
-    for context in [KeyContext::Normal, KeyContext::OperatorPending] {
-        keymap.register_sequence(context, keys.to_vec(), action.clone());
-    }
+    keymap.register_sequence(KeyContext::Normal, keys.to_vec(), action.clone());
+    keymap.register_sequence(KeyContext::OperatorPending, keys.to_vec(), action);
 }
 
 fn register_terminal_defaults(keymap: &mut KeyMap) {
