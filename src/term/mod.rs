@@ -98,6 +98,11 @@ pub trait TerminalBackend {
     /// Returns `Err` if the cursor shape cannot be set.
     fn set_cursor_shape(&mut self, shape: CursorShape) -> Result<(), RiftError>;
 
+    /// Cell size in pixels `(width, height)`, if the terminal reports it.
+    fn cell_pixel_size(&self) -> Option<(u16, u16)> {
+        None
+    }
+
     /// Signal that the client should detach without killing the editor.
     /// Only meaningful for IPC backends; default is a no-op.
     fn request_detach(&mut self) {}

@@ -247,6 +247,16 @@ impl<W: Write> TerminalBackend for CrosstermBackend<W> {
         Ok(Size { rows, cols })
     }
 
+    fn cell_pixel_size(&self) -> Option<(u16, u16)> {
+        // Unsupported on Windows; many Unix terminals report zero pixels.
+        let size = terminal::window_size().ok()?;
+        if size.columns == 0 || size.rows == 0 {
+            return None;
+        }
+        let cell = (size.width / size.columns, size.height / size.rows);
+        (cell.0 > 0 && cell.1 > 0).then_some(cell)
+    }
+
     fn clear_screen(&mut self) -> Result<(), RiftError> {
         execute!(self.writer, terminal::Clear(ClearType::All))
             .map_err(|e| format!("Failed to clear screen: {e}"))?;
