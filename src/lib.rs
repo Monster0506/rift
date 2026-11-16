@@ -26,6 +26,7 @@ mod floating_window;
 mod fs_backend;
 mod git;
 mod history;
+mod image_view;
 mod invariants;
 #[cfg(feature = "ipc")]
 mod ipc;

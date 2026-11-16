@@ -112,6 +112,8 @@ pub struct RenderSystem {
     status_paint_frame: crate::paint::PaintFrame,
 
     render_order: Vec<(crate::render::ecs::EntityId, crate::layer::LayerPriority)>,
+    /// Sixel images drawn over image-buffer windows; staged per frame.
+    pub(crate) image_overlay: crate::image_view::overlay::ImageOverlay,
 }
 
 fn match_index_at_cursor(
@@ -149,6 +151,7 @@ impl RenderSystem {
             window_paint_caches: std::collections::HashMap::new(),
             status_paint_frame: crate::paint::PaintFrame::new(0),
             render_order: Vec::new(),
+            image_overlay: crate::image_view::overlay::ImageOverlay::default(),
         }
     }
 
@@ -494,6 +497,7 @@ impl RenderSystem {
                 .clear_cell(pr, pc);
         }
 
+        self.image_overlay.before_flush(term, &mut self.compositor);
         self.compositor
             .render_to_terminal(term, ctx.needs_clear, scroll_hint)
             .map_err(|e| {
@@ -503,6 +507,7 @@ impl RenderSystem {
                     e.to_string(),
                 )
             })?;
+        self.image_overlay.after_flush(term, &mut self.compositor)?;
 
         if software {
             self.last_cursor_shape = None;
