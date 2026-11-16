@@ -83,8 +83,7 @@ pub(super) fn is_alive(pid: u32) -> bool {
         std::process::Command::new("tasklist")
             .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
             .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).contains(&format!(",\"{pid}\",")))
-            .unwrap_or(false)
+            .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains(&format!(",\"{pid}\",")))
     }
 }
 

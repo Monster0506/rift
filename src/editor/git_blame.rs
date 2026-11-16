@@ -107,8 +107,7 @@ impl<T: TerminalBackend> Editor<T> {
             &repo_root,
             &["rev-parse", "--verify", "--quiet", &parent_commit],
         )
-        .map(|out| out.success)
-        .unwrap_or(false)
+        .is_ok_and(|out| out.success)
         {
             self.state.notify(
                 crate::notification::NotificationType::Info,

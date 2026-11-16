@@ -46,7 +46,7 @@ fn spawn_editor(file: Option<&str>) -> EditorInstance {
                 let r = e.run();
                 eprintln!(
                     "rift: editor run returned: {:?}",
-                    r.as_ref().map(|()| "ok").unwrap_or("err")
+                    r.as_ref().map_or("err", |()| "ok")
                 );
             }
             Err(e) => eprintln!("rift: editor init error: {e}"),

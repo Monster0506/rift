@@ -267,8 +267,7 @@ pub(super) fn encode(
             timestamp_unix_secs: n
                 .timestamp
                 .duration_since(crate::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
+                .map_or(0, |d| d.as_secs()),
             transaction: TransactionV1::from(&n.transaction),
         })
         .collect();

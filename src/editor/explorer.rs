@@ -854,9 +854,7 @@ impl<T: TerminalBackend> Editor<T> {
             (name, is_dir)
         } else {
             let name = line_text.trim_end_matches('/').to_string();
-            let is_dir = std::fs::symlink_metadata(dir_path.join(&name))
-                .map(|m| m.is_dir())
-                .unwrap_or(false);
+            let is_dir = std::fs::symlink_metadata(dir_path.join(&name)).is_ok_and(|m| m.is_dir());
             (name, is_dir)
         };
         if entry_name.is_empty() || entry_name == ".." {

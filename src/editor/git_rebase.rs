@@ -15,9 +15,7 @@ enum CherryPickOutcome {
 }
 
 fn cherry_pick_in_progress(repo_root: &Path) -> bool {
-    crate::git::git_dir(repo_root)
-        .map(|d| d.join("CHERRY_PICK_HEAD").exists())
-        .unwrap_or(false)
+    crate::git::git_dir(repo_root).is_ok_and(|d| d.join("CHERRY_PICK_HEAD").exists())
 }
 
 fn cherry_pick(repo_root: &Path, sha: &str, no_commit: bool) -> CherryPickOutcome {

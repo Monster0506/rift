@@ -962,14 +962,12 @@ impl PluginHost {
     /// Load all top-level `.lua` files in `dir`, sorted lexicographically. Returns error strings.
     pub(crate) fn lua_load_dir(&self, dir: &std::path::Path) -> Vec<String> {
         self.lua.as_ref().map_or_else(Vec::new, |lua| {
-            let has_lua_files = std::fs::read_dir(dir)
-                .map(|rd| {
-                    rd.flatten().any(|e| {
-                        let p = e.path();
-                        p.is_file() && p.extension().is_some_and(|x| x == "lua")
-                    })
+            let has_lua_files = std::fs::read_dir(dir).is_ok_and(|rd| {
+                rd.flatten().any(|e| {
+                    let p = e.path();
+                    p.is_file() && p.extension().is_some_and(|x| x == "lua")
                 })
-                .unwrap_or(false);
+            });
             if has_lua_files {
                 self.lua_used.set(true);
             }

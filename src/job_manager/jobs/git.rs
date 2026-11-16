@@ -689,8 +689,7 @@ fn tempfile_write(content: &str) -> Result<PathBuf, crate::error::RiftError> {
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
+            .map_or(0, |d| d.as_nanos())
     );
     let path = dir.join(unique);
     std::fs::write(&path, content)?;

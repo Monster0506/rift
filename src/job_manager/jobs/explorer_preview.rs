@@ -110,8 +110,7 @@ impl Job for ExplorerPreviewJob {
             let prefix = fs.read_file_prefix(&self.path, FILE_PREVIEW_BYTES);
             let looks_like_undo_file = prefix
                 .as_ref()
-                .map(|bytes| crate::history::persist::has_magic(bytes))
-                .unwrap_or(false);
+                .is_ok_and(|bytes| crate::history::persist::has_magic(bytes));
 
             let (text, undo_file) = if looks_like_undo_file {
                 let full = fs

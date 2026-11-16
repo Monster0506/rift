@@ -94,7 +94,7 @@ impl FileSystem for NativeFileSystem {
             let name = entry.file_name().to_string_lossy().into_owned();
             // file_type() reads d_type from the readdir result itself on
             // most platforms, so listing a directory stays a single syscall.
-            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            let is_dir = entry.file_type().is_ok_and(|t| t.is_dir());
             entries.push(FsEntry { name, is_dir });
         }
         Ok(entries)
