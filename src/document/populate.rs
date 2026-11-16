@@ -606,12 +606,28 @@ impl Document {
         }
     }
 
+    /// Coalesce terminal wakeups without copying the terminal grid until a frame.
     pub(crate) fn handle_terminal_data(&mut self, _data: &[u8]) {
-        self.sync_terminal_buffer();
+        if let Some(state) = self.state.try_get_mut(TERMINAL_STATE_KEY) {
+            state.terminal_dirty = true;
+        }
     }
 
+    pub(crate) fn sync_terminal_if_dirty(&mut self) {
+        if self
+            .state
+            .try_get(TERMINAL_STATE_KEY)
+            .is_some_and(|state| state.terminal_dirty)
+        {
+            self.sync_terminal_buffer();
+        }
+    }
+
+    /// Immediately refresh the document and its scroll metadata from one locked
+    /// terminal snapshot, including when no wakeup has been received.
     pub(crate) fn sync_terminal_buffer(&mut self) {
-        let (content, cursor_line, cursor_col, cell_colors) = match self.terminal() {
+        let (content, cursor_line, cursor_col, cell_colors, scroll_position) = match self.terminal()
+        {
             Some(terminal) => terminal.read_screen(),
             None => return,
         };
@@ -637,6 +653,15 @@ impl Document {
             if let Some(state) = self.state.try_get_mut(TERMINAL_STATE_KEY) {
                 state.terminal_cursor = Some((cursor_line, cursor_col));
                 state.terminal_cell_colors = cell_colors;
+                let scroll = state
+                    .terminal_scroll_position
+                    .and_then(|previous| scroll_position.scroll_since(previous));
+                state.terminal_scroll = state
+                    .terminal_scroll
+                    .zip(scroll)
+                    .and_then(|(accumulated, scroll)| accumulated.checked_add(scroll));
+                state.terminal_scroll_position = Some(scroll_position);
+                state.terminal_dirty = false;
             }
         }
     }
@@ -1534,5 +1559,112 @@ fn git_status_entry_code(entry: &crate::git::status::StatusEntry, section: &str)
         s if s == git_status_sections::STAGED => state_char(entry.index_state).to_string(),
         s if s == git_status_sections::UNSTAGED => state_char(entry.worktree_state).to_string(),
         _ => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod terminal_snapshot_tests {
+    use super::*;
+    use crate::document::runtime::{StateSlot, TerminalState};
+
+    fn terminal_document() -> Document {
+        let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
+        document.state = StateSlot::new(TERMINAL_STATE_KEY, TerminalState::default());
+        document
+    }
+
+    #[test]
+    fn terminal_wakeups_only_mark_one_pending_snapshot() {
+        let mut document = terminal_document();
+        document.buffer.insert_str("previous snapshot").unwrap();
+        let revision = document.buffer.revision;
+
+        document.handle_terminal_data(b"first");
+        document.handle_terminal_data(b"second");
+        document.handle_terminal_data(&[]);
+
+        assert_eq!(document.buffer.revision, revision);
+        assert!(
+            document
+                .state
+                .try_get(TERMINAL_STATE_KEY)
+                .unwrap()
+                .terminal_dirty
+        );
+    }
+
+    #[test]
+    fn clean_terminal_does_not_refresh_its_snapshot() {
+        let mut document = terminal_document();
+        let revision = document.buffer.revision;
+        document.sync_terminal_if_dirty();
+        assert_eq!(document.buffer.revision, revision);
+    }
+
+    #[test]
+    fn rendered_terminal_scroll_is_cleared_without_losing_dirty_state() {
+        let mut document = terminal_document();
+        document
+            .state
+            .try_get_mut(TERMINAL_STATE_KEY)
+            .unwrap()
+            .terminal_scroll = Some(3);
+        document.handle_terminal_data(&[]);
+        assert_eq!(document.terminal_scroll(), 3);
+
+        document.clear_terminal_scroll();
+
+        assert_eq!(document.terminal_scroll(), 0);
+        assert!(
+            document
+                .state
+                .try_get(TERMINAL_STATE_KEY)
+                .unwrap()
+                .terminal_dirty
+        );
+    }
+
+    #[test]
+    fn ordinary_document_ignores_terminal_wakeups() {
+        let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
+        let revision = document.buffer.revision;
+        document.handle_terminal_data(&[]);
+        document.sync_terminal_if_dirty();
+        document.clear_terminal_scroll();
+        assert_eq!(document.buffer.revision, revision);
+        assert_eq!(document.terminal_scroll(), 0);
+    }
+
+    #[cfg(not(feature = "terminal_emulation"))]
+    #[test]
+    fn dirty_terminal_snapshots_coalesce_and_explicit_sync_remains_immediate() {
+        let mut document = terminal_document();
+        document
+            .state
+            .try_get_mut(TERMINAL_STATE_KEY)
+            .unwrap()
+            .terminal = Some(crate::term::terminal::Terminal {
+            size: (3, 40),
+            name: "stub".to_string(),
+        });
+        let revision = document.buffer.revision;
+        document.handle_terminal_data(b"first");
+        document.handle_terminal_data(b"second");
+        assert_eq!(document.buffer.revision, revision);
+
+        document.sync_terminal_if_dirty();
+        assert_eq!(document.buffer.revision, revision + 1);
+        assert!(
+            !document
+                .state
+                .try_get(TERMINAL_STATE_KEY)
+                .unwrap()
+                .terminal_dirty
+        );
+
+        document.sync_terminal_if_dirty();
+        assert_eq!(document.buffer.revision, revision + 1);
+        document.sync_terminal_buffer();
+        assert_eq!(document.buffer.revision, revision + 2);
     }
 }

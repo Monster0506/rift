@@ -353,7 +353,7 @@ impl<T: TerminalBackend> Editor<T> {
             .windows_for_document(token.doc_id())
             .is_empty()
         {
-            let _ = self.update_and_render();
+            self.terminal_frame_pending = true;
         }
     }
 

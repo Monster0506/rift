@@ -4,12 +4,23 @@
 use super::TerminalEvent;
 use std::sync::mpsc;
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ScrollPosition;
+
+#[allow(clippy::unused_self)]
+impl ScrollPosition {
+    pub(crate) const fn scroll_since(self, _previous: Self) -> Option<isize> {
+        None
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct Terminal {
     pub(crate) size: (u16, u16),
     pub(crate) name: String,
 }
 
+#[allow(clippy::unused_self)]
 impl Terminal {
     /// # Errors
     /// Always returns `Err`.
@@ -34,8 +45,22 @@ impl Terminal {
     pub(crate) const fn scroll_to_bottom(&self) {}
 
     #[must_use]
-    pub(crate) fn read_screen(&self) -> (String, usize, usize, crate::color::CellColorSpans) {
-        (String::new(), 0, 0, crate::color::CellColorSpans::default())
+    pub(crate) fn read_screen(
+        &self,
+    ) -> (
+        String,
+        usize,
+        usize,
+        crate::color::CellColorSpans,
+        ScrollPosition,
+    ) {
+        (
+            String::new(),
+            0,
+            0,
+            crate::color::CellColorSpans::default(),
+            ScrollPosition,
+        )
     }
 }
 

@@ -68,11 +68,11 @@ fn test_scrollback_changes_visible_content() {
     let history = term.lock().grid().history_size();
     assert!(history > 0, "need scrollback history, got 0");
 
-    let (bottom_screen, _, _, _) = read_term_screen(&term);
+    let (bottom_screen, _, _, _, _) = snapshot(&term);
 
     scroll(&term, 3);
     let offset = term.lock().grid().display_offset();
-    let (scrolled_screen, _, _, _) = read_term_screen(&term);
+    let (scrolled_screen, _, _, _, _) = snapshot(&term);
 
     assert_ne!(
         bottom_screen, scrolled_screen,
@@ -80,9 +80,86 @@ fn test_scrollback_changes_visible_content() {
     );
 
     scroll_bottom(&term);
-    let (restored_screen, _, _, _) = read_term_screen(&term);
+    let (restored_screen, _, _, _, _) = snapshot(&term);
     assert_eq!(
         bottom_screen, restored_screen,
         "screen should match original after scrolling back"
     );
+}
+
+fn snapshot(
+    term: &Arc<FairMutex<Term<TerminalListener>>>,
+) -> (
+    String,
+    usize,
+    usize,
+    crate::color::CellColorSpans,
+    ScrollPosition,
+) {
+    read_term_screen(term, Config::default().scrolling_history)
+}
+
+#[test]
+fn snapshot_reports_output_scroll_and_scrollback_direction() {
+    let term = make_term(3, 40);
+    let previous = snapshot(&term).4;
+    feed(&term, b"one\r\ntwo\r\nthree\r\nfour\r\n");
+    let bottom = snapshot(&term).4;
+    assert_eq!(bottom.scroll_since(previous), Some(2));
+
+    scroll(&term, 1);
+    let scrolled = snapshot(&term).4;
+    assert_eq!(scrolled.scroll_since(bottom), Some(-1));
+    scroll_bottom(&term);
+    assert_eq!(snapshot(&term).4.scroll_since(scrolled), Some(1));
+}
+
+#[test]
+fn snapshot_output_keeps_scrolled_view_stationary() {
+    let term = make_term(3, 40);
+    feed(&term, b"one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n");
+    scroll(&term, 2);
+    let previous = snapshot(&term).4;
+    feed(&term, b"six\r\n");
+    assert_eq!(snapshot(&term).4.scroll_since(previous), Some(0));
+}
+
+#[test]
+fn snapshot_rejects_resize_and_alternate_screen_transitions() {
+    let term = make_term(3, 40);
+    feed(&term, b"one\r\ntwo\r\nthree\r\nfour\r\n");
+    let previous = snapshot(&term).4;
+    term.lock().resize(TermDims { rows: 4, cols: 40 });
+    let resized = snapshot(&term).4;
+    assert_eq!(resized.scroll_since(previous), None);
+    feed(&term, b"\x1b[?1049h");
+    let alternate = snapshot(&term).4;
+    assert_eq!(alternate.scroll_since(resized), None);
+    feed(&term, b"\n\n\n\n");
+    assert_eq!(snapshot(&term).4.scroll_since(alternate), None);
+    feed(&term, b"\x1b[?1049l");
+    assert_eq!(snapshot(&term).4.scroll_since(alternate), None);
+}
+
+#[test]
+fn snapshot_rejects_cleared_history() {
+    let term = make_term(3, 40);
+    feed(&term, b"one\r\ntwo\r\nthree\r\nfour\r\n");
+    let previous = snapshot(&term).4;
+    feed(&term, b"\x1b[3J");
+    assert_eq!(snapshot(&term).4.scroll_since(previous), None);
+}
+
+#[test]
+fn snapshot_rejects_scrollback_saturation_without_changing_history() {
+    let term = make_term(3, 40);
+    term.lock().grid_mut().update_history(2);
+    feed(&term, b"one\r\ntwo\r\nthree\r\n");
+    let previous = read_term_screen(&term, 2).4;
+    feed(&term, b"four\r\nfive\r\nsix\r\n");
+    let saturated = read_term_screen(&term, 2).4;
+    assert_eq!(saturated.scroll_since(previous), None);
+    assert_eq!(term.lock().grid().history_size(), 2);
+    feed(&term, b"seven\r\n");
+    assert_eq!(read_term_screen(&term, 2).4.scroll_since(saturated), None);
 }

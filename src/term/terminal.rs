@@ -46,9 +46,43 @@ impl alacritty_terminal::grid::Dimensions for TermDims {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ScrollPosition {
+    history_size: usize,
+    display_offset: usize,
+    rows: usize,
+    cols: usize,
+    alternate_screen: bool,
+    history_limit: usize,
+}
+
+impl ScrollPosition {
+    /// Returns the visible content's upward displacement, or `None` when history
+    /// cannot distinguish scrolling from a reset, reflow, or scrollback eviction.
+    pub(crate) fn scroll_since(self, previous: Self) -> Option<isize> {
+        if self.rows != previous.rows
+            || self.cols != previous.cols
+            || self.alternate_screen
+            || previous.alternate_screen
+            || self.history_limit != previous.history_limit
+            || self.history_size < previous.history_size
+            || self.history_size >= self.history_limit
+            || previous.history_size >= previous.history_limit
+        {
+            return None;
+        }
+
+        let current = isize::try_from(self.history_size.checked_sub(self.display_offset)?).ok()?;
+        let previous =
+            isize::try_from(previous.history_size.checked_sub(previous.display_offset)?).ok()?;
+        current.checked_sub(previous)
+    }
+}
+
 pub(crate) struct Terminal {
     term: Arc<FairMutex<Term<TerminalListener>>>,
     notifier: Notifier,
+    history_limit: usize,
     pub(crate) size: (u16, u16),
     pub(crate) name: String,
 }
@@ -109,6 +143,7 @@ impl Terminal {
         let (tx, rx) = mpsc::channel();
         let listener = TerminalListener(tx);
         let config = Config::default();
+        let history_limit = config.scrolling_history;
         let dims = TermDims {
             rows: rows as usize,
             cols: cols as usize,
@@ -127,6 +162,7 @@ impl Terminal {
             Self {
                 term,
                 notifier,
+                history_limit,
                 size: (rows, cols),
                 name,
             },
@@ -176,14 +212,29 @@ impl Terminal {
     }
 
     #[must_use]
-    pub(crate) fn read_screen(&self) -> (String, usize, usize, crate::color::CellColorSpans) {
-        read_term_screen(&self.term)
+    pub(crate) fn read_screen(
+        &self,
+    ) -> (
+        String,
+        usize,
+        usize,
+        crate::color::CellColorSpans,
+        ScrollPosition,
+    ) {
+        read_term_screen(&self.term, self.history_limit)
     }
 }
 
 fn read_term_screen(
     term_arc: &Arc<FairMutex<Term<TerminalListener>>>,
-) -> (String, usize, usize, crate::color::CellColorSpans) {
+    history_limit: usize,
+) -> (
+    String,
+    usize,
+    usize,
+    crate::color::CellColorSpans,
+    ScrollPosition,
+) {
     use alacritty_terminal::grid::Dimensions as _;
 
     let term = term_arc.lock();
@@ -192,6 +243,16 @@ fn read_term_screen(
     let num_cols = grid.columns();
     let num_lines = grid.screen_lines();
     let display_offset = i32::try_from(grid.display_offset()).unwrap_or(i32::MAX);
+    let scroll_position = ScrollPosition {
+        history_size: grid.history_size(),
+        display_offset: grid.display_offset(),
+        rows: num_lines,
+        cols: num_cols,
+        alternate_screen: term
+            .mode()
+            .contains(alacritty_terminal::term::TermMode::ALT_SCREEN),
+        history_limit,
+    };
 
     let cursor_point = grid.cursor.point;
     let cursor_abs = cursor_point.line.0;
@@ -264,7 +325,13 @@ fn read_term_screen(
     drop(term);
 
     let content = lines.join("\n");
-    (content, cursor_line, cursor_col, color_spans)
+    (
+        content,
+        cursor_line,
+        cursor_col,
+        color_spans,
+        scroll_position,
+    )
 }
 
 const fn alacritty_color_to_rift(

@@ -217,6 +217,8 @@ pub struct Editor<T: TerminalBackend> {
     pending_explorer_preview: Option<explorer::PendingExplorerPreview>,
     startup_first_paint: Option<crate::time::Instant>,
     unrendered_key_count: usize,
+    terminal_frame_pending: bool,
+    last_frame_at: Option<crate::time::Instant>,
 }
 
 struct DisplayMapCacheEntry {

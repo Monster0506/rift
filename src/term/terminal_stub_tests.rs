@@ -47,9 +47,10 @@ fn read_screen_is_empty() {
         size: (24, 80),
         name: "stub".to_string(),
     };
-    let (text, cursor_row, cursor_col, spans) = term.read_screen();
+    let (text, cursor_row, cursor_col, spans, scroll_position) = term.read_screen();
     assert_eq!(text, "");
     assert_eq!(cursor_row, 0);
     assert_eq!(cursor_col, 0);
     assert!(spans.is_empty());
+    assert_eq!(scroll_position.scroll_since(scroll_position), None);
 }

@@ -390,6 +390,9 @@ pub(super) struct TerminalState {
     pub(super) terminal: Option<crate::term::terminal::Terminal>,
     pub(super) terminal_cursor: Option<(usize, usize)>,
     pub(super) terminal_cell_colors: crate::color::CellColorSpans,
+    pub(super) terminal_dirty: bool,
+    pub(super) terminal_scroll_position: Option<crate::term::terminal::ScrollPosition>,
+    pub(super) terminal_scroll: Option<isize>,
 }
 pub(super) static TERMINAL_STATE_KEY: StateKey<TerminalState> = StateKey::new("terminal");
 

@@ -550,6 +550,21 @@ impl Document {
             .map(|state| state.terminal_cell_colors.as_slice())
     }
 
+    /// Content displacement since the last rendered terminal snapshot; positive
+    /// values mean content moved up. Unknown scrolls fall back to screen diffing.
+    pub(crate) fn terminal_scroll(&self) -> isize {
+        self.state
+            .try_get(TERMINAL_STATE_KEY)
+            .and_then(|state| state.terminal_scroll)
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn clear_terminal_scroll(&mut self) {
+        if let Some(state) = self.state.try_get_mut(TERMINAL_STATE_KEY) {
+            state.terminal_scroll = Some(0);
+        }
+    }
+
     #[cfg(test)]
     fn is_file(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::FILE

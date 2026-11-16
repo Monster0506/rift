@@ -12,6 +12,8 @@ use crate::term::TerminalBackend;
 /// key before the shorter action is flushed, mirroring vim's `timeoutlen`.
 const KEY_SEQUENCE_TIMEOUT_MS: u64 = 1000;
 
+pub(super) const FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_nanos(16_666_667);
+
 impl<T: TerminalBackend> Editor<T> {
     /// # Errors
     ///
@@ -51,7 +53,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.pending_keys_started_at = None;
         }
 
-        let jobs_changed = self.drain_job_messages();
+        let mut jobs_changed = self.drain_job_messages();
         self.replay_deferred_keys()?;
         self.poll_pending_syntax_reparse();
         self.poll_pending_search_refresh();
@@ -71,27 +73,26 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         // Poll for input
-        let timeout = self.state.settings.poll_timeout_ms;
-        if self
-            .term
-            .poll(std::time::Duration::from_millis(timeout))
-            .map_err(|e| {
-                RiftError::new(
-                    ErrorType::Internal,
-                    crate::constants::errors::POLL_FAILED,
-                    e.to_string(),
-                )
-            })?
-        {
-            // Early exits skip the notification bookkeeping below.
-            if self.handle_input_event()? {
-                return Ok(());
-            }
+        let mut timeout = std::time::Duration::from_millis(self.state.settings.poll_timeout_ms);
+        if let Some(delay) = self.terminal_frame_delay(crate::time::Instant::now()) {
+            timeout = timeout.min(delay);
+        }
+        let input_ready = self.term.poll(timeout).map_err(|e| {
+            RiftError::new(
+                ErrorType::Internal,
+                crate::constants::errors::POLL_FAILED,
+                e.to_string(),
+            )
+        })?;
+
+        // Output can arrive while polling; apply it before either kind of frame.
+        jobs_changed |= self.drain_job_messages();
+        if input_ready {
+            self.handle_input_event()?;
         } else {
             self.flush_pending_keys_on_timeout()?;
 
-            let poll_dur = std::time::Duration::from_millis(self.state.settings.poll_timeout_ms);
-            let notif_tick = self.state.error_manager.notifications().tick(poll_dur);
+            let notif_tick = self.state.error_manager.notifications().tick(timeout);
 
             if let Some(hold_event) = self.plugin_host.tick_idle() {
                 self.update_lua_state();
@@ -109,6 +110,11 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
+        if self.terminal_frame_delay(crate::time::Instant::now()) == Some(std::time::Duration::ZERO)
+        {
+            self.update_and_render()?;
+        }
+
         if notif_changed {
             self.last_notification_generation = current_gen;
         }
@@ -122,20 +128,45 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
+    fn terminal_frame_delay(&self, now: crate::time::Instant) -> Option<std::time::Duration> {
+        if !self.terminal_frame_pending {
+            return None;
+        }
+        Some(
+            self.last_frame_at
+                .map_or(std::time::Duration::ZERO, |last| {
+                    FRAME_INTERVAL.saturating_sub(now.saturating_duration_since(last))
+                }),
+        )
+    }
+
     fn drain_job_messages(&mut self) -> bool {
-        const MAX_JOB_MESSAGES: usize = 10;
+        const MAX_NONTERMINAL_MESSAGES: usize = 10;
+        const JOB_DRAIN_BUDGET: std::time::Duration = std::time::Duration::from_millis(2);
+        const BUDGET_CHECK_INTERVAL: usize = 256;
         for doc in self.document_manager.documents_iter() {
             self.job_manager
                 .register_document_handle(doc.handle(), doc.buffer_kind_id(), None);
         }
+        let started = crate::time::Instant::now();
         let mut jobs_changed = false;
         let mut processed_jobs = 0;
-        while processed_jobs < MAX_JOB_MESSAGES {
-            if let Ok(msg) = self.job_manager.receiver().try_recv() {
-                self.handle_job_message(msg);
-                processed_jobs += 1;
+        let mut nonterminal_jobs = 0;
+        while let Ok(msg) = self.job_manager.receiver().try_recv() {
+            let terminal_output =
+                matches!(&msg, crate::job_manager::JobMessage::TerminalOutput(..));
+            self.handle_job_message(msg);
+            processed_jobs += 1;
+            if !terminal_output {
                 jobs_changed = true;
-            } else {
+                nonterminal_jobs += 1;
+            }
+            // Wakeups are cheap and coalesce into one snapshot. Bound sustained
+            // producers without imposing the old ten-message limit on output.
+            if nonterminal_jobs >= MAX_NONTERMINAL_MESSAGES
+                || (processed_jobs % BUDGET_CHECK_INTERVAL == 0
+                    && started.elapsed() >= JOB_DRAIN_BUDGET)
+            {
                 break;
             }
         }
@@ -695,3 +726,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "terminal_frame_tests.rs"]
+mod terminal_frame_tests;

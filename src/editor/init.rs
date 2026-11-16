@@ -172,6 +172,8 @@ impl<T: TerminalBackend> Editor<T> {
             pending_explorer_preview: None,
             startup_first_paint: None,
             unrendered_key_count: 0,
+            terminal_frame_pending: false,
+            last_frame_at: None,
         };
 
         crate::keymap::defaults::register_defaults(&mut editor.keymap);

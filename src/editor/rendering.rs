@@ -134,7 +134,7 @@ impl<T: TerminalBackend> Editor<T> {
         let scroll_hint = {
             let vp = &self.render_system.viewport;
             let content_bottom = vp.visible_rows().saturating_sub(2);
-            let (delta, horizontal) = if display_map.is_some() {
+            let (viewport_delta, horizontal) = if display_map.is_some() {
                 (
                     vp.top_visual_row().cast_signed() - vp.prev_top_visual_row().cast_signed(),
                     false,
@@ -145,6 +145,11 @@ impl<T: TerminalBackend> Editor<T> {
                     vp.left_col() != vp.prev_left_col(),
                 )
             };
+            let delta = viewport_delta.saturating_add(
+                self.document_manager
+                    .get_document(doc_id)
+                    .map_or(0, crate::document::Document::terminal_scroll),
+            );
             if !needs_clear && !horizontal && delta != 0 && content_bottom >= 1 {
                 Some((0usize, content_bottom, delta))
             } else {
@@ -195,8 +200,8 @@ impl<T: TerminalBackend> Editor<T> {
         ids
     }
 
-    fn begin_ghost_paint(&mut self) {
-        for id in self.visible_document_ids() {
+    fn begin_ghost_paint(&mut self, visible: &[crate::document::DocumentId]) {
+        for &id in visible {
             let Some(doc) = self.document_manager.get_document_mut(id) else {
                 continue;
             };
@@ -207,8 +212,8 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    fn end_ghost_paint(&mut self) {
-        for id in self.visible_document_ids() {
+    fn end_ghost_paint(&mut self, visible: &[crate::document::DocumentId]) {
+        for &id in visible {
             let Some(doc) = self.document_manager.get_document_mut(id) else {
                 continue;
             };
@@ -222,9 +227,24 @@ impl<T: TerminalBackend> Editor<T> {
     /// # Errors
     /// Returns an error if the frame fails to render or the terminal cannot be written.
     pub(super) fn update_and_render(&mut self) -> Result<(), RiftError> {
-        self.begin_ghost_paint();
+        let visible = self.visible_document_ids();
+        for &id in &visible {
+            if let Some(doc) = self.document_manager.get_document_mut(id) {
+                doc.sync_terminal_if_dirty();
+            }
+        }
+        self.begin_ghost_paint(&visible);
         let result = self.update_and_render_painted();
-        self.end_ghost_paint();
+        self.end_ghost_paint(&visible);
+        if result.is_ok() {
+            self.last_frame_at = Some(crate::time::Instant::now());
+            self.terminal_frame_pending = false;
+            for id in visible {
+                if let Some(doc) = self.document_manager.get_document_mut(id) {
+                    doc.clear_terminal_scroll();
+                }
+            }
+        }
         result
     }
 
@@ -904,7 +924,8 @@ impl<T: TerminalBackend> Editor<T> {
                 if let Some(terminal) = doc.terminal_mut() {
                     terminal.resize(new_rows, new_cols);
                 }
-                doc.handle_terminal_data(&[]);
+                doc.sync_terminal_buffer();
+                doc.clear_terminal_scroll();
             }
         }
 
