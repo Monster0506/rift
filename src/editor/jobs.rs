@@ -936,7 +936,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let preview_path = res.path.clone();
         #[cfg(feature = "treesitter")]
-        let is_file_preview = res.dir_entries.is_none() && res.undo_file.is_none();
+        let is_file_preview = res.file_text.is_some();
         let Some(doc) = self
             .document_manager
             .get_document_by_handle_mut(token.handle)
@@ -957,6 +957,9 @@ impl<T: TerminalBackend> Editor<T> {
             doc.convert_to_undo_file_view();
             doc.set_path(&preview_path);
             doc.populate_undo_file_view(&parsed);
+        } else if let Some(image) = res.image {
+            doc.set_path(&preview_path);
+            doc.convert_to_image_view(image);
         } else if let Some(text) = res.file_text {
             doc.convert_to_file();
             doc.set_path(&preview_path);

@@ -14,6 +14,7 @@ fn test_explorer_preview_result_job_payload() {
         dir_entries: Some(vec![]),
         file_text: None,
         undo_file: None,
+        image: None,
     };
     let boxed: Box<dyn JobPayload> = Box::new(r);
     assert!(boxed

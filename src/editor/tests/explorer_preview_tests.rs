@@ -220,6 +220,7 @@ fn test_explorer_preview_discards_stale_result() {
             dir_entries: None,
             file_text: Some("new content".to_string()),
             undo_file: None,
+            image: None,
         },
     );
     editor.handle_job_message(crate::job_manager::JobMessage::Custom(10000, fresh_result));
@@ -231,6 +232,7 @@ fn test_explorer_preview_discards_stale_result() {
             dir_entries: None,
             file_text: Some("old content".to_string()),
             undo_file: None,
+            image: None,
         },
     );
     editor.handle_job_message(crate::job_manager::JobMessage::Custom(9999, stale_result));
@@ -424,4 +426,51 @@ fn test_explorer_preview_first_move_from_blank_writes_to_terminal() {
     );
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_explorer_preview_draws_images_and_clears_them_for_text() {
+    let dir = tempfile::tempdir().unwrap();
+    image::RgbaImage::from_pixel(40, 40, image::Rgba([200, 0, 0, 255]))
+        .save(dir.path().join("a.png"))
+        .unwrap();
+    std::fs::write(dir.path().join("b.txt"), "plain text\n").unwrap();
+
+    let mut editor = create_editor();
+    editor.open_explorer(dir.path().to_path_buf());
+    drain_jobs(&mut editor);
+    let layout = editor.panel_layout.as_ref().unwrap().clone();
+
+    editor.term.clear();
+    move_explorer_cursor_to_line(&mut editor, layout.dir_doc_id, 1);
+    editor.update_explorer_preview();
+    drain_jobs(&mut editor);
+
+    let preview = editor
+        .document_manager
+        .get_document(layout.preview_doc_id)
+        .unwrap();
+    assert_eq!(
+        preview.buffer_kind_id(),
+        crate::document::runtime::BufferKindId::IMAGE_VIEW
+    );
+    let written = editor.term.get_written_string();
+    assert!(written.contains("\x1bP0;1;0q"), "no sixel in:\n{written:?}");
+
+    editor.term.clear();
+    move_explorer_cursor_to_line(&mut editor, layout.dir_doc_id, 2);
+    editor.update_explorer_preview();
+    drain_jobs(&mut editor);
+
+    let preview = editor
+        .document_manager
+        .get_document(layout.preview_doc_id)
+        .unwrap();
+    assert_eq!(
+        preview.buffer_kind_id(),
+        crate::document::runtime::BufferKindId::FILE
+    );
+    let written = editor.term.get_written_string();
+    assert!(written.contains("plain text"));
+    assert!(!written.contains("\x1bP0;1;0q"));
 }

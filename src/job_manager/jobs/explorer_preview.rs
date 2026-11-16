@@ -10,6 +10,7 @@ pub(crate) struct ExplorerPreviewResult {
     pub(crate) dir_entries: Option<Vec<DirEntry>>,
     pub(crate) file_text: Option<String>,
     pub(crate) undo_file: Option<crate::history::persist::ParsedUndoFile>,
+    pub(crate) image: Option<std::sync::Arc<crate::image_view::DecodedImage>>,
 }
 
 crate::job_manager::impl_job_payload!(ExplorerPreviewResult);
@@ -100,6 +101,7 @@ impl Job for ExplorerPreviewJob {
                 dir_entries: Some(entries),
                 file_text: None,
                 undo_file: None,
+                image: None,
             });
             if let Some(token) = self.token {
                 crate::job_manager::send_job_result_with_token(&sender, id, token, result);
@@ -111,8 +113,18 @@ impl Job for ExplorerPreviewJob {
             let looks_like_undo_file = prefix
                 .as_ref()
                 .is_ok_and(|bytes| crate::history::persist::has_magic(bytes));
+            let image = prefix
+                .as_ref()
+                .ok()
+                .and_then(|bytes| crate::image_view::sniff(bytes))
+                .and_then(|_| fs.read_file(&self.path).ok())
+                .filter(|_| !signal.is_cancelled())
+                .and_then(|bytes| crate::image_view::decode(&bytes))
+                .map(std::sync::Arc::new);
 
-            let (text, undo_file) = if looks_like_undo_file {
+            let (text, undo_file) = if image.is_some() {
+                (String::new(), None)
+            } else if looks_like_undo_file {
                 let full = fs
                     .read_file_prefix(&self.path, CUSTOM_PREVIEW_BYTES)
                     .unwrap_or_default();
@@ -146,8 +158,9 @@ impl Job for ExplorerPreviewJob {
                 right_doc_id: self.right_doc_id,
                 path: self.path,
                 dir_entries: None,
-                file_text: undo_file.is_none().then_some(text),
+                file_text: (undo_file.is_none() && image.is_none()).then_some(text),
                 undo_file,
+                image,
             });
             if let Some(token) = self.token {
                 crate::job_manager::send_job_result_with_token(&sender, id, token, result);
