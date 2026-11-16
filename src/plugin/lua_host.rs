@@ -1070,10 +1070,9 @@ impl LuaHost {
             let f = lua.create_function(move |lua, prefix: String| {
                 let s = sh.borrow_mut();
                 let out = lua.create_table()?;
-                let mut i = 1;
-                for v in s.annotations.iter().filter(|v| v.kind.starts_with(&prefix)) {
+                let matching = s.annotations.iter().filter(|v| v.kind.starts_with(&prefix));
+                for (i, v) in (1..).zip(matching) {
                     out.set(i, annotation_view_to_table(lua, v)?)?;
-                    i += 1;
                 }
                 Ok(out)
             })?;
