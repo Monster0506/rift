@@ -523,19 +523,16 @@ impl Iterator for PieceTableIterator<'_> {
                 self.current_piece = None;
             }
 
-            if let Some(node) = self.pop_stack() {
-                let slice = get_piece_slice(&node.piece, self.original, self.add);
-                if !slice.is_empty() {
-                    self.current_piece = Some(slice);
-                    self.current_piece_idx = 0; // Start at 0
-                                                // Loop again to consume from current_piece
-                }
-                // Empty pieces just traverse right
-                if let Some(right) = &node.right {
-                    self.push_node(right);
-                }
-            } else {
-                return None;
+            let node = self.pop_stack()?;
+            let slice = get_piece_slice(&node.piece, self.original, self.add);
+            if !slice.is_empty() {
+                self.current_piece = Some(slice);
+                self.current_piece_idx = 0; // Start at 0
+                                            // Loop again to consume from current_piece
+            }
+            // Empty pieces just traverse right
+            if let Some(right) = &node.right {
+                self.push_node(right);
             }
         }
     }
@@ -644,20 +641,17 @@ impl<'a> Iterator for PieceTableChunkIterator<'a> {
             }
 
             // Fetch next piece from tree
-            if let Some(node) = self.pop_stack() {
-                let slice = get_piece_slice(&node.piece, self.original, self.add);
-                if !slice.is_empty() {
-                    self.current_piece = Some(slice);
-                    self.current_piece_idx = 0;
-                    if let Some(right) = &node.right {
-                        self.push_node(right);
-                    }
-                    // Loop again to consume
-                } else if let Some(right) = &node.right {
+            let node = self.pop_stack()?;
+            let slice = get_piece_slice(&node.piece, self.original, self.add);
+            if !slice.is_empty() {
+                self.current_piece = Some(slice);
+                self.current_piece_idx = 0;
+                if let Some(right) = &node.right {
                     self.push_node(right);
                 }
-            } else {
-                return None;
+                // Loop again to consume
+            } else if let Some(right) = &node.right {
+                self.push_node(right);
             }
         }
     }
