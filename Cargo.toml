@@ -24,6 +24,7 @@ terminal_emulation = ["dep:alacritty_terminal"]
 lsp = ["ipc"]
 ipc = []
 treesitter = [
+    "dep:streaming-iterator",
     "dep:tree-sitter",
     "dep:tree-sitter-bash",
     "dep:tree-sitter-c",
@@ -52,7 +53,7 @@ treesitter = [
 mlua = { version = "0.12", features = ["lua54", "vendored"], optional = true }
 crossterm = "0.29.0"
 monster-regex = "0.2.5"
-streaming-iterator = "0.1.9"
+streaming-iterator = { version = "0.1.9", optional = true }
 unicode-width = "0.2.2"
 
 tree-sitter = { version = "0.27.0", optional = true }
