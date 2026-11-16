@@ -108,7 +108,6 @@ pub(crate) fn generate_token() -> String {
 ///
 /// # Panics
 /// Panics if `SessionInfo` cannot be serialized, which does not happen in practice.
-#[must_use]
 pub fn print_newest() -> ExitCode {
     match find_local().and_then(|p| read(&p)) {
         Ok(info) => {

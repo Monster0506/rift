@@ -453,7 +453,6 @@ pub enum RiftRegex {
 }
 
 impl RiftRegex {
-    #[must_use]
     fn find_all<'a>(
         &'a self,
         text: &'a str,

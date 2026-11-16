@@ -381,7 +381,6 @@ struct BrokerParams {
 }
 
 /// Entry point for `rift --lsp-broker <key>`; the result is the process exit status.
-#[must_use]
 pub fn run(key: &str) -> ExitCode {
     let idle_secs = std::env::var("RIFT_LSP_BROKER_IDLE_SECS")
         .ok()
