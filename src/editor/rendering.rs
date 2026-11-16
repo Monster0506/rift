@@ -85,19 +85,17 @@ impl<T: TerminalBackend> Editor<T> {
             doc.recompute_directory_highlights();
         }
 
-        let (cursor_line, cursor_col, total_lines, is_terminal) =
-            if let Some(doc) = self.document_manager.get_document(doc_id) {
-                let tw = doc.options.tab_width;
-                let line = doc.buffer.get_line();
-                let cursor = doc.buffer.cursor();
-                let line_start = doc.buffer.line_index.get_start(line).unwrap_or(0);
-                let col = render::calculate_cursor_column_at(&doc.buffer, line, tw, cursor)
-                    + doc.annotations.leading_width_in(line_start, cursor + 1);
-                let total = doc.buffer.get_total_lines();
-                (line, col, total, doc.is_terminal())
-            } else {
-                return None;
-            };
+        let (cursor_line, cursor_col, total_lines, is_terminal) = {
+            let doc = self.document_manager.get_document(doc_id)?;
+            let tw = doc.options.tab_width;
+            let line = doc.buffer.get_line();
+            let cursor = doc.buffer.cursor();
+            let line_start = doc.buffer.line_index.get_start(line).unwrap_or(0);
+            let col = render::calculate_cursor_column_at(&doc.buffer, line, tw, cursor)
+                + doc.annotations.leading_width_in(line_start, cursor + 1);
+            let total = doc.buffer.get_total_lines();
+            (line, col, total, doc.is_terminal())
+        };
         self.state.update_cursor(cursor_line, cursor_col);
 
         self.sync_state_with_active_document();
