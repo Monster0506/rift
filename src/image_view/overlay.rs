@@ -119,12 +119,11 @@ impl ImageOverlay {
             if sixel.is_empty() {
                 continue;
             }
-            term.hide_cursor()?;
-            term.move_cursor(
-                u16::try_from(target.cells.start_row).unwrap_or(u16::MAX),
-                u16::try_from(target.cells.start_col).unwrap_or(u16::MAX),
+            compositor.write_raw_at(
+                term,
+                (target.cells.start_row, target.cells.start_col),
+                sixel,
             )?;
-            term.write(sixel)?;
             covered_overlay |= compositor.invalidate_overlays_within(target.cells);
         }
         if covered_overlay {

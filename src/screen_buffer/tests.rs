@@ -599,3 +599,148 @@ fn apply_scroll_rejects_pending_full_redraw_and_bad_ranges() {
         "delta spans whole region"
     );
 }
+
+#[test]
+fn color_reset_reapplies_attributes_it_cleared() {
+    use crate::layer::CellAttrs;
+    use crate::test_utils::MockTerminal;
+    let mut buffer = DoubleBuffer::new(1, 2);
+    buffer.set_cell(
+        0,
+        0,
+        Cell::from_char('a')
+            .with_bg(Color::Red)
+            .with_attrs(CellAttrs::BOLD),
+    );
+    buffer.set_cell(0, 1, Cell::from_char('b').with_attrs(CellAttrs::BOLD));
+
+    let mut term = MockTerminal::new(1, 2);
+    buffer.render_to_terminal(&mut term).unwrap();
+
+    let out = term.get_written_string();
+    let after_reset = &out[out.rfind("\u{1b}[0m").unwrap()..];
+    assert!(
+        after_reset.contains("\u{1b}[1m"),
+        "SGR 0 also clears bold, so 'b' must re-enable it: {out:?}"
+    );
+}
+
+#[test]
+fn style_carries_over_to_the_next_frame() {
+    use crate::layer::CellAttrs;
+    use crate::test_utils::MockTerminal;
+    let bold = |ch| Cell::from_char(ch).with_attrs(CellAttrs::BOLD);
+    let mut buffer = DoubleBuffer::new(1, 4);
+    for c in 0..4 {
+        buffer.set_cell(0, c, bold('a'));
+    }
+    let mut term = MockTerminal::new(1, 4);
+    buffer.render_to_terminal(&mut term).unwrap();
+
+    term.clear();
+    buffer.set_cell(0, 2, bold('b'));
+    buffer.render_to_terminal(&mut term).unwrap();
+
+    assert_eq!(
+        term.get_written_string(),
+        "b",
+        "same style as the last frame left: no SGR"
+    );
+}
+
+#[test]
+fn place_cursor_sends_only_changes() {
+    use crate::test_utils::MockTerminal;
+    let mut buffer = DoubleBuffer::new(2, 4);
+    let mut term = MockTerminal::new(2, 4);
+    buffer.render_to_terminal(&mut term).unwrap();
+    buffer.place_cursor(&mut term, Some((1, 1))).unwrap();
+
+    term.clear();
+    buffer.render_to_terminal(&mut term).unwrap();
+    buffer.place_cursor(&mut term, Some((1, 1))).unwrap();
+    assert!(term.cursor_moves.is_empty(), "cursor did not move");
+    assert_eq!(term.cursor_shows, 0, "cursor already visible");
+
+    buffer.place_cursor(&mut term, Some((1, 2))).unwrap();
+    assert_eq!(term.cursor_moves, vec![(1, 2)]);
+    assert_eq!(term.cursor_shows, 0);
+
+    term.clear();
+    buffer.set_cell(0, 0, Cell::from_char('x'));
+    buffer.render_to_terminal(&mut term).unwrap();
+    buffer.place_cursor(&mut term, Some((1, 2))).unwrap();
+    assert_eq!(term.cursor_hides, 1, "hidden while cells are written");
+    assert_eq!(term.cursor_moves, vec![(0, 0), (1, 2)], "writing moved it");
+    assert_eq!(term.cursor_shows, 1);
+
+    term.clear();
+    buffer.place_cursor(&mut term, None).unwrap();
+    buffer.place_cursor(&mut term, None).unwrap();
+    assert_eq!(term.cursor_hides, 1);
+}
+
+#[test]
+fn apply_scroll_resets_style_only_when_set() {
+    use crate::test_utils::MockTerminal;
+    let blue_row = |buffer: &mut DoubleBuffer, row: usize| {
+        for c in 0..buffer.cols() {
+            buffer.set_cell(row, c, Cell::from_char('b').with_bg(Color::Blue));
+        }
+    };
+    let mut buffer = DoubleBuffer::new(3, 4);
+    let mut term = MockTerminal::new(3, 4);
+    fill_row(&mut buffer, 0, 'a');
+    blue_row(&mut buffer, 1);
+    blue_row(&mut buffer, 2); // outside the region; leaves blue as current bg
+    buffer.render_to_terminal(&mut term).unwrap();
+
+    // The terminal blanks scrolled-in rows with the current background.
+    term.clear();
+    blue_row(&mut buffer, 0);
+    fill_row(&mut buffer, 1, ' ');
+    assert!(buffer.apply_scroll(&mut term, 0, 1, 1).unwrap());
+    assert!(term.get_written_string().starts_with("\u{1b}[0m"));
+    buffer.render_to_terminal(&mut term).unwrap();
+
+    term.clear();
+    fill_row(&mut buffer, 0, ' ');
+    blue_row(&mut buffer, 1);
+    assert!(buffer.apply_scroll(&mut term, 0, 1, -1).unwrap());
+    assert!(!term.get_written_string().contains("\u{1b}[0m"));
+}
+
+#[test]
+fn scroll_repaints_a_completed_output_row() {
+    use crate::test_utils::MockTerminal;
+    let mut buffer = DoubleBuffer::new(6, 10);
+    for (r, ch) in ['a', 'b', 'c', 'd', ' '].into_iter().enumerate() {
+        fill_row(&mut buffer, r, ch);
+    }
+    buffer.swap();
+    for (r, ch) in ['b', 'c', 'd', 'e', ' '].into_iter().enumerate() {
+        fill_row(&mut buffer, r, ch);
+    }
+    let mut term = MockTerminal::new(6, 10);
+
+    assert!(buffer.apply_scroll(&mut term, 0, 4, 1).unwrap());
+    assert_eq!(changed_rows(&mut buffer), vec![3]);
+}
+
+#[test]
+fn wide_glyph_write_restores_the_hardware_cursor() {
+    use crate::test_utils::MockTerminal;
+    let mut buffer = DoubleBuffer::new(2, 4);
+    let mut term = MockTerminal::new(2, 4);
+    buffer.set_cell(0, 1, Cell::from_char('x'));
+    buffer.render_to_terminal(&mut term).unwrap();
+    buffer.place_cursor(&mut term, Some((0, 2))).unwrap();
+    term.clear();
+
+    buffer.set_cell(0, 0, Cell::from_char('\u{4e2d}'));
+    buffer.set_cell(0, 1, Cell::from_char(' '));
+    buffer.render_to_terminal(&mut term).unwrap();
+    buffer.place_cursor(&mut term, Some((0, 2))).unwrap();
+
+    assert_eq!(term.cursor_moves.last(), Some(&(0, 2)));
+}

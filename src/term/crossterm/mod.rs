@@ -190,8 +190,8 @@ impl<W: Write> TerminalBackend for CrosstermBackend<W> {
     }
 
     fn deinit(&mut self) {
-        // Show cursor before exiting
-        let _ = execute!(self.writer, cursor::Show);
+        // Frames retain SGR state; do not leak it back to the shell.
+        let _ = execute!(self.writer, ResetColor, cursor::Show);
 
         #[cfg(not(windows))]
         let _ = execute!(self.writer, event::DisableBracketedPaste);

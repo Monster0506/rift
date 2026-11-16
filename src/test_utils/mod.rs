@@ -7,11 +7,14 @@ use crate::error::RiftError;
 use crate::key::InputEvent;
 use crate::term::{CursorShape, Size, TerminalBackend};
 
-/// Mock `TerminalBackend` for testing; records writes, cursor moves, and
-/// clear-screen calls for later assertion.
+/// Mock `TerminalBackend` for testing; records writes, cursor moves and
+/// visibility changes, flushes, and clear-screen calls for later assertion.
 pub(crate) struct MockTerminal {
     pub(crate) writes: Vec<Vec<u8>>,
     pub(crate) cursor_moves: Vec<(u16, u16)>,
+    pub(crate) cursor_shows: usize,
+    pub(crate) cursor_hides: usize,
+    pub(crate) flushes: usize,
     pub(crate) clear_screen_calls: usize,
     pub(crate) size: (u16, u16),
 }
@@ -23,6 +26,9 @@ impl MockTerminal {
         Self {
             writes: Vec::new(),
             cursor_moves: Vec::new(),
+            cursor_shows: 0,
+            cursor_hides: 0,
+            flushes: 0,
             clear_screen_calls: 0,
             size: (rows, cols),
         }
@@ -44,6 +50,9 @@ impl MockTerminal {
     pub(crate) fn clear(&mut self) {
         self.writes.clear();
         self.cursor_moves.clear();
+        self.cursor_shows = 0;
+        self.cursor_hides = 0;
+        self.flushes = 0;
         self.clear_screen_calls = 0;
     }
 }
@@ -69,6 +78,7 @@ impl TerminalBackend for MockTerminal {
     }
 
     fn flush(&mut self) -> Result<(), RiftError> {
+        self.flushes += 1;
         Ok(())
     }
 
@@ -90,10 +100,12 @@ impl TerminalBackend for MockTerminal {
     }
 
     fn hide_cursor(&mut self) -> Result<(), RiftError> {
+        self.cursor_hides += 1;
         Ok(())
     }
 
     fn show_cursor(&mut self) -> Result<(), RiftError> {
+        self.cursor_shows += 1;
         Ok(())
     }
 

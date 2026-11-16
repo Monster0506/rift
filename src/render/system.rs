@@ -509,17 +509,18 @@ impl RenderSystem {
             })?;
         self.image_overlay.after_flush(term, &mut self.compositor)?;
 
-        if software {
+        let hardware_cursor = if software {
             self.last_cursor_shape = None;
+            None
         } else {
             let desired_shape = CursorShape::SteadyBar;
             if self.last_cursor_shape != Some(desired_shape) {
                 term.set_cursor_shape(desired_shape)?;
                 self.last_cursor_shape = Some(desired_shape);
             }
-            term.move_cursor(to_u16_saturating(cursor_row), to_u16_saturating(cursor_col))?;
-            term.show_cursor()?;
-        }
+            Some((cursor_row, cursor_col))
+        };
+        self.compositor.place_cursor(term, hardware_cursor)?;
 
         self.last_cursor_pos = Some(cursor_info);
         term.flush()?;

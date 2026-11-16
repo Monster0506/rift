@@ -64,13 +64,15 @@ impl FrameStats {
     }
 }
 
-/// Terminal-side state carried across batches to skip redundant escape codes.
+/// Host terminal state carried across batches and frames to skip redundant
+/// escape codes.
 #[derive(Default)]
 struct TermTrack {
     fg: Option<Color>,
     back: Option<Color>,
     attrs: crate::layer::CellAttrs,
     cursor: Option<(usize, usize)>,
+    cursor_shown: bool,
 }
 
 #[cfg(test)]
@@ -130,6 +132,7 @@ pub struct DoubleBuffer {
     cell_batch_pool: Vec<Vec<Cell>>,
     /// One rect per batch written by the last `render_to_terminal`.
     last_written: Vec<Rect>,
+    track: TermTrack,
 }
 
 impl DoubleBuffer {
@@ -151,6 +154,7 @@ impl DoubleBuffer {
             scratch_ops: Vec::new(),
             cell_batch_pool: Vec::new(),
             last_written: Vec::new(),
+            track: TermTrack::default(),
         }
     }
 
@@ -505,8 +509,8 @@ impl DoubleBuffer {
             return Ok(false);
         }
 
-        // Probe the shifted region's edge rows: the centered cursor (and any
-        // cursor-line styling) sits mid-region, so edges verify a real shift.
+        // Terminal output may complete the old bottom row before scrolling.
+        // One matching edge suffices; the diff repairs any other changed rows.
         let (lo, hi) = if delta > 0 {
             (top, bottom - k)
         } else {
@@ -517,13 +521,19 @@ impl DoubleBuffer {
             self.current[r * self.cols..(r + 1) * self.cols]
                 == self.previous[s * self.cols..(s + 1) * self.cols]
         };
-        if !row_shifted(lo) || !row_shifted(hi) {
+        if !row_shifted(lo) && !row_shifted(hi) {
             return Ok(false);
         }
 
         // Reset colors first: cells the terminal blanks in use the current
         // background, which must match the Cell::empty() model below.
-        let mut esc = format!("\x1b[0m\x1b[{};{}r", top + 1, bottom + 1);
+        let esc = &mut self.scratch_output;
+        esc.clear();
+        let track = &mut self.track;
+        if track.fg.is_some() || track.back.is_some() || !track.attrs.is_empty() {
+            esc.push_str("\x1b[0m");
+        }
+        let _ = write!(esc, "\x1b[{};{}r", top + 1, bottom + 1);
         if delta > 0 {
             let _ = write!(esc, "\x1b[{k}S");
         } else {
@@ -531,6 +541,12 @@ impl DoubleBuffer {
         }
         esc.push_str("\x1b[r");
         term.write(esc.as_bytes())?;
+
+        // Setting the scroll region also homes the cursor.
+        *track = TermTrack {
+            cursor_shown: track.cursor_shown,
+            ..TermTrack::default()
+        };
 
         // Shift the previous-frame model the same way the terminal moved.
         if delta > 0 {
@@ -610,9 +626,10 @@ impl DoubleBuffer {
     }
 
     /// Render the current buffer to the terminal using double buffering
-    /// Only cells that changed since the last frame are rendered
+    /// Only cells that changed since the last frame are rendered; the caller
+    /// places the cursor and flushes.
     /// # Errors
-    /// Returns `Err` when the terminal write, flush, or style encoding fails.
+    /// Returns `Err` when the terminal write or style encoding fails.
     pub(crate) fn render_to_terminal<T: crate::term::TerminalBackend>(
         &mut self,
         term: &mut T,
@@ -647,18 +664,29 @@ impl DoubleBuffer {
 
         crate::perf_span!("ansi_serialize", crate::perf::PerfFields::default());
 
-        // Hide cursor during rendering
-        term.hide_cursor()?;
+        // A full redraw may follow a host we know nothing about (reattach).
+        if self.force_full_redraw {
+            cmd_buf.clear();
+            crate::term::crossterm::encode_style_ops(&[StyleOp::ResetAttrs], &mut cmd_buf)?;
+            term.write(&cmd_buf)?;
+            self.track = TermTrack {
+                cursor_shown: true,
+                ..TermTrack::default()
+            };
+        }
 
-        // Track current colors/attrs to minimize escape sequences
-        let mut track = TermTrack::default();
+        // Hide cursor during rendering
+        if self.track.cursor_shown {
+            term.hide_cursor()?;
+            self.track.cursor_shown = false;
+        }
 
         let result = (|| -> Result<(), RiftError> {
             for mut batch in batches {
                 Self::flush_cell_batch(
                     term,
                     &batch,
-                    &mut track,
+                    &mut self.track,
                     &mut output,
                     &mut cmd_buf,
                     &mut ops,
@@ -673,22 +701,66 @@ impl DoubleBuffer {
         self.scratch_cmd_buf = cmd_buf;
         self.scratch_ops = ops;
         result?;
-
-        // Reset colors and attributes at end
-        let mut reset_ops = vec![StyleOp::ResetColor];
-        if !track.attrs.is_empty() {
-            reset_ops.push(StyleOp::ResetAttrs);
-        }
-        let mut reset_buf = Vec::new();
-        crate::term::crossterm::encode_style_ops(&reset_ops, &mut reset_buf)?;
-        term.write(&reset_buf)?;
-
-        term.flush().map_err(|e| format!("Failed to flush: {e}"))?;
+        // Cell columns can differ from glyph widths and pending-wrap state.
+        // After writing, restore the hardware cursor from an explicit position.
+        self.track.cursor = None;
 
         // Swap buffers: copy current to previous for next frame
         self.swap();
 
         Ok(stats)
+    }
+
+    /// Leave the terminal cursor at `target`, or hidden when `None`, sending
+    /// only what differs from where the last frame left it.
+    /// # Errors
+    /// Returns `Err` when moving, showing, or hiding the cursor fails.
+    pub(crate) fn place_cursor<T: crate::term::TerminalBackend>(
+        &mut self,
+        term: &mut T,
+        target: Option<(usize, usize)>,
+    ) -> Result<(), RiftError> {
+        let Some((row, col)) = target else {
+            if self.track.cursor_shown {
+                term.hide_cursor()?;
+                self.track.cursor_shown = false;
+            }
+            return Ok(());
+        };
+
+        if self.track.cursor != Some((row, col)) {
+            term.move_cursor(
+                u16::try_from(row).unwrap_or(u16::MAX),
+                u16::try_from(col).unwrap_or(u16::MAX),
+            )?;
+            self.track.cursor = Some((row, col));
+        }
+        if !self.track.cursor_shown {
+            term.show_cursor()?;
+            self.track.cursor_shown = true;
+        }
+        Ok(())
+    }
+
+    /// Write bytes the diff does not model, such as a sixel image, at
+    /// `(row, col)` with the cursor hidden. The cursor position afterwards
+    /// is unknown, so the next placement moves it explicitly.
+    /// # Errors
+    /// Returns `Err` when hiding or moving the cursor or writing fails.
+    pub(crate) fn write_raw_at<T: crate::term::TerminalBackend>(
+        &mut self,
+        term: &mut T,
+        (row, col): (usize, usize),
+        bytes: &[u8],
+    ) -> Result<(), RiftError> {
+        self.place_cursor(term, None)?;
+        term.move_cursor(
+            u16::try_from(row).unwrap_or(u16::MAX),
+            u16::try_from(col).unwrap_or(u16::MAX),
+        )?;
+        term.write(bytes)?;
+        self.track.cursor = None;
+        Ok(())
     }
 
     /// Flush a batch of consecutive changed cells to the terminal; `output`/
@@ -706,6 +778,7 @@ impl DoubleBuffer {
             back: current_back,
             attrs: current_attrs,
             cursor: last_cursor_pos,
+            ..
         } = track;
         if batch.cells.is_empty() {
             return Ok(());
@@ -744,10 +817,12 @@ impl DoubleBuffer {
                 let need_reset = (cell.fg.is_none() && current_fg.is_some())
                     || (cell.bg.is_none() && current_back.is_some());
 
+                // ResetColor is SGR 0, which clears attributes too.
                 if need_reset {
                     ops.push(StyleOp::ResetColor);
                     *current_fg = None;
                     *current_back = None;
+                    *current_attrs = crate::layer::CellAttrs::default();
                 }
 
                 if cell.fg != *current_fg {

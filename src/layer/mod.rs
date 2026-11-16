@@ -793,6 +793,32 @@ impl LayerCompositor {
         buffer.invalidate_cells(rect, |row, col| Self::has_overlay_at(layers, row, col))
     }
 
+    /// Leave the terminal cursor at `target`, or hidden when `None`.
+    ///
+    /// # Errors
+    /// Returns an error if the terminal backend fails to move, show, or hide the cursor.
+    pub(crate) fn place_cursor<T: crate::term::TerminalBackend>(
+        &mut self,
+        term: &mut T,
+        target: Option<(usize, usize)>,
+    ) -> Result<(), RiftError> {
+        self.buffer.place_cursor(term, target)
+    }
+
+    /// Write bytes the compositor does not model at `at`, keeping its
+    /// knowledge of the host cursor consistent.
+    ///
+    /// # Errors
+    /// Returns an error if the terminal backend fails to hide or move the cursor or write.
+    pub(crate) fn write_raw_at<T: crate::term::TerminalBackend>(
+        &mut self,
+        term: &mut T,
+        at: (usize, usize),
+        bytes: &[u8],
+    ) -> Result<(), RiftError> {
+        self.buffer.write_raw_at(term, at, bytes)
+    }
+
     /// Get the number of rows
     #[must_use]
     pub(crate) const fn rows(&self) -> usize {
