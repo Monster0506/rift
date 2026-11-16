@@ -128,6 +128,8 @@ pub struct DoubleBuffer {
     /// Pool of emptied `CellBatch.cells` buffers, returned by
     /// `render_to_terminal` and reused by `get_batched_changes`.
     cell_batch_pool: Vec<Vec<Cell>>,
+    /// One rect per batch written by the last `render_to_terminal`.
+    last_written: Vec<Rect>,
 }
 
 impl DoubleBuffer {
@@ -148,6 +150,7 @@ impl DoubleBuffer {
             scratch_cmd_buf: Vec::new(),
             scratch_ops: Vec::new(),
             cell_batch_pool: Vec::new(),
+            last_written: Vec::new(),
         }
     }
 
@@ -256,6 +259,56 @@ impl DoubleBuffer {
     /// Force a full redraw on the next diff
     pub(crate) const fn invalidate(&mut self) {
         self.force_full_redraw = true;
+    }
+
+    /// Cells inside `rect` written by the last `render_to_terminal`.
+    pub(crate) fn written_cells_within(
+        &self,
+        rect: Rect,
+    ) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.last_written
+            .iter()
+            .filter(move |w| w.intersects(&rect))
+            .flat_map(move |w| {
+                // Batches are single rows: clip the column span to `rect`.
+                let (start, end) = (w.start_col.max(rect.start_col), w.end_col.min(rect.end_col));
+                (start..=end).map(move |col| (w.start_row, col))
+            })
+    }
+
+    /// Forces the next diff to rewrite cells in `rect` where `pred` holds; returns whether any did.
+    pub(crate) fn invalidate_cells(
+        &mut self,
+        rect: Rect,
+        mut pred: impl FnMut(usize, usize) -> bool,
+    ) -> bool {
+        if self.rows == 0 || self.cols == 0 || rect.start_row >= self.rows {
+            return false;
+        }
+        let end_row = rect.end_row.min(self.rows - 1);
+        let end_col = rect.end_col.min(self.cols - 1);
+        let mut hit: Option<Rect> = None;
+        for row in rect.start_row..=end_row {
+            for col in rect.start_col..=end_col {
+                if !pred(row, col) {
+                    continue;
+                }
+                let idx = self.idx(row, col);
+                // A noncharacter never produced by content, so the diff sees a change.
+                let marker = if self.current[idx].content == Character::Unicode('\u{FFFF}') {
+                    '\u{FFFE}'
+                } else {
+                    '\u{FFFF}'
+                };
+                self.previous[idx] = Cell::from_char(marker);
+                let cell = Rect::new(row, col, row, col);
+                hit = Some(hit.map_or(cell, |h| h.union(&cell)));
+            }
+        }
+        if let Some(hit) = hit {
+            self.frame_dirty_rect = Some(self.frame_dirty_rect.map_or(hit, |d| d.union(&hit)));
+        }
+        hit.is_some()
     }
 
     pub(crate) fn check_invariants(&self) -> Vec<String> {
@@ -576,12 +629,21 @@ impl DoubleBuffer {
             self.get_batched_changes()
         };
 
+        self.last_written.clear();
         if batches.is_empty() {
             self.scratch_output = output;
             self.scratch_cmd_buf = cmd_buf;
             self.scratch_ops = ops;
             return Ok(stats);
         }
+        self.last_written.extend(batches.iter().map(|b| {
+            Rect::new(
+                b.row,
+                b.start_col,
+                b.row,
+                b.start_col + b.cells.len().saturating_sub(1),
+            )
+        }));
 
         crate::perf_span!("ansi_serialize", crate::perf::PerfFields::default());
 

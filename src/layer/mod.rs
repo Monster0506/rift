@@ -36,7 +36,7 @@ impl Rect {
     }
     /// Check if two rects intersect
     #[must_use]
-    const fn intersects(&self, other: &Self) -> bool {
+    pub(crate) const fn intersects(&self, other: &Self) -> bool {
         self.start_row <= other.end_row
             && self.end_row >= other.start_row
             && self.start_col <= other.end_col
@@ -751,6 +751,46 @@ impl LayerCompositor {
 
         // Delegate to double buffer
         self.buffer.render_to_terminal(term)
+    }
+
+    /// Make the next flush rewrite every cell in `rect`.
+    pub(crate) fn invalidate_rect(&mut self, rect: Rect) {
+        self.buffer.invalidate_cells(rect, |_, _| true);
+    }
+
+    /// Whether a layer above content covers the cell.
+    fn has_overlay_at(layers: &BTreeMap<LayerPriority, Layer>, row: usize, col: usize) -> bool {
+        layers
+            .range(LayerPriority(LayerPriority::CONTENT.0 + 1)..)
+            .any(|(_, layer)| layer.get_cell(row, col).is_some())
+    }
+
+    /// Whether the last flush wrote a cell in `rect` not covered by an overlay.
+    #[must_use]
+    pub(crate) fn wrote_content_within(&self, rect: Rect) -> bool {
+        self.buffer
+            .written_cells_within(rect)
+            .any(|(row, col)| !Self::has_overlay_at(&self.layers, row, col))
+    }
+
+    /// Per cell of `rect`, row-major: whether an overlay covers it.
+    #[must_use]
+    pub(crate) fn overlay_mask(&self, rect: Rect) -> Vec<bool> {
+        (rect.start_row..=rect.end_row)
+            .flat_map(|row| (rect.start_col..=rect.end_col).map(move |col| (row, col)))
+            .map(|(row, col)| Self::has_overlay_at(&self.layers, row, col))
+            .collect()
+    }
+
+    /// Make the next flush rewrite the cells in `rect` where `pred(row, col)`.
+    pub(crate) fn invalidate_where(&mut self, rect: Rect, pred: impl FnMut(usize, usize) -> bool) {
+        self.buffer.invalidate_cells(rect, pred);
+    }
+
+    /// Forces overlay-covered cells in `rect` to be rewritten; returns whether any exist.
+    pub(crate) fn invalidate_overlays_within(&mut self, rect: Rect) -> bool {
+        let Self { layers, buffer, .. } = self;
+        buffer.invalidate_cells(rect, |row, col| Self::has_overlay_at(layers, row, col))
     }
 
     /// Get the number of rows
