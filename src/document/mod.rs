@@ -20,12 +20,13 @@ use crate::buffer::TextBuffer;
 use crate::document::kind::BufferKind;
 use crate::document::runtime::{
     BufferKindId, BufferKindRegistry, BufferPolicies, ClipboardEntryState, DirectoryState,
-    DocumentHandle, FileState, GhostCutPolicy, KeyFallback, KindDescriptor, LocationListState,
-    ReadOnlyPolicy, RegionsState, ScratchState, StateSlot, TextProjection, UndoFileViewState,
-    BUFFER_LIST_STATE_KEY, CLIPBOARD_ENTRY_STATE_KEY, CLIPBOARD_STATE_KEY, DIRECTORY_STATE_KEY,
-    FILE_STATE_KEY, GIT_BLAME_STATE_KEY, GIT_COMMIT_MESSAGE_STATE_KEY, GIT_LOG_STATE_KEY,
-    GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY, LOCATION_LIST_STATE_KEY, REGIONS_STATE_KEY,
-    SCRATCH_STATE_KEY, TERMINAL_STATE_KEY, UNDO_FILE_VIEW_STATE_KEY, UNDO_TREE_STATE_KEY,
+    DocumentHandle, FileState, GhostCutPolicy, ImageViewState, KeyFallback, KindDescriptor,
+    LocationListState, ReadOnlyPolicy, RegionsState, ScratchState, StateSlot, TextProjection,
+    UndoFileViewState, BUFFER_LIST_STATE_KEY, CLIPBOARD_ENTRY_STATE_KEY, CLIPBOARD_STATE_KEY,
+    DIRECTORY_STATE_KEY, FILE_STATE_KEY, GIT_BLAME_STATE_KEY, GIT_COMMIT_MESSAGE_STATE_KEY,
+    GIT_LOG_STATE_KEY, GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY, IMAGE_VIEW_STATE_KEY,
+    LOCATION_LIST_STATE_KEY, REGIONS_STATE_KEY, SCRATCH_STATE_KEY, TERMINAL_STATE_KEY,
+    UNDO_FILE_VIEW_STATE_KEY, UNDO_TREE_STATE_KEY,
 };
 use crate::history::{EditTransaction, UndoTree};
 use crate::syntax::Syntax;
@@ -654,6 +655,21 @@ impl Document {
         self.kind = BufferKind::for_builtin(BufferKindId::UNDO_FILE_VIEW);
         self.state = StateSlot::new(UNDO_FILE_VIEW_STATE_KEY, UndoFileViewState::default());
     }
+
+    /// Show `image` read-only, with a one-line summary above it.
+    pub(crate) fn convert_to_image_view(
+        &mut self,
+        image: std::sync::Arc<crate::image_view::DecodedImage>,
+    ) {
+        self.kind = BufferKind::for_builtin(BufferKindId::IMAGE_VIEW);
+        self.replace_buffer_content(&image.summary());
+        self.custom_highlights.clear();
+        self.syntax = None;
+        self.state = StateSlot::new(IMAGE_VIEW_STATE_KEY, ImageViewState { image });
+        self.history = UndoTree::new();
+    }
+
+    state_get!(pub(crate) fn image(&self) -> &std::sync::Arc<crate::image_view::DecodedImage> = IMAGE_VIEW_STATE_KEY, |s| &s.image);
 
     state_get!(pub(crate) fn undotree_linked_doc_id(&self) -> DocumentId = UNDO_TREE_STATE_KEY, |s| s.linked_doc_id);
     state_get!(pub(crate) fn undotree_sequences(&self) -> &[crate::history::EditSeq] = UNDO_TREE_STATE_KEY, |s| s.sequences.as_slice());

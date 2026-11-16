@@ -218,6 +218,78 @@ fn reloading_an_open_undo_file_view_re_renders_instead_of_showing_raw_bytes() {
     );
 }
 
+fn write_png(path: &std::path::Path) {
+    image::RgbaImage::from_pixel(64, 32, image::Rgba([10, 200, 30, 255]))
+        .save(path)
+        .unwrap();
+}
+
+#[test]
+fn open_file_on_an_image_shows_a_readonly_image_buffer() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("logo.png");
+    write_png(&path);
+
+    let mut editor = create_editor();
+    editor.term.clear();
+    editor
+        .open_file(Some(path.to_string_lossy().into_owned()), false)
+        .unwrap();
+    drain_jobs(&mut editor);
+
+    let doc = editor.document_manager.active_document().unwrap();
+    assert_eq!(
+        doc.buffer_kind_id(),
+        crate::document::runtime::BufferKindId::IMAGE_VIEW
+    );
+    assert!(doc.is_read_only());
+    assert!(doc.buffer.to_string().starts_with("PNG 64x32"));
+    assert!(
+        editor.term.get_written_string().contains("\x1bP0;1;0q"),
+        "the image should be drawn as sixel"
+    );
+}
+
+#[test]
+fn edit_command_toggles_an_image_between_picture_and_raw_bytes() {
+    use crate::document::runtime::BufferKindId;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("logo.png");
+    write_png(&path);
+
+    let mut editor = create_editor();
+    editor
+        .open_file(Some(path.to_string_lossy().into_owned()), false)
+        .unwrap();
+    drain_jobs(&mut editor);
+    let doc_id = editor.active_document_id();
+
+    for expected in [
+        BufferKindId::FILE,
+        BufferKindId::IMAGE_VIEW,
+        BufferKindId::FILE,
+    ] {
+        editor.term.clear();
+        editor.execute_command_line("e");
+        drain_jobs(&mut editor);
+
+        assert_eq!(editor.active_document_id(), doc_id);
+        let doc = editor.document_manager.active_document().unwrap();
+        assert_eq!(doc.buffer_kind_id(), expected);
+        let is_image = expected == BufferKindId::IMAGE_VIEW;
+        assert_eq!(doc.is_read_only(), is_image);
+        if !is_image {
+            assert!(doc.buffer.to_string().contains("PNG"));
+        }
+        assert_eq!(
+            editor.term.get_written_string().contains("\x1bP0;1;0q"),
+            is_image,
+            "sixel is drawn only while showing the picture"
+        );
+    }
+}
+
 #[test]
 fn reloading_a_kind_with_no_reload_dispatch_returns_a_clear_error() {
     let mut editor = create_editor();

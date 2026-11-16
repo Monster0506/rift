@@ -27,6 +27,7 @@ impl BufferKindId {
     pub(crate) const GIT_REBASE_TODO: Self = Self(NonZeroU32::new(15).unwrap());
     pub(crate) const BUFFER_LIST: Self = Self(NonZeroU32::new(16).unwrap());
     pub(crate) const UNDO_FILE_VIEW: Self = Self(NonZeroU32::new(17).unwrap());
+    pub(crate) const IMAGE_VIEW: Self = Self(NonZeroU32::new(18).unwrap());
 
     const RESERVED_BUILTIN_END: u32 = 64;
 
@@ -514,6 +515,12 @@ pub(super) struct UndoFileViewState {
 }
 pub(super) static UNDO_FILE_VIEW_STATE_KEY: StateKey<UndoFileViewState> =
     StateKey::new("undo_file_view");
+
+#[derive(Debug, Clone)]
+pub(super) struct ImageViewState {
+    pub(super) image: Arc<crate::image_view::DecodedImage>,
+}
+pub(super) static IMAGE_VIEW_STATE_KEY: StateKey<ImageViewState> = StateKey::new("image_view");
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct PluginBufferState;
@@ -1206,6 +1213,27 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Native,
             state_key: UNDO_FILE_VIEW_STATE_KEY.id(),
+            owner: DescriptorOwner::BuiltIn,
+            tombstone: None,
+        })?;
+
+        let image_view_help: Vec<String> = vec![
+            "Image".into(),
+            String::new(),
+            "Read-only image, drawn with sixel graphics.".into(),
+            ":e      show raw bytes (:e again for the picture)".into(),
+        ];
+        self.register_builtin(KindDescriptor {
+            id: BufferKindId::IMAGE_VIEW,
+            name: "image_view".into(),
+            policies: BufferPolicies::read_only_list(),
+            action_dispatch: ActionDispatch::Disabled,
+            save_dispatch: SaveDispatch::Reject,
+            display_name: DisplayNameStrategy::FileName,
+            help_lines: Some(image_view_help.into()),
+            on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Native,
+            state_key: IMAGE_VIEW_STATE_KEY.id(),
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;

@@ -254,11 +254,95 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.render_explorer_diff_tooltip();
 
+        self.stage_image_placements(multi_window);
+
         if multi_window {
             self.render_multi_window(needs_clear)
         } else {
             self.render(needs_clear, display_map.as_deref(), scroll_hint)
         }
+    }
+
+    /// Stages each visible image buffer with the cells below its summary line.
+    fn stage_image_placements(&mut self, multi_window: bool) {
+        let shows_image = |doc_id| {
+            self.document_manager
+                .get_document(doc_id)
+                .is_some_and(|d| d.image().is_some())
+        };
+        let any_image = if multi_window {
+            self.split_tree
+                .windows
+                .values()
+                .any(|w| shows_image(w.document_id))
+        } else {
+            shows_image(self.split_tree.focused_window().document_id)
+        };
+        if !any_image {
+            self.render_system.image_overlay.stage(Vec::new());
+            return;
+        }
+        let windows: Vec<(crate::document::DocumentId, WindowLayout)> = if multi_window {
+            let Ok(size) = self.term.get_size() else {
+                self.render_system.image_overlay.stage(Vec::new());
+                return;
+            };
+            self.split_tree
+                .compute_layout((size.rows as usize).saturating_sub(1), size.cols as usize)
+                .into_iter()
+                .filter_map(|l| {
+                    let doc_id = self.split_tree.get_window(l.window_id)?.document_id;
+                    Some((doc_id, l))
+                })
+                .collect()
+        } else {
+            let vp = &self.render_system.viewport;
+            vec![(
+                self.split_tree.focused_window().document_id,
+                WindowLayout {
+                    window_id: self.split_tree.focused_window_id(),
+                    row: 0,
+                    col: 0,
+                    rows: vp.visible_rows().saturating_sub(1),
+                    cols: vp.visible_cols(),
+                },
+            )]
+        };
+
+        let soft_wrap = self.state.settings.soft_wrap;
+        let mut placements = Vec::new();
+        for (doc_id, layout) in windows {
+            let Some(doc) = self.document_manager.get_document(doc_id) else {
+                continue;
+            };
+            let Some(image) = doc.image() else {
+                continue;
+            };
+            let gutter = if multi_window {
+                Self::line_number_gutter_width(doc, &self.state)
+            } else {
+                self.active_gutter_cols(doc_id)
+            };
+            let text_cols = layout.cols.saturating_sub(gutter);
+            let summary_rows = if soft_wrap {
+                doc.buffer.len().div_ceil(text_cols.max(1)).max(1)
+            } else {
+                1
+            };
+            if text_cols == 0 || layout.rows <= summary_rows {
+                continue;
+            }
+            placements.push(crate::image_view::overlay::ImagePlacement {
+                image: std::sync::Arc::clone(image),
+                area: crate::layer::Rect::new(
+                    layout.row + summary_rows,
+                    layout.col + gutter,
+                    layout.row + layout.rows - 1,
+                    layout.col + layout.cols - 1,
+                ),
+            });
+        }
+        self.render_system.image_overlay.stage(placements);
     }
 
     pub(super) fn cursor_screen_row(&mut self) -> usize {

@@ -63,7 +63,7 @@ pub(super) fn native_save_handlers<T: TerminalBackend>(
     handlers
 }
 
-// One table holds both shapes; only the undo-file view reload can fail.
+// One table holds both shapes; only the undo-file and image views can fail.
 pub(super) enum NativeReloadHandler<T: TerminalBackend> {
     Infallible(fn(&mut Editor<T>)),
     Fallible(fn(&mut Editor<T>) -> Result<(), RiftError>),
@@ -86,6 +86,35 @@ fn reload_undo_file_view_handler<T: TerminalBackend>(
         return Ok(());
     };
     doc.reload_undo_file_view()
+}
+
+/// `:e` on an image buffer reopens the same file as plain text (raw bytes).
+fn reopen_image_as_text<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), RiftError> {
+    let doc_id = editor.active_document_id();
+    let Some(doc) = editor.document_manager.get_document_mut(doc_id) else {
+        return Ok(());
+    };
+    let path = doc
+        .path()
+        .ok_or_else(|| {
+            RiftError::new(
+                ErrorType::Execution,
+                crate::constants::errors::NO_PATH,
+                crate::constants::errors::MSG_NO_FILE_NAME,
+            )
+        })?
+        .to_path_buf();
+    doc.convert_to_file();
+    doc.replace_buffer_content("");
+    // The load's async token records the kind at spawn; it must be FILE now.
+    let (handle, kind) = (doc.handle(), doc.buffer_kind_id());
+    editor
+        .job_manager
+        .register_document_handle(handle, kind, None);
+    let job = crate::job_manager::jobs::file_operations::FileLoadJob::new_text(doc_id, path);
+    let job_id = editor.job_manager.spawn(job);
+    editor.file_load_jobs.insert(job_id, doc_id);
+    Ok(())
 }
 
 fn reload_directory<T: TerminalBackend>(editor: &mut Editor<T>) {
@@ -158,6 +187,10 @@ pub(super) fn native_reload_handlers<T: TerminalBackend>(
     handlers.insert(
         BufferKindId::UNDO_FILE_VIEW,
         NativeReloadHandler::Fallible(reload_undo_file_view_handler::<T>),
+    );
+    handlers.insert(
+        BufferKindId::IMAGE_VIEW,
+        NativeReloadHandler::Fallible(reopen_image_as_text::<T>),
     );
     handlers.insert(
         BufferKindId::DIRECTORY,

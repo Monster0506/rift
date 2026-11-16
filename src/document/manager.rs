@@ -592,7 +592,10 @@ impl DocumentManager {
             }
             match Document::try_open_undo_file(self.next_document_id, path) {
                 Some(result) => result?,
-                None => Document::from_file(self.next_document_id, path_str)?,
+                None => match Document::try_open_image(self.next_document_id, path) {
+                    Some(doc) => doc,
+                    None => Document::from_file(self.next_document_id, path_str)?,
+                },
             }
         } else if parent_dir_missing(path) {
             return Err(RiftError::new(

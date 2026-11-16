@@ -265,6 +265,23 @@ impl Document {
         Ok(())
     }
 
+    /// Opens `path` as a read-only image buffer, or `None` if it is not a decodable image.
+    #[must_use]
+    pub(crate) fn try_open_image(id: super::DocumentId, path: &Path) -> Option<Self> {
+        let fs = crate::fs_backend::backend();
+        let prefix = fs
+            .read_file_prefix(path, crate::image_view::SNIFF_BYTES)
+            .ok()?;
+        crate::image_view::sniff(&prefix)?;
+        let image = crate::image_view::decode(&fs.read_file(path).ok()?)?;
+        let mut doc = Self {
+            file_path: Some(Self::normalize_path(path)),
+            ..Self::skeleton(id, TextBuffer::new(64).ok()?)
+        };
+        doc.convert_to_image_view(std::sync::Arc::new(image));
+        Some(doc)
+    }
+
     /// # Errors
     /// Returns an error if the text buffer or the terminal cannot be created.
     pub(crate) fn new_terminal(

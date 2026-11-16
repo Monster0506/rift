@@ -531,6 +531,16 @@ impl<T: TerminalBackend> Editor<T> {
             Err(p) => p,
         };
 
+        let any_payload = match any_payload
+            .downcast::<crate::job_manager::jobs::file_operations::ImageLoadResult>(
+        ) {
+            Ok(res) => {
+                self.apply_image_load(id, token, *res);
+                return;
+            }
+            Err(p) => p,
+        };
+
         if let Ok(payload) =
             any_payload.downcast::<crate::job_manager::jobs::completion::CompletionPayload>()
         {
@@ -1116,6 +1126,72 @@ impl<T: TerminalBackend> Editor<T> {
         }
         #[cfg(feature = "lsp")]
         self.apply_pending_goto(&token, res.document_id);
+
+        self.sync_state_with_active_document();
+        let _ = self.force_full_redraw();
+
+        self.job_manager
+            .update_job_state(&JobMessage::Finished(id, true));
+    }
+
+    fn apply_image_load(
+        &mut self,
+        id: usize,
+        token: Option<AsyncToken>,
+        res: crate::job_manager::jobs::file_operations::ImageLoadResult,
+    ) {
+        self.file_load_jobs.remove(&id);
+        let Some(token) = self.resolve_and_validate_token(
+            id,
+            token,
+            res.document_id,
+            crate::job_manager::AsyncOpDomain::FileLoad,
+        ) else {
+            self.job_manager
+                .update_job_state(&JobMessage::Finished(id, true));
+            return;
+        };
+        if self
+            .document_manager
+            .get_document_by_handle(token.handle)
+            .is_none()
+        {
+            self.job_manager
+                .update_job_state(&JobMessage::Finished(id, true));
+            return;
+        }
+        #[cfg(feature = "lsp")]
+        {
+            // `:e` from raw bytes: the text buffer may be open with a server.
+            if res.is_reload {
+                self.lsp_notify_close(res.document_id);
+            }
+            if self.pending_goto_target.map(|t| t.0) == Some(res.document_id) {
+                self.pending_goto_target = None;
+            }
+        }
+        let path = self
+            .document_manager
+            .get_document_by_handle_mut(token.handle)
+            .and_then(|doc| {
+                doc.convert_to_image_view(res.image);
+                doc.path().map(std::path::Path::to_path_buf)
+            });
+
+        self.update_lua_state();
+        let event = if res.is_reload {
+            crate::plugin::events::EditorEvent::BufReload {
+                buf: res.document_id,
+            }
+        } else {
+            crate::plugin::events::EditorEvent::BufOpen {
+                buf: res.document_id,
+                path,
+                filetype: None,
+            }
+        };
+        self.plugin_host.dispatch(&event);
+        self.apply_plugin_mutations();
 
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();

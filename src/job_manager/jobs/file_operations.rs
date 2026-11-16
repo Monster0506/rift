@@ -173,11 +173,23 @@ pub(crate) struct FileLoadResult {
 
 crate::job_manager::impl_job_payload!(FileLoadResult);
 
+/// A file opened as an image buffer instead of text.
+#[derive(Debug)]
+pub(crate) struct ImageLoadResult {
+    pub(crate) document_id: DocumentId,
+    pub(crate) image: std::sync::Arc<crate::image_view::DecodedImage>,
+    pub(crate) is_reload: bool,
+}
+
+crate::job_manager::impl_job_payload!(ImageLoadResult);
+
 #[derive(Debug)]
 pub(crate) struct FileLoadJob {
     document_id: DocumentId,
     path: PathBuf,
     is_reload: bool,
+    /// Open supported images as image buffers rather than text.
+    detect_image: bool,
     token: Option<crate::job_manager::AsyncToken>,
 }
 
@@ -188,16 +200,31 @@ impl FileLoadJob {
             document_id,
             path,
             is_reload: false,
+            detect_image: true,
             token: None,
         }
     }
 
+    /// Load of `path` as text even if it is an image (`:e` on an image buffer).
+    #[must_use]
+    pub(crate) const fn new_text(document_id: DocumentId, path: PathBuf) -> Self {
+        Self {
+            document_id,
+            path,
+            is_reload: false,
+            detect_image: false,
+            token: None,
+        }
+    }
+
+    /// Re-reads an open buffer; image files reopen as images, so `:e` toggles picture and bytes.
     #[must_use]
     pub(crate) const fn new_reload(document_id: DocumentId, path: PathBuf) -> Self {
         Self {
             document_id,
             path,
             is_reload: true,
+            detect_image: true,
             token: None,
         }
     }
@@ -220,45 +247,50 @@ impl Job for FileLoadJob {
         Some(crate::job_manager::AsyncOpDomain::FileLoad)
     }
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
-        let do_load = || -> Result<FileLoadResult, crate::error::RiftError> {
-            let bytes = crate::fs_backend::backend().read_file(&self.path)?;
+        let do_load =
+            || -> Result<Box<dyn crate::job_manager::JobPayload>, crate::error::RiftError> {
+                let bytes = crate::fs_backend::backend().read_file(&self.path)?;
 
-            if signal.is_cancelled() {
-                return Err(crate::error::RiftError::new(
-                    crate::error::ErrorType::Io,
-                    "CANCELLED",
-                    "Cancelled",
-                ));
-            }
+                if signal.is_cancelled() {
+                    return Err(crate::error::RiftError::new(
+                        crate::error::ErrorType::Io,
+                        "CANCELLED",
+                        "Cancelled",
+                    ));
+                }
 
-            let decoded = crate::document::factories::decode_file_bytes(&bytes);
-            let piece_table = PieceTable::new(decoded.chars);
-            let content_hash = crate::history::persist::sha256(&piece_table.to_logical_bytes());
-            let line_index = LineIndex::from_table_with_starts(piece_table, decoded.starts);
+                if self.detect_image {
+                    if let Some(image) = crate::image_view::decode(&bytes) {
+                        return Ok(Box::new(ImageLoadResult {
+                            document_id: self.document_id,
+                            image: std::sync::Arc::new(image),
+                            is_reload: self.is_reload,
+                        }));
+                    }
+                }
 
-            Ok(FileLoadResult {
-                document_id: self.document_id,
-                line_index,
-                line_ending: decoded.line_ending,
-                has_bom: decoded.has_bom,
-                is_reload: self.is_reload,
-                content_hash,
-            })
-        };
+                let decoded = crate::document::factories::decode_file_bytes(&bytes);
+                let piece_table = PieceTable::new(decoded.chars);
+                let content_hash = crate::history::persist::sha256(&piece_table.to_logical_bytes());
+                let line_index = LineIndex::from_table_with_starts(piece_table, decoded.starts);
 
+                Ok(Box::new(FileLoadResult {
+                    document_id: self.document_id,
+                    line_index,
+                    line_ending: decoded.line_ending,
+                    has_bom: decoded.has_bom,
+                    is_reload: self.is_reload,
+                    content_hash,
+                }))
+            };
         match do_load() {
             Ok(result) => {
                 if signal.is_cancelled() {
                     let _ = sender.send(JobMessage::Cancelled(id));
                 } else if let Some(token) = self.token {
-                    crate::job_manager::send_job_result_with_token(
-                        &sender,
-                        id,
-                        token,
-                        Box::new(result),
-                    );
+                    crate::job_manager::send_job_result_with_token(&sender, id, token, result);
                 } else {
-                    crate::job_manager::send_job_result(&sender, id, Box::new(result));
+                    crate::job_manager::send_job_result(&sender, id, result);
                 }
             }
             Err(e) => {
