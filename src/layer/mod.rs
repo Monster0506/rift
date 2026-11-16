@@ -420,9 +420,7 @@ impl Layer {
 
     /// Clear all cells in the layer (make transparent)
     pub(crate) fn clear(&mut self) {
-        for cell in &mut self.cells {
-            *cell = None;
-        }
+        self.cells.fill(None);
         self.dirty_rects.clear();
         self.dirty_rects.push(Rect::new(
             0,
