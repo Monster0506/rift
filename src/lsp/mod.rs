@@ -264,10 +264,7 @@ impl LspManager {
                     return Some(dir.to_path_buf());
                 }
             }
-            match dir.parent() {
-                Some(p) => dir = p,
-                None => return None,
-            }
+            dir = dir.parent()?;
         }
     }
 
