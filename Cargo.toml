@@ -50,7 +50,6 @@ treesitter = [
 
 [dependencies]
 mlua = { version = "0.12", features = ["lua54", "vendored"], optional = true }
-find-msvc-tools = "=0.1.9"
 crossterm = "0.29.0"
 monster-regex = "0.2.5"
 streaming-iterator = "0.1.9"

@@ -846,7 +846,6 @@ dependencies = [
  "bincode",
  "criterion",
  "crossterm",
- "find-msvc-tools",
  "getrandom 0.4.3",
  "image",
  "mlua",
