@@ -429,17 +429,14 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Collect the matching diagnostics for richer context.
         let norm_uri = crate::lsp::protocol::normalize_uri(&entry.uri);
-        let diagnostics: Vec<crate::lsp::protocol::LspDiagnostic> = self
-            .lsp_diagnostics
-            .get(&norm_uri)
-            .map(|diags| {
+        let diagnostics: Vec<crate::lsp::protocol::LspDiagnostic> =
+            self.lsp_diagnostics.get(&norm_uri).map_or_default(|diags| {
                 diags
                     .iter()
                     .filter(|d| d.range.start.line == entry.line)
                     .cloned()
                     .collect()
-            })
-            .unwrap_or_default();
+            });
 
         if self
             .lsp_manager

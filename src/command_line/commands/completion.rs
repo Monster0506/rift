@@ -516,8 +516,7 @@ pub(crate) fn split_path_prefix(prefix: &str) -> (String, String) {
         Some(parent) if parent != std::path::Path::new("") => (
             parent.to_string_lossy().to_string(),
             path.file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default(),
+                .map_or_default(|n| n.to_string_lossy().to_string()),
         ),
         _ => (".".to_string(), prefix.to_string()),
     }

@@ -1141,8 +1141,7 @@ impl<T: TerminalBackend> Editor<T> {
             .and_then(|doc| doc.path().map(std::path::Path::to_path_buf));
         let encoding = doc_path
             .as_deref()
-            .map(|p| self.lsp_manager.position_encoding_for_path(p))
-            .unwrap_or_default();
+            .map_or_default(|p| self.lsp_manager.position_encoding_for_path(p));
         if let Some(doc) = self
             .document_manager
             .get_document_by_handle_mut(token.handle)

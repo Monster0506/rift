@@ -671,8 +671,7 @@ impl<T: TerminalBackend> Editor<T> {
         let regions = self
             .document_manager
             .active_document()
-            .map(|d| d.selection_set.sorted())
-            .unwrap_or_default();
+            .map_or_default(|d| d.selection_set.sorted());
         if regions.is_empty() {
             self.state.notify(
                 crate::notification::NotificationType::Info,

@@ -735,8 +735,7 @@ impl LspManager {
                             .clients
                             .get_mut(lang)
                             .and_then(|c| c.pending.remove(&id))
-                            .map(|p| p.method)
-                            .unwrap_or_default();
+                            .map_or_default(|p| p.method);
                         if method == "initialize" {
                             // A server that rejects initialize is unusable; drop it so
                             // the next didOpen can retry instead of queueing forever.
@@ -926,8 +925,7 @@ impl LspManager {
         let title = val.get("title").and_then(|t| t.as_str()).unwrap_or("");
         let token = params
             .get("token")
-            .map(std::string::ToString::to_string)
-            .unwrap_or_default();
+            .map_or_default(std::string::ToString::to_string);
 
         let flychecks = self.flycheck_tokens.entry(lang.to_string()).or_default();
         let counter = self.indexing_tokens.entry(lang.to_string()).or_insert(0);
@@ -1108,14 +1106,12 @@ fn route_notification(method: &str, params: &Value) -> Option<LspMessage> {
         "textDocument/publishDiagnostics" => {
             let uri = params["uri"].as_str()?.to_string();
             let version = params.get("version").and_then(serde_json::Value::as_i64);
-            let diags: Vec<protocol::LspDiagnostic> = params["diagnostics"]
-                .as_array()
-                .map(|arr| {
+            let diags: Vec<protocol::LspDiagnostic> =
+                params["diagnostics"].as_array().map_or_default(|arr| {
                     arr.iter()
                         .filter_map(|v| serde_json::from_value(v.clone()).ok())
                         .collect()
-                })
-                .unwrap_or_default();
+                });
             Some(LspMessage::Diagnostics {
                 uri,
                 version,

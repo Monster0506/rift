@@ -2208,14 +2208,11 @@ impl LuaHost {
             let f = lua.create_function(move |_, tbl: LuaTable| {
                 let language: String = tbl.get("language")?;
                 let command: String = tbl.get("command")?;
-                let args: Vec<String> = tbl
-                    .get::<Option<LuaTable>>("args")?
-                    .map(|t| {
-                        t.sequence_values::<String>()
-                            .filter_map(std::result::Result::ok)
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                let args: Vec<String> = tbl.get::<Option<LuaTable>>("args")?.map_or_default(|t| {
+                    t.sequence_values::<String>()
+                        .filter_map(std::result::Result::ok)
+                        .collect()
+                });
                 tbl.get::<Option<LuaTable>>("extensions")?;
                 let root_markers: Vec<String> =
                     tbl.get::<Option<LuaTable>>("root_markers")?.map_or_else(
@@ -2228,13 +2225,12 @@ impl LuaHost {
                     );
                 let capabilities: Vec<crate::lsp::config::LspCapability> = tbl
                     .get::<Option<LuaTable>>("capabilities")?
-                    .map(|t| {
+                    .map_or_default(|t| {
                         t.sequence_values::<String>()
                             .filter_map(std::result::Result::ok)
                             .filter_map(|s| crate::lsp::config::LspCapability::parse(&s))
                             .collect()
-                    })
-                    .unwrap_or_default();
+                    });
                 let initialization_options = tbl
                     .get::<Option<LuaValue>>("initialization_options")?
                     .and_then(|v| lua_to_json(v).ok());

@@ -542,8 +542,7 @@ impl<T: TerminalBackend> Editor<T> {
 
             let text = idx
                 .and_then(|index| doc.clipboard_entry(index))
-                .map(<[crate::character::Character]>::to_vec)
-                .unwrap_or_default();
+                .map_or_default(<[crate::character::Character]>::to_vec);
 
             (text, layout.preview_doc_id)
         };

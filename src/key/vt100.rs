@@ -62,7 +62,7 @@ pub(super) fn encode(key: Key) -> Vec<u8> {
 
 fn char_bytes(c: char, mods: Mods) -> Vec<u8> {
     if mods.contains(Mods::CTRL) {
-        return ctrl_byte(c).map(|b| vec![b]).unwrap_or_default();
+        return ctrl_byte(c).map_or_default(|b| vec![b]);
     }
 
     let c = if mods.contains(Mods::SHIFT) {

@@ -835,16 +835,12 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         let uri = crate::lsp::protocol::normalize_uri(&crate::lsp::protocol::path_to_uri(&path));
-        let diags: Vec<_> = self
-            .lsp_diagnostics
-            .get(&uri)
-            .map(|d| {
-                d.iter()
-                    .filter(|d| d.severity != Some(4))
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default();
+        let diags: Vec<_> = self.lsp_diagnostics.get(&uri).map_or_default(|d| {
+            d.iter()
+                .filter(|d| d.severity != Some(4))
+                .cloned()
+                .collect()
+        });
         if diags.is_empty() {
             self.state
                 .notify(NotificationType::Info, "LSP: no diagnostics".to_string());

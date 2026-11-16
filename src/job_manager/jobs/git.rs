@@ -198,11 +198,7 @@ impl Job for GitDiffJob {
         };
 
         let files = crate::git::diff::parse_unified_diff(&stdout);
-        let hunks = files
-            .into_iter()
-            .next()
-            .map(|f| f.hunks)
-            .unwrap_or_default();
+        let hunks = files.into_iter().next().map_or_default(|f| f.hunks);
         let result = Box::new(GitDiffResult {
             doc_id: self.doc_id,
             path: self.path,
@@ -666,8 +662,7 @@ impl Job for GitGutterDiffJob {
         let files = crate::git::diff::parse_unified_diff(&stdout);
         let signs = files
             .first()
-            .map(|f| crate::git::diff::classify_gutter_signs(&f.hunks))
-            .unwrap_or_default();
+            .map_or_default(|f| crate::git::diff::classify_gutter_signs(&f.hunks));
 
         let result = Box::new(GitGutterDiffResult {
             doc_id: self.doc_id,

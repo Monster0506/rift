@@ -233,8 +233,7 @@ impl<T: TerminalBackend> Editor<T> {
                         "{} buffer cannot be saved",
                         self.document_manager
                             .active_document()
-                            .map(|document| document.display_name().into_owned())
-                            .unwrap_or_default()
+                            .map_or_default(|document| document.display_name().into_owned())
                     ),
                 ));
                 self.state.clear_command_line();

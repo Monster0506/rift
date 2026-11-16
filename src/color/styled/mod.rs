@@ -152,7 +152,7 @@ impl StyledLine {
     fn get_style_at(&self, column: usize) -> ColorStyle {
         match self {
             Self::Plain(_) => ColorStyle::new(),
-            Self::PerChar(chars) => chars.get(column).map(|sc| sc.style).unwrap_or_default(),
+            Self::PerChar(chars) => chars.get(column).map_or_default(|sc| sc.style),
             Self::PerSpan { spans, .. } => {
                 // Find span containing this column
                 for span in spans {

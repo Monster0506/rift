@@ -337,8 +337,7 @@ impl AnnotationStore {
             .index
             .borrow()
             .as_ref()
-            .map(|t| t.query(range).into_iter().map(|(_, id)| id).collect())
-            .unwrap_or_default();
+            .map_or_default(|t| t.query(range).into_iter().map(|(_, id)| id).collect());
         ids.sort_unstable();
         ids.dedup();
         let by_id = self.by_id.borrow();
@@ -710,7 +709,7 @@ impl AnnotationStore {
                 .and_then(|f| presentation::resolve_face(f, colors));
             let fg = pres.style.as_ref().and_then(|s| s.fg).or(face_fg);
             let bg = pres.style.as_ref().and_then(|s| s.bg);
-            let attrs = pres.style.as_ref().map(|s| s.attrs).unwrap_or_default();
+            let attrs = pres.style.as_ref().map_or_default(|s| s.attrs);
             if fg.is_some() || bg.is_some() || !attrs.is_empty() {
                 let style = crate::layer::CellStyle { fg, bg, attrs };
                 cands.push((start, end, style, pres.priority, a.owner.rank(), a.id));

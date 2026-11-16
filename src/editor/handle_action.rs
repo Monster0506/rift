@@ -1214,17 +1214,14 @@ impl<T: TerminalBackend> Editor<T> {
                 if let Some((path, line, col)) = self.lsp_request_position() {
                     let uri = crate::lsp::protocol::path_to_uri(&path);
                     let norm_uri = crate::lsp::protocol::normalize_uri(&uri);
-                    let diagnostics: Vec<crate::lsp::protocol::LspDiagnostic> = self
-                        .lsp_diagnostics
-                        .get(&norm_uri)
-                        .map(|diags| {
+                    let diagnostics: Vec<crate::lsp::protocol::LspDiagnostic> =
+                        self.lsp_diagnostics.get(&norm_uri).map_or_default(|diags| {
                             diags
                                 .iter()
                                 .filter(|d| d.range.start.line == line)
                                 .cloned()
                                 .collect()
-                        })
-                        .unwrap_or_default();
+                        });
                     if self
                         .lsp_manager
                         .code_action(&path, line, col, diagnostics)

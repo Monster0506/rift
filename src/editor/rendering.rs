@@ -734,7 +734,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let wrap_rows = self
                     .document_manager
                     .get_document(source_doc_id)
-                    .map(|source_doc| match params {
+                    .map_or_default(|source_doc| match params {
                         Some((wrap_width, tab_width)) => {
                             let map = crate::wrap::DisplayMap::build(
                                 &source_doc.buffer,
@@ -754,8 +754,7 @@ impl<T: TerminalBackend> Editor<T> {
                                 .collect()
                         }
                         None => vec![1; blame_line_count],
-                    })
-                    .unwrap_or_default();
+                    });
                 if let Some(blame_doc) = self.document_manager.get_document_mut(blame_doc_id) {
                     blame_doc.set_git_blame_wrap_rows(wrap_key, wrap_rows);
                     if let Some(window) = self.split_tree.get_window_mut(blame_window_id) {
@@ -1457,8 +1456,7 @@ impl<T: TerminalBackend> Editor<T> {
         let diff = self
             .document_manager
             .get_document(doc_id)
-            .map(super::super::document::Document::parse_directory_diff)
-            .unwrap_or_default();
+            .map_or_default(super::super::document::Document::parse_directory_diff);
 
         if diff.renames.is_empty() && diff.deletes.is_empty() && diff.creates.is_empty() {
             self.render_system

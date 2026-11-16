@@ -459,8 +459,7 @@ fn get_undo_dir(s: &UserSettings) -> SettingValue {
         s.undo
             .dir
             .as_deref()
-            .map(|p| p.display().to_string())
-            .unwrap_or_default(),
+            .map_or_default(|p| p.display().to_string()),
     )
 }
 
