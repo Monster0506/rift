@@ -19,6 +19,7 @@ I use this daily and primarily.
 - Vertical/horizontal splits with resize, equalize, freeze, and directional pane moving
 - Integrated terminal emulator (`:terminal`)
 - Ranger-style file explorer (open, rename, delete, copy, bulk ops, hidden-file toggle)
+- Image buffers: PNG, JPEG, GIF, BMP, ICO, WebP and TIFF files show read-only as sixel graphics; `:e` toggles between the picture and its raw bytes
 - Clipboard ring buffer with system clipboard integration
 - Fast search (sub-15ms on a 1MB buffer) with smartcase and background index warming
 - Full Unicode support: multi-width rendering, correct decoding, lossless BOM and line-ending round-trip
