@@ -363,7 +363,7 @@ fn test_ctrl_w_ctrl_hjkl_match_ctrl_w_hjkl() {
     register_defaults(&mut map);
     let ww = Key::ctrl('w');
 
-    for ch in [b'h', b'j', b'k', b'l'] {
+    for ch in *b"hjkl" {
         let plain = map.lookup(KeyContext::Normal, &[ww, Key::char(ch as char)]);
         let ctrl = map.lookup(KeyContext::Normal, &[ww, Key::ctrl(ch as char)]);
 
@@ -388,7 +388,7 @@ fn test_ctrl_w_ctrl_shift_hjkl_match_ctrl_w_hjkl() {
     register_defaults(&mut map);
     let ww = Key::ctrl('w');
 
-    for ch in [b'h', b'j', b'k', b'l'] {
+    for ch in *b"hjkl" {
         let plain = map.lookup(KeyContext::Normal, &[ww, Key::char(ch as char)]);
         let ctrl_shift = map.lookup(
             KeyContext::Normal,
