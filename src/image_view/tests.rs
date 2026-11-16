@@ -210,7 +210,7 @@ fn frame(
 ) {
     overlay.stage(placements);
     overlay.before_flush(term, compositor);
-    compositor.render_to_terminal(term, false, None).unwrap();
+    compositor.render_to_terminal(term, false, &[]).unwrap();
     overlay.after_flush(term, compositor).unwrap();
 }
 

@@ -127,7 +127,7 @@ impl ImageOverlay {
             covered_overlay |= compositor.invalidate_overlays_within(target.cells);
         }
         if covered_overlay {
-            compositor.render_to_terminal(term, false, None)?;
+            compositor.render_to_terminal(term, false, &[])?;
         }
 
         self.drawn.clear();

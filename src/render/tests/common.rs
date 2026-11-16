@@ -106,7 +106,7 @@ pub(super) fn render_row_with_adornments(
                 terminal_cell_colors: None,
                 show_line_numbers: false,
                 display_map: None,
-                scroll_hint: None,
+                scroll_hints: &[],
             },
         )
         .unwrap();
@@ -154,7 +154,7 @@ pub(super) fn inline_render_state<'a>(
         terminal_cell_colors: None,
         show_line_numbers: false,
         display_map: None,
-        scroll_hint: None,
+        scroll_hints: &[],
     }
 }
 
@@ -191,7 +191,7 @@ pub(super) fn render_state_with_highlights<'a>(
         terminal_cell_colors: None,
         show_line_numbers: false,
         display_map: None,
-        scroll_hint: None,
+        scroll_hints: &[],
     }
 }
 

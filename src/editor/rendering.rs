@@ -561,7 +561,7 @@ impl<T: TerminalBackend> Editor<T> {
         let stats = self
             .render_system
             .compositor
-            .render_to_terminal(&mut self.term, needs_clear, None)
+            .render_to_terminal(&mut self.term, needs_clear, &[])
             .map_err(|e| {
                 RiftError::new(
                     ErrorType::Internal,
@@ -674,7 +674,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .filter(|colors| !colors.is_empty()),
             show_line_numbers: doc.options.show_line_numbers,
             display_map,
-            scroll_hint,
+            scroll_hints: scroll_hint.as_slice(),
             syntax_generation,
             annotations_revision,
             kind_registry_generation,
@@ -1114,8 +1114,28 @@ impl<T: TerminalBackend> Editor<T> {
             focused_doc_id,
         };
         let mut rendered_window_ids = std::collections::HashSet::new();
+        let mut scroll_hints = std::mem::take(&mut self.render_system.scroll_hint_scratch);
+        scroll_hints.clear();
 
         for (layout, display_map) in layouts.iter().zip(&window_maps) {
+            if !window_set_changed && layout.col == 0 && layout.cols == total_cols {
+                if let Some(window) = self.split_tree.get_window(layout.window_id) {
+                    let vp = &window.viewport;
+                    let viewport_delta = if display_map.is_some() {
+                        vp.top_visual_row().cast_signed() - vp.prev_top_visual_row().cast_signed()
+                    } else {
+                        vp.top_line().cast_signed() - vp.prev_top_line().cast_signed()
+                    };
+                    let terminal_delta = self
+                        .document_manager
+                        .get_document(window.document_id)
+                        .map_or(0, crate::document::Document::terminal_scroll);
+                    let delta = viewport_delta.saturating_add(terminal_delta);
+                    if delta != 0 && vp.left_col() == vp.prev_left_col() && layout.rows > 1 {
+                        scroll_hints.push((layout.row, layout.row + layout.rows - 1, delta));
+                    }
+                }
+            }
             if self.render_window_layer(layout, display_map.as_deref(), pass) {
                 rendered_window_ids.insert(layout.window_id);
             }
@@ -1124,13 +1144,16 @@ impl<T: TerminalBackend> Editor<T> {
         self.render_system
             .window_paint_caches
             .retain(|id, _| rendered_window_ids.contains(id));
-        self.render_focus_overlay(
+        let result = self.render_focus_overlay(
             &layouts,
             content_rows,
             total_cols,
             focused_display_map.as_deref(),
             needs_clear,
-        )
+            &scroll_hints,
+        );
+        self.render_system.scroll_hint_scratch = scroll_hints;
+        result
     }
     fn render_window_layer(
         &mut self,
@@ -1322,6 +1345,7 @@ impl<T: TerminalBackend> Editor<T> {
         total_cols: usize,
         focused_display_map: Option<&crate::wrap::DisplayMap>,
         needs_clear: bool,
+        scroll_hints: &[crate::layer::ScrollHint],
     ) -> Result<(), RiftError> {
         use crate::layer::LayerPriority;
 
@@ -1419,7 +1443,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .filter(|colors| !colors.is_empty()),
             show_line_numbers: focused_doc.options.show_line_numbers,
             display_map: focused_display_map,
-            scroll_hint: None,
+            scroll_hints,
             syntax_generation: 0,
             annotations_revision: 0,
             kind_registry_generation: 0,

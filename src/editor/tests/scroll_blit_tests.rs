@@ -443,3 +443,37 @@ fn scroll_blit_repaints_when_annotations_or_theme_change_mid_scroll() {
         assert_content_grids_match(&live_grid, &fresh_grid, i, "mid-scroll mutation");
     }
 }
+
+#[test]
+fn stacked_split_uses_its_own_scroll_region() {
+    let mut editor = create_editor_sized(30, 80);
+    let text = (0..100)
+        .map(|i| format!("line {i:03}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    load_text(&mut editor, &text);
+    editor.do_split_window(
+        crate::split::tree::SplitDirection::Horizontal,
+        crate::command_line::commands::types::SplitSubcommand::Current,
+    );
+    editor.execute_buffer_command(crate::command::Command::Move(
+        crate::action::Motion::Down,
+        20,
+    ));
+    editor.update_and_render().unwrap();
+    let layouts = editor.split_tree.compute_layout(29, 80);
+    let focused = layouts
+        .iter()
+        .find(|l| l.window_id == editor.split_tree.focused_window_id())
+        .unwrap();
+    let region = format!("\u{1b}[{};{}r", focused.row + 1, focused.row + focused.rows);
+    editor.term.clear();
+
+    feed_keys(&mut editor, "j");
+    editor.update_and_render().unwrap();
+
+    let out = editor.term.get_written_string();
+    assert!(out.contains(&region), "pane region missing: {out:?}");
+    assert!(out.contains("\u{1b}[1S"), "pane must scroll one row");
+    assert_eq!(editor.term.flushes, 1, "one flush per frame");
+}

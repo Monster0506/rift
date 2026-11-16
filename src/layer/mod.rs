@@ -552,6 +552,10 @@ impl Layer {
     }
 }
 
+/// `(top, bottom, delta)`: rows `top..=bottom` moved by `delta` since the
+/// previous frame, positive when content moved up.
+pub(crate) type ScrollHint = (usize, usize, isize);
+
 /// Layer compositor that manages multiple layers and composites them for rendering
 pub(crate) struct LayerCompositor {
     /// Layers indexed by priority
@@ -726,16 +730,16 @@ impl LayerCompositor {
         }
     }
 
-    /// Render the composited output, diffing against the previous frame. A
-    /// `(top, bottom, delta)` scroll hint rides the terminal's scroll region.
+    /// Render the composited output, diffing against the previous frame.
+    /// Scroll hints over disjoint row ranges ride the terminal's scroll region.
     ///
     /// # Errors
-    /// Returns an error if the terminal backend fails to apply the scroll or write the frame.
+    /// Returns an error if the terminal backend fails to apply a scroll or write the frame.
     pub(crate) fn render_to_terminal<T: crate::term::TerminalBackend>(
         &mut self,
         term: &mut T,
         needs_clear: bool,
-        scroll_hint: Option<(usize, usize, isize)>,
+        scroll_hints: &[ScrollHint],
     ) -> Result<FrameStats, RiftError> {
         // Composite if needed
         if self.has_dirty() {
@@ -745,8 +749,10 @@ impl LayerCompositor {
         // Force full redraw if requested
         if needs_clear {
             self.buffer.invalidate();
-        } else if let Some((top, bottom, delta)) = scroll_hint {
-            self.buffer.apply_scroll(term, top, bottom, delta)?;
+        } else {
+            for &(top, bottom, delta) in scroll_hints {
+                self.buffer.apply_scroll(term, top, bottom, delta)?;
+            }
         }
 
         // Delegate to double buffer

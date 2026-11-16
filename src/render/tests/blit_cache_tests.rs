@@ -306,7 +306,7 @@ fn non_wrap_scroll_blit_with_left_col_tabs_and_multibyte_matches_fresh_render() 
                     terminal_cell_colors: None,
                     show_line_numbers: false,
                     display_map: None,
-                    scroll_hint: None,
+                    scroll_hints: &[],
                 },
             )
             .unwrap();
@@ -393,7 +393,7 @@ fn cursor_snaps_instead_of_animating_across_a_viewport_jump() {
                     terminal_cell_colors: None,
                     show_line_numbers: false,
                     display_map: None,
-                    scroll_hint: None,
+                    scroll_hints: &[],
                 },
             )
             .unwrap();
@@ -463,7 +463,7 @@ fn needs_clear_forces_repaint_even_when_blit_key_is_unchanged() {
                     terminal_cell_colors: None,
                     show_line_numbers: false,
                     display_map: None,
-                    scroll_hint: None,
+                    scroll_hints: &[],
                 },
             )
             .unwrap();

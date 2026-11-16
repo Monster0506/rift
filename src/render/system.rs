@@ -109,6 +109,7 @@ pub struct RenderSystem {
     pub(crate) content_blit_key: Option<crate::render::ContentBlitKey>,
     pub(crate) window_paint_caches:
         std::collections::HashMap<crate::split::window::WindowId, WindowPaintCache>,
+    pub(crate) scroll_hint_scratch: Vec<crate::layer::ScrollHint>,
     status_paint_frame: crate::paint::PaintFrame,
 
     render_order: Vec<(crate::render::ecs::EntityId, crate::layer::LayerPriority)>,
@@ -149,6 +150,7 @@ impl RenderSystem {
             content_paint_frame: crate::paint::PaintFrame::new(0),
             content_blit_key: None,
             window_paint_caches: std::collections::HashMap::new(),
+            scroll_hint_scratch: Vec::new(),
             status_paint_frame: crate::paint::PaintFrame::new(0),
             render_order: Vec::new(),
             image_overlay: crate::image_view::overlay::ImageOverlay::default(),
@@ -447,7 +449,7 @@ impl RenderSystem {
 
         let viewport = self.viewport;
         let skip_content = state.skip_content;
-        let scroll_hint = state.scroll_hint;
+        let scroll_hints = state.scroll_hints;
         let cursor_row_offset = state.cursor_row_offset;
         let cursor_col_offset = state.cursor_col_offset;
         let cursor_viewport = state.cursor_viewport;
@@ -499,7 +501,7 @@ impl RenderSystem {
 
         self.image_overlay.before_flush(term, &mut self.compositor);
         self.compositor
-            .render_to_terminal(term, ctx.needs_clear, scroll_hint)
+            .render_to_terminal(term, ctx.needs_clear, scroll_hints)
             .map_err(|e| {
                 RiftError::new(
                     crate::error::ErrorType::Renderer,

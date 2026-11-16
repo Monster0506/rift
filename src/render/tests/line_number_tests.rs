@@ -42,7 +42,7 @@ fn test_render_line_numbers_enabled() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
-                scroll_hint: None,
+                scroll_hints: &[],
             },
         )
         .unwrap();
@@ -108,7 +108,7 @@ fn test_render_line_numbers_disabled() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
-                scroll_hint: None,
+                scroll_hints: &[],
             },
         )
         .unwrap();
@@ -161,7 +161,7 @@ fn test_render_line_numbers_gutter_width() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
-                scroll_hint: None,
+                scroll_hints: &[],
             },
         )
         .unwrap();
@@ -232,7 +232,7 @@ fn test_render_cursor_position_with_line_numbers() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
-                scroll_hint: None,
+                scroll_hints: &[],
             },
         )
         .unwrap();

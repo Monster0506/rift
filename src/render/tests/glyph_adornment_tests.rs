@@ -39,7 +39,7 @@ fn test_tab_rendered_as_space_not_raw_tab() {
                 terminal_cell_colors: None,
                 show_line_numbers: false,
                 display_map: None,
-                scroll_hint: None,
+                scroll_hints: &[],
             },
         )
         .unwrap();
@@ -124,7 +124,7 @@ fn test_tab_straddling_left_col_does_not_shift_text() {
                 terminal_cell_colors: None,
                 show_line_numbers: false,
                 display_map: None,
-                scroll_hint: None,
+                scroll_hints: &[],
             },
         )
         .unwrap();
@@ -179,7 +179,7 @@ fn test_wide_char_straddling_left_col_renders_as_space() {
                 terminal_cell_colors: None,
                 show_line_numbers: false,
                 display_map: None,
-                scroll_hint: None,
+                scroll_hints: &[],
             },
         )
         .unwrap();
@@ -237,7 +237,7 @@ fn test_zero_width_char_does_not_write_stray_cell() {
                 terminal_cell_colors: None,
                 show_line_numbers: false,
                 display_map: None,
-                scroll_hint: None,
+                scroll_hints: &[],
             },
         )
         .unwrap();
