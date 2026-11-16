@@ -502,7 +502,7 @@ impl AnnotationStore {
             };
             let (start, end) = match a.anchor {
                 Anchor::Point(p) => (p.offset, p.offset),
-                Anchor::Range(s, e) if is_leading => (s.offset, s.offset),
+                Anchor::Range(s, _) if is_leading => (s.offset, s.offset),
                 Anchor::Range(s, e) => (s.offset, e.offset),
                 Anchor::Line(_) => continue,
             };
