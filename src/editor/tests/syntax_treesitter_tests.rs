@@ -42,7 +42,7 @@ fn stale_syntax_job_result_does_not_clobber_newer_state() {
     syntax.invalidate_trees();
     assert!(syntax.incremental_parse(&doc.buffer));
     let fresh_highlights = syntax.highlights(&doc.buffer, 0..doc.buffer.byte_len());
-    assert!(!fresh_highlights.is_empty());
+    assert_ne!(fresh_highlights, Vec::new());
 
     let mut drained = false;
     while let Ok(msg) = editor

@@ -41,7 +41,7 @@ fn test_interval_tree_nested() {
 #[test]
 fn test_interval_tree_empty() {
     let tree: IntervalTree<i32> = IntervalTree::new(vec![]);
-    assert!(tree.query(0..10).is_empty());
+    assert_eq!(tree.query(0..10), Vec::new());
 }
 
 #[test]
