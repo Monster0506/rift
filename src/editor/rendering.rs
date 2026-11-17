@@ -1032,6 +1032,27 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    fn window_scroll_hint(
+        &self,
+        layout: &WindowLayout,
+        has_display_map: bool,
+    ) -> Option<(usize, usize, isize)> {
+        let window = self.split_tree.get_window(layout.window_id)?;
+        let vp = &window.viewport;
+        let viewport_delta = if has_display_map {
+            vp.top_visual_row().cast_signed() - vp.prev_top_visual_row().cast_signed()
+        } else {
+            vp.top_line().cast_signed() - vp.prev_top_line().cast_signed()
+        };
+        let terminal_delta = self
+            .document_manager
+            .get_document(window.document_id)
+            .map_or(0, crate::document::Document::terminal_scroll);
+        let delta = viewport_delta.saturating_add(terminal_delta);
+        (delta != 0 && vp.left_col() == vp.prev_left_col() && layout.rows > 1)
+            .then(|| (layout.row, layout.row + layout.rows - 1, delta))
+    }
+
     fn render_multi_window(&mut self, needs_clear: bool) -> Result<(), RiftError> {
         use crate::layer::LayerPriority;
         crate::perf_span!("render_multi_window", crate::perf::PerfFields::default());
@@ -1119,22 +1140,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         for (layout, display_map) in layouts.iter().zip(&window_maps) {
             if !window_set_changed && layout.col == 0 && layout.cols == total_cols {
-                if let Some(window) = self.split_tree.get_window(layout.window_id) {
-                    let vp = &window.viewport;
-                    let viewport_delta = if display_map.is_some() {
-                        vp.top_visual_row().cast_signed() - vp.prev_top_visual_row().cast_signed()
-                    } else {
-                        vp.top_line().cast_signed() - vp.prev_top_line().cast_signed()
-                    };
-                    let terminal_delta = self
-                        .document_manager
-                        .get_document(window.document_id)
-                        .map_or(0, crate::document::Document::terminal_scroll);
-                    let delta = viewport_delta.saturating_add(terminal_delta);
-                    if delta != 0 && vp.left_col() == vp.prev_left_col() && layout.rows > 1 {
-                        scroll_hints.push((layout.row, layout.row + layout.rows - 1, delta));
-                    }
-                }
+                scroll_hints.extend(self.window_scroll_hint(layout, display_map.is_some()));
             }
             if self.render_window_layer(layout, display_map.as_deref(), pass) {
                 rendered_window_ids.insert(layout.window_id);
