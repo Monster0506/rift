@@ -280,11 +280,14 @@ pub(crate) struct Syntax {
 
     /// Edits since the last completed parse, bounding what it invalidates.
     pending_edits: Vec<InputEdit>,
-    /// Bumped whenever host highlights the renderer may have seen are dropped,
-    /// never when a chunk is filled - lets callers detect real changes.
     highlights_generation: u64,
     /// Same as `highlights_generation`, for every injection layer.
     injection_generation: u64,
+}
+
+fn next_generation() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 impl Syntax {
@@ -303,20 +306,16 @@ impl Syntax {
             dynamic_injection_layers: BTreeMap::new(),
             language_loader: None,
             pending_edits: Vec::new(),
-            highlights_generation: 0,
-            injection_generation: 0,
+            highlights_generation: next_generation(),
+            injection_generation: next_generation(),
         }
     }
 
-    /// Monotonic count of host highlight invalidations, for external
-    /// staleness gates that must not react to mere queries.
     #[must_use]
     pub(crate) const fn highlights_generation(&self) -> u64 {
         self.highlights_generation
     }
 
-    /// Monotonic count of injection-layer highlight invalidations (static or
-    /// dynamic), same reasoning as `highlights_generation`.
     #[must_use]
     pub(crate) const fn injection_generation(&self) -> u64 {
         self.injection_generation
@@ -339,7 +338,7 @@ impl Syntax {
         self.injections_query = Some(injections_query);
         self.injection_capture_langs = capture_langs;
         self.injection_layers = layers;
-        self.injection_generation += 1;
+        self.injection_generation = next_generation();
     }
 
     // Update from background job result
@@ -358,7 +357,7 @@ impl Syntax {
     pub(crate) fn invalidate_trees(&mut self) {
         self.tree = None;
         self.highlights.clear();
-        self.highlights_generation += 1;
+        self.highlights_generation = next_generation();
         self.pending_edits.clear();
         for layer in &mut self.injection_layers {
             layer.reset();
@@ -366,7 +365,7 @@ impl Syntax {
         for layer in self.dynamic_injection_layers.values_mut() {
             layer.reset();
         }
-        self.injection_generation += 1;
+        self.injection_generation = next_generation();
     }
 
     /// Notify the syntax tree of an edit, in the caller's own vocabulary
@@ -402,7 +401,7 @@ impl Syntax {
             tree.edit(&edit);
         }
         if self.highlights.invalidate_from(start_byte) {
-            self.highlights_generation += 1;
+            self.highlights_generation = next_generation();
         }
 
         let mut injections_dropped = false;
@@ -417,7 +416,7 @@ impl Syntax {
             injections_dropped |= layer.highlights.invalidate_from(start_byte);
         }
         if injections_dropped {
-            self.injection_generation += 1;
+            self.injection_generation = next_generation();
         }
 
         self.pending_edits.push(edit);
@@ -492,7 +491,7 @@ impl Syntax {
             true
         };
         if dropped {
-            self.highlights_generation += 1;
+            self.highlights_generation = next_generation();
         }
 
         self.tree = Some(tree);
@@ -526,7 +525,7 @@ impl Syntax {
             self.parse_static_injections(source, &tree, &query)
         };
         if dropped {
-            self.injection_generation += 1;
+            self.injection_generation = next_generation();
         }
     }
 
