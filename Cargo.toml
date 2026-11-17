@@ -16,7 +16,7 @@ name = "rift"
 path = "src/main.rs"
 
 [features]
-default = ["system_clipboard", "plugins", "terminal_emulation", "lsp", "ipc"]
+default = ["system_clipboard", "plugins", "terminal_emulation", "lsp", "ipc", "treesitter"]
 perf_instrumentation = []
 system_clipboard = ["dep:arboard"]
 plugins = ["dep:mlua"]
