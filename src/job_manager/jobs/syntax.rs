@@ -100,6 +100,11 @@ impl Job for SyntaxParseJob {
             "syntax_reparse_job",
             crate::perf::PerfFields {
                 bytes: Some(u32::try_from(self.buffer.byte_len()).unwrap_or(u32::MAX)),
+                tag: Some(if self.old_tree.is_some() {
+                    "incremental"
+                } else {
+                    "full"
+                }),
                 ..Default::default()
             }
         );
