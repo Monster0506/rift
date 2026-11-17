@@ -155,6 +155,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn flush_pending_cursor_moved(&mut self) {
         if let Some((buf, row, col)) = self.pending_cursor_moved.take() {
+            self.update_lua_state();
             self.plugin_host
                 .dispatch(&crate::plugin::events::EditorEvent::CursorMoved { buf, row, col });
             self.apply_plugin_mutations();
