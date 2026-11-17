@@ -584,16 +584,15 @@ impl<T: TerminalBackend> Editor<T> {
         let highlights = doc
             .syntax
             .as_mut()
-            .map(|syntax| syntax.highlights(Some(start_byte..end_byte)));
-
+            .map(|syntax| syntax.highlights(&doc.buffer, start_byte..end_byte));
+        let injection_hl = doc
+            .syntax
+            .as_mut()
+            .map(|s| s.injection_highlights_named(&doc.buffer, start_byte..end_byte));
         let capture_names = doc
             .syntax
             .as_ref()
             .map(crate::syntax::Syntax::capture_names);
-        let injection_hl = doc
-            .syntax
-            .as_ref()
-            .map(|s| s.injection_highlights_named(Some(&(start_byte..end_byte))));
 
         let annotation_styles = doc.annotations.presentation_spans(
             state.settings.syntax_colors.as_ref(),
@@ -1147,15 +1146,15 @@ impl<T: TerminalBackend> Editor<T> {
         let highlights = doc
             .syntax
             .as_mut()
-            .map(|syntax| syntax.highlights(Some(start_byte..end_byte)));
+            .map(|syntax| syntax.highlights(&doc.buffer, start_byte..end_byte));
+        let injection_hl = doc
+            .syntax
+            .as_mut()
+            .map(|s| s.injection_highlights_named(&doc.buffer, start_byte..end_byte));
         let capture_names = doc
             .syntax
             .as_ref()
             .map(crate::syntax::Syntax::capture_names);
-        let injection_hl = doc
-            .syntax
-            .as_ref()
-            .map(|s| s.injection_highlights_named(Some(&(start_byte..end_byte))));
         let annotation_styles = doc.annotations.presentation_spans(
             state.settings.syntax_colors.as_ref(),
             Some(kind_registry),

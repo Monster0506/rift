@@ -17,8 +17,7 @@ impl Document {
         if self.buffer.byte_len() > SYNC_PARSE_MAX_BYTES {
             return SyntaxSync::Deferred;
         }
-        let source = self.buffer.to_logical_bytes();
-        match syntax.try_incremental_parse(&source, SYNC_PARSE_BUDGET) {
+        match syntax.try_incremental_parse(&self.buffer, SYNC_PARSE_BUDGET) {
             #[cfg(feature = "treesitter")]
             ParseOutcome::Completed => SyntaxSync::Completed,
             #[cfg(feature = "treesitter")]

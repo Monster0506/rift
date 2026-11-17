@@ -3,19 +3,33 @@ use crate::syntax::loader::{LanguageLoader, LoadedLanguage};
 use crate::syntax::Syntax;
 use std::path::PathBuf;
 use std::sync::mpsc;
+use tree_sitter::Query;
+
+type Highlights = Vec<(std::ops::Range<usize>, u32)>;
 
 fn make_signal() -> CancellationSignal {
     CancellationSignal::new(false)
 }
 
-fn rust_language_and_query() -> (tree_sitter::Language, Arc<Query>) {
+fn rust_syntax() -> Syntax {
     let loader = LanguageLoader::new(PathBuf::from("."));
     let grammar = loader.load_language("rust").expect("rust grammar");
     let query_src = loader
         .load_query("rust", "highlights")
         .expect("rust highlights query");
     let query = Query::new(&grammar.language, &query_src).expect("compile highlights query");
-    (grammar.language, Arc::new(query))
+    Syntax::new(
+        LoadedLanguage::bundled(grammar.language, "rust"),
+        Some(Arc::new(query)),
+    )
+}
+
+fn rust_parser() -> Parser {
+    let mut parser = Parser::new();
+    parser
+        .set_language(&tree_sitter_rust::LANGUAGE.into())
+        .expect("set rust language");
+    parser
 }
 
 fn make_buffer(src: &str) -> TextBuffer {
@@ -32,453 +46,170 @@ fn run_job(job: SyntaxParseJob) -> SyntaxParseResult {
         .expect("SyntaxParseJob did not produce a SyntaxParseResult")
 }
 
-fn sorted_highlights(tree: &IntervalTree<u32>) -> Vec<(std::ops::Range<usize>, u32)> {
-    let mut items: Vec<_> = tree.iter().map(|(r, v)| (r.clone(), *v)).collect();
-    items.sort_by(|a, b| {
-        a.0.start
-            .cmp(&b.0.start)
-            .then(a.0.end.cmp(&b.0.end))
-            .then(a.1.cmp(&b.1))
-    });
-    items
-}
-
-/// A scoped single-edit reparse must match a full from-scratch parse of
-/// the same edited content.
-#[test]
-fn test_scoped_highlights_match_full_recompute_after_single_edit() {
-    let (language, query) = rust_language_and_query();
-
-    let initial_src = "fn foo() { let a = 1; let b = 2; }";
-    let buffer1 = make_buffer(initial_src);
-
-    let mut parser1 = Parser::new();
-    parser1.set_language(&language).unwrap();
-    let tree1 = parser1
-        .parse(buffer1.to_logical_bytes().as_slice(), None)
-        .unwrap();
-
-    let initial_highlights = {
-        let root = tree1.root_node();
-        let mut cursor = QueryCursor::new();
-        cursor.set_byte_range(0..buffer1.byte_len());
-        let source = buffer1.to_logical_bytes();
-        let mut matches = cursor.matches(&query, root, source.as_slice());
-        let mut items = Vec::new();
-        while let Some(m) = matches.next() {
-            for capture in m.captures() {
-                items.push((capture.node.byte_range(), capture.index));
-            }
-        }
-        IntervalTree::new(items)
-    };
-
-    // Insert one character ("1" -> "11") inside the first literal.
-    let insert_pos = initial_src.find("1;").unwrap() + 1;
-    let mut buffer2 = buffer1;
-    buffer2.set_cursor(insert_pos).unwrap();
-    buffer2.insert_str("1").unwrap();
-
-    let edit = InputEdit {
-        start_byte: insert_pos,
-        old_end_byte: insert_pos,
-        new_end_byte: insert_pos + 1,
-        start_position: tree_sitter::Point {
-            row: 0,
-            column: insert_pos,
-        },
-        old_end_position: tree_sitter::Point {
-            row: 0,
-            column: insert_pos,
-        },
-        new_end_position: tree_sitter::Point {
-            row: 0,
-            column: insert_pos + 1,
-        },
-    };
-    let mut old_tree_edited = tree1;
-    old_tree_edited.edit(&edit);
-
-    let mut parser2 = Parser::new();
-    parser2.set_language(&language).unwrap();
+/// Reparses `buffer` on the background job path and applies the result.
+fn job_reparse(syntax: &mut Syntax, buffer: &TextBuffer) {
     let job = SyntaxParseJob::new(
-        buffer2.clone(),
-        parser2,
-        Some(old_tree_edited),
-        Some(query.clone()),
+        buffer.clone(),
+        rust_parser(),
+        syntax.tree.clone(),
         "rust".to_string(),
         crate::document::DocumentId::new(1),
-        buffer2.revision,
-    )
-    .with_highlights_context(initial_highlights.into(), std::slice::from_ref(&edit));
-
-    let result = run_job(job);
-
-    // Ground truth: a full from-scratch parse and query of the edited content.
-    let mut parser3 = Parser::new();
-    parser3.set_language(&language).unwrap();
-    let expected_source = buffer2.to_logical_bytes();
-    let expected_tree = parser3.parse(expected_source.as_slice(), None).unwrap();
-    let expected_highlights = {
-        let root = expected_tree.root_node();
-        let mut cursor = QueryCursor::new();
-        cursor.set_byte_range(0..expected_source.len());
-        let mut matches = cursor.matches(&query, root, expected_source.as_slice());
-        let mut items = Vec::new();
-        while let Some(m) = matches.next() {
-            for capture in m.captures() {
-                items.push((capture.node.byte_range(), capture.index));
-            }
-        }
-        IntervalTree::new(items)
-    };
-
-    assert_eq!(
-        sorted_highlights(&result.highlights),
-        sorted_highlights(&expected_highlights),
+        buffer.revision,
     );
+    let result = run_job(job);
+    assert!(result.tree.is_some());
+    syntax.update_from_result(result, buffer);
 }
 
-fn point_at(source: &[u8], byte: usize) -> tree_sitter::Point {
+fn all_highlights(syntax: &mut Syntax, buffer: &TextBuffer) -> Highlights {
+    syntax.highlights(buffer, 0..buffer.byte_len())
+}
+
+fn fresh_highlights(buffer: &TextBuffer) -> Highlights {
+    let mut syntax = rust_syntax();
+    assert!(syntax.incremental_parse(buffer));
+    all_highlights(&mut syntax, buffer)
+}
+
+fn point_at(source: &[u8], byte: usize) -> (usize, usize) {
     let byte = byte.min(source.len());
     let row = source[..byte].split(|&b| b == b'\n').count() - 1;
     let last_nl = source[..byte]
         .iter()
         .rposition(|&b| b == b'\n')
         .map_or(0, |i| i + 1);
-    tree_sitter::Point {
-        row,
-        column: byte - last_nl,
-    }
+    (row, byte - last_nl)
+}
+
+/// Inserts `text` at char `pos` and tells `syntax`, as `document::edit` does.
+fn insert(syntax: &mut Syntax, buffer: &mut TextBuffer, pos: usize, text: &str) {
+    let old_source = buffer.to_logical_bytes();
+    let start_byte = buffer.char_to_byte(pos);
+    buffer.set_cursor(pos).unwrap();
+    buffer.insert_str(text).unwrap();
+    let new_end_byte = start_byte + text.len();
+    let new_source = buffer.to_logical_bytes();
+
+    let start_point = point_at(&old_source, start_byte);
+    syntax.notify_edit(
+        start_byte,
+        start_byte,
+        new_end_byte,
+        start_point,
+        start_point,
+        point_at(&new_source, new_end_byte),
+    );
+}
+
+fn captures_at(highlights: &Highlights, range: &std::ops::Range<usize>) -> Vec<u32> {
+    highlights
+        .iter()
+        .filter(|(r, _)| r == range)
+        .map(|(_, c)| *c)
+        .collect()
+}
+
+/// A job reparse after one edit must match a from-scratch parse of the
+/// same edited content.
+#[test]
+fn test_job_highlights_match_fresh_parse_after_single_edit() {
+    let initial_src = "fn foo() { let a = 1; let b = 2; }";
+    let mut buffer = make_buffer(initial_src);
+    let mut syntax = rust_syntax();
+    job_reparse(&mut syntax, &buffer);
+    all_highlights(&mut syntax, &buffer);
+
+    // Insert one character ("1" -> "11") inside the first literal.
+    let insert_pos = initial_src.find("1;").unwrap() + 1;
+    insert(&mut syntax, &mut buffer, insert_pos, "1");
+    job_reparse(&mut syntax, &buffer);
+
+    assert_eq!(
+        all_highlights(&mut syntax, &buffer),
+        fresh_highlights(&buffer)
+    );
 }
 
 /// Editing inside a string literal must not change the capture (color)
 /// of an unrelated `Ok(...)` constructor call later on the same line.
 #[test]
-fn test_scoped_highlights_do_not_recolor_unrelated_token_on_same_line() {
-    let (language, query) = rust_language_and_query();
-
+fn test_job_highlights_do_not_recolor_unrelated_token_on_same_line() {
     let initial_src = "fn f(s: &str) -> Result<Action, ()> {\n    match s {\n        \"lsp:diagnostics_panel\" => Ok(Action::Editor(EditorAction::LspDiagnosticsPanel)),\n        _ => Ok(Action::Noop),\n    }\n}\n";
-    let buffer1 = make_buffer(initial_src);
-    let source1 = buffer1.to_logical_bytes();
-
-    let mut parser1 = Parser::new();
-    parser1.set_language(&language).unwrap();
-    let tree1 = parser1.parse(source1.as_slice(), None).unwrap();
-    let initial_highlights = full_highlights(&language, &query, source1.as_slice());
+    let mut buffer = make_buffer(initial_src);
+    let mut syntax = rust_syntax();
+    job_reparse(&mut syntax, &buffer);
 
     let ok_start = initial_src.find("Ok(Action").unwrap();
     let ok_range = ok_start..ok_start + 2;
-    let initial_ok_capture = initial_highlights
-        .query(ok_range.clone())
-        .into_iter()
-        .filter(|(r, _)| *r == ok_range)
-        .count();
+    let initial = all_highlights(&mut syntax, &buffer);
 
     // Insert one character right after "lsp" inside the string literal.
     let insert_pos = initial_src.find("lsp:diagnostics_panel").unwrap() + 3;
-    let mut buffer2 = buffer1;
-    buffer2.set_cursor(insert_pos).unwrap();
-    buffer2.insert_str("x").unwrap();
-    let source2 = buffer2.to_logical_bytes();
+    insert(&mut syntax, &mut buffer, insert_pos, "x");
+    job_reparse(&mut syntax, &buffer);
 
-    let edit = InputEdit {
-        start_byte: insert_pos,
-        old_end_byte: insert_pos,
-        new_end_byte: insert_pos + 1,
-        start_position: point_at(&source1, insert_pos),
-        old_end_position: point_at(&source1, insert_pos),
-        new_end_position: point_at(&source2, insert_pos + 1),
-    };
-    let mut old_tree_edited = tree1;
-    old_tree_edited.edit(&edit);
-
-    let mut parser2 = Parser::new();
-    parser2.set_language(&language).unwrap();
-    let job = SyntaxParseJob::new(
-        buffer2.clone(),
-        parser2,
-        Some(old_tree_edited),
-        Some(query.clone()),
-        "rust".to_string(),
-        crate::document::DocumentId::new(1),
-        buffer2.revision,
-    )
-    .with_highlights_context(initial_highlights.into(), std::slice::from_ref(&edit));
-
-    let result = run_job(job);
-
-    let expected_highlights = full_highlights(&language, &query, source2.as_slice());
-
+    let after = all_highlights(&mut syntax, &buffer);
+    let expected = fresh_highlights(&buffer);
     let shifted_ok_range = (ok_range.start + 1)..(ok_range.end + 1);
-    let scoped_ok: Vec<u32> = result
-        .highlights
-        .query(shifted_ok_range.clone())
-        .into_iter()
-        .filter(|(r, _)| *r == shifted_ok_range)
-        .map(|(_, c)| c)
-        .collect();
-    let expected_ok: Vec<u32> = expected_highlights
-        .query(shifted_ok_range.clone())
-        .into_iter()
-        .filter(|(r, _)| *r == shifted_ok_range)
-        .map(|(_, c)| c)
-        .collect();
 
     // "Ok" matches both @constructor and @function; the render picks
-    // whichever comes first, so order must match a full recompute.
+    // whichever comes first, so order must match a fresh parse.
     assert_eq!(
-        initial_ok_capture, 2,
+        captures_at(&initial, &ok_range).len(),
+        2,
         "test fixture must exercise a dual-capture token"
     );
     assert_eq!(
-        scoped_ok, expected_ok,
-        "capture order for \"Ok\" diverged after a scoped edit elsewhere on the line"
+        captures_at(&after, &shifted_ok_range),
+        captures_at(&expected, &shifted_ok_range),
+        "capture order for \"Ok\" diverged after an edit elsewhere on the line"
     );
-
     assert_eq!(
-        sorted_highlights(&result.highlights),
-        sorted_highlights(&expected_highlights),
-        "scoped highlights diverged from a full recompute after editing inside the string"
+        after, expected,
+        "highlights diverged from a fresh parse after editing inside the string"
     );
 }
-
-const DIAGNOSTICS_ARM: &str = "\"lsp:diagnostics_panel\" => ";
 
 #[test]
-fn test_scoped_highlights_real_file_diagnostics_panel_line() {
-    let (language, query) = rust_language_and_query();
+fn test_job_highlights_real_file_diagnostics_panel_line() {
     let initial_src = include_str!("../../action/mod.rs");
-    let buffer1 = make_buffer(initial_src);
-    let source1 = buffer1.to_logical_bytes();
-
-    let mut parser1 = Parser::new();
-    parser1.set_language(&language).unwrap();
-    let tree1 = parser1.parse(source1.as_slice(), None).unwrap();
-    let initial_highlights = full_highlights(&language, &query, source1.as_slice());
+    let mut buffer = make_buffer(initial_src);
+    let mut syntax = rust_syntax();
+    job_reparse(&mut syntax, &buffer);
+    all_highlights(&mut syntax, &buffer);
 
     let insert_pos = initial_src.find("lsp:diagnostics_panel").unwrap() + 3;
-    let mut buffer2 = buffer1;
-    buffer2.set_cursor(insert_pos).unwrap();
-    buffer2.insert_str("x").unwrap();
-    let source2 = buffer2.to_logical_bytes();
-
-    let edit = InputEdit {
-        start_byte: insert_pos,
-        old_end_byte: insert_pos,
-        new_end_byte: insert_pos + 1,
-        start_position: point_at(&source1, insert_pos),
-        old_end_position: point_at(&source1, insert_pos),
-        new_end_position: point_at(&source2, insert_pos + 1),
-    };
-    let mut old_tree_edited = tree1;
-    old_tree_edited.edit(&edit);
-
-    let mut parser2 = Parser::new();
-    parser2.set_language(&language).unwrap();
-    let job = SyntaxParseJob::new(
-        buffer2.clone(),
-        parser2,
-        Some(old_tree_edited),
-        Some(query.clone()),
-        "rust".to_string(),
-        crate::document::DocumentId::new(1),
-        buffer2.revision,
-    )
-    .with_highlights_context(initial_highlights.into(), std::slice::from_ref(&edit));
-
-    let result = run_job(job);
-    let expected_highlights = full_highlights(&language, &query, source2.as_slice());
-
-    // The token after `=>` sits after the inserted character on the same line,
-    // so its post-edit position is shifted by one byte from its pre-edit offset.
-    let after_arrow = initial_src.find(DIAGNOSTICS_ARM).unwrap() + DIAGNOSTICS_ARM.len();
-    let rest = initial_src
-        .get(after_arrow..)
-        .expect("arm ends on a char boundary");
-    let token_len = rest.find(|c: char| !c.is_alphanumeric()).unwrap();
-    let token_start = after_arrow + 1;
-    let token_range = token_start..token_start + token_len;
-    assert_eq!(
-        result.highlights.query(token_range.clone()),
-        expected_highlights.query(token_range),
-        "capture order after `=>` diverged from a full recompute on the real file"
-    );
+    insert(&mut syntax, &mut buffer, insert_pos, "x");
+    job_reparse(&mut syntax, &buffer);
 
     assert_eq!(
-        sorted_highlights(&result.highlights),
-        sorted_highlights(&expected_highlights),
-        "scoped highlights diverged from a full recompute on the real file"
+        all_highlights(&mut syntax, &buffer),
+        fresh_highlights(&buffer),
+        "highlights diverged from a fresh parse on the real file"
     );
-}
-
-fn full_highlights(
-    language: &tree_sitter::Language,
-    query: &Query,
-    source: &[u8],
-) -> IntervalTree<u32> {
-    let mut parser = Parser::new();
-    parser.set_language(language).unwrap();
-    let tree = parser.parse(source, None).unwrap();
-    let root = tree.root_node();
-    let mut cursor = QueryCursor::new();
-    cursor.set_byte_range(0..source.len());
-    let mut matches = cursor.matches(query, root, source);
-    let mut items = Vec::new();
-    while let Some(m) = matches.next() {
-        for capture in m.captures() {
-            items.push((capture.node.byte_range(), capture.index));
-        }
-    }
-    IntervalTree::new(items)
 }
 
 /// Simulates fast typing (each keystroke's job chains onto the last).
-/// A subtle scoping bug can compound into flickering without ever failing a single-edit test.
+/// A subtle invalidation bug can compound into flickering without ever failing a single-edit test.
 #[test]
-fn test_scoped_highlights_stay_correct_across_many_sequential_edits() {
-    let (language, query) = rust_language_and_query();
-
+fn test_job_highlights_stay_correct_across_many_sequential_edits() {
     let mut buffer = make_buffer("fn foo() {\n}\n");
-    let mut parser = Parser::new();
-    parser.set_language(&language).unwrap();
-    let mut tree = parser
-        .parse(buffer.to_logical_bytes().as_slice(), None)
-        .unwrap();
-    let mut highlights = full_highlights(&language, &query, buffer.to_logical_bytes().as_slice());
+    let mut syntax = rust_syntax();
+    job_reparse(&mut syntax, &buffer);
 
     // Type this, one character at a time, right before the closing brace.
     let to_type = "    let x = 12345;\n    let y = x + 1;\n";
-    let mut insert_pos = buffer.to_logical_bytes().len() - "}\n".len();
+    let start = buffer.len() - "}\n".len();
 
-    for ch in to_type.chars() {
-        let mut ch_buf = [0u8; 4];
-        let ch_bytes = ch.encode_utf8(&mut ch_buf).as_bytes();
+    for (insert_pos, ch) in (start..).zip(to_type.chars()) {
+        all_highlights(&mut syntax, &buffer);
+        insert(&mut syntax, &mut buffer, insert_pos, &ch.to_string());
+        job_reparse(&mut syntax, &buffer);
 
-        let old_source = buffer.to_logical_bytes();
-        let start_position = point_at(&old_source, insert_pos);
-
-        buffer.set_cursor(insert_pos).unwrap();
-        buffer.insert_str(&ch.to_string()).unwrap();
-        let new_source = buffer.to_logical_bytes();
-        let new_end_position = point_at(&new_source, insert_pos + ch_bytes.len());
-
-        let edit = InputEdit {
-            start_byte: insert_pos,
-            old_end_byte: insert_pos,
-            new_end_byte: insert_pos + ch_bytes.len(),
-            start_position,
-            old_end_position: start_position,
-            new_end_position,
-        };
-        tree.edit(&edit);
-
-        let mut step_parser = Parser::new();
-        step_parser.set_language(&language).unwrap();
-        let job = SyntaxParseJob::new(
-            buffer.clone(),
-            step_parser,
-            Some(tree.clone()),
-            Some(query.clone()),
-            "rust".to_string(),
-            crate::document::DocumentId::new(1),
-            buffer.revision,
-        )
-        .with_highlights_context(highlights.clone().into(), std::slice::from_ref(&edit));
-
-        let result = run_job(job);
-        tree = result.tree.expect("each step must produce a tree");
-        highlights = result.highlights;
-        insert_pos += ch_bytes.len();
-
-        // Zero-width ranges are transient error-recovery artifacts of
-        // incomplete syntax mid-typing; they can't render, so exclude them.
-        let step_expected =
-            full_highlights(&language, &query, buffer.to_logical_bytes().as_slice());
-        let non_empty = |v: Vec<(std::ops::Range<usize>, u32)>| -> Vec<_> {
-            v.into_iter().filter(|(r, _)| !r.is_empty()).collect()
-        };
         assert_eq!(
-            non_empty(sorted_highlights(&highlights)),
-            non_empty(sorted_highlights(&step_expected)),
-            "highlights diverged from a full recompute after typing {ch:?}"
+            all_highlights(&mut syntax, &buffer),
+            fresh_highlights(&buffer),
+            "highlights diverged from a fresh parse after typing {ch:?}"
         );
     }
-
-    let expected = full_highlights(&language, &query, buffer.to_logical_bytes().as_slice());
-    assert_eq!(sorted_highlights(&highlights), sorted_highlights(&expected));
-}
-
-fn rust_parser() -> Parser {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_rust::LANGUAGE.into())
-        .expect("set rust language");
-    parser
-}
-
-fn rust_syntax() -> Syntax {
-    let lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
-    Syntax::new(LoadedLanguage::bundled(lang, "rust"), None)
-}
-
-/// Patch path wired up as `Syntax`/`editor::jobs` would drive it must
-/// match a full `to_logical_bytes()` rebuild of the edited buffer.
-#[test]
-fn patch_path_matches_full_rebuild_end_to_end() {
-    let mut buffer = TextBuffer::new(64).unwrap();
-    buffer
-        .insert_str("fn main() {\n    let x = 1;\n}\n")
-        .unwrap();
-    let mut syntax = rust_syntax();
-
-    let job1 = SyntaxParseJob::new(
-        buffer.clone(),
-        rust_parser(),
-        syntax.tree.clone(),
-        None,
-        "rust".to_string(),
-        crate::document::DocumentId::new(0),
-        buffer.revision,
-    );
-    let result1 = run_job(job1);
-    assert_eq!(result1.logical_bytes, buffer.to_logical_bytes());
-    assert!(result1.tree.is_some());
-    syntax.update_from_result(result1);
-
-    // Insert one character right after 'x', mirroring how `document::edit`
-    // derives an edit and calls `Syntax::notify_edit`.
-    let insert_pos = 21;
-    let start_byte = buffer.char_to_byte(insert_pos);
-    buffer.set_cursor(insert_pos).unwrap();
-    buffer.insert_str("y").unwrap();
-    syntax.notify_edit(
-        start_byte,
-        start_byte,
-        start_byte + 1,
-        (0, 0),
-        (0, 0),
-        (0, 0),
-    );
-
-    let (cached_logical_bytes, single_edit) = syntax.incremental_logical_bytes();
-    assert!(
-        cached_logical_bytes.is_some() && single_edit.is_some(),
-        "a single edit after a completed parse should surface a patchable cache"
-    );
-
-    let job2 = SyntaxParseJob::new(
-        buffer.clone(),
-        rust_parser(),
-        syntax.tree.clone(),
-        None,
-        "rust".to_string(),
-        crate::document::DocumentId::new(0),
-        buffer.revision,
-    )
-    .with_incremental_bytes(cached_logical_bytes, single_edit);
-
-    let result2 = run_job(job2);
-    assert_eq!(result2.logical_bytes, buffer.to_logical_bytes());
-    assert!(result2.tree.is_some());
 }

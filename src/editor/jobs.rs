@@ -73,9 +73,6 @@ impl<T: TerminalBackend> Editor<T> {
             doc.buffer.clone()
         };
 
-        let (old_highlights, pending_edits) = syntax.highlights_snapshot();
-        let (cached_logical_bytes, single_edit) = syntax.incremental_logical_bytes();
-
         let token = self.job_manager.next_token(
             doc.handle(),
             doc.buffer_kind_id(),
@@ -86,15 +83,12 @@ impl<T: TerminalBackend> Editor<T> {
             buffer,
             parser,
             syntax.tree.clone(),
-            syntax.highlights_query.clone(),
             syntax.language_name.clone(),
             doc_id,
             doc.buffer.revision,
         )
         .with_token(token)
-        .with_lib(syntax.lib())
-        .with_highlights_context(old_highlights, &pending_edits)
-        .with_incremental_bytes(cached_logical_bytes, single_edit);
+        .with_lib(syntax.lib());
 
         Some(self.job_manager.spawn_with_token(job, token))
     }
@@ -1001,9 +995,8 @@ impl<T: TerminalBackend> Editor<T> {
         {
             doc.set_syntax(syntax);
             if doc.buffer.byte_len() <= crate::syntax::SYNC_PARSE_MAX_BYTES {
-                let source = doc.buffer.to_logical_bytes();
                 if let Some(s) = &mut doc.syntax {
-                    s.incremental_parse(&source);
+                    s.incremental_parse(&doc.buffer);
                 }
             }
         }
@@ -1285,19 +1278,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         if is_current {
             if let Some(syntax) = &mut doc.syntax {
-                let (old_host_tree, edit): (
-                    Option<tree_sitter::Tree>,
-                    Option<tree_sitter::InputEdit>,
-                ) = if syntax.injections_query.is_some() {
-                    (syntax.tree.clone(), syntax.single_pending_edit())
-                } else {
-                    (None, None)
-                };
-                syntax.update_from_result(result);
-                if syntax.injections_query.is_some() {
-                    let source = doc.buffer.to_logical_bytes();
-                    syntax.parse_injections_pub(&source, old_host_tree.as_ref(), edit);
-                }
+                syntax.update_from_result(result, &doc.buffer);
             }
         }
 

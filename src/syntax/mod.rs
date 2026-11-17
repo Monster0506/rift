@@ -4,9 +4,9 @@ pub(crate) mod loader;
 #[cfg(feature = "treesitter")]
 mod imp;
 #[cfg(feature = "treesitter")]
-pub(crate) use imp::{build_syntax, Syntax};
+mod source;
 #[cfg(feature = "treesitter")]
-pub(crate) use imp::{finalize_highlights, scoped_kept_items, scoped_query_ranges};
+pub(crate) use imp::{build_syntax, parse_buffer, Syntax};
 
 #[cfg(not(feature = "treesitter"))]
 mod stub;

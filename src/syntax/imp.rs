@@ -1,11 +1,160 @@
+use super::source::Source;
 use super::ParseOutcome;
+use crate::buffer::TextBuffer;
 use crate::job_manager::jobs::syntax::SyntaxParseResult;
-use crate::syntax::interval_tree::IntervalTree;
 use crate::syntax::loader::LoadedLanguage;
+use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::ops::Range;
 use std::sync::Arc;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{InputEdit, Parser, Query, QueryCursor, Tree};
+
+/// Target highlight chunk size; each chunk extends to the next line start.
+const CHUNK_BYTES: usize = 4096;
+
+type Highlight = (Range<usize>, u32);
+
+// Highlight chunks
+
+/// Highlights of one line-aligned slice of the document, clipped to it.
+struct Chunk {
+    range: Range<usize>,
+    items: Vec<Highlight>,
+}
+
+/// Highlights of one tree, queried a chunk at a time and only on request.
+/// Chunk `k` starts at the first line start at or after `k * CHUNK_BYTES`.
+#[derive(Default)]
+struct ChunkCache {
+    chunks: BTreeMap<usize, Chunk>,
+}
+
+impl ChunkCache {
+    /// Drops the chunk touching `byte` and every later chunk.
+    fn invalidate_from(&mut self, byte: usize) -> bool {
+        if self
+            .chunks
+            .last_key_value()
+            .is_none_or(|(_, c)| c.range.end < byte)
+        {
+            return false;
+        }
+
+        let start = self
+            .chunks
+            .range(..byte)
+            .next_back()
+            .filter(|(_, c)| c.range.end >= byte)
+            .map_or(byte, |(&start, _)| start);
+        self.chunks.split_off(&start);
+        true
+    }
+
+    fn clear(&mut self) {
+        self.chunks.clear();
+    }
+
+    /// Highlights overlapping `range`, querying any chunk not cached yet.
+    fn highlights(
+        &mut self,
+        source: Source,
+        tree: &Tree,
+        query: &Query,
+        range: Range<usize>,
+    ) -> Vec<Highlight> {
+        let end = range.end.min(source.len());
+        let mut out = Vec::new();
+        if range.start >= end {
+            return out;
+        }
+
+        let mut start = source.line_start(range.start);
+        while start < end {
+            let index = start / CHUNK_BYTES;
+            let bounds = source.next_line_start(index * CHUNK_BYTES)
+                ..source.next_line_start((index + 1) * CHUNK_BYTES);
+            let chunk = self
+                .chunks
+                .entry(bounds.start)
+                .or_insert_with(|| query_chunk(source, tree, query, bounds));
+
+            out.extend(
+                chunk
+                    .items
+                    .iter()
+                    .filter(|(r, _)| r.start < end && r.end > range.start)
+                    .cloned(),
+            );
+            start = chunk.range.end;
+        }
+        out
+    }
+}
+
+fn query_chunk(source: Source, tree: &Tree, query: &Query, bounds: Range<usize>) -> Chunk {
+    crate::perf_span!(
+        "syntax_highlight_chunk",
+        crate::perf::PerfFields {
+            bytes: Some(u32::try_from(bounds.len()).unwrap_or(u32::MAX)),
+            ..Default::default()
+        }
+    );
+
+    let mut cursor = QueryCursor::new();
+    cursor.set_byte_range(bounds.clone());
+    let mut matches = cursor.matches(query, tree.root_node(), source.node_text());
+    let mut found = Vec::new();
+    while let Some(m) = matches.next() {
+        for capture in m.captures() {
+            found.push((capture.node.byte_range(), capture.index, m.pattern_index));
+        }
+    }
+
+    // Clipping after ordering keeps a capture entering from an earlier chunk
+    // ahead of the ones nested in it, as in an unchunked query.
+    let items = finalize_highlights(found)
+        .into_iter()
+        .filter_map(|(r, capture)| {
+            let clipped = r.start.max(bounds.start)..r.end.min(bounds.end);
+            (!clipped.is_empty()).then_some((clipped, capture))
+        })
+        .collect();
+    Chunk {
+        range: bounds,
+        items,
+    }
+}
+
+/// First byte whose highlights may differ between `old` (already edited
+/// with `edits`) and its reparse `new`.
+fn reparse_start(old: &Tree, new: &Tree, edits: &[InputEdit]) -> usize {
+    let root = new.root_node();
+    // A token absorbing an edit (e.g. a block comment) can start in an
+    // earlier chunk without showing up in `changed_ranges`.
+    let edit_start = edits
+        .iter()
+        .map(|e| {
+            root.descendant_for_byte_range(e.start_byte, e.new_end_byte)
+                .map_or(e.start_byte, |n| n.start_byte().min(e.start_byte))
+        })
+        .min();
+
+    old.changed_ranges(new)
+        .map(|r| r.start_byte)
+        .chain(edit_start)
+        .min()
+        .unwrap_or(usize::MAX)
+}
+
+/// Parses `buffer` straight from its piece table, for callers without a `Syntax`.
+pub(crate) fn parse_buffer(
+    parser: &mut Parser,
+    buffer: &TextBuffer,
+    old_tree: Option<&Tree>,
+) -> Option<Tree> {
+    Source::new(buffer).parse(parser, old_tree, None)
+}
 
 // Injection layer
 
@@ -15,9 +164,94 @@ struct InjectedLayer {
     language_name: String,
     highlights_query: Option<Arc<Query>>,
     tree: Option<Tree>,
-    cached_highlights: Arc<IntervalTree<u32>>,
-    /// Byte ranges in the host document covered by this layer.
-    byte_ranges: Vec<std::ops::Range<usize>>,
+    highlights: ChunkCache,
+}
+
+impl InjectedLayer {
+    fn new(
+        language: tree_sitter::Language,
+        language_name: String,
+        highlights_query: Option<Arc<Query>>,
+    ) -> Self {
+        Self {
+            language,
+            language_name,
+            highlights_query,
+            tree: None,
+            highlights: ChunkCache::default(),
+        }
+    }
+
+    /// Returns whether highlights the renderer may have seen were dropped.
+    fn reset(&mut self) -> bool {
+        self.highlights.clear();
+        self.tree.take().is_some()
+    }
+
+    /// Reparses over the host byte `ranges`; returns whether highlights the
+    /// renderer may have seen were dropped.
+    fn reparse(&mut self, source: Source, ranges: &[Range<usize>], edits: &[InputEdit]) -> bool {
+        if ranges.is_empty() {
+            return self.reset();
+        }
+
+        let ts_ranges: Vec<tree_sitter::Range> = ranges
+            .iter()
+            .map(|r| tree_sitter::Range {
+                start_byte: r.start,
+                end_byte: r.end,
+                start_point: source.point(r.start),
+                end_point: source.point(r.end),
+            })
+            .collect();
+
+        let mut parser = Parser::new();
+        if parser.set_language(&self.language).is_err()
+            || parser.set_included_ranges(&ts_ranges).is_err()
+        {
+            return false;
+        }
+        let Some(new_tree) = source.parse(&mut parser, self.tree.as_ref(), None) else {
+            return false;
+        };
+
+        let dropped = if let Some(old) = &self.tree {
+            self.highlights
+                .invalidate_from(reparse_start(old, &new_tree, edits))
+        } else {
+            self.highlights.clear();
+            true
+        };
+        self.tree = Some(new_tree);
+        dropped
+    }
+
+    fn highlights_named(
+        &mut self,
+        source: Source,
+        range: Range<usize>,
+    ) -> Vec<(Range<usize>, String)> {
+        let Self {
+            tree: Some(tree),
+            highlights_query: Some(query),
+            highlights,
+            ..
+        } = self
+        else {
+            return Vec::new();
+        };
+
+        let names = query.capture_names();
+        highlights
+            .highlights(source, tree, query, range)
+            .into_iter()
+            .filter_map(|(r, capture)| {
+                names
+                    .get(capture as usize)
+                    .map(|name| (r, (*name).to_string()))
+            })
+            .collect()
+    }
 }
 
 // Syntax
@@ -29,12 +263,7 @@ pub(crate) struct Syntax {
     pub(crate) tree: Option<Tree>,
     pub(crate) highlights_query: Option<Arc<Query>>,
     pub(crate) language_name: String,
-    /// Arc-wrapped: always replaced wholesale, never mutated in place, so
-    /// `highlights_snapshot()` (cloned on every reparse job spawn) stays O(1).
-    cached_highlights: Arc<IntervalTree<u32>>,
-    /// Logical bytes from the last completed parse, so a background job can
-    /// patch them instead of a full `to_logical_bytes()` rebuild.
-    cached_logical_bytes: Option<Arc<Vec<u8>>>,
+    highlights: ChunkCache,
     /// Keeps `language`'s backing dynamic library alive for as long as this
     /// `Syntax` (and any `Tree`/`Parser` derived from it) may exist.
     lib: Option<Arc<libloading::Library>>,
@@ -43,31 +272,20 @@ pub(crate) struct Syntax {
     pub(crate) injections_query: Option<Arc<Query>>,
     injection_capture_langs: Vec<(u32, String)>,
     injection_layers: Vec<InjectedLayer>,
-    /// Content ranges discovered by the last static-injection scan, keyed by
-    /// index into `injection_layers`, so a single-edit reparse can reuse them.
-    static_injection_ranges: IntervalTree<usize>,
 
     // Dynamic injection support (Markdown: injection.language + injection.content)
     /// Layers created on demand, cached by language name so queries/trees are reused.
     dynamic_injection_layers: BTreeMap<String, InjectedLayer>,
-    /// Content ranges discovered by the last dynamic-injection scan, keyed by
-    /// language, so a single-edit reparse can shift and reuse them.
-    dynamic_injection_ranges: IntervalTree<String>,
 
     /// Optional loader used to create dynamic injection layers.
     language_loader: Option<Arc<super::loader::LanguageLoader>>,
 
-    /// Edits since `cached_highlights` was last replaced, reset by any
-    /// successful parse (sync or async), for background highlight scoping.
+    /// Edits since the last completed parse, bounding what it invalidates.
     pending_edits: Vec<InputEdit>,
-    /// Edits since `cached_logical_bytes` was captured - only reset when
-    /// that cache itself refreshes (a sync-only parse leaves it stale).
-    logical_bytes_pending_edits: Vec<InputEdit>,
-    /// Bumped only when `cached_highlights` is actually replaced, never on
-    /// a read - lets callers detect real changes, not a shifted query window.
+    /// Bumped whenever host highlights the renderer may have seen are dropped,
+    /// never when a chunk is filled - lets callers detect real changes.
     highlights_generation: u64,
-    /// Bumped only when any injection layer's cached highlights are replaced
-    /// (static or dynamic), for the same reason as `highlights_generation`.
+    /// Same as `highlights_generation`, for every injection layer.
     injection_generation: u64,
 }
 
@@ -79,62 +297,31 @@ impl Syntax {
             tree: None,
             highlights_query,
             language_name: loaded.name,
-            cached_highlights: Arc::new(IntervalTree::default()),
-            cached_logical_bytes: None,
+            highlights: ChunkCache::default(),
             lib: loaded.lib,
             injections_query: None,
             injection_capture_langs: Vec::new(),
             injection_layers: Vec::new(),
-            static_injection_ranges: IntervalTree::default(),
             dynamic_injection_layers: BTreeMap::new(),
-            dynamic_injection_ranges: IntervalTree::default(),
             language_loader: None,
             pending_edits: Vec::new(),
-            logical_bytes_pending_edits: Vec::new(),
             highlights_generation: 0,
             injection_generation: 0,
         }
     }
 
-    /// Monotonic count of `cached_highlights` (host grammar) replacements,
-    /// for external staleness gates that must not react to mere queries.
+    /// Monotonic count of host highlight invalidations, for external
+    /// staleness gates that must not react to mere queries.
     #[must_use]
     pub(crate) const fn highlights_generation(&self) -> u64 {
         self.highlights_generation
     }
 
-    /// Monotonic count of injection-layer highlight replacements (static or
+    /// Monotonic count of injection-layer highlight invalidations (static or
     /// dynamic), same reasoning as `highlights_generation`.
     #[must_use]
     pub(crate) const fn injection_generation(&self) -> u64 {
         self.injection_generation
-    }
-
-    /// Snapshot of the current highlights and the edits applied since they
-    /// were last fully recomputed, for a background job to reuse.
-    pub(crate) fn highlights_snapshot(&self) -> (Arc<IntervalTree<u32>>, Vec<InputEdit>) {
-        (self.cached_highlights.clone(), self.pending_edits.clone())
-    }
-
-    /// The single edit since highlights/injections were last recomputed, if
-    /// exactly one landed; otherwise the caller should recompute everything.
-    pub(crate) fn single_pending_edit(&self) -> Option<InputEdit> {
-        match self.pending_edits.as_slice() {
-            [edit] => Some(*edit),
-            _ => None,
-        }
-    }
-
-    /// Cached logical bytes plus the edit since capture, for a job to patch;
-    /// `None` if there's no cache yet or more than one edit has landed.
-    #[must_use]
-    pub(crate) fn incremental_logical_bytes(&self) -> (Option<Arc<Vec<u8>>>, Option<InputEdit>) {
-        match self.logical_bytes_pending_edits.as_slice() {
-            [edit] if self.cached_logical_bytes.is_some() => {
-                (self.cached_logical_bytes.clone(), Some(*edit))
-            }
-            _ => (None, None),
-        }
     }
 
     /// The library keeping this syntax's `language` alive, if it came
@@ -159,58 +346,29 @@ impl Syntax {
 
     // Update from background job result
 
-    pub(crate) fn update_from_result(&mut self, result: SyntaxParseResult) {
+    pub(crate) fn update_from_result(&mut self, result: SyntaxParseResult, buffer: &TextBuffer) {
         if result.language_name != self.language_name {
             return;
         }
-        self.tree = result.tree;
-        self.cached_highlights = Arc::new(result.highlights);
-        self.highlights_generation += 1;
-        self.cached_logical_bytes = Some(Arc::new(result.logical_bytes));
-        self.pending_edits.clear();
-        self.logical_bytes_pending_edits.clear();
+        if let Some(tree) = result.tree {
+            self.apply_tree(tree, Source::new(buffer));
+        }
     }
 
     /// Discard all cached trees and highlights after a non-incremental change (e.g. undo/redo).
     /// The next `incremental_parse()` will do a full re-parse from scratch.
     pub(crate) fn invalidate_trees(&mut self) {
         self.tree = None;
-        self.cached_highlights = Arc::new(IntervalTree::default());
+        self.highlights.clear();
         self.highlights_generation += 1;
-        self.cached_logical_bytes = None;
         self.pending_edits.clear();
-        self.logical_bytes_pending_edits.clear();
         for layer in &mut self.injection_layers {
-            layer.tree = None;
-            layer.cached_highlights = Arc::new(IntervalTree::default());
-            layer.byte_ranges.clear();
+            layer.reset();
         }
-        self.static_injection_ranges = IntervalTree::default();
         for layer in self.dynamic_injection_layers.values_mut() {
-            layer.tree = None;
-            layer.cached_highlights = Arc::new(IntervalTree::default());
-            layer.byte_ranges.clear();
+            layer.reset();
         }
-        self.dynamic_injection_ranges = IntervalTree::default();
         self.injection_generation += 1;
-    }
-
-    fn update_tree(&mut self, edit: &InputEdit) {
-        if let Some(tree) = &mut self.tree {
-            tree.edit(edit);
-        }
-        for layer in &mut self.injection_layers {
-            if let Some(tree) = &mut layer.tree {
-                tree.edit(edit);
-            }
-        }
-        for layer in self.dynamic_injection_layers.values_mut() {
-            if let Some(tree) = &mut layer.tree {
-                tree.edit(edit);
-            }
-        }
-        self.pending_edits.push(*edit);
-        self.logical_bytes_pending_edits.push(*edit);
     }
 
     /// Notify the syntax tree of an edit, in the caller's own vocabulary
@@ -241,20 +399,44 @@ impl Syntax {
                 column: new_end_point.1,
             },
         };
-        self.update_tree(&edit);
+
+        if let Some(tree) = &mut self.tree {
+            tree.edit(&edit);
+        }
+        if self.highlights.invalidate_from(start_byte) {
+            self.highlights_generation += 1;
+        }
+
+        let mut injections_dropped = false;
+        for layer in self
+            .injection_layers
+            .iter_mut()
+            .chain(self.dynamic_injection_layers.values_mut())
+        {
+            if let Some(tree) = &mut layer.tree {
+                tree.edit(&edit);
+            }
+            injections_dropped |= layer.highlights.invalidate_from(start_byte);
+        }
+        if injections_dropped {
+            self.injection_generation += 1;
+        }
+
+        self.pending_edits.push(edit);
     }
 
     // Parsing
 
     /// Time-budgeted incremental parse, aborting if it exceeds `budget`. On
-    /// `Aborted`, tree/highlights are untouched; caller falls back to a background job.
+    /// `Aborted`, the tree is untouched; caller falls back to a background job.
     pub(crate) fn try_incremental_parse(
         &mut self,
-        source: &[u8],
+        buffer: &TextBuffer,
         budget: std::time::Duration,
     ) -> ParseOutcome {
         use std::ops::ControlFlow;
         use std::time::Instant;
+        let source = Source::new(buffer);
         crate::perf_span!(
             "syntax_reparse",
             crate::perf::PerfFields {
@@ -268,142 +450,60 @@ impl Syntax {
             return ParseOutcome::NoLanguage;
         }
 
-        let old_tree = self.tree.clone();
-        let single_edit = self.single_pending_edit();
-
         let deadline = Instant::now() + budget;
-        let mut parse_timed_out = false;
         let mut parse_progress = |_state: &tree_sitter::ParseState| {
             if Instant::now() >= deadline {
-                parse_timed_out = true;
                 ControlFlow::Break(())
             } else {
                 ControlFlow::Continue(())
             }
         };
-        let new_tree = parser.parse_with_options(
-            &mut |i, _| source.get(i..).unwrap_or(&[]),
-            old_tree.as_ref(),
-            Some(tree_sitter::ParseOptions::new().progress_callback(&mut parse_progress)),
-        );
-
-        let Some(tree) = new_tree else {
+        let options = tree_sitter::ParseOptions::new().progress_callback(&mut parse_progress);
+        let Some(tree) = source.parse(&mut parser, self.tree.as_ref(), Some(options)) else {
             return ParseOutcome::Aborted;
         };
-        if parse_timed_out {
-            return ParseOutcome::Aborted;
-        }
 
-        if let Some(query) = &self.highlights_query {
-            // Scoping to the changed region keeps this inside budget instead
-            // of always falling back to the (slower to appear) async job.
-            let scoped = match (old_tree.as_ref(), single_edit) {
-                (Some(prev), Some(edit)) => Some((prev, edit)),
-                _ => None,
-            };
-
-            if let Some((prev_tree, edit)) = scoped {
-                self.cached_highlights = Arc::new(scoped_query_highlights(
-                    query,
-                    &tree,
-                    source,
-                    &self.cached_highlights,
-                    Some((prev_tree, edit)),
-                ));
-            } else {
-                let root_node = tree.root_node();
-                let mut cursor = QueryCursor::new();
-                let mut highlights = Vec::new();
-                let mut query_timed_out = false;
-                let mut query_progress = |_state: &tree_sitter::QueryCursorState| {
-                    if Instant::now() >= deadline {
-                        query_timed_out = true;
-                        ControlFlow::Break(())
-                    } else {
-                        ControlFlow::Continue(())
-                    }
-                };
-                let mut matches = cursor.matches_with_options(
-                    query,
-                    root_node,
-                    source,
-                    tree_sitter::QueryCursorOptions::new().progress_callback(&mut query_progress),
-                );
-                while let Some(m) = matches.next() {
-                    let pattern_index = m.pattern_index;
-                    for capture in m.captures() {
-                        highlights.push((capture.node.byte_range(), capture.index, pattern_index));
-                    }
-                }
-                drop(matches);
-                if query_timed_out {
-                    return ParseOutcome::Aborted;
-                }
-                self.cached_highlights =
-                    Arc::new(IntervalTree::new(finalize_highlights(highlights)));
-            }
-            self.highlights_generation += 1;
-        }
-
-        self.tree = Some(tree);
-        self.pending_edits.clear();
-        self.parse_injections(source);
+        self.apply_tree(tree, source);
         ParseOutcome::Completed
     }
 
     /// Incremental parse of the host grammar, then injection layers.
     /// Returns `true` if host parsing succeeded.
-    pub(crate) fn incremental_parse(&mut self, source: &[u8]) -> bool {
+    pub(crate) fn incremental_parse(&mut self, buffer: &TextBuffer) -> bool {
         let mut parser = Parser::new();
         if parser.set_language(&self.language).is_err() {
             return false;
         }
 
-        let new_tree = parser.parse(source, self.tree.as_ref());
-
-        if let Some(tree) = new_tree {
-            if let Some(query) = &self.highlights_query {
-                let root_node = tree.root_node();
-                let mut cursor = QueryCursor::new();
-                let mut highlights = Vec::new();
-                let mut matches = cursor.matches(query, root_node, source);
-                while let Some(m) = matches.next() {
-                    for capture in m.captures() {
-                        let range = capture.node.byte_range();
-                        highlights.push((range, capture.index));
-                    }
-                }
-                self.cached_highlights = Arc::new(IntervalTree::new(highlights));
-                self.highlights_generation += 1;
-            }
-            self.tree = Some(tree);
-
-            // Parse injection regions with their respective languages.
-            self.parse_injections(source);
-
-            true
-        } else {
-            false
-        }
+        let source = Source::new(buffer);
+        let Some(tree) = source.parse(&mut parser, self.tree.as_ref(), None) else {
+            return false;
+        };
+        self.apply_tree(tree, source);
+        true
     }
 
-    /// Re-run injection parsing after an external tree update. `old_host_tree`/`edit`
-    /// scope the requery when this reflects exactly one edit since injections were derived.
-    pub(crate) fn parse_injections_pub(
-        &mut self,
-        source: &[u8],
-        old_host_tree: Option<&Tree>,
-        edit: Option<InputEdit>,
-    ) {
-        self.parse_injections_dispatch(source, old_host_tree.zip(edit));
+    /// Install a freshly parsed host tree, dropping the highlight chunks it
+    /// may have changed, then reparse injection layers.
+    fn apply_tree(&mut self, tree: Tree, source: Source) {
+        let dropped = if let Some(old) = &self.tree {
+            self.highlights
+                .invalidate_from(reparse_start(old, &tree, &self.pending_edits))
+        } else {
+            self.highlights.clear();
+            true
+        };
+        if dropped {
+            self.highlights_generation += 1;
+        }
+
+        self.tree = Some(tree);
+        self.parse_injections(source);
+        self.pending_edits.clear();
     }
 
     /// Dispatch to static or dynamic injection parsing depending on the query.
-    fn parse_injections(&mut self, source: &[u8]) {
-        self.parse_injections_dispatch(source, None);
-    }
-
-    fn parse_injections_dispatch(&mut self, source: &[u8], scoped: Option<(&Tree, InputEdit)>) {
+    fn parse_injections(&mut self, source: Source) {
         let Some(tree) = self.tree.clone() else {
             return;
         };
@@ -412,286 +512,129 @@ impl Syntax {
         };
 
         // Detect protocol: dynamic uses injection.language + injection.content captures.
-        let cap_names: Vec<String> = query
-            .capture_names()
-            .iter()
-            .map(std::string::ToString::to_string)
-            .collect();
+        let cap_names = query.capture_names();
         let lang_idx = cap_names
             .iter()
-            .position(|n| n == "injection.language")
+            .position(|n| *n == "injection.language")
             .and_then(|i| u32::try_from(i).ok());
         let content_idx = cap_names
             .iter()
-            .position(|n| n == "injection.content")
+            .position(|n| *n == "injection.content")
             .and_then(|i| u32::try_from(i).ok());
 
-        // Either branch replaces at least one layer's cached highlights, so
-        // a single bump per dispatch covers both protocols.
-        self.injection_generation += 1;
-        if let (Some(li), Some(ci)) = (lang_idx, content_idx) {
-            self.parse_dynamic_injections(source, &tree, &query, li, ci, scoped);
+        let dropped = if let (Some(li), Some(ci)) = (lang_idx, content_idx) {
+            self.parse_dynamic_injections(source, &tree, &query, li, ci)
         } else {
-            self.parse_static_injections(source, &tree, &query, scoped);
+            self.parse_static_injections(source, &tree, &query)
+        };
+        if dropped {
+            self.injection_generation += 1;
         }
     }
 
     /// Static injection protocol: capture name IS the target language name.
     /// Used by Svelte (`@typescript`, `@css`) and HTML (`@javascript`, `@css`).
-    fn parse_static_injections(
-        &mut self,
-        source: &[u8],
-        tree: &Tree,
-        query: &Query,
-        scoped: Option<(&Tree, InputEdit)>,
-    ) {
-        let query_ranges: Vec<std::ops::Range<usize>> = match scoped {
-            Some((prev_tree, edit)) => scoped_query_ranges(prev_tree, tree, edit),
-            None => std::iter::once(0..source.len()).collect(),
-        };
-
-        let mut fresh: Vec<(std::ops::Range<usize>, usize)> = Vec::new();
-        {
-            let root = tree.root_node();
-            for range in &query_ranges {
-                let mut cursor = QueryCursor::new();
-                cursor.set_byte_range(range.clone());
-                let mut matches = cursor.matches(query, root, source);
-
-                while let Some(m) = matches.next() {
-                    for cap in m.captures() {
-                        for (cap_idx, lang_name) in &self.injection_capture_langs {
-                            if cap.index == *cap_idx {
-                                for (li, layer) in self.injection_layers.iter().enumerate() {
-                                    if layer.language_name == *lang_name {
-                                        fresh.push((cap.node.byte_range(), li));
-                                    }
-                                }
-                            }
-                        }
+    fn parse_static_injections(&mut self, source: Source, tree: &Tree, query: &Query) -> bool {
+        let mut layer_ranges: Vec<Vec<Range<usize>>> =
+            vec![Vec::new(); self.injection_layers.len()];
+        let mut cursor = QueryCursor::new();
+        let mut matches = cursor.matches(query, tree.root_node(), source.node_text());
+        while let Some(m) = matches.next() {
+            for cap in m.captures() {
+                let Some((_, lang_name)) = self
+                    .injection_capture_langs
+                    .iter()
+                    .find(|(idx, _)| *idx == cap.index)
+                else {
+                    continue;
+                };
+                for (li, layer) in self.injection_layers.iter().enumerate() {
+                    if layer.language_name == *lang_name {
+                        layer_ranges[li].push(cap.node.byte_range());
                     }
                 }
             }
         }
 
-        let mut pairs: Vec<(std::ops::Range<usize>, usize)> = match scoped {
-            Some((_, edit)) => {
-                scoped_kept_items(&self.static_injection_ranges, edit, &query_ranges)
-            }
-            None => Vec::new(),
-        };
-        pairs.extend(fresh);
-
-        // set_included_ranges requires sorted, non-overlapping ranges; a scoped
-        // pass can also re-emit a range from an overlapping broad pattern match.
-        pairs.sort_by(|a, b| a.0.start.cmp(&b.0.start).then(a.0.end.cmp(&b.0.end)));
-        if scoped.is_some() {
-            pairs.dedup();
+        let mut dropped = false;
+        for (layer, mut ranges) in self.injection_layers.iter_mut().zip(layer_ranges) {
+            sort_included_ranges(&mut ranges);
+            dropped |= layer.reparse(source, &ranges, &self.pending_edits);
         }
-        self.static_injection_ranges = IntervalTree::new(pairs.clone());
-
-        let mut lang_ranges: Vec<Vec<std::ops::Range<usize>>> =
-            vec![Vec::new(); self.injection_layers.len()];
-        for (range, li) in pairs {
-            lang_ranges[li].push(range);
-        }
-
-        let newline_index = NewlineIndex::build(source);
-        for (li, layer) in self.injection_layers.iter_mut().enumerate() {
-            let ranges = &lang_ranges[li];
-            if ranges.is_empty() {
-                layer.cached_highlights = Arc::new(IntervalTree::default());
-                layer.byte_ranges.clear();
-                continue;
-            }
-
-            layer.byte_ranges.clone_from(ranges);
-
-            let ts_ranges: Vec<tree_sitter::Range> = ranges
-                .iter()
-                .map(|r| {
-                    let sp = newline_index.point_at(r.start);
-                    let ep = newline_index.point_at(r.end);
-                    tree_sitter::Range {
-                        start_byte: r.start,
-                        end_byte: r.end,
-                        start_point: sp,
-                        end_point: ep,
-                    }
-                })
-                .collect();
-
-            let mut parser = Parser::new();
-            if parser.set_language(&layer.language).is_err() {
-                continue;
-            }
-            if parser.set_included_ranges(&ts_ranges).is_err() {
-                continue;
-            }
-
-            let old_layer_tree = layer.tree.clone();
-            let Some(new_tree) = parser.parse(source, old_layer_tree.as_ref()) else {
-                continue;
-            };
-
-            let highlights = if let Some(ref q) = layer.highlights_query {
-                let layer_scoped = match (&old_layer_tree, scoped) {
-                    (Some(prev), Some((_, edit))) => Some((prev, edit)),
-                    _ => None,
-                };
-                scoped_query_highlights(
-                    q,
-                    &new_tree,
-                    source,
-                    &layer.cached_highlights,
-                    layer_scoped,
-                )
-            } else {
-                IntervalTree::default()
-            };
-
-            layer.cached_highlights = Arc::new(highlights);
-            layer.tree = Some(new_tree);
-        }
+        dropped
     }
 
     /// Dynamic injection protocol used by Markdown: `injection.language`
     /// names the language, `injection.content` gives the byte range to parse.
     fn parse_dynamic_injections(
         &mut self,
-        source: &[u8],
+        source: Source,
         tree: &Tree,
         query: &Query,
         lang_cap_idx: u32,
         content_cap_idx: u32,
-        scoped: Option<(&Tree, InputEdit)>,
-    ) {
+    ) -> bool {
         let Some(loader) = self.language_loader.clone() else {
-            return;
+            return false;
         };
 
-        let query_ranges: Vec<std::ops::Range<usize>> = match scoped {
-            Some((prev_tree, edit)) => scoped_query_ranges(prev_tree, tree, edit),
-            None => std::iter::once(0..source.len()).collect(),
-        };
-
-        let fresh = collect_fresh_injections(
-            query,
-            tree,
-            source,
-            &query_ranges,
-            lang_cap_idx,
-            content_cap_idx,
-        );
-
-        let mut pairs: Vec<(std::ops::Range<usize>, String)> = match scoped {
-            Some((_, edit)) => {
-                scoped_kept_items(&self.dynamic_injection_ranges, edit, &query_ranges)
-            }
-            None => Vec::new(),
-        };
-        pairs.extend(fresh);
-
-        // set_included_ranges requires sorted, non-overlapping ranges; a scoped
-        // pass can also re-emit a range from an overlapping broad pattern match.
-        pairs.sort_by(|a, b| a.0.start.cmp(&b.0.start).then(a.0.end.cmp(&b.0.end)));
-        if scoped.is_some() {
-            pairs.dedup();
-        }
-        self.dynamic_injection_ranges = IntervalTree::new(pairs.clone());
-
-        // Group ranges by language name.
-        let mut by_lang: BTreeMap<String, Vec<std::ops::Range<usize>>> = BTreeMap::new();
-        for (range, lang) in pairs {
+        let mut by_lang: BTreeMap<String, Vec<Range<usize>>> = BTreeMap::new();
+        for (range, lang) in collect_injections(query, tree, source, lang_cap_idx, content_cap_idx)
+        {
             by_lang.entry(lang).or_default().push(range);
         }
 
         // Drop cached layers for languages no longer present in this document.
+        let layer_count = self.dynamic_injection_layers.len();
         self.dynamic_injection_layers
             .retain(|lang_name, _| by_lang.contains_key(lang_name));
+        let mut dropped = self.dynamic_injection_layers.len() != layer_count;
 
-        let newline_index = NewlineIndex::build(source);
-        for (lang_name, ranges) in by_lang {
-            let prev_layer = self.dynamic_injection_layers.get(&lang_name);
-            let Some(layer) = build_dynamic_layer(
-                &loader,
-                prev_layer,
-                source,
-                &newline_index,
-                &lang_name,
-                ranges,
-                scoped,
-            ) else {
-                continue;
+        for (lang_name, mut ranges) in by_lang {
+            let layer = match self.dynamic_injection_layers.entry(lang_name) {
+                Entry::Occupied(entry) => entry.into_mut(),
+                Entry::Vacant(entry) => {
+                    let Some(layer) = new_dynamic_layer(&loader, entry.key()) else {
+                        continue;
+                    };
+                    entry.insert(layer)
+                }
             };
-            self.dynamic_injection_layers.insert(lang_name, layer);
+            sort_included_ranges(&mut ranges);
+            dropped |= layer.reparse(source, &ranges, &self.pending_edits);
         }
+        dropped
     }
 
     // Highlight queries
 
-    /// Host grammar highlights for a byte range (or the full document).
-    #[must_use]
+    /// Host grammar highlights overlapping `range`, querying uncached chunks.
     pub(crate) fn highlights(
-        &self,
-        range: Option<std::ops::Range<usize>>,
-    ) -> Vec<(std::ops::Range<usize>, u32)> {
-        range.map_or_else(
-            || {
-                self.cached_highlights
-                    .iter()
-                    .map(|(r, v)| (r.clone(), *v))
-                    .collect()
-            },
-            |r| self.cached_highlights.query(r),
-        )
+        &mut self,
+        buffer: &TextBuffer,
+        range: Range<usize>,
+    ) -> Vec<Highlight> {
+        let (Some(tree), Some(query)) = (&self.tree, &self.highlights_query) else {
+            return Vec::new();
+        };
+        self.highlights
+            .highlights(Source::new(buffer), tree, query, range)
     }
 
-    /// All injection layer highlights (static and dynamic) as
-    /// `(byte_range, capture_name)` pairs.
-    #[must_use]
+    /// Injection layer highlights (static and dynamic) overlapping `range`
+    /// as `(byte_range, capture_name)` pairs.
     pub(crate) fn injection_highlights_named(
-        &self,
-        range: Option<&std::ops::Range<usize>>,
-    ) -> Vec<(std::ops::Range<usize>, String)> {
-        let mut result: Vec<(std::ops::Range<usize>, String)> = Vec::new();
-
-        let collect_from_layer = |layer: &InjectedLayer,
-                                  range: Option<&std::ops::Range<usize>>|
-         -> Vec<(std::ops::Range<usize>, String)> {
-            let items: Vec<(std::ops::Range<usize>, u32)> = range.map_or_else(
-                || {
-                    layer
-                        .cached_highlights
-                        .iter()
-                        .map(|(r, v)| (r.clone(), *v))
-                        .collect()
-                },
-                |r| layer.cached_highlights.query(r.clone()),
-            );
-
-            layer
-                .highlights_query
-                .as_ref()
-                .map_or_else(Vec::new, |query| {
-                    let names = query.capture_names();
-                    items
-                        .into_iter()
-                        .filter_map(|(hl_range, capture_idx)| {
-                            names
-                                .get(capture_idx as usize)
-                                .map(|name| (hl_range, name.to_string()))
-                        })
-                        .collect()
-                })
-        };
-
-        for layer in &self.injection_layers {
-            result.extend(collect_from_layer(layer, range));
-        }
-        for layer in self.dynamic_injection_layers.values() {
-            result.extend(collect_from_layer(layer, range));
-        }
+        &mut self,
+        buffer: &TextBuffer,
+        range: Range<usize>,
+    ) -> Vec<(Range<usize>, String)> {
+        let source = Source::new(buffer);
+        let mut result: Vec<(Range<usize>, String)> = self
+            .injection_layers
+            .iter_mut()
+            .chain(self.dynamic_injection_layers.values_mut())
+            .flat_map(|layer| layer.highlights_named(source, range.clone()))
+            .collect();
 
         result.sort_by_key(|(r, _)| r.start);
         result
@@ -708,123 +651,76 @@ impl Syntax {
     }
 }
 
-/// Collects `(range, language)` pairs for every dynamic injection match in `query_ranges`.
-fn collect_fresh_injections(
+/// `set_included_ranges` requires sorted, non-overlapping ranges.
+fn sort_included_ranges(ranges: &mut Vec<Range<usize>>) {
+    ranges.sort_by(|a, b| a.start.cmp(&b.start).then(a.end.cmp(&b.end)));
+    ranges.dedup();
+}
+
+/// Collects `(range, language)` pairs for every dynamic injection match.
+fn collect_injections(
     query: &Query,
     tree: &Tree,
-    source: &[u8],
-    query_ranges: &[std::ops::Range<usize>],
+    source: Source,
     lang_cap_idx: u32,
     content_cap_idx: u32,
-) -> Vec<(std::ops::Range<usize>, String)> {
-    let mut fresh: Vec<(std::ops::Range<usize>, String)> = Vec::new();
-    let root = tree.root_node();
-    for range in query_ranges {
-        let mut cursor = QueryCursor::new();
-        cursor.set_byte_range(range.clone());
-        let mut matches = cursor.matches(query, root, source);
+) -> Vec<(Range<usize>, String)> {
+    let mut found: Vec<(Range<usize>, String)> = Vec::new();
+    let mut cursor = QueryCursor::new();
+    let mut matches = cursor.matches(query, tree.root_node(), source.node_text());
 
-        while let Some(m) = matches.next() {
-            let mut lang_name: Option<String> = None;
-            let mut content_range: Option<std::ops::Range<usize>> = None;
+    while let Some(m) = matches.next() {
+        let mut lang_name: Option<String> = None;
+        let mut content_range: Option<Range<usize>> = None;
 
-            for cap in m.captures() {
-                if cap.index == lang_cap_idx {
-                    let text = std::str::from_utf8(&source[cap.node.byte_range()])
-                        .unwrap_or("")
-                        .trim();
-                    lang_name = Some(normalize_lang_name(text));
-                } else if cap.index == content_cap_idx {
-                    content_range = Some(cap.node.byte_range());
-                }
+        for cap in m.captures() {
+            if cap.index == lang_cap_idx {
+                let text = source.text(cap.node.byte_range());
+                lang_name = Some(normalize_lang_name(
+                    std::str::from_utf8(&text).unwrap_or("").trim(),
+                ));
+            } else if cap.index == content_cap_idx {
+                content_range = Some(cap.node.byte_range());
             }
+        }
 
-            // Some patterns (e.g. markdown HTML blocks/frontmatter) supply the
-            // language via `#set! injection.language "x"` instead of a capture.
-            if lang_name.is_none() {
-                for prop in query.property_settings(m.pattern_index) {
-                    if &*prop.key == "injection.language" {
-                        if let Some(v) = &prop.value {
-                            lang_name = Some(normalize_lang_name(v));
-                        }
+        // Some patterns (e.g. markdown HTML blocks/frontmatter) supply the
+        // language via `#set! injection.language "x"` instead of a capture.
+        if lang_name.is_none() {
+            for prop in query.property_settings(m.pattern_index) {
+                if &*prop.key == "injection.language" {
+                    if let Some(v) = &prop.value {
+                        lang_name = Some(normalize_lang_name(v));
                     }
                 }
             }
+        }
 
-            if let (Some(lang), Some(range)) = (lang_name, content_range) {
-                if !lang.is_empty() {
-                    fresh.push((range, lang));
-                }
+        if let (Some(lang), Some(range)) = (lang_name, content_range) {
+            if !lang.is_empty() {
+                found.push((range, lang));
             }
         }
     }
-    fresh
+    found
 }
 
-/// Reparses one dynamic injection layer, reusing `prev_layer`'s tree and highlights
-/// for an incremental parse and a scoped highlights requery.
-fn build_dynamic_layer(
+/// Creates an unparsed dynamic injection layer for `lang_name`.
+fn new_dynamic_layer(
     loader: &super::loader::LanguageLoader,
-    prev_layer: Option<&InjectedLayer>,
-    source: &[u8],
-    newline_index: &NewlineIndex,
     lang_name: &str,
-    ranges: Vec<std::ops::Range<usize>>,
-    scoped: Option<(&Tree, InputEdit)>,
 ) -> Option<InjectedLayer> {
     let lang_loaded = loader.load_language(lang_name).ok()?;
-    let ts_ranges: Vec<tree_sitter::Range> = ranges
-        .iter()
-        .map(|r| {
-            let sp = newline_index.point_at(r.start);
-            let ep = newline_index.point_at(r.end);
-            tree_sitter::Range {
-                start_byte: r.start,
-                end_byte: r.end,
-                start_point: sp,
-                end_point: ep,
-            }
-        })
-        .collect();
-
-    let mut parser = Parser::new();
-    parser.set_language(&lang_loaded.language).ok()?;
-    parser.set_included_ranges(&ts_ranges).ok()?;
-
-    let highlights_query = prev_layer
-        .and_then(|l| l.highlights_query.clone())
-        .or_else(|| {
-            loader
-                .load_query(lang_name, "highlights")
-                .ok()
-                .and_then(|src| tree_sitter::Query::new(&lang_loaded.language, &src).ok())
-                .map(Arc::new)
-        });
-    let old_layer_tree = prev_layer.and_then(|l| l.tree.clone());
-    let old_layer_highlights = prev_layer
-        .map(|l| l.cached_highlights.clone())
-        .unwrap_or_default();
-
-    let new_tree = parser.parse(source, old_layer_tree.as_ref())?;
-
-    let highlights = highlights_query
-        .as_ref()
-        .map_or_else(IntervalTree::default, |q| {
-            let layer_scoped = match (&old_layer_tree, scoped) {
-                (Some(prev), Some((_, edit))) => Some((prev, edit)),
-                _ => None,
-            };
-            scoped_query_highlights(q, &new_tree, source, &old_layer_highlights, layer_scoped)
-        });
-
-    Some(InjectedLayer {
-        language: lang_loaded.language,
-        language_name: lang_name.to_owned(),
+    let highlights_query = loader
+        .load_query(lang_name, "highlights")
+        .ok()
+        .and_then(|src| Query::new(&lang_loaded.language, &src).ok())
+        .map(Arc::new);
+    Some(InjectedLayer::new(
+        lang_loaded.language,
+        lang_name.to_owned(),
         highlights_query,
-        tree: Some(new_tree),
-        cached_highlights: Arc::new(highlights),
-        byte_ranges: ranges,
-    })
+    ))
 }
 
 // Public factory
@@ -868,14 +764,11 @@ pub(crate) fn build_syntax(
                             .map(Arc::new);
 
                         capture_langs.push((idx, lang_name.clone()));
-                        layers.push(InjectedLayer {
-                            language: lang_loaded.language,
-                            language_name: lang_name,
-                            highlights_query: layer_query,
-                            tree: None,
-                            cached_highlights: Arc::new(IntervalTree::default()),
-                            byte_ranges: Vec::new(),
-                        });
+                        layers.push(InjectedLayer::new(
+                            lang_loaded.language,
+                            lang_name,
+                            layer_query,
+                        ));
                     }
                 }
 
@@ -904,63 +797,11 @@ fn normalize_lang_name(name: &str) -> String {
     }
 }
 
-/// Ranges to (re)query for a single-edit reparse: `changed_ranges` plus the
-/// edit's own span (`changed_ranges` alone can miss a token absorbing an edit).
-pub(crate) fn scoped_query_ranges(
-    prev_tree: &Tree,
-    new_tree: &Tree,
-    edit: InputEdit,
-) -> Vec<std::ops::Range<usize>> {
-    let mut ranges: Vec<std::ops::Range<usize>> = prev_tree
-        .changed_ranges(new_tree)
-        .map(|r| r.start_byte..r.end_byte)
-        .collect();
-    ranges.push(edit.start_byte..edit.new_end_byte.max(edit.start_byte + 1));
-
-    let mut ancestor = new_tree
-        .root_node()
-        .descendant_for_byte_range(edit.start_byte, edit.new_end_byte);
-    while let Some(n) = ancestor {
-        if n.is_named() && n.start_byte() < edit.start_byte {
-            ranges.push(n.start_byte()..n.end_byte());
-            break;
-        }
-        ancestor = n.parent();
-    }
-
-    ranges.sort_by_key(|r| r.start);
-
-    let mut merged: Vec<std::ops::Range<usize>> = Vec::new();
-    for r in ranges {
-        match merged.last_mut() {
-            Some(last) if r.start <= last.end => last.end = last.end.max(r.end),
-            _ => merged.push(r),
-        }
-    }
-    merged
-}
-
-pub(crate) fn scoped_kept_items<T: Clone>(
-    old_items: &IntervalTree<T>,
-    edit: InputEdit,
-    query_ranges: &[std::ops::Range<usize>],
-) -> Vec<(std::ops::Range<usize>, T)> {
-    old_items
-        .shift_for_edit(edit.start_byte, edit.old_end_byte, edit.new_end_byte)
-        .into_iter()
-        .filter(|(r, _)| {
-            !query_ranges
-                .iter()
-                .any(|qr| r.start < qr.end && qr.start < r.end)
-        })
-        .collect()
-}
-
 /// Orders same-range captures so a later-declared query pattern always wins,
-/// independent of whether the query was scoped or a full scan.
-pub(crate) fn finalize_highlights(
-    mut highlights: Vec<(std::ops::Range<usize>, u32, usize)>,
-) -> Vec<(std::ops::Range<usize>, u32)> {
+/// independent of how the query was scoped.
+fn finalize_highlights(
+    mut highlights: Vec<(Range<usize>, u32, usize)>,
+) -> Vec<(Range<usize>, u32)> {
     highlights.sort_by(|a, b| {
         a.0.start
             .cmp(&b.0.start)
@@ -969,81 +810,4 @@ pub(crate) fn finalize_highlights(
     });
     highlights.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
     highlights.into_iter().map(|(r, c, _)| (r, c)).collect()
-}
-
-/// Recompute a highlights query, scoped to the changed region on a
-/// single-edit incremental reparse, or a full scan of `new_tree` otherwise.
-fn scoped_query_highlights(
-    query: &Query,
-    new_tree: &Tree,
-    source: &[u8],
-    old_highlights: &IntervalTree<u32>,
-    scoped: Option<(&Tree, InputEdit)>,
-) -> IntervalTree<u32> {
-    let root_node = new_tree.root_node();
-
-    let query_ranges = match scoped {
-        Some((prev_tree, edit)) => scoped_query_ranges(prev_tree, new_tree, edit),
-        None => std::iter::once(0..source.len()).collect(),
-    };
-
-    let mut fresh: Vec<(std::ops::Range<usize>, u32, usize)> = Vec::new();
-    for range in &query_ranges {
-        let mut cursor = QueryCursor::new();
-        cursor.set_byte_range(range.clone());
-        let mut matches = cursor.matches(query, root_node, source);
-        while let Some(m) = matches.next() {
-            let pattern_index = m.pattern_index;
-            for capture in m.captures() {
-                fresh.push((capture.node.byte_range(), capture.index, pattern_index));
-            }
-        }
-    }
-
-    let kept = match scoped {
-        Some((_, edit)) => scoped_kept_items(old_highlights, edit, &query_ranges),
-        None => Vec::new(),
-    };
-
-    let mut highlights = fresh;
-    highlights.extend(kept.into_iter().map(|(r, c)| (r, c, 0)));
-
-    IntervalTree::new(finalize_highlights(highlights))
-}
-
-/// Byte offsets of every newline in a source buffer, built once per parse so
-/// repeated byte-to-point lookups can binary-search instead of rescanning.
-struct NewlineIndex {
-    newlines: Vec<usize>,
-    source_len: usize,
-}
-
-impl NewlineIndex {
-    fn build(source: &[u8]) -> Self {
-        let newlines = source
-            .iter()
-            .enumerate()
-            .filter(|&(_, &b)| b == b'\n')
-            .map(|(i, _)| i)
-            .collect();
-        Self {
-            newlines,
-            source_len: source.len(),
-        }
-    }
-
-    /// Convert a byte offset to a tree-sitter `Point` via binary search.
-    fn point_at(&self, byte: usize) -> tree_sitter::Point {
-        let byte = byte.min(self.source_len);
-        let row = self.newlines.partition_point(|&nl| nl < byte);
-        let last_nl = if row == 0 {
-            0
-        } else {
-            self.newlines[row - 1] + 1
-        };
-        tree_sitter::Point {
-            row,
-            column: byte - last_nl,
-        }
-    }
 }

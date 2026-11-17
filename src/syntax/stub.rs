@@ -28,16 +28,18 @@ impl Syntax {
 
     #[must_use]
     pub(crate) const fn highlights(
-        &self,
-        _range: Option<std::ops::Range<usize>>,
+        &mut self,
+        _buffer: &crate::buffer::TextBuffer,
+        _range: std::ops::Range<usize>,
     ) -> Vec<(std::ops::Range<usize>, u32)> {
         Vec::new()
     }
 
     #[must_use]
     pub(crate) const fn injection_highlights_named(
-        &self,
-        _range: Option<&std::ops::Range<usize>>,
+        &mut self,
+        _buffer: &crate::buffer::TextBuffer,
+        _range: std::ops::Range<usize>,
     ) -> Vec<(std::ops::Range<usize>, String)> {
         Vec::new()
     }
@@ -56,7 +58,7 @@ impl Syntax {
 
     pub(crate) const fn try_incremental_parse(
         &mut self,
-        _source: &[u8],
+        _buffer: &crate::buffer::TextBuffer,
         _budget: std::time::Duration,
     ) -> ParseOutcome {
         ParseOutcome::NoLanguage
