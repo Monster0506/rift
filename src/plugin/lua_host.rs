@@ -18,8 +18,14 @@ use std::sync::Arc;
 /// Parse a `{ fg, bg, bold, italic, underline, strike, reverse }` style subtable.
 fn parse_style(st: &LuaTable) -> LuaResult<crate::annotations::presentation::StyleOverride> {
     let color = |key: &str| -> LuaResult<Option<crate::color::Color>> {
-        let s: Option<String> = st.get(key)?;
-        Ok(s.and_then(|s| crate::color::Color::parse(&s)))
+        let Some(s) = st.get::<Option<String>>(key)? else {
+            return Ok(None);
+        };
+        crate::color::Color::parse(&s).map(Some).ok_or_else(|| {
+            LuaError::RuntimeError(format!(
+                "invalid {key} color '{s}': use a color name, \"#rrggbb\", or \"ansiN\""
+            ))
+        })
     };
     let mut attrs = crate::layer::CellAttrs::default();
     for (key, flag) in crate::layer::CellAttrs::NAMED {
