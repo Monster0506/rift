@@ -117,34 +117,6 @@ impl<T: Clone> IntervalTree<T> {
         }
     }
 
-    /// Helper to get all items (e.g. for iteration).
-    #[cfg(feature = "treesitter")]
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (&Range<usize>, &T)> {
-        self.nodes.iter().map(|n| (&n.range, &n.val))
-    }
-
-    #[cfg(any(test, feature = "treesitter"))]
-    /// In-order traversal: same relative ordering as `query`.
-    fn in_order(&self) -> Vec<(Range<usize>, T)> {
-        let mut results = Vec::with_capacity(self.nodes.len());
-        if let Some(root) = self.root {
-            self.in_order_recursive(root, &mut results);
-        }
-        results
-    }
-
-    #[cfg(any(test, feature = "treesitter"))]
-    fn in_order_recursive(&self, node_idx: usize, results: &mut Vec<(Range<usize>, T)>) {
-        let node = &self.nodes[node_idx];
-        if let Some(left) = node.left {
-            self.in_order_recursive(left, results);
-        }
-        results.push((node.range.clone(), node.val.clone()));
-        if let Some(right) = node.right {
-            self.in_order_recursive(right, results);
-        }
-    }
-
     /// Update every node's range from `get_range` in place, preserving tree topology, then recompute `max` bottom-up.
     pub(crate) fn resync(&mut self, mut get_range: impl FnMut(&T) -> Option<Range<usize>>) {
         for node in &mut self.nodes {
@@ -164,33 +136,6 @@ impl<T: Clone> IntervalTree<T> {
             }
             self.nodes[idx].max = max_end;
         }
-    }
-
-    /// Ranges at/before the edit are kept, at/after its old end shift by the
-    /// delta, overlapping it are dropped (caller must also filter its fresh requery for touching cases).
-    #[cfg(any(test, feature = "treesitter"))]
-    #[must_use]
-    pub(super) fn shift_for_edit(
-        &self,
-        start_byte: usize,
-        old_end_byte: usize,
-        new_end_byte: usize,
-    ) -> Vec<(Range<usize>, T)> {
-        let delta = new_end_byte.cast_signed() - old_end_byte.cast_signed();
-        self.in_order()
-            .into_iter()
-            .filter_map(|(r, val)| {
-                if r.end <= start_byte {
-                    Some((r, val))
-                } else if r.start >= old_end_byte {
-                    let new_start = (r.start.cast_signed() + delta).cast_unsigned();
-                    let new_end = (r.end.cast_signed() + delta).cast_unsigned();
-                    Some((new_start..new_end, val))
-                } else {
-                    None
-                }
-            })
-            .collect()
     }
 }
 
