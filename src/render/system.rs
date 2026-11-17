@@ -113,7 +113,6 @@ pub struct RenderSystem {
     status_paint_frame: crate::paint::PaintFrame,
 
     render_order: Vec<(crate::render::ecs::EntityId, crate::layer::LayerPriority)>,
-    /// Sixel images drawn over image-buffer windows; staged per frame.
     pub(crate) image_overlay: crate::image_view::overlay::ImageOverlay,
 }
 
@@ -181,7 +180,11 @@ impl RenderSystem {
         self.last_render_version = 0;
         self.last_cursor_pos = None;
         self.last_command_cursor = None;
-        self.last_soft_cursor = None;
+        if let Some((row, col)) = self.last_soft_cursor.take() {
+            self.compositor
+                .get_layer_mut(LayerPriority::CURSOR)
+                .clear_cell(row, col);
+        }
         self.last_cursor_shape = None;
         self.cursor_animator.reset();
         self.content_blit_key = None;
