@@ -544,6 +544,9 @@ impl FromStr for Action {
             "mode:open_line_above" => Ok(Self::Editor(EditorAction::OpenLineAbove)),
             "mode:command" => Ok(Self::Editor(EditorAction::EnterCommandMode)),
             "mode:search" => Ok(Self::Editor(EditorAction::EnterSearchMode)),
+            "mode:visual" => Ok(Self::Editor(EditorAction::EnterVisualChar)),
+            "mode:visual_line" => Ok(Self::Editor(EditorAction::EnterVisualLine)),
+            "mode:visual_block" => Ok(Self::Editor(EditorAction::EnterVisualBlock)),
             _ => Ok(Self::parse_rest(s)),
         }
     }
