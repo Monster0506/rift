@@ -46,6 +46,11 @@ pub(crate) enum EditorEvent {
     /// Cheap to fire for tools that only need change awareness.
     TextChangedCoarse { buf: DocumentId },
 
+    SyntaxUpdated {
+        buf: DocumentId,
+        lang: Option<String>,
+    },
+
     /// The cursor moved. Row and col are 0-indexed.
     CursorMoved {
         buf: DocumentId,
@@ -142,6 +147,12 @@ impl EditorEvent {
                     t.set("filetype", ft.as_str())?;
                 }
             }
+            Self::SyntaxUpdated { buf, lang } => {
+                t.set("buf", lua_int(buf.get()))?;
+                if let Some(lang) = lang {
+                    t.set("lang", lang.as_str())?;
+                }
+            }
             Self::BufClose { buf }
             | Self::BufEnter { buf }
             | Self::BufLeave { buf }
@@ -224,6 +235,7 @@ impl EditorEvent {
             Self::BufSavePost { .. } => "BufSavePost",
             Self::BufReload { .. } => "BufReload",
             Self::TextChangedCoarse { .. } => "TextChangedCoarse",
+            Self::SyntaxUpdated { .. } => "SyntaxUpdated",
             Self::CursorMoved { .. } => "CursorMoved",
             Self::CursorHold { .. } => "CursorHold",
             Self::ModeChanged { .. } => "ModeChanged",

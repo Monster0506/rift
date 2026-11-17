@@ -65,6 +65,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn update_state(&mut self) -> Option<FrameState> {
         crate::perf_span!("update_state", crate::perf::PerfFields::default());
         self.flush_pending_text_changed();
+        self.flush_pending_syntax_updated();
         self.flush_pending_cursor_moved();
         self.update_annotation_hover();
         if self.split_tree.window_count() == 1 {

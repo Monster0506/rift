@@ -162,6 +162,23 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    pub(super) fn flush_pending_syntax_updated(&mut self) {
+        if self.pending_syntax_updated.is_empty() {
+            return;
+        }
+        self.update_lua_state();
+        for buf in std::mem::take(&mut self.pending_syntax_updated) {
+            let lang = self
+                .document_manager
+                .get_document(buf)
+                .and_then(|doc| doc.syntax.as_ref())
+                .map(|syntax| syntax.language_name.clone());
+            self.plugin_host
+                .dispatch(&crate::plugin::events::EditorEvent::SyntaxUpdated { buf, lang });
+        }
+        self.apply_plugin_mutations();
+    }
+
     pub(super) fn do_incremental_syntax_parse(&mut self) {
         if let Some(doc_id) = self.document_manager.active_document_id() {
             self.do_incremental_syntax_parse_for(doc_id);
@@ -185,6 +202,7 @@ impl<T: TerminalBackend> Editor<T> {
             #[cfg(feature = "treesitter")]
             crate::document::syntax_sync::SyntaxSync::Completed => {
                 self.cancel_pending_syntax_reparse(doc_id);
+                self.pending_syntax_updated.insert(doc_id);
             }
             crate::document::syntax_sync::SyntaxSync::Deferred => {
                 self.debounce_syntax_reparse(doc_id);

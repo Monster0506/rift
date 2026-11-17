@@ -1281,6 +1281,7 @@ impl<T: TerminalBackend> Editor<T> {
         if is_current {
             if let Some(syntax) = &mut doc.syntax {
                 syntax.update_from_result(result, &doc.buffer);
+                self.pending_syntax_updated.insert(doc.id);
             }
         }
 

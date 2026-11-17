@@ -179,6 +179,7 @@ pub struct Editor<T: TerminalBackend> {
     display_map_cache: Vec<DisplayMapCacheEntry>,
     pending_text_changed: Option<crate::document::DocumentId>,
     pending_cursor_moved: Option<(crate::document::DocumentId, usize, usize)>,
+    pending_syntax_updated: std::collections::BTreeSet<crate::document::DocumentId>,
     dot_repeat: DotRepeat,
     panel_layout: Option<PanelLayout>,
     last_notification_generation: u64,
