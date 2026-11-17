@@ -88,9 +88,9 @@ fn hash_virtual_text(
 }
 
 pub struct RenderSystem {
-    pub compositor: LayerCompositor,
-    pub viewport: Viewport,
-    pub world: World,
+    pub(crate) compositor: LayerCompositor,
+    pub(crate) viewport: Viewport,
+    pub(super) world: World,
 
     content_entity: Option<crate::render::ecs::EntityId>,
     status_entity: Option<crate::render::ecs::EntityId>,
@@ -105,13 +105,15 @@ pub struct RenderSystem {
     last_cursor_shape: Option<CursorShape>,
     cursor_animator: crate::cursor::CursorAnimator,
 
-    pub(crate) content_paint_frame: crate::paint::PaintFrame,
+    content_paint_frame: crate::paint::PaintFrame,
     pub(crate) content_blit_key: Option<crate::render::ContentBlitKey>,
     pub(crate) window_paint_caches:
         std::collections::HashMap<crate::split::window::WindowId, WindowPaintCache>,
+    pub(crate) scroll_hint_scratch: Vec<crate::layer::ScrollHint>,
     status_paint_frame: crate::paint::PaintFrame,
 
     render_order: Vec<(crate::render::ecs::EntityId, crate::layer::LayerPriority)>,
+    pub(crate) image_overlay: crate::image_view::overlay::ImageOverlay,
 }
 
 fn match_index_at_cursor(
@@ -147,18 +149,21 @@ impl RenderSystem {
             content_paint_frame: crate::paint::PaintFrame::new(0),
             content_blit_key: None,
             window_paint_caches: std::collections::HashMap::new(),
+            scroll_hint_scratch: Vec::new(),
             status_paint_frame: crate::paint::PaintFrame::new(0),
             render_order: Vec::new(),
+            image_overlay: crate::image_view::overlay::ImageOverlay::default(),
         }
     }
 
     #[must_use]
-    pub const fn needs_animation_frame(&self) -> bool {
+    pub(crate) const fn needs_animation_frame(&self) -> bool {
         self.cursor_animator.is_animating()
     }
 
+    #[cfg(test)]
     #[must_use]
-    pub const fn last_soft_cursor(&self) -> Option<(usize, usize)> {
+    pub(crate) const fn last_soft_cursor(&self) -> Option<(usize, usize)> {
         self.last_soft_cursor
     }
 
@@ -175,7 +180,11 @@ impl RenderSystem {
         self.last_render_version = 0;
         self.last_cursor_pos = None;
         self.last_command_cursor = None;
-        self.last_soft_cursor = None;
+        if let Some((row, col)) = self.last_soft_cursor.take() {
+            self.compositor
+                .get_layer_mut(LayerPriority::CURSOR)
+                .clear_cell(row, col);
+        }
         self.last_cursor_shape = None;
         self.cursor_animator.reset();
         self.content_blit_key = None;
@@ -278,22 +287,28 @@ impl RenderSystem {
             editor_bg: ctx.state.settings.editor_bg,
             editor_fg: ctx.state.settings.editor_fg,
             theme: crate::perf_clone!(ctx.state.settings.theme.clone()),
-            highlights_hash: ctx.state.settings.syntax_colors.as_ref().map_or(0, |_| {
-                let highlights = ctx.highlights.unwrap_or(&[]);
-                let mut hash: u64 = highlights.len() as u64;
-                for (range, capture) in highlights {
-                    hash = hash
-                        .wrapping_mul(6_364_136_223_846_793_005)
-                        .wrapping_add(range.start as u64);
-                    hash = hash
-                        .wrapping_mul(6_364_136_223_846_793_005)
-                        .wrapping_add(range.end as u64 + 1);
-                    hash = hash
-                        .wrapping_mul(6_364_136_223_846_793_005)
-                        .wrapping_add(u64::from(*capture) + 1);
-                }
-                hash
-            }),
+            highlights_hash: ctx
+                .state
+                .settings
+                .syntax_colors
+                .as_ref()
+                .map_or(0, |colors| {
+                    let highlights = ctx.highlights.unwrap_or(&[]);
+                    let mut hash: u64 =
+                        (highlights.len() as u64) ^ colors.revision().rotate_left(32);
+                    for (range, capture) in highlights {
+                        hash = hash
+                            .wrapping_mul(6_364_136_223_846_793_005)
+                            .wrapping_add(range.start as u64);
+                        hash = hash
+                            .wrapping_mul(6_364_136_223_846_793_005)
+                            .wrapping_add(range.end as u64 + 1);
+                        hash = hash
+                            .wrapping_mul(6_364_136_223_846_793_005)
+                            .wrapping_add(u64::from(*capture) + 1);
+                    }
+                    hash
+                }),
         }
     }
 
@@ -443,7 +458,7 @@ impl RenderSystem {
 
         let viewport = self.viewport;
         let skip_content = state.skip_content;
-        let scroll_hint = state.scroll_hint;
+        let scroll_hints = state.scroll_hints;
         let cursor_row_offset = state.cursor_row_offset;
         let cursor_col_offset = state.cursor_col_offset;
         let cursor_viewport = state.cursor_viewport;
@@ -493,8 +508,9 @@ impl RenderSystem {
                 .clear_cell(pr, pc);
         }
 
+        self.image_overlay.before_flush(term, &mut self.compositor);
         self.compositor
-            .render_to_terminal(term, ctx.needs_clear, scroll_hint)
+            .render_to_terminal(term, ctx.needs_clear, scroll_hints)
             .map_err(|e| {
                 RiftError::new(
                     crate::error::ErrorType::Renderer,
@@ -502,18 +518,20 @@ impl RenderSystem {
                     e.to_string(),
                 )
             })?;
+        self.image_overlay.after_flush(term, &mut self.compositor)?;
 
-        if software {
+        let hardware_cursor = if software {
             self.last_cursor_shape = None;
+            None
         } else {
             let desired_shape = CursorShape::SteadyBar;
             if self.last_cursor_shape != Some(desired_shape) {
                 term.set_cursor_shape(desired_shape)?;
                 self.last_cursor_shape = Some(desired_shape);
             }
-            term.move_cursor(to_u16_saturating(cursor_row), to_u16_saturating(cursor_col))?;
-            term.show_cursor()?;
-        }
+            Some((cursor_row, cursor_col))
+        };
+        self.compositor.place_cursor(term, hardware_cursor)?;
 
         self.last_cursor_pos = Some(cursor_info);
         term.flush()?;
@@ -796,17 +814,6 @@ impl RenderSystem {
             .get_layer_mut(LayerPriority::CURSOR)
             .set_cell(anim_row, anim_col, cursor_cell);
         self.last_soft_cursor = Some((anim_row, anim_col));
-    }
-
-    /// # Errors
-    /// Returns `Err` when rendering fails.
-    pub fn force_full_redraw<T: TerminalBackend>(
-        &mut self,
-        term: &mut T,
-        mut state: RenderState,
-    ) -> Result<CursorPosition, RiftError> {
-        state.needs_clear = true;
-        self.render(term, &state)
     }
 }
 

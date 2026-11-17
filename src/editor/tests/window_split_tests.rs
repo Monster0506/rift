@@ -108,6 +108,34 @@ fn test_terminal_resize_updates_layout() {
 }
 
 #[test]
+fn resize_that_moves_the_cursor_leaves_a_single_soft_cursor() {
+    let mut editor = create_editor_sized(24, 40);
+    set_content(&mut editor, &format!("{}\nbbbb\n", "a".repeat(60)));
+    let second_line = editor.active_document().buffer.line_index.get_line_start(1);
+    editor
+        .active_document()
+        .buffer
+        .set_cursor(second_line)
+        .unwrap();
+    editor.update_and_render().unwrap();
+
+    editor.term.size = (24, 80);
+    editor.render_system.resize(24, 80);
+    editor.update_and_render().unwrap();
+
+    let layer = editor
+        .render_system
+        .compositor
+        .get_layer(crate::layer::LayerPriority::CURSOR)
+        .expect("cursor layer exists after a render");
+    let cursors: Vec<(usize, usize)> = (0..layer.rows())
+        .flat_map(|r| (0..layer.cols()).map(move |c| (r, c)))
+        .filter(|&(r, c)| layer.get_cell(r, c).is_some())
+        .collect();
+    assert_eq!(cursors.len(), 1, "stale cursor cells: {cursors:?}");
+}
+
+#[test]
 fn test_split_creates_second_window() {
     use crate::split::tree::SplitDirection;
     let mut editor = create_editor();
@@ -124,7 +152,7 @@ fn test_split_file_not_found_emits_error() {
 
     editor.do_split_window(
         SplitDirection::Horizontal,
-        crate::command_line::commands::SplitSubcommand::File(
+        crate::command_line::commands::types::SplitSubcommand::File(
             "nonexistent_file_xyz.txt".to_string(),
         ),
     );
