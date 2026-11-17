@@ -723,7 +723,7 @@ impl LuaHost {
         Self::register_emit(&lua, &api)?;
         Self::register_spawn(&lua, &api, &shell_result_tx)?;
         Self::register_edits(&lua, &api, &shared)?;
-        Self::register_highlights(&lua, &api, &shared)?;
+        Self::register_line_edits(&lua, &api, &shared)?;
         Self::register_options(&lua, &api, &shared)?;
         Self::register_buffer_ops(&lua, &api, &shared)?;
         Self::register_editor_state(&lua, &api, &shared)?;
@@ -1466,7 +1466,7 @@ impl LuaHost {
         Ok(())
     }
 
-    fn register_highlights(
+    fn register_line_edits(
         lua: &Lua,
         api: &LuaTable,
         shared: &Rc<RefCell<LuaSharedState>>,
