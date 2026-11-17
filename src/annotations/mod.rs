@@ -34,9 +34,11 @@ fn adornment_color(
         .face
         .as_ref()
         .and_then(|f| presentation::resolve_face(f, colors))
+        .and_then(|s| s.fg)
         .or_else(|| {
             kd.and_then(|p| p.face.as_ref())
                 .and_then(|f| presentation::resolve_face(f, colors))
+                .and_then(|s| s.fg)
         });
     style_fg
         .or(face_fg)
@@ -703,13 +705,15 @@ impl AnnotationStore {
             let Some(pres) = pres else {
                 continue;
             };
-            let face_fg = pres
+            let face = pres
                 .face
                 .as_ref()
-                .and_then(|f| presentation::resolve_face(f, colors));
-            let fg = pres.style.as_ref().and_then(|s| s.fg).or(face_fg);
-            let bg = pres.style.as_ref().and_then(|s| s.bg);
-            let attrs = pres.style.as_ref().map_or_default(|s| s.attrs);
+                .and_then(|f| presentation::resolve_face(f, colors))
+                .unwrap_or_default();
+            let own = pres.style.unwrap_or_default();
+            let fg = own.fg.or(face.fg);
+            let bg = own.bg.or(face.bg);
+            let attrs = own.attrs.union(face.attrs);
             if fg.is_some() || bg.is_some() || !attrs.is_empty() {
                 let style = crate::layer::CellStyle { fg, bg, attrs };
                 cands.push((start, end, style, pres.priority, a.owner.rank(), a.id));

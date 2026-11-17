@@ -56,6 +56,7 @@ pub(crate) struct ContentBlitKey {
     editor_bg: Option<Color>,
     editor_fg: Option<Color>,
     syntax_generation: u64,
+    highlight_styles_revision: u64,
     custom_highlights_hash: u64,
     terminal_colors_hash: u64,
     search_matches_hash: u64,
@@ -149,6 +150,12 @@ fn compute_content_blit_key(ctx: &DrawContext, visible_rows: usize) -> ContentBl
         editor_bg: ctx.state.settings.editor_bg,
         editor_fg: ctx.state.settings.editor_fg,
         syntax_generation: ctx.syntax_generation,
+        highlight_styles_revision: ctx
+            .state
+            .settings
+            .syntax_colors
+            .as_ref()
+            .map_or(0, crate::color::theme::SyntaxColors::revision),
         custom_highlights_hash: hash_ranged_spans(ctx.custom_highlights.unwrap_or(&[])),
         terminal_colors_hash: hash_ranged_spans(ctx.terminal_cell_colors.unwrap_or(&[])),
         search_matches_hash: hash_search_matches(ctx.search_matches()),

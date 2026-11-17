@@ -117,23 +117,25 @@ impl Presentation {
     }
 }
 
-/// Resolve a named face to a foreground color against the active syntax colors,
-/// with built-in fallbacks for well-known faces so presentation works untheme-aware.
 #[must_use]
 pub(super) fn resolve_face(
     face: &FaceRef,
     colors: Option<&crate::color::theme::SyntaxColors>,
-) -> Option<Color> {
-    if let Some(c) = colors.and_then(|s| s.get_color(face.as_str())) {
-        return Some(c);
+) -> Option<crate::layer::CellStyle> {
+    if let Some(style) = colors.and_then(|s| s.get_style(face.as_str())) {
+        return Some(style);
     }
-    match face.as_str() {
-        "diag.error" => Some(Color::Red),
-        "diag.warning" => Some(Color::Yellow),
-        "diag.info" | "diag.hint" | "button" => Some(Color::Cyan),
-        "link" => Some(Color::Blue),
-        _ => None,
-    }
+    let fg = match face.as_str() {
+        "diag.error" => Color::Red,
+        "diag.warning" => Color::Yellow,
+        "diag.info" | "diag.hint" | "button" => Color::Cyan,
+        "link" => Color::Blue,
+        _ => return None,
+    };
+    Some(crate::layer::CellStyle {
+        fg: Some(fg),
+        ..Default::default()
+    })
 }
 
 #[cfg(test)]

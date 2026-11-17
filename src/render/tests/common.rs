@@ -231,6 +231,7 @@ pub(super) fn base_blit_key() -> ContentBlitKey {
         editor_bg: None,
         editor_fg: None,
         syntax_generation: 0,
+        highlight_styles_revision: 0,
         custom_highlights_hash: 0,
         terminal_colors_hash: 0,
         search_matches_hash: 0,

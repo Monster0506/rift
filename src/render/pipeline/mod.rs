@@ -29,6 +29,16 @@ impl RenderItem {
             char_offset,
         }
     }
+
+    fn apply_style(&mut self, style: crate::layer::CellStyle) {
+        if let Some(fg) = style.fg {
+            self.fg = Some(fg);
+        }
+        if let Some(bg) = style.bg {
+            self.bg = Some(bg);
+        }
+        self.attrs = self.attrs.union(style.attrs);
+    }
 }
 
 pub(super) struct LineSource<'a, I: Iterator<Item = Character>> {
@@ -119,13 +129,12 @@ impl<I: Iterator<Item = RenderItem>> Iterator for SyntaxDecorator<'_, I> {
                 break;
             }
             if range.end > item.byte_offset {
-                if let Some(colors) = self.syntax_colors {
-                    if let Some(map) = self.capture_map {
-                        if let Some(name) = map.get(*capture_idx as usize) {
-                            if let Some(color) = colors.get_color(name) {
-                                item.fg = Some(color);
-                            }
-                        }
+                if let (Some(colors), Some(map)) = (self.syntax_colors, self.capture_map) {
+                    if let Some(style) = map
+                        .get(*capture_idx as usize)
+                        .and_then(|name| colors.get_style(name))
+                    {
+                        item.apply_style(style);
                     }
                 }
                 break;
@@ -179,10 +188,8 @@ impl<I: Iterator<Item = RenderItem>> Iterator for InjectionDecorator<'_, I> {
                 break;
             }
             if range.end > item.byte_offset {
-                if let Some(colors) = self.syntax_colors {
-                    if let Some(color) = colors.get_color(name) {
-                        item.fg = Some(color);
-                    }
+                if let Some(style) = self.syntax_colors.and_then(|c| c.get_style(name)) {
+                    item.apply_style(style);
                 }
                 break;
             }
@@ -264,13 +271,7 @@ impl<I: Iterator<Item = RenderItem>> Iterator for PresentationDecorator<'_, I> {
         if *self.idx < self.styles.len() {
             let (range, style) = &self.styles[*self.idx];
             if range.start <= item.byte_offset {
-                if let Some(fg) = style.fg {
-                    item.fg = Some(fg);
-                }
-                if let Some(bg) = style.bg {
-                    item.bg = Some(bg);
-                }
-                item.attrs = item.attrs.union(style.attrs);
+                item.apply_style(*style);
             }
         }
         Some(item)

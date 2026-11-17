@@ -284,22 +284,28 @@ impl RenderSystem {
             editor_bg: ctx.state.settings.editor_bg,
             editor_fg: ctx.state.settings.editor_fg,
             theme: crate::perf_clone!(ctx.state.settings.theme.clone()),
-            highlights_hash: ctx.state.settings.syntax_colors.as_ref().map_or(0, |_| {
-                let highlights = ctx.highlights.unwrap_or(&[]);
-                let mut hash: u64 = highlights.len() as u64;
-                for (range, capture) in highlights {
-                    hash = hash
-                        .wrapping_mul(6_364_136_223_846_793_005)
-                        .wrapping_add(range.start as u64);
-                    hash = hash
-                        .wrapping_mul(6_364_136_223_846_793_005)
-                        .wrapping_add(range.end as u64 + 1);
-                    hash = hash
-                        .wrapping_mul(6_364_136_223_846_793_005)
-                        .wrapping_add(u64::from(*capture) + 1);
-                }
-                hash
-            }),
+            highlights_hash: ctx
+                .state
+                .settings
+                .syntax_colors
+                .as_ref()
+                .map_or(0, |colors| {
+                    let highlights = ctx.highlights.unwrap_or(&[]);
+                    let mut hash: u64 =
+                        (highlights.len() as u64) ^ colors.revision().rotate_left(32);
+                    for (range, capture) in highlights {
+                        hash = hash
+                            .wrapping_mul(6_364_136_223_846_793_005)
+                            .wrapping_add(range.start as u64);
+                        hash = hash
+                            .wrapping_mul(6_364_136_223_846_793_005)
+                            .wrapping_add(range.end as u64 + 1);
+                        hash = hash
+                            .wrapping_mul(6_364_136_223_846_793_005)
+                            .wrapping_add(u64::from(*capture) + 1);
+                    }
+                    hash
+                }),
         }
     }
 

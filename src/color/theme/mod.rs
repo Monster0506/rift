@@ -2,6 +2,7 @@
 //! Provides predefined color themes for the editor
 
 use super::Color;
+use crate::layer::CellStyle;
 use crate::state::UserSettings;
 use captures::{
     ATTRIBUTE, BOOLEAN, BUILTIN, CHARACTER, COMMENT, CONSTANT, CONSTRUCTOR, C_IMPORT, ESCAPE,
@@ -37,43 +38,84 @@ impl ThemeHandler for DefaultThemeHandler {
 static THEME_HANDLER: DefaultThemeHandler = DefaultThemeHandler;
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Syntax highlighting colors for a theme
+static NEXT_SYNTAX_COLORS_REVISION: AtomicU64 = AtomicU64::new(1);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntaxColors {
-    colors: HashMap<String, Color>,
+    styles: HashMap<String, CellStyle>,
+    revision: u64,
+}
+
+impl Default for SyntaxColors {
+    fn default() -> Self {
+        Self {
+            styles: HashMap::new(),
+            revision: NEXT_SYNTAX_COLORS_REVISION.fetch_add(1, Ordering::Relaxed),
+        }
+    }
 }
 
 impl SyntaxColors {
-    /// Create syntax colors from a list of base colors
     #[must_use]
     pub(crate) fn from_base_colors(base: &[(&str, Color)]) -> Self {
         Self {
-            colors: base.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
+            styles: base
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        (*k).to_string(),
+                        CellStyle {
+                            fg: Some(*v),
+                            ..CellStyle::default()
+                        },
+                    )
+                })
+                .collect(),
+            ..Self::default()
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn get_style(&self, capture: &str) -> Option<CellStyle> {
+        let mut part = capture.trim_start_matches('@').trim();
+        loop {
+            if let Some(style) = self.styles.get(part) {
+                return Some(*style);
+            }
+            part = part.rsplit_once('.')?.0;
         }
     }
 
     #[must_use]
     pub(crate) fn get_color(&self, capture: &str) -> Option<Color> {
-        // 1. Normalize (remove leading @ and trim)
-        let clean_capture = capture.trim_start_matches('@').trim();
+        self.get_style(capture).and_then(|s| s.fg)
+    }
 
-        // 2. Try exact match
-        if let Some(color) = self.colors.get(clean_capture) {
-            return Some(*color);
+    #[must_use]
+    pub(crate) fn exact_style(&self, name: &str) -> Option<CellStyle> {
+        self.styles.get(name).copied()
+    }
+
+    pub(crate) fn set_style(&mut self, name: &str, style: CellStyle) {
+        self.styles.insert(name.to_string(), style);
+        self.revision = NEXT_SYNTAX_COLORS_REVISION.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn remove_style(&mut self, name: &str) {
+        if self.styles.remove(name).is_some() {
+            self.revision = NEXT_SYNTAX_COLORS_REVISION.fetch_add(1, Ordering::Relaxed);
         }
+    }
 
-        // 3. Fallback components (e.g., "function.builtin" -> "function")
-        let mut part = clean_capture;
-        while let Some((prefix, _)) = part.rsplit_once('.') {
-            part = prefix;
-            if let Some(color) = self.colors.get(part) {
-                return Some(*color);
-            }
-        }
+    pub(crate) fn names(&self) -> impl Iterator<Item = &str> {
+        self.styles.keys().map(String::as_str)
+    }
 
-        // 4. Return None to let caller fall back to editor foreground
-        None
+    #[must_use]
+    pub(crate) const fn revision(&self) -> u64 {
+        self.revision
     }
 }
 
