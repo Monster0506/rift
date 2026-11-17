@@ -53,12 +53,14 @@ impl Color {
             "black" => Self::Black,
             "grey" | "gray" => Self::Grey,
             "darkgrey" | "darkgray" => Self::DarkGrey,
+            "reset" => Self::Reset,
             hex if hex.starts_with('#') && hex.len() == 7 => {
                 let r = u8::from_str_radix(hex.get(1..3)?, 16).ok()?;
                 let g = u8::from_str_radix(hex.get(3..5)?, 16).ok()?;
                 let b = u8::from_str_radix(hex.get(5..7)?, 16).ok()?;
                 Self::Rgb { r, g, b }
             }
+            ansi if ansi.starts_with("ansi") => Self::Ansi256(ansi.get(4..)?.parse().ok()?),
             _ => return None,
         })
     }
