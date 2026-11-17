@@ -928,6 +928,8 @@ impl PluginHost {
             lua.mark_retiring();
         }
         self.lua.take();
+        self.clear_synced_buf();
+        self.clear_synced_annotations();
 
         let new_gen = self.new_generation(self.lua_plugin_id);
         self.current_lua_generation = Some(new_gen);
