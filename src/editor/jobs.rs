@@ -13,6 +13,19 @@ use std::sync::Arc;
 const SYNTAX_REPARSE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(40);
 
 #[cfg(feature = "treesitter")]
+fn syntax_for(
+    loader: &Arc<crate::syntax::loader::LanguageLoader>,
+    lang: crate::syntax::loader::LoadedLanguage,
+) -> crate::syntax::Syntax {
+    let highlights = loader
+        .load_query(&lang.name, "highlights")
+        .ok()
+        .and_then(|source| tree_sitter::Query::new(&lang.language, &source).ok())
+        .map(Arc::new);
+    crate::syntax::build_syntax(lang, highlights, loader)
+}
+
+#[cfg(feature = "treesitter")]
 fn attach_syntax(
     docs: &mut crate::document::manager::DocumentManager,
     loader: &std::sync::Arc<crate::syntax::loader::LanguageLoader>,
@@ -28,12 +41,7 @@ fn attach_syntax(
     let Ok(lang) = loader.load_language_for_file(&path) else {
         return;
     };
-    let highlights = loader
-        .load_query(&lang.name, "highlights")
-        .ok()
-        .and_then(|source| tree_sitter::Query::new(&lang.language, &source).ok())
-        .map(Arc::new);
-    let syntax = crate::syntax::build_syntax(lang, highlights, loader);
+    let syntax = syntax_for(loader, lang);
     if let Some(doc) = docs.get_document_mut(doc_id) {
         doc.set_syntax(syntax);
     }
@@ -982,13 +990,7 @@ impl<T: TerminalBackend> Editor<T> {
         let Ok(loaded) = self.language_loader.load_language_for_file(preview_path) else {
             return;
         };
-        let highlights = self
-            .language_loader
-            .load_query(&loaded.name, "highlights")
-            .ok()
-            .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
-            .map(Arc::new);
-        let syntax = crate::syntax::build_syntax(loaded, highlights, &self.language_loader);
+        let syntax = syntax_for(&self.language_loader, loaded);
         if let Some(doc) = self
             .document_manager
             .get_document_by_handle_mut(token.handle)
