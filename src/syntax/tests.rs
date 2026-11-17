@@ -196,3 +196,32 @@ fn markdown_deep_fenced_rust_capture_disappears_when_language_changes() {
         0..text.len(),
     );
 }
+
+#[test]
+fn nested_capture_wins_over_the_capture_around_it() {
+    let loader = Arc::new(LanguageLoader::new(".".into()));
+    let text = "fn f() { let s = \"a\\nb\"; }\n";
+    let buffer = buffer(text);
+    let mut syntax = syntax(&loader, "rust", &buffer);
+    let names: Vec<String> = syntax
+        .capture_names()
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    let spans = syntax.highlights(&buffer, 0..text.len());
+    let name_at = |byte: usize| {
+        spans
+            .iter()
+            .find(|(r, _)| r.contains(&byte))
+            .map(|(_, c)| names[*c as usize].as_str())
+    };
+
+    let escape = text.find("\\n").unwrap();
+    assert_eq!(name_at(escape - 1), Some("string"));
+    assert_eq!(name_at(escape), Some("escape"));
+    assert_eq!(name_at(escape + 2), Some("string"));
+    assert!(
+        spans.windows(2).all(|w| w[0].0.end <= w[1].0.start),
+        "spans must be sorted and non-overlapping: {spans:?}"
+    );
+}

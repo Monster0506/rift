@@ -141,7 +141,6 @@ fn test_job_highlights_do_not_recolor_unrelated_token_on_same_line() {
 
     let ok_start = initial_src.find("Ok(Action").unwrap();
     let ok_range = ok_start..ok_start + 2;
-    let initial = all_highlights(&mut syntax, &buffer);
 
     // Insert one character right after "lsp" inside the string literal.
     let insert_pos = initial_src.find("lsp:diagnostics_panel").unwrap() + 3;
@@ -152,13 +151,6 @@ fn test_job_highlights_do_not_recolor_unrelated_token_on_same_line() {
     let expected = fresh_highlights(&buffer);
     let shifted_ok_range = (ok_range.start + 1)..(ok_range.end + 1);
 
-    // "Ok" matches both @constructor and @function; the render picks
-    // whichever comes first, so order must match a fresh parse.
-    assert_eq!(
-        captures_at(&initial, &ok_range).len(),
-        2,
-        "test fixture must exercise a dual-capture token"
-    );
     assert_eq!(
         captures_at(&after, &shifted_ok_range),
         captures_at(&expected, &shifted_ok_range),

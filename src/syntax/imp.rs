@@ -111,9 +111,7 @@ fn query_chunk(source: Source, tree: &Tree, query: &Query, bounds: Range<usize>)
         }
     }
 
-    // Clipping after ordering keeps a capture entering from an earlier chunk
-    // ahead of the ones nested in it, as in an unchunked query.
-    let items = finalize_highlights(found)
+    let items = flatten_highlights(found)
         .into_iter()
         .filter_map(|(r, capture)| {
             let clipped = r.start.max(bounds.start)..r.end.min(bounds.end);
@@ -797,17 +795,45 @@ fn normalize_lang_name(name: &str) -> String {
     }
 }
 
-/// Orders same-range captures so a later-declared query pattern always wins,
-/// independent of how the query was scoped.
-fn finalize_highlights(
-    mut highlights: Vec<(Range<usize>, u32, usize)>,
-) -> Vec<(Range<usize>, u32)> {
-    highlights.sort_by(|a, b| {
+fn flatten_highlights(mut found: Vec<(Range<usize>, u32, usize)>) -> Vec<Highlight> {
+    found.sort_by(|a, b| {
         a.0.start
             .cmp(&b.0.start)
-            .then(a.0.end.cmp(&b.0.end))
-            .then(b.2.cmp(&a.2))
+            .then(b.0.end.cmp(&a.0.end))
+            .then(a.2.cmp(&b.2))
     });
-    highlights.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
-    highlights.into_iter().map(|(r, c, _)| (r, c)).collect()
+
+    let mut out: Vec<Highlight> = Vec::new();
+    let mut open: Vec<(usize, u32)> = Vec::new();
+    let mut pos = 0;
+    for (range, capture, _) in found {
+        emit_open(&mut out, &mut open, &mut pos, range.start);
+        pos = pos.max(range.start);
+        open.push((range.end, capture));
+    }
+    emit_open(&mut out, &mut open, &mut pos, usize::MAX);
+    out
+}
+
+fn emit_open(
+    out: &mut Vec<Highlight>,
+    open: &mut Vec<(usize, u32)>,
+    pos: &mut usize,
+    target: usize,
+) {
+    while let Some(&(end, capture)) = open.last() {
+        if end <= *pos {
+            open.pop();
+            continue;
+        }
+        if *pos >= target {
+            break;
+        }
+        let seg_end = end.min(target);
+        match out.last_mut() {
+            Some(last) if last.0.end == *pos && last.1 == capture => last.0.end = seg_end,
+            _ => out.push((*pos..seg_end, capture)),
+        }
+        *pos = seg_end;
+    }
 }
