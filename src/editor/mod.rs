@@ -83,16 +83,18 @@ pub(crate) fn user_config_dir() -> std::path::PathBuf {
 }
 
 fn plugin_dirs() -> Vec<std::path::PathBuf> {
-    let mut dirs = Vec::new();
-    if let Ok(manifest) = std::env::var("CARGO_MANIFEST_DIR") {
-        dirs.push(
-            std::path::PathBuf::from(manifest)
-                .join("runtime")
-                .join("plugins"),
-        );
-    }
-    dirs.push(user_config_dir().join("plugins"));
-    dirs
+    #[cfg(not(test))]
+    let runtime = std::env::var("CARGO_MANIFEST_DIR").ok().map(|manifest| {
+        std::path::PathBuf::from(manifest)
+            .join("runtime")
+            .join("plugins")
+    });
+    #[cfg(test)]
+    let runtime: Option<std::path::PathBuf> = None;
+    runtime
+        .into_iter()
+        .chain(std::iter::once(user_config_dir().join("plugins")))
+        .collect()
 }
 
 fn resolve_wrap_params(
