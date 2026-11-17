@@ -10,8 +10,8 @@ use crate::annotations::action::Action;
 use crate::annotations::kind::well_known;
 use crate::annotations::kind::Kind;
 use crate::annotations::marker::Marker;
+use crate::annotations::presentation::Presentation;
 use crate::annotations::presentation::{Adornment, FaceRef};
-use crate::annotations::presentation::{Presentation, StyleOverride};
 use crate::annotations::value::Value;
 
 use serde::{Deserialize, Serialize};
@@ -863,37 +863,29 @@ impl AnnotationStore {
         })
     }
 
-    const PLUGIN_HIGHLIGHT_PRIORITY: i32 = -1;
-
-    pub(crate) fn add_plugin_highlight(
+    pub(crate) fn add_ns_highlight(
         &mut self,
-        slot: u32,
+        ns: &str,
         start: usize,
         end: usize,
-        bg: crate::color::Color,
+        presentation: Presentation,
     ) -> AnnotationId {
-        let style = StyleOverride {
-            fg: Some(crate::color::contrasting_color(bg)),
-            bg: Some(bg),
-            ..Default::default()
-        };
         self.add(
             Annotation::new(
                 Kind::new(well_known::PLUGIN_HIGHLIGHT),
                 Anchor::range(start, end),
-                AnnotationOwner::Plugin(slot.to_string()),
+                Self::ns_owner(ns),
             )
-            .with_presentation(
-                Presentation::with_style(style).with_priority(Self::PLUGIN_HIGHLIGHT_PRIORITY),
-            ),
+            .with_presentation(presentation),
         )
     }
 
-    pub(crate) fn clear_plugin_highlights(&mut self, slot: Option<u32>) {
-        match slot {
-            Some(slot) => self.clear_by_owner(&AnnotationOwner::Plugin(slot.to_string())),
-            None => self.clear_by_kind_prefix(well_known::PLUGIN_HIGHLIGHT),
-        }
+    pub(crate) fn clear_ns_highlights(&mut self, ns: &str) {
+        self.clear_by_owner(&Self::ns_owner(ns));
+    }
+
+    fn ns_owner(ns: &str) -> AnnotationOwner {
+        AnnotationOwner::Plugin(format!("hl:{ns}"))
     }
 
     #[cfg(test)]

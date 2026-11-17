@@ -222,7 +222,10 @@ pub(crate) enum PluginMutation {
     /// Delete `n` characters immediately after the cursor.
     DeleteForward(usize),
     /// Move the cursor to a specific position. `row` is 1-indexed; `col` is 0-indexed.
-    SetCursor { row: usize, col: usize },
+    SetCursor {
+        row: usize,
+        col: usize,
+    },
     /// Replace a line range with new content. `start` and `end` are 1-indexed and inclusive.
     /// The replaced region is deleted and `lines` are inserted in its place.
     ReplaceLines {
@@ -230,20 +233,27 @@ pub(crate) enum PluginMutation {
         end: usize,
         lines: Vec<String>,
     },
-    /// Add a foreground color highlight over a character range (lines 1-indexed, columns 0-indexed).
-    /// `color` is a named color or hex string; `slot` identifies the owning plugin handler.
-    AddHighlight {
-        slot: u32,
-        start_line: usize,
-        start_col: usize,
-        end_line: usize,
-        end_col: usize,
-        color: String,
+    SetHighlightGroup {
+        name: String,
+        style: Option<crate::layer::CellStyle>,
     },
-    /// Remove all highlights owned by the given plugin slot.
-    ClearHighlights { slot: u32 },
+    ResetHighlightGroups,
+    AddNsHighlight {
+        buf: DocumentId,
+        ns: String,
+        range: HighlightRange,
+        hl: HighlightSpec,
+        priority: i32,
+    },
+    ClearNsHighlights {
+        buf: Option<DocumentId>,
+        ns: String,
+    },
     /// Set a per-document option. Values are strings such as `"4"` or `"true"`.
-    SetOption { name: String, value: String },
+    SetOption {
+        name: String,
+        value: String,
+    },
     /// Trigger a save of the active buffer to disk.
     SaveBuffer,
     /// Open a plugin-owned floating window.
@@ -265,7 +275,10 @@ pub(crate) enum PluginMutation {
     /// Set the line ending for the active document ("lf" or "crlf").
     SetLineEnding(String),
     /// Remove a key binding for the selected mode and key sequence.
-    UnmapKey { mode: String, keys: String },
+    UnmapKey {
+        mode: String,
+        keys: String,
+    },
     /// Move the cursor to `row` (1-indexed) and center the viewport on it.
     CenterOnLine(usize),
     /// Set the `CursorHold` idle delay in milliseconds.
@@ -273,9 +286,14 @@ pub(crate) enum PluginMutation {
     /// Switch the active buffer to the given document ID.
     SwitchToBuffer(DocumentId),
     /// Open (or switch to) a file by path. `force` discards unsaved changes.
-    OpenFile { path: String, force: bool },
+    OpenFile {
+        path: String,
+        force: bool,
+    },
     /// Close the current buffer. `force` discards unsaved changes.
-    CloseBuffer { force: bool },
+    CloseBuffer {
+        force: bool,
+    },
     /// Move the focused window in the given direction.
     MoveWindow {
         direction: crate::split::navigation::Direction,
@@ -316,7 +334,9 @@ pub(crate) enum PluginMutation {
     /// Request hover documentation at the current cursor position.
     LspHover,
     /// Request a rename of the symbol at the current cursor position (direct, no dialog).
-    LspRename { new_name: String },
+    LspRename {
+        new_name: String,
+    },
     /// Open the rename dialog at the current cursor position.
     LspRenameDialog,
     /// Request document formatting.
@@ -352,7 +372,9 @@ pub(crate) enum PluginMutation {
     /// Remove an annotation from the active document by id.
     RemoveAnnotation(u64),
     /// Remove every annotation in the active document whose kind starts with this prefix.
-    ClearAnnotations { kind_prefix: String },
+    ClearAnnotations {
+        kind_prefix: String,
+    },
     /// Register a handler for an annotation (kind, verb). With `command` set, the
     /// verb runs that ex command; otherwise it routes back to the Lua host.
     RegisterAnnotationAction {
@@ -367,9 +389,14 @@ pub(crate) enum PluginMutation {
         description: Option<String>,
     },
     /// Create and activate an in-memory buffer. Fires `BufOpen` after creation.
-    CreateScratchBuf { name: String, lines: Vec<String> },
+    CreateScratchBuf {
+        name: String,
+        lines: Vec<String>,
+    },
     /// Reload active buffer content from disk. Force discards unsaved changes.
-    ReloadBuffer { force: bool },
+    ReloadBuffer {
+        force: bool,
+    },
     /// Register a custom buffer kind from a plugin.
     RegisterBufferKind {
         name: String,
@@ -396,13 +423,30 @@ pub(crate) enum PluginMutation {
         action: String,
     },
     /// Unmap a key binding scoped to a specific buffer kind.
-    UnmapKeyKind { kind: String, keys: String },
+    UnmapKeyKind {
+        kind: String,
+        keys: String,
+    },
     /// Set a buffer-local variable. `buf_id == None` targets the active document.
     SetBufferVar {
         buf_id: Option<DocumentId>,
         key: String,
         value: crate::annotations::value::Value,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum HighlightRange {
+    Points {
+        start: (usize, usize),
+        end: (usize, usize),
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum HighlightSpec {
+    Group(String),
+    Style(crate::annotations::presentation::StyleOverride),
 }
 
 /// Where a plugin-authored annotation is anchored.

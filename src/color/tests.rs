@@ -1,4 +1,4 @@
-use super::{contrasting_color, Color, ColorStyle};
+use super::{Color, ColorStyle};
 
 #[test]
 fn test_color_style() {
@@ -20,17 +20,18 @@ fn test_color_style() {
 }
 
 #[test]
-fn test_contrasting_color_grayscale_ramp() {
-    assert_eq!(contrasting_color(Color::Ansi256(232)), Color::White);
-    assert_eq!(contrasting_color(Color::Ansi256(255)), Color::Black);
-}
-
-#[test]
-fn test_contrasting_color_cube_near_white_gets_black() {
-    assert_eq!(contrasting_color(Color::Ansi256(231)), Color::Black);
-}
-
-#[test]
-fn test_contrasting_color_cube_black_gets_white() {
-    assert_eq!(contrasting_color(Color::Ansi256(16)), Color::White);
+fn color_names_parse_back_to_the_same_color() {
+    for color in [
+        Color::Reset,
+        Color::DarkYellow,
+        Color::Grey,
+        Color::Ansi256(208),
+        Color::Rgb {
+            r: 1,
+            g: 171,
+            b: 255,
+        },
+    ] {
+        assert_eq!(Color::parse(&color.name()), Some(color), "{}", color.name());
+    }
 }

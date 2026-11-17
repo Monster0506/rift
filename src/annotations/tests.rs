@@ -1,5 +1,5 @@
 use super::*;
-use crate::annotations::presentation::Placement;
+use crate::annotations::presentation::{Placement, StyleOverride};
 
 impl AnnotationStore {
     /// Whether the interval tree index is currently stale. Test-only.

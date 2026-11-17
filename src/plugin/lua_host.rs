@@ -725,6 +725,7 @@ impl LuaHost {
         Self::register_buffer_kind(&lua, &api, &shared)?;
         Self::register_buffer_create(&lua, &api, &shared)?;
         Self::register_buffer_vars(&lua, &api, &shared)?;
+        highlight_api::register(&lua, &api, &shared)?;
         Self::finish(lua, api, shared, hook_deadline, shell_result_rx, generation)
     }
 
@@ -1490,42 +1491,6 @@ impl LuaHost {
                 Ok(())
             })?;
             api.set("replace_lines", f)?;
-        }
-
-        // rift.add_highlight(start_line, start_col, end_line, end_col, color)
-        // lines are 1-indexed, columns 0-indexed; color is named or hex ("#rrggbb")
-        {
-            let sh = Rc::clone(shared);
-            let f = lua.create_function(
-                move |_, (sl, sc, el, ec, color): (i64, i64, i64, i64, String)| {
-                    if sl >= 1 && el >= sl {
-                        let mut s = sh.borrow_mut();
-                        let slot = s.current_slot;
-                        s.mutations.push(PluginMutation::AddHighlight {
-                            slot,
-                            start_line: lua_index(sl),
-                            start_col: lua_index(sc),
-                            end_line: lua_index(el),
-                            end_col: lua_index(ec),
-                            color,
-                        });
-                    }
-                    Ok(())
-                },
-            )?;
-            api.set("add_highlight", f)?;
-        }
-
-        // rift.clear_highlights() - remove this handler's highlights from the active buffer
-        {
-            let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| {
-                let mut s = sh.borrow_mut();
-                let slot = s.current_slot;
-                s.mutations.push(PluginMutation::ClearHighlights { slot });
-                Ok(())
-            })?;
-            api.set("clear_highlights", f)?;
         }
 
         // rift.set_cursor_hold_delay(ms) - set the CursorHold idle threshold in milliseconds
@@ -3185,6 +3150,9 @@ impl std::fmt::Debug for LuaHost {
         f.debug_struct("LuaHost").finish_non_exhaustive()
     }
 }
+
+#[path = "lua_highlight.rs"]
+mod highlight_api;
 
 #[cfg(test)]
 #[path = "lua_host_tests.rs"]

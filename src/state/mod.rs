@@ -129,6 +129,7 @@ pub(crate) struct UserSettings {
     pub(crate) tab_width: usize,
     pub(crate) editing: EditingSettings,
     pub(crate) syntax_colors: Option<crate::color::theme::SyntaxColors>,
+    pub(crate) highlight_overrides: std::collections::BTreeMap<String, crate::layer::CellStyle>,
     pub(crate) soft_wrap: bool,
     pub(crate) wrap_width: Option<usize>,
     pub(crate) clipboard_ring_size: usize,
@@ -155,6 +156,7 @@ impl UserSettings {
             tab_width: 4,
             editing: EditingSettings::default(),
             syntax_colors: None,
+            highlight_overrides: std::collections::BTreeMap::new(),
             soft_wrap: true,
             wrap_width: None,
             clipboard_ring_size: crate::clipboard::DEFAULT_RING_CAPACITY,
@@ -173,6 +175,41 @@ impl UserSettings {
 
     fn apply_theme(&mut self, theme: &Theme) {
         theme.apply_to_settings(self);
+    }
+
+    pub(crate) fn set_highlight_override(
+        &mut self,
+        name: &str,
+        style: Option<crate::layer::CellStyle>,
+    ) {
+        if let Some(style) = style {
+            self.highlight_overrides.insert(name.to_string(), style);
+            self.syntax_colors
+                .get_or_insert_with(crate::color::theme::SyntaxColors::default)
+                .set_style(name, style);
+            return;
+        }
+        if self.highlight_overrides.remove(name).is_none() {
+            return;
+        }
+        let base = self
+            .theme
+            .as_deref()
+            .and_then(Theme::by_name)
+            .and_then(|theme| theme.syntax_style(name));
+        if let Some(colors) = &mut self.syntax_colors {
+            match base {
+                Some(style) => colors.set_style(name, style),
+                None => colors.remove_style(name),
+            }
+        }
+    }
+
+    pub(crate) fn clear_highlight_overrides(&mut self) {
+        let names: Vec<String> = self.highlight_overrides.keys().cloned().collect();
+        for name in names {
+            self.set_highlight_override(&name, None);
+        }
     }
 }
 

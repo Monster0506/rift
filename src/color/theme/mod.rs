@@ -30,6 +30,14 @@ impl ThemeHandler for DefaultThemeHandler {
         settings.editor_fg = Some(theme.foreground);
         settings.syntax_colors.clone_from(&theme.syntax);
         settings.cursor_color = Some(theme.cursor_color);
+        if !settings.highlight_overrides.is_empty() {
+            let colors = settings
+                .syntax_colors
+                .get_or_insert_with(SyntaxColors::default);
+            for (name, style) in &settings.highlight_overrides {
+                colors.set_style(name, *style);
+            }
+        }
     }
 }
 
@@ -652,6 +660,11 @@ impl Theme {
     /// This is the main entry point for applying themes
     pub(crate) fn apply_to_settings(&self, settings: &mut UserSettings) {
         THEME_HANDLER.apply_theme(self, settings);
+    }
+
+    #[must_use]
+    pub(crate) fn syntax_style(&self, name: &str) -> Option<CellStyle> {
+        self.syntax.as_ref().and_then(|s| s.exact_style(name))
     }
 }
 

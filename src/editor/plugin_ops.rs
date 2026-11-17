@@ -1,6 +1,5 @@
 use super::Editor;
-use crate::color::Color;
-use crate::plugin::{PluginGeneration, PluginMutation};
+use crate::plugin::{HighlightRange, HighlightSpec, PluginGeneration, PluginMutation};
 use crate::term::TerminalBackend;
 
 struct LuaBufState {
@@ -367,7 +366,10 @@ impl<T: TerminalBackend> Editor<T> {
             | PluginMutation::RegisterKindDefaults { .. } => {
                 self.apply_annotation_mutation(mutation);
             }
-            PluginMutation::AddHighlight { .. } | PluginMutation::ClearHighlights { .. } => {
+            PluginMutation::SetHighlightGroup { .. }
+            | PluginMutation::ResetHighlightGroups
+            | PluginMutation::AddNsHighlight { .. }
+            | PluginMutation::ClearNsHighlights { .. } => {
                 self.apply_highlight_mutation(mutation);
             }
         }
@@ -1161,37 +1163,46 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn apply_highlight_mutation(&mut self, mutation: PluginMutation) {
         match mutation {
-            PluginMutation::AddHighlight {
-                slot,
-                start_line,
-                start_col,
-                end_line,
-                end_col,
-                color,
-            } => {
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    let parsed_color = plugin_color(&color);
-                    let sl = start_line.saturating_sub(1);
-                    let el = end_line.saturating_sub(1);
-                    let line_count = doc.buffer.line_index.line_count();
-                    if sl < line_count {
-                        let el = el.min(line_count.saturating_sub(1));
-                        let start_char = doc.buffer.line_index.get_line_start(sl) + start_col;
-                        let end_char = (doc.buffer.line_index.get_line_start(el) + end_col)
-                            .min(doc.buffer.len());
-                        let start = doc.buffer.char_to_byte(start_char);
-                        let end = doc.buffer.char_to_byte(end_char);
-                        if start < end {
-                            doc.annotations
-                                .add_plugin_highlight(slot, start, end, parsed_color);
-                        }
-                    }
-                }
+            PluginMutation::SetHighlightGroup { name, style } => {
+                self.state.settings.set_highlight_override(&name, style);
             }
-            PluginMutation::ClearHighlights { slot } => {
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    let slot = (slot != 0).then_some(slot);
-                    doc.annotations.clear_plugin_highlights(slot);
+            PluginMutation::ResetHighlightGroups => self.state.settings.clear_highlight_overrides(),
+            PluginMutation::AddNsHighlight {
+                buf,
+                ns,
+                range,
+                hl,
+                priority,
+            } => {
+                use crate::annotations::presentation::{FaceRef, Presentation};
+                let Some(doc) = self.document_manager.get_document_mut(buf) else {
+                    return;
+                };
+                let bytes = highlight_bytes(&doc.buffer, &range);
+                if bytes.is_empty() {
+                    return;
+                }
+                let presentation = match hl {
+                    HighlightSpec::Group(group) => Presentation::with_face(FaceRef::new(group)),
+                    HighlightSpec::Style(style) => Presentation::with_style(style),
+                }
+                .with_priority(priority);
+                doc.annotations
+                    .add_ns_highlight(&ns, bytes.start, bytes.end, presentation);
+            }
+            PluginMutation::ClearNsHighlights { buf, ns } => {
+                let ids: Vec<crate::document::DocumentId> = match buf {
+                    Some(buf) => vec![buf],
+                    None => self
+                        .document_manager
+                        .documents_iter()
+                        .map(|d| d.id)
+                        .collect(),
+                };
+                for id in ids {
+                    if let Some(doc) = self.document_manager.get_document_mut(id) {
+                        doc.annotations.clear_ns_highlights(&ns);
+                    }
                 }
             }
             _ => self.report_misrouted(),
@@ -1199,37 +1210,18 @@ impl<T: TerminalBackend> Editor<T> {
     }
 }
 
-fn plugin_color(s: &str) -> Color {
-    match s.to_lowercase().as_str() {
-        "red" => Color::Red,
-        "darkred" => Color::DarkRed,
-        "green" => Color::Green,
-        "darkgreen" => Color::DarkGreen,
-        "blue" => Color::Blue,
-        "darkblue" => Color::DarkBlue,
-        "yellow" => Color::Yellow,
-        "darkyellow" => Color::DarkYellow,
-        "cyan" => Color::Cyan,
-        "darkcyan" => Color::DarkCyan,
-        "magenta" => Color::Magenta,
-        "darkmagenta" => Color::DarkMagenta,
-        "white" => Color::White,
-        "black" => Color::Black,
-        "grey" | "gray" => Color::Grey,
-        "darkgrey" | "darkgray" => Color::DarkGrey,
-        s if s.starts_with('#') && s.len() == 7 => {
-            let channel = |range: std::ops::Range<usize>| {
-                s.get(range)
-                    .and_then(|hex| u8::from_str_radix(hex, 16).ok())
-                    .unwrap_or(255)
+fn highlight_bytes(
+    buffer: &crate::buffer::TextBuffer,
+    range: &HighlightRange,
+) -> std::ops::Range<usize> {
+    match range {
+        HighlightRange::Points { start, end } => {
+            let at = |(row, col): (usize, usize)| {
+                let line = buffer.line_byte_range(row);
+                line.start + col.min(line.len())
             };
-            Color::Rgb {
-                r: channel(1..3),
-                g: channel(3..5),
-                b: channel(5..7),
-            }
+            at(*start)..at(*end)
         }
-        _ => Color::Yellow,
     }
 }
 

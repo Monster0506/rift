@@ -64,54 +64,30 @@ impl Color {
             _ => return None,
         })
     }
-}
 
-#[must_use]
-pub(crate) fn contrasting_color(bg: Color) -> Color {
-    match bg {
-        Color::Black
-        | Color::DarkGrey
-        | Color::Blue
-        | Color::DarkBlue
-        | Color::Red
-        | Color::DarkRed
-        | Color::Magenta
-        | Color::DarkMagenta
-        | Color::DarkGreen
-        | Color::DarkCyan
-        | Color::DarkYellow => Color::White,
-        Color::White | Color::Grey | Color::Yellow | Color::Green | Color::Cyan => Color::Black,
-        Color::Rgb { r, g, b } => {
-            let lum = 0.114f32.mul_add(
-                f32::from(b),
-                0.299f32.mul_add(f32::from(r), 0.587 * f32::from(g)),
-            );
-            if lum > 128.0 {
-                Color::Black
-            } else {
-                Color::White
-            }
+    #[must_use]
+    pub(crate) fn name(self) -> String {
+        match self {
+            Self::Reset => "reset".into(),
+            Self::Black => "black".into(),
+            Self::DarkGrey => "darkgrey".into(),
+            Self::Red => "red".into(),
+            Self::DarkRed => "darkred".into(),
+            Self::Green => "green".into(),
+            Self::DarkGreen => "darkgreen".into(),
+            Self::Yellow => "yellow".into(),
+            Self::DarkYellow => "darkyellow".into(),
+            Self::Blue => "blue".into(),
+            Self::DarkBlue => "darkblue".into(),
+            Self::Magenta => "magenta".into(),
+            Self::DarkMagenta => "darkmagenta".into(),
+            Self::Cyan => "cyan".into(),
+            Self::DarkCyan => "darkcyan".into(),
+            Self::White => "white".into(),
+            Self::Grey => "grey".into(),
+            Self::Ansi256(n) => format!("ansi{n}"),
+            Self::Rgb { r, g, b } => format!("#{r:02x}{g:02x}{b:02x}"),
         }
-        Color::Ansi256(n) => {
-            let (r, g, b) = if n >= 232 {
-                let step = (n - 232) * 10 + 8;
-                (step, step, step)
-            } else {
-                let i = n - 16;
-                let ramp = |v: u8| if v == 0 { 0 } else { 55 + 40 * v };
-                (ramp(i / 36), ramp((i / 6) % 6), ramp(i % 6))
-            };
-            let lum = 0.114f32.mul_add(
-                f32::from(b),
-                0.299f32.mul_add(f32::from(r), 0.587 * f32::from(g)),
-            );
-            if lum > 128.0 {
-                Color::Black
-            } else {
-                Color::White
-            }
-        }
-        Color::Reset => Color::Reset,
     }
 }
 

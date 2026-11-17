@@ -356,6 +356,18 @@ impl TextBuffer {
     }
 
     #[must_use]
+    pub(crate) fn line_byte_range(&self, line_idx: usize) -> std::ops::Range<usize> {
+        let (Some(start), Some(end)) = (
+            self.line_index.get_start(line_idx),
+            self.line_index.get_end(line_idx, self.len()),
+        ) else {
+            let len = self.byte_len();
+            return len..len;
+        };
+        self.char_to_byte(start)..self.char_to_byte(end)
+    }
+
+    #[must_use]
     pub fn get_line_bytes(&self, line_idx: usize) -> Vec<u8> {
         let Some(start) = self.line_index.get_start(line_idx) else {
             return Vec::new();
