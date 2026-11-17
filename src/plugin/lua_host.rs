@@ -185,9 +185,6 @@ struct LuaSharedState {
     file_path: Option<String>,
     /// Snapshot of all open buffers with rich metadata.
     buf_list: Vec<BufEntry>,
-    /// Slot ID of the handler currently dispatching, so `clear_highlights()`
-    /// only affects that handler's own highlights.
-    current_slot: u32,
     /// Counter used to assign unique slot IDs when `rift.on()` is called.
     next_slot: u32,
     /// Current terminal dimensions (rows, cols).
@@ -276,7 +273,6 @@ impl LuaSharedState {
             filetype: None,
             file_path: None,
             buf_list: Vec::new(),
-            current_slot: 0,
             next_slot: 1,
             window_size: (0, 0),
             history: HistoryAvailability::default(),
@@ -724,7 +720,7 @@ impl LuaHost {
         Self::register_annotations(&lua, &api, &shared)?;
         Self::register_cursor_lines(&lua, &api, &shared)?;
         Self::register_commands(&lua, &api, &shared)?;
-        Self::register_emit(&lua, &api, &shared)?;
+        Self::register_emit(&lua, &api)?;
         Self::register_spawn(&lua, &api, &shell_result_tx)?;
         Self::register_edits(&lua, &api, &shared)?;
         Self::register_highlights(&lua, &api, &shared)?;
@@ -1311,15 +1307,10 @@ impl LuaHost {
         Ok(())
     }
 
-    fn register_emit(
-        lua: &Lua,
-        api: &LuaTable,
-        shared: &Rc<RefCell<LuaSharedState>>,
-    ) -> LuaResult<()> {
+    fn register_emit(lua: &Lua, api: &LuaTable) -> LuaResult<()> {
         // rift.emit(event_name [, payload])  - fire a UserEvent to all registered handlers
         // Optional payload table keys are merged into the event table alongside `name`.
         {
-            let sh = Rc::clone(shared);
             let f =
                 lua.create_function(move |lua, (name, payload): (String, Option<LuaTable>)| {
                     let handlers: LuaTable = lua.globals().get("_rift_handlers")?;
@@ -1340,18 +1331,7 @@ impl LuaHost {
                             .collect::<LuaResult<_>>()?;
                         for entry in snapshot {
                             let f: LuaFunction = entry.get("fn")?;
-                            let slot_id: u32 = entry.get("slot").unwrap_or(0);
-                            // Tag this handler's slot, then restore the caller's slot
-                            // afterward so reentrant emit() doesn't corrupt ownership.
-                            let prev_slot = {
-                                let mut s = sh.borrow_mut();
-                                let prev = s.current_slot;
-                                s.current_slot = slot_id;
-                                prev
-                            };
-                            let result = f.call::<()>(ev.clone());
-                            sh.borrow_mut().current_slot = prev_slot;
-                            result?;
+                            f.call::<()>(ev.clone())?;
                         }
                     }
                     Ok(())
@@ -2788,7 +2768,6 @@ impl LuaHost {
         for entry in snapshot {
             match entry {
                 Ok(entry) => {
-                    let slot_id: u32 = entry.get("slot").unwrap_or(0);
                     let f: LuaFunction = match entry.get("fn") {
                         Ok(f) => f,
                         Err(e) => {
@@ -2796,16 +2775,7 @@ impl LuaHost {
                             continue;
                         }
                     };
-                    // Tag current_slot for this handler's mutations, then restore the
-                    // prior value so reentrant dispatch (e.g. rift.emit) doesn't corrupt it.
-                    let prev_slot = {
-                        let mut s = self.shared.borrow_mut();
-                        let prev = s.current_slot;
-                        s.current_slot = slot_id;
-                        prev
-                    };
                     let call_result = self.call_budgeted(|| f.call::<()>(ev_table.clone()));
-                    self.shared.borrow_mut().current_slot = prev_slot;
                     if let Err(e) = call_result {
                         errors.push(format!("[lua:{}] {}", event.name(), e));
                     }
