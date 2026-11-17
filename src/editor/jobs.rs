@@ -128,6 +128,66 @@ impl<T: TerminalBackend> Editor<T> {
         attach_syntax(&mut self.document_manager, &self.language_loader, doc_id);
     }
 
+    #[cfg(feature = "treesitter")]
+    pub(super) fn start_syntax(&mut self, doc_id: DocumentId, lang: Option<&str>) {
+        self.cancel_pending_syntax_reparse(doc_id);
+        match lang {
+            Some(lang) => {
+                let Ok(loaded) = self.language_loader.load_language(lang) else {
+                    self.state.notify(
+                        crate::notification::NotificationType::Error,
+                        format!("treesitter: unknown language '{lang}'"),
+                    );
+                    return;
+                };
+                let syntax = syntax_for(&self.language_loader, loaded);
+                if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                    doc.set_syntax(syntax);
+                }
+            }
+            None => attach_syntax(&mut self.document_manager, &self.language_loader, doc_id),
+        }
+        if self
+            .document_manager
+            .get_document(doc_id)
+            .is_some_and(|d| d.syntax.is_some())
+        {
+            self.do_incremental_syntax_parse_for(doc_id);
+        } else {
+            self.state.notify(
+                crate::notification::NotificationType::Warning,
+                "treesitter: no grammar matches this buffer".to_string(),
+            );
+        }
+    }
+
+    #[cfg(feature = "treesitter")]
+    pub(super) fn stop_syntax(&mut self, doc_id: DocumentId) {
+        self.cancel_pending_syntax_reparse(doc_id);
+        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+            if doc.syntax.take().is_some() {
+                self.pending_syntax_updated.insert(doc_id);
+            }
+        }
+    }
+
+    #[cfg(feature = "treesitter")]
+    pub(super) fn rebuild_syntax_using(&mut self, lang: &str) {
+        let targets: Vec<(DocumentId, String)> = self
+            .document_manager
+            .documents_iter()
+            .filter_map(|doc| {
+                let syntax = doc.syntax.as_ref()?;
+                syntax
+                    .uses_language(lang)
+                    .then(|| (doc.id, syntax.language_name.clone()))
+            })
+            .collect();
+        for (doc_id, host) in targets {
+            self.start_syntax(doc_id, Some(&host));
+        }
+    }
+
     fn on_file_load_failed(&mut self, job_id: usize) {
         let Some(doc_id) = self.file_load_jobs.remove(&job_id) else {
             return;

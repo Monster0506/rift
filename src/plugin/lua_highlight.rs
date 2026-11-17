@@ -187,6 +187,12 @@ fn style_table(lua: &Lua, style: CellStyle) -> LuaResult<LuaTable> {
 }
 
 fn parse_range(value: &LuaValue) -> LuaResult<(Option<u64>, HighlightRange)> {
+    #[cfg(feature = "treesitter")]
+    if let LuaValue::UserData(ud) = value {
+        if let Some((buf, bytes)) = super::treesitter_api::node_extent(ud) {
+            return Ok((buf, HighlightRange::Bytes(bytes)));
+        }
+    }
     let LuaValue::Table(t) = value else {
         return Err(LuaError::RuntimeError(format!(
             "highlight range must be a node or {{ start_row, start_col, end_row, end_col }}, got {}",

@@ -303,16 +303,24 @@ pub(crate) enum PluginMutation {
     /// Focus the previously focused window.
     FocusPreviousWindow,
     /// Register a file extension -> language name mapping.
-    RegisterFiletype { ext: String, lang_name: String },
-    /// Register (or override) the highlights query for a language.
-    RegisterLanguageQuery {
+    RegisterFiletype {
+        ext: String,
         lang_name: String,
-        query_src: String,
     },
-    /// Register an injections query for a language (enables embedded-language highlighting).
-    RegisterInjectionsQuery {
-        lang_name: String,
-        query_src: String,
+    #[cfg(feature = "treesitter")]
+    SetSyntaxQuery {
+        lang: String,
+        kind: crate::syntax::loader::QueryKind,
+        source: Option<String>,
+    },
+    #[cfg(feature = "treesitter")]
+    StartSyntax {
+        buf: DocumentId,
+        lang: Option<String>,
+    },
+    #[cfg(feature = "treesitter")]
+    StopSyntax {
+        buf: DocumentId,
     },
     /// Load a tree-sitter grammar from a compiled shared library at runtime.
     /// `so_path` is the `.so`/`.dll`/`.dylib` path; `fn_name` is the exported C symbol (e.g. `"tree_sitter_toml"`).
@@ -437,6 +445,8 @@ pub(crate) enum PluginMutation {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum HighlightRange {
+    #[cfg(feature = "treesitter")]
+    Bytes(std::ops::Range<usize>),
     Points {
         start: (usize, usize),
         end: (usize, usize),
@@ -592,6 +602,8 @@ pub(crate) struct PluginHost {
     /// `(doc_id, annotations.revision)` last synced to Lua, so an unchanged
     /// annotation set isn't re-snapshotted every sync.
     last_synced_annotations: std::cell::Cell<Option<(u64, u64)>>,
+    #[cfg(feature = "treesitter")]
+    synced_syntax: std::cell::RefCell<std::collections::HashMap<u64, (u64, usize)>>,
     /// Registered plugin names mapped to stable `PluginId`.
     #[cfg(test)]
     plugin_names: std::collections::HashMap<String, PluginId>,
@@ -624,6 +636,8 @@ impl PluginHost {
             lua_used: std::cell::Cell::new(false),
             last_synced_buf: std::cell::Cell::new(None),
             last_synced_annotations: std::cell::Cell::new(None),
+            #[cfg(feature = "treesitter")]
+            synced_syntax: std::cell::RefCell::new(std::collections::HashMap::new()),
             #[cfg(test)]
             plugin_names: std::collections::HashMap::new(),
             #[cfg(test)]
@@ -674,6 +688,21 @@ impl PluginHost {
     /// Forget the last-synced annotations, e.g. when there's no active document.
     pub(crate) fn clear_synced_annotations(&self) {
         self.last_synced_annotations.set(None);
+    }
+
+    #[cfg(feature = "treesitter")]
+    pub(crate) fn syntax_needs_sync(&self, doc_id: u64, revision: u64, root_id: usize) -> bool {
+        self.synced_syntax
+            .borrow_mut()
+            .insert(doc_id, (revision, root_id))
+            != Some((revision, root_id))
+    }
+
+    #[cfg(feature = "treesitter")]
+    pub(crate) fn retain_synced_syntax(&self, live: &[u64]) {
+        self.synced_syntax
+            .borrow_mut()
+            .retain(|doc_id, _| live.contains(doc_id));
     }
 
     #[cfg(test)]
@@ -964,7 +993,10 @@ impl PluginHost {
 
     /// Initialize the Lua VM. Must be called once at startup or reload.
     /// Returns any error string if Lua initialization fails.
-    pub(crate) fn init_lua(&mut self) -> Option<String> {
+    pub(crate) fn init_lua(
+        &mut self,
+        language_loader: std::sync::Arc<crate::syntax::loader::LanguageLoader>,
+    ) -> Option<String> {
         if let Some(old_gen) = self.current_lua_generation.take() {
             self.retire_generation(old_gen);
         }
@@ -974,11 +1006,13 @@ impl PluginHost {
         self.lua.take();
         self.clear_synced_buf();
         self.clear_synced_annotations();
+        #[cfg(feature = "treesitter")]
+        self.synced_syntax.borrow_mut().clear();
 
         let new_gen = self.new_generation(self.lua_plugin_id);
         self.current_lua_generation = Some(new_gen);
 
-        match lua_host::LuaHost::with_generation(new_gen) {
+        match lua_host::LuaHost::with_generation(new_gen, language_loader) {
             Ok(host) => {
                 self.lua = Some(host);
                 None

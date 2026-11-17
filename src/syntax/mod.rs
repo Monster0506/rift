@@ -4,6 +4,8 @@ pub(crate) mod loader;
 #[cfg(feature = "treesitter")]
 mod imp;
 #[cfg(feature = "treesitter")]
+pub(crate) mod snapshot;
+#[cfg(feature = "treesitter")]
 mod source;
 #[cfg(feature = "treesitter")]
 pub(crate) use imp::{build_syntax, parse_buffer, Syntax};

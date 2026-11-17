@@ -646,6 +646,49 @@ impl Syntax {
             &[]
         }
     }
+
+    #[must_use]
+    pub(crate) fn uses_language(&self, lang_name: &str) -> bool {
+        self.language_name == lang_name
+            || self
+                .injection_layers
+                .iter()
+                .any(|l| l.language_name == lang_name)
+            || self.dynamic_injection_layers.contains_key(lang_name)
+    }
+
+    #[must_use]
+    pub(crate) fn snapshot(
+        &self,
+        buf: u64,
+        buffer: &TextBuffer,
+    ) -> Option<super::snapshot::BufferSyntax> {
+        use super::snapshot::{BufferSyntax, SnapshotText, SyntaxSnapshot};
+        use std::rc::Rc;
+
+        let tree = self.tree.clone()?;
+        let text = Rc::new(SnapshotText::Buffer(buffer.clone()));
+        let host = Rc::new(SyntaxSnapshot::new(
+            Some(buf),
+            self.language_name.clone(),
+            tree,
+            Rc::clone(&text),
+        ));
+        let injected = self
+            .injection_layers
+            .iter()
+            .chain(self.dynamic_injection_layers.values())
+            .filter_map(|layer| {
+                Some(Rc::new(SyntaxSnapshot::new(
+                    Some(buf),
+                    layer.language_name.clone(),
+                    layer.tree.clone()?,
+                    Rc::clone(&text),
+                )))
+            })
+            .collect();
+        Some(BufferSyntax { host, injected })
+    }
 }
 
 /// `set_included_ranges` requires sorted, non-overlapping ranges.

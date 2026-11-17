@@ -19,8 +19,9 @@ impl LuaHost {
 
     /// # Errors
     /// Never fails; the stub holds no state.
-    pub(super) const fn with_generation(
+    pub(super) fn with_generation(
         _generation: crate::plugin::PluginGeneration,
+        _language_loader: std::sync::Arc<crate::syntax::loader::LanguageLoader>,
     ) -> Result<Self, String> {
         Ok(Self)
     }

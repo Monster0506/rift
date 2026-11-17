@@ -35,8 +35,10 @@ struct DynamicRegistry {
     /// File extension -> language name overrides (e.g. "svelte" -> "svelte").
     filetype_map: HashMap<String, String>,
     /// Language name -> highlights query source override.
+    #[cfg(feature = "treesitter")]
     highlights_overrides: HashMap<String, String>,
     /// Language name -> injections query source.
+    #[cfg(feature = "treesitter")]
     injections_queries: HashMap<String, String>,
 }
 
@@ -111,22 +113,25 @@ impl LanguageLoader {
         Some(name.to_string())
     }
 
-    pub(crate) fn register_language_query(&self, lang_name: &str, query_src: &str) {
+    #[cfg(feature = "treesitter")]
+    pub(crate) fn set_query_override(
+        &self,
+        lang_name: &str,
+        kind: QueryKind,
+        source: Option<String>,
+    ) {
         let mut reg = self
             .dynamic
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        reg.highlights_overrides
-            .insert(lang_name.to_string(), query_src.to_string());
-    }
-
-    pub(crate) fn register_injections_query(&self, lang_name: &str, query_src: &str) {
-        let mut reg = self
-            .dynamic
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        reg.injections_queries
-            .insert(lang_name.to_string(), query_src.to_string());
+        let map = match kind {
+            QueryKind::Highlights => &mut reg.highlights_overrides,
+            QueryKind::Injections => &mut reg.injections_queries,
+        };
+        match source {
+            Some(source) => map.insert(lang_name.to_string(), source),
+            None => map.remove(lang_name),
+        };
     }
 
     /// Load a grammar shared object and register it under `lang_name`.
@@ -357,7 +362,7 @@ impl LanguageLoader {
     /// Load an injections query for a language.
     /// Checks the dynamic plugin registry first, then bundled queries.
     #[cfg(feature = "treesitter")]
-    pub(super) fn load_injections_query(&self, lang_name: &str) -> Option<String> {
+    pub(crate) fn load_injections_query(&self, lang_name: &str) -> Option<String> {
         // Plugin-registered injections take priority.
         {
             let reg = self
@@ -372,7 +377,75 @@ impl LanguageLoader {
         // Bundled injections.
         get_bundled_injections_query(lang_name).map(str::to_string)
     }
+
+    #[cfg(feature = "treesitter")]
+    pub(crate) fn query_source(&self, lang_name: &str, kind: QueryKind) -> Option<String> {
+        match kind {
+            QueryKind::Highlights => self.load_query(lang_name, "highlights").ok(),
+            QueryKind::Injections => self.load_injections_query(lang_name),
+        }
+    }
+
+    #[cfg(feature = "treesitter")]
+    pub(crate) fn available_languages(&self) -> Vec<String> {
+        let mut names: Vec<String> = BUNDLED_LANGUAGES.iter().map(|s| (*s).to_string()).collect();
+        names.extend(
+            self.dynamic_languages
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .keys()
+                .cloned(),
+        );
+        names.sort();
+        names.dedup();
+        names
+    }
 }
+
+#[cfg(feature = "treesitter")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum QueryKind {
+    Highlights,
+    Injections,
+}
+
+#[cfg(feature = "treesitter")]
+impl QueryKind {
+    #[must_use]
+    pub(crate) fn parse(name: &str) -> Option<Self> {
+        match name {
+            "highlights" => Some(Self::Highlights),
+            "injections" => Some(Self::Injections),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(feature = "treesitter")]
+pub(crate) const BUNDLED_LANGUAGES: &[&str] = &[
+    "bash",
+    "c",
+    "c_sharp",
+    "cpp",
+    "css",
+    "go",
+    "html",
+    "java",
+    "javascript",
+    "json",
+    "lua",
+    "markdown",
+    "php",
+    "python",
+    "ruby",
+    "rust",
+    "sql",
+    "svelte",
+    "tsx",
+    "typescript",
+    "yaml",
+    "zig",
+];
 
 // Bundled grammar tables
 

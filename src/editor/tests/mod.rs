@@ -20,6 +20,8 @@ mod normal_cursor_tests;
 mod operator_tests;
 mod plugin_highlight_tests;
 mod plugin_settings_tests;
+#[cfg(feature = "treesitter")]
+mod plugin_treesitter_tests;
 mod region_bank_ops_tests;
 mod region_bank_selection_tests;
 mod register_kind_tests;

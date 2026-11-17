@@ -223,6 +223,15 @@ struct LuaSharedState {
     >,
     doc_options: crate::document::definitions::DocumentOptions,
     user_settings: crate::state::UserSettings,
+    #[cfg(feature = "treesitter")]
+    language_loader: Arc<crate::syntax::loader::LanguageLoader>,
+    #[cfg(feature = "treesitter")]
+    syntax: std::collections::HashMap<u64, crate::syntax::snapshot::BufferSyntax>,
+    #[cfg(feature = "treesitter")]
+    query_cache: std::collections::HashMap<
+        (String, crate::syntax::loader::QueryKind),
+        (String, Rc<tree_sitter::Query>),
+    >,
 }
 
 impl LuaSharedState {
@@ -247,10 +256,10 @@ impl LuaSharedState {
     fn line_count(&self) -> usize {
         self.buf_source.as_ref().map_or(0, |s| s.line_count)
     }
-}
 
-impl Default for LuaSharedState {
-    fn default() -> Self {
+    fn new(language_loader: Arc<crate::syntax::loader::LanguageLoader>) -> Self {
+        #[cfg(not(feature = "treesitter"))]
+        drop(language_loader);
         Self {
             mutations: Vec::new(),
             annotations: Arc::new(vec![]),
@@ -285,6 +294,12 @@ impl Default for LuaSharedState {
             buffer_vars: std::collections::HashMap::new(),
             doc_options: crate::document::definitions::DocumentOptions::default(),
             user_settings: crate::state::UserSettings::new(),
+            #[cfg(feature = "treesitter")]
+            language_loader,
+            #[cfg(feature = "treesitter")]
+            syntax: std::collections::HashMap::new(),
+            #[cfg(feature = "treesitter")]
+            query_cache: std::collections::HashMap::new(),
         }
     }
 }
@@ -625,21 +640,25 @@ impl LuaHost {
     fn new() -> LuaResult<Self> {
         let plugin_id = crate::plugin::PluginId::allocate();
         let gen = crate::plugin::PluginGeneration::allocate(plugin_id);
-        Self::with_generation(gen)
+        Self::with_generation(
+            gen,
+            Arc::new(crate::syntax::loader::LanguageLoader::new(
+                std::path::PathBuf::new(),
+            )),
+        )
     }
 
     /// Create a new Lua VM bound to a specific plugin generation.
     ///
     /// # Errors
     /// Returns an error if the Lua VM or the `rift` API table cannot be set up.
-    pub(super) fn with_generation(generation: crate::plugin::PluginGeneration) -> LuaResult<Self> {
+    pub(super) fn with_generation(
+        generation: crate::plugin::PluginGeneration,
+        language_loader: Arc<crate::syntax::loader::LanguageLoader>,
+    ) -> LuaResult<Self> {
         // SAFETY: unsafe_new enables C modules and the debug library; rift only runs the user's own local plugin scripts.
         let lua = unsafe { Lua::unsafe_new() };
-        let shared_state = LuaSharedState {
-            is_active: true,
-            ..Default::default()
-        };
-        let shared = Rc::new(RefCell::new(shared_state));
+        let shared = Rc::new(RefCell::new(LuaSharedState::new(language_loader)));
         let hook_deadline: Rc<RefCell<Option<std::time::Instant>>> = Rc::new(RefCell::new(None));
         let (shell_result_tx, shell_result_rx) = std::sync::mpsc::channel::<ShellResult>();
         {
@@ -726,6 +745,7 @@ impl LuaHost {
         Self::register_buffer_create(&lua, &api, &shared)?;
         Self::register_buffer_vars(&lua, &api, &shared)?;
         highlight_api::register(&lua, &api, &shared)?;
+        treesitter_api::register(&lua, &api, &shared)?;
         Self::finish(lua, api, shared, hook_deadline, shell_result_rx, generation)
     }
 
@@ -2113,36 +2133,6 @@ impl LuaHost {
             api.set("register_filetype", f)?;
         }
 
-        // rift.register_language_query(lang_name, query_src) - override highlights query
-        {
-            let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, (lang_name, query_src): (String, String)| {
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::RegisterLanguageQuery {
-                        lang_name,
-                        query_src,
-                    });
-                Ok(())
-            })?;
-            api.set("register_language_query", f)?;
-        }
-
-        // rift.register_injections_query(lang_name, query_src) - set injections query
-        {
-            let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, (lang_name, query_src): (String, String)| {
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::RegisterInjectionsQuery {
-                        lang_name,
-                        query_src,
-                    });
-                Ok(())
-            })?;
-            api.set("register_injections_query", f)?;
-        }
-
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(
@@ -2740,6 +2730,15 @@ impl LuaHost {
         s.buffer_vars = update.buffer_vars;
         s.doc_options = update.doc_options;
         s.user_settings = update.user_settings;
+        #[cfg(feature = "treesitter")]
+        {
+            let mut synced = std::mem::take(&mut s.syntax);
+            s.syntax = update
+                .syntax
+                .into_iter()
+                .filter_map(|(doc, fresh)| Some((doc, fresh.or_else(|| synced.remove(&doc))?)))
+                .collect();
+        }
     }
 
     /// Budget for one automatic (non-user-initiated) Lua call - event
@@ -3153,6 +3152,36 @@ impl std::fmt::Debug for LuaHost {
 
 #[path = "lua_highlight.rs"]
 mod highlight_api;
+
+#[cfg(feature = "treesitter")]
+#[path = "lua_treesitter.rs"]
+mod treesitter_api;
+
+#[cfg(not(feature = "treesitter"))]
+mod treesitter_api {
+    use mlua::prelude::*;
+
+    pub(super) fn register(
+        lua: &Lua,
+        api: &LuaTable,
+        _shared: &std::rc::Rc<std::cell::RefCell<super::LuaSharedState>>,
+    ) -> LuaResult<()> {
+        let ts = lua.create_table()?;
+        let meta = lua.create_table()?;
+        meta.set(
+            "__index",
+            lua.create_function(|lua, (_, name): (LuaTable, String)| {
+                lua.create_function(move |_, _: LuaMultiValue| -> LuaResult<()> {
+                    Err(LuaError::RuntimeError(format!(
+                        "rift.treesitter.{name}: tree-sitter support is not compiled in"
+                    )))
+                })
+            })?,
+        )?;
+        ts.set_metatable(Some(meta))?;
+        api.set("treesitter", ts)
+    }
+}
 
 #[cfg(test)]
 #[path = "lua_host_tests.rs"]

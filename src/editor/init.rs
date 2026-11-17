@@ -385,7 +385,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn load_plugins(&mut self) -> Result<(), RiftError> {
         self.retire_lua_plugins();
-        if let Some(err) = self.plugin_host.init_lua() {
+        if let Some(err) = self.plugin_host.init_lua(Arc::clone(&self.language_loader)) {
             return Err(RiftError::new(
                 ErrorType::Internal,
                 crate::constants::errors::PLUGIN_LOAD_FAILED,

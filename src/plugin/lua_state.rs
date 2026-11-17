@@ -106,4 +106,6 @@ pub(crate) struct StateUpdate<'a> {
     >,
     pub(crate) doc_options: crate::document::definitions::DocumentOptions,
     pub(crate) user_settings: crate::state::UserSettings,
+    #[cfg(feature = "treesitter")]
+    pub(crate) syntax: Vec<(u64, Option<crate::syntax::snapshot::BufferSyntax>)>,
 }

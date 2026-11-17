@@ -59,6 +59,8 @@ impl<T: TerminalBackend> Editor<T> {
         #[cfg(not(feature = "lsp"))]
         let lsp_diagnostics = std::collections::HashMap::new();
         let buffer_vars = self.lua_buffer_vars();
+        #[cfg(feature = "treesitter")]
+        let syntax = self.lua_syntax_snapshots();
 
         self.plugin_host
             .lua_update_state(crate::plugin::lua_host::StateUpdate {
@@ -85,8 +87,32 @@ impl<T: TerminalBackend> Editor<T> {
                 buffer_vars,
                 doc_options,
                 user_settings,
+                #[cfg(feature = "treesitter")]
+                syntax,
             });
         self.sync_lua_annotations();
+    }
+
+    #[cfg(feature = "treesitter")]
+    fn lua_syntax_snapshots(&self) -> Vec<(u64, Option<crate::syntax::snapshot::BufferSyntax>)> {
+        let synced: Vec<(u64, Option<crate::syntax::snapshot::BufferSyntax>)> = self
+            .document_manager
+            .documents_iter()
+            .filter_map(|doc| {
+                let syntax = doc.syntax.as_ref()?;
+                let root_id = syntax.tree.as_ref()?.root_node().id();
+                let id = doc.id.get();
+                let fresh = self
+                    .plugin_host
+                    .syntax_needs_sync(id, doc.buffer.revision, root_id)
+                    .then(|| syntax.snapshot(id, &doc.buffer))
+                    .flatten();
+                Some((id, fresh))
+            })
+            .collect();
+        let live: Vec<u64> = synced.iter().map(|(id, _)| *id).collect();
+        self.plugin_host.retain_synced_syntax(&live);
+        synced
     }
 
     fn lua_buf_state(&self) -> LuaBufState {
@@ -342,10 +368,13 @@ impl<T: TerminalBackend> Editor<T> {
             | PluginMutation::UnmapKeyKind { .. } => {
                 self.apply_keymap_mutation(mutation, origin);
             }
-            PluginMutation::RegisterFiletype { .. }
-            | PluginMutation::RegisterLanguageQuery { .. }
-            | PluginMutation::RegisterInjectionsQuery { .. }
-            | PluginMutation::RegisterGrammar { .. } => self.apply_language_mutation(mutation),
+            PluginMutation::RegisterFiletype { .. } | PluginMutation::RegisterGrammar { .. } => {
+                self.apply_language_mutation(mutation);
+            }
+            #[cfg(feature = "treesitter")]
+            PluginMutation::SetSyntaxQuery { .. }
+            | PluginMutation::StartSyntax { .. }
+            | PluginMutation::StopSyntax { .. } => self.apply_language_mutation(mutation),
             PluginMutation::LspGotoDefinition
             | PluginMutation::LspReferences
             | PluginMutation::LspHover
@@ -937,20 +966,15 @@ impl<T: TerminalBackend> Editor<T> {
             PluginMutation::RegisterFiletype { ext, lang_name } => {
                 self.language_loader.register_filetype(&ext, &lang_name);
             }
-            PluginMutation::RegisterLanguageQuery {
-                lang_name,
-                query_src,
-            } => {
-                self.language_loader
-                    .register_language_query(&lang_name, &query_src);
+            #[cfg(feature = "treesitter")]
+            PluginMutation::SetSyntaxQuery { lang, kind, source } => {
+                self.language_loader.set_query_override(&lang, kind, source);
+                self.rebuild_syntax_using(&lang);
             }
-            PluginMutation::RegisterInjectionsQuery {
-                lang_name,
-                query_src,
-            } => {
-                self.language_loader
-                    .register_injections_query(&lang_name, &query_src);
-            }
+            #[cfg(feature = "treesitter")]
+            PluginMutation::StartSyntax { buf, lang } => self.start_syntax(buf, lang.as_deref()),
+            #[cfg(feature = "treesitter")]
+            PluginMutation::StopSyntax { buf } => self.stop_syntax(buf),
             PluginMutation::RegisterGrammar {
                 lang_name,
                 so_path,
@@ -1215,6 +1239,11 @@ fn highlight_bytes(
     range: &HighlightRange,
 ) -> std::ops::Range<usize> {
     match range {
+        #[cfg(feature = "treesitter")]
+        HighlightRange::Bytes(r) => {
+            let len = buffer.byte_len();
+            r.start.min(len)..r.end.min(len)
+        }
         HighlightRange::Points { start, end } => {
             let at = |(row, col): (usize, usize)| {
                 let line = buffer.line_byte_range(row);
