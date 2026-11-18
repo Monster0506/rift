@@ -339,3 +339,116 @@ fn scroll_latency_wrapped_markdown() {
         );
     }
 }
+
+#[cfg(feature = "perf_instrumentation")]
+fn lua_sync_totals() -> (u64, f64, f64) {
+    crate::perf::span_stats()
+        .into_iter()
+        .find(|(name, _)| *name == "lua_state_sync")
+        .map_or((0, 0.0, 0.0), |(_, s)| {
+            let n = crate::num::u64_to_f64(s.count);
+            (s.count, s.avg_ms * n, s.avg_allocs * n)
+        })
+}
+
+#[cfg(feature = "perf_instrumentation")]
+fn report_syncs(label: &str, steps: usize, before: (u64, f64, f64), after: (u64, f64, f64)) {
+    let syncs = after.0 - before.0;
+    let n = crate::num::u64_to_f64(syncs.max(1));
+    eprintln!(
+        "{label:<16} syncs/step={:.2} us/sync={:>8.2} allocs/sync={:>8.1}",
+        crate::num::u64_to_f64(syncs) / crate::num::usize_to_f64(steps),
+        (after.1 - before.1) * 1000.0 / n,
+        (after.2 - before.2) / n,
+    );
+}
+
+#[test]
+#[ignore = "manual timing harness"]
+#[cfg(all(feature = "perf_instrumentation", feature = "plugins"))]
+fn plugin_sync_cost_per_keystroke() {
+    use std::fmt::Write as _;
+    const KEYS: usize = 500;
+    const IDLE_SYNCS: usize = 2_000;
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut editor = create_editor_sized(50, 180);
+    for i in 0..20 {
+        let path = dir.path().join(format!("small_{i}.txt"));
+        std::fs::write(&path, format!("small buffer {i}\n")).unwrap();
+        open_and_load(&mut editor, &path);
+    }
+    let big = dir.path().join("big.txt");
+    let mut src = String::new();
+    for i in 0..10_000 {
+        let _ = writeln!(
+            src,
+            "fn function_{i}() {{ println!(\"Hello World {i}\"); }}"
+        );
+    }
+    std::fs::write(&big, src).unwrap();
+    open_and_load(&mut editor, &big);
+    editor.execute_command_line("split");
+    editor.execute_command_line("vsplit");
+
+    #[cfg(feature = "lsp")]
+    {
+        use crate::lsp::protocol::{LspDiagnostic, LspPosition, LspRange};
+        let uri = crate::lsp::protocol::normalize_uri(&crate::lsp::protocol::path_to_uri(&big));
+        let diags = (0..200u32)
+            .map(|line| LspDiagnostic {
+                range: LspRange {
+                    start: LspPosition { line, character: 3 },
+                    end: LspPosition {
+                        line,
+                        character: 11,
+                    },
+                },
+                severity: Some(2),
+                message: format!("bench warning {line}"),
+                source: None,
+            })
+            .collect();
+        editor.lsp_diagnostics.insert(uri, diags);
+    }
+
+    editor.plugin_host.mark_lua_used();
+    editor.update_lua_state();
+    let err = editor.plugin_host.lua_exec(
+        r#"
+        for i = 1, 30 do
+            rift.register_command("bench_cmd_" .. i, function() end, "bench command " .. i)
+        end
+        rift.on("TextChangedCoarse", function() end)
+        rift.on("CursorMoved", function() end)
+        for _, b in ipairs(rift.get_buf_list()) do
+            rift.set_buffer_var(b.id, "bench", "value " .. b.id)
+        end
+        "#,
+    );
+    assert!(err.is_none(), "{err:?}");
+    editor.apply_plugin_mutations();
+    editor.current_mode = crate::mode::Mode::Insert;
+    editor.update_and_render().unwrap();
+
+    let before = lua_sync_totals();
+    let start = std::time::Instant::now();
+    for _ in 0..KEYS {
+        editor.execute_buffer_command(crate::command::Command::InsertChar('x'));
+        editor.update_and_render().unwrap();
+    }
+    let per_key = start.elapsed() / u32::try_from(KEYS).unwrap();
+    let typed = lua_sync_totals();
+    for _ in 0..IDLE_SYNCS {
+        editor.update_lua_state();
+    }
+    let idle = lua_sync_totals();
+
+    eprintln!(
+        "--- plugin state sync: {} buffers, {} windows, keystroke={per_key:.2?} ---",
+        editor.document_manager.documents_iter().count(),
+        editor.split_tree.window_count()
+    );
+    report_syncs("typing", KEYS, before, typed);
+    report_syncs("no-change sync", IDLE_SYNCS, typed, idle);
+}
