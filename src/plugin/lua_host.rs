@@ -3191,17 +3191,31 @@ impl LuaHost {
         !self.shared.borrow().mutations.is_empty()
     }
 
+    pub(super) fn has_pending_shell_events(&self) -> bool {
+        let mut s = self.shared.borrow_mut();
+        s.pending_shell_events
+            .extend(self.shell_result_rx.try_iter());
+        !s.pending_shell_events.is_empty()
+    }
+
+    pub(super) fn has_annotation_hook(&self, enter: bool, kind: &str) -> bool {
+        let table_name = if enter {
+            "_rift_enter_handlers"
+        } else {
+            "_rift_leave_handlers"
+        };
+        self.lua
+            .globals()
+            .get::<LuaTable>(table_name)
+            .and_then(|handlers| handlers.get::<Option<LuaTable>>(kind))
+            .is_ok_and(|entry| entry.is_some_and(|entry| entry.get::<LuaFunction>("fn").is_ok()))
+    }
+
     /// Drain all mutations queued by Lua API calls. Fires pending shell-completion
     /// events as Lua `UserEvents` first, so their handlers can queue further mutations.
     #[must_use]
     pub(super) fn drain_mutations(&self) -> Vec<PluginMutation> {
-        let pending = {
-            let mut s = self.shared.borrow_mut();
-            while let Ok(result) = self.shell_result_rx.try_recv() {
-                s.pending_shell_events.push(result);
-            }
-            std::mem::take(&mut s.pending_shell_events)
-        };
+        let pending = std::mem::take(&mut self.shared.borrow_mut().pending_shell_events);
         for (tag, success, output) in pending {
             let _ = (|| -> LuaResult<()> {
                 let handlers: LuaTable = self.lua.globals().get("_rift_handlers")?;

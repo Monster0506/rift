@@ -1093,7 +1093,9 @@ fn test_spawn_shell_delivers_result_from_background_thread() {
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     loop {
-        let _ = host.drain_mutations();
+        if host.has_pending_shell_events() {
+            let _ = host.drain_mutations();
+        }
         if host.exec("assert(_G.got == 'mytag')").is_none() {
             break;
         }

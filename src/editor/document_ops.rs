@@ -289,12 +289,15 @@ impl<T: TerminalBackend> Editor<T> {
         self.split_tree.set_focused_document(id);
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
-        self.plugin_host
-            .dispatch(&crate::plugin::events::EditorEvent::BufOpen {
-                buf: id,
-                path: None,
-                filetype: None,
-            });
+        self.call_plugins(|editor| {
+            editor
+                .plugin_host
+                .dispatch(&crate::plugin::events::EditorEvent::BufOpen {
+                    buf: id,
+                    path: None,
+                    filetype: None,
+                });
+        });
         Ok(id)
     }
 

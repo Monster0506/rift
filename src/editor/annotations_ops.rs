@@ -220,20 +220,23 @@ impl<T: TerminalBackend> Editor<T> {
             })
         };
 
-        let mut ran = false;
-        if let Some(prev) = previous {
-            if let Some(ctx) = make_ctx(self, prev) {
-                ran |= self.plugin_host.invoke_annotation_hook(false, &ctx);
+        let leave = previous
+            .and_then(|prev| make_ctx(self, prev))
+            .filter(|ctx| self.plugin_host.has_annotation_hook(false, &ctx.kind));
+        let enter = current
+            .and_then(|cur| make_ctx(self, cur))
+            .filter(|ctx| self.plugin_host.has_annotation_hook(true, &ctx.kind));
+        if leave.is_none() && enter.is_none() {
+            return;
+        }
+        self.call_plugins(|editor| {
+            if let Some(ctx) = leave {
+                editor.plugin_host.invoke_annotation_hook(false, &ctx);
             }
-        }
-        if let Some(cur) = current {
-            if let Some(ctx) = make_ctx(self, cur) {
-                ran |= self.plugin_host.invoke_annotation_hook(true, &ctx);
+            if let Some(ctx) = enter {
+                editor.plugin_host.invoke_annotation_hook(true, &ctx);
             }
-        }
-        if ran {
-            self.apply_plugin_mutations();
-        }
+        });
     }
 
     /// Move the cursor to the start of the next interactive annotation.

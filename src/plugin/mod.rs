@@ -1060,18 +1060,9 @@ impl PluginHost {
 
     /// Load all top-level `.lua` files in `dir`, sorted lexicographically. Returns error strings.
     pub(crate) fn lua_load_dir(&self, dir: &std::path::Path) -> Vec<String> {
-        self.lua.as_ref().map_or_else(Vec::new, |lua| {
-            let has_lua_files = std::fs::read_dir(dir).is_ok_and(|rd| {
-                rd.flatten().any(|e| {
-                    let p = e.path();
-                    p.is_file() && p.extension().is_some_and(|x| x == "lua")
-                })
-            });
-            if has_lua_files {
-                self.lua_used.set(true);
-            }
-            lua.load_dir(dir)
-        })
+        self.lua
+            .as_ref()
+            .map_or_else(Vec::new, |lua| lua.load_dir(dir))
     }
 
     /// Execute a single `.lua` file. Returns an error string on failure.
@@ -1100,6 +1091,18 @@ impl PluginHost {
         self.lua
             .as_ref()
             .is_some_and(|lua| lua.invoke_annotation_hook(enter, ctx))
+    }
+
+    pub(crate) fn has_annotation_hook(&self, enter: bool, kind: &str) -> bool {
+        self.lua
+            .as_ref()
+            .is_some_and(|lua| lua.has_annotation_hook(enter, kind))
+    }
+
+    pub(crate) fn has_pending_shell_results(&self) -> bool {
+        self.lua
+            .as_ref()
+            .is_some_and(lua_host::LuaHost::has_pending_shell_events)
     }
 
     /// Invoke a Lua buffer-kind action callback. Returns `true` if handled.
@@ -1446,6 +1449,15 @@ impl PluginHost {
         });
         self.mutation_queue.drain(..)
     }
+}
+
+pub(crate) fn dir_has_lua_files(dir: &std::path::Path) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|rd| {
+        rd.flatten().any(|e| {
+            let p = e.path();
+            p.is_file() && p.extension().is_some_and(|x| x == "lua")
+        })
+    })
 }
 
 impl std::fmt::Debug for PluginHost {

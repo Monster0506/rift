@@ -27,9 +27,11 @@ impl<T: TerminalBackend> Editor<T> {
             self.tick()?;
         }
 
-        self.plugin_host
-            .dispatch(&crate::plugin::events::EditorEvent::EditorQuit);
-        self.apply_plugin_mutations();
+        self.call_plugins(|editor| {
+            editor
+                .plugin_host
+                .dispatch(&crate::plugin::events::EditorEvent::EditorQuit);
+        });
 
         Ok(())
     }

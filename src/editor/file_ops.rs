@@ -787,11 +787,13 @@ impl<T: TerminalBackend> Editor<T> {
                 let moved_id = self.split_tree.focused_window_id();
                 if self.split_tree.move_window(dir, &layouts) {
                     self.render_system.viewport.mark_needs_full_redraw();
-                    self.plugin_host
-                        .dispatch(&crate::plugin::events::EditorEvent::WinMoved {
-                            win: moved_id.get(),
-                        });
-                    self.apply_plugin_mutations();
+                    self.call_plugins(|editor| {
+                        editor.plugin_host.dispatch(
+                            &crate::plugin::events::EditorEvent::WinMoved {
+                                win: moved_id.get(),
+                            },
+                        );
+                    });
                 }
             }
             SplitSubcommand::Equalize => {
@@ -864,12 +866,14 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 self.sync_state_with_active_document();
                 self.render_system.viewport.mark_needs_full_redraw();
-                self.plugin_host
-                    .dispatch(&crate::plugin::events::EditorEvent::WinSwapped {
-                        win1: focused_id.get(),
-                        win2: prev_id.get(),
-                    });
-                self.apply_plugin_mutations();
+                self.call_plugins(|editor| {
+                    editor
+                        .plugin_host
+                        .dispatch(&crate::plugin::events::EditorEvent::WinSwapped {
+                            win1: focused_id.get(),
+                            win2: prev_id.get(),
+                        });
+                });
             }
         }
     }

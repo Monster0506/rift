@@ -399,6 +399,9 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn apply_plugin_mutations(&mut self) {
         let outermost = self.plugin_mutation_rounds.is_none();
         while self.plugin_mutation_rounds.unwrap_or(0) < PLUGIN_MUTATION_ROUNDS {
+            if self.plugin_host.has_pending_shell_results() {
+                self.update_lua_state();
+            }
             let envelopes: Vec<crate::plugin::PluginMutationEnvelope> =
                 self.plugin_host.drain_mutation_envelopes().collect();
             if envelopes.is_empty() {
@@ -684,10 +687,13 @@ impl<T: TerminalBackend> Editor<T> {
                 let moved_id = self.split_tree.focused_window_id();
                 if self.split_tree.move_window(direction, &layouts) {
                     self.render_system.viewport.mark_needs_full_redraw();
-                    self.plugin_host
-                        .dispatch(&crate::plugin::events::EditorEvent::WinMoved {
-                            win: moved_id.get(),
-                        });
+                    self.call_plugins(|editor| {
+                        editor.plugin_host.dispatch(
+                            &crate::plugin::events::EditorEvent::WinMoved {
+                                win: moved_id.get(),
+                            },
+                        );
+                    });
                 }
             }
             PluginMutation::SwapWindows => {
@@ -702,12 +708,14 @@ impl<T: TerminalBackend> Editor<T> {
                         }
                         self.sync_state_with_active_document();
                         self.render_system.viewport.mark_needs_full_redraw();
-                        self.plugin_host.dispatch(
-                            &crate::plugin::events::EditorEvent::WinSwapped {
-                                win1: focused_id.get(),
-                                win2: prev_id.get(),
-                            },
-                        );
+                        self.call_plugins(|editor| {
+                            editor.plugin_host.dispatch(
+                                &crate::plugin::events::EditorEvent::WinSwapped {
+                                    win1: focused_id.get(),
+                                    win2: prev_id.get(),
+                                },
+                            );
+                        });
                     }
                 }
             }
@@ -851,16 +859,20 @@ impl<T: TerminalBackend> Editor<T> {
         self.split_tree.set_focused_document(handle.doc_id());
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
-        self.plugin_host
-            .dispatch(&crate::plugin::events::EditorEvent::BufOpen {
-                buf: handle.doc_id(),
-                path: None,
-                filetype: None,
-            });
-        self.plugin_host
-            .dispatch(&crate::plugin::events::EditorEvent::BufEnter {
-                buf: handle.doc_id(),
-            });
+        self.call_plugins(|editor| {
+            editor
+                .plugin_host
+                .dispatch(&crate::plugin::events::EditorEvent::BufOpen {
+                    buf: handle.doc_id(),
+                    path: None,
+                    filetype: None,
+                });
+            editor
+                .plugin_host
+                .dispatch(&crate::plugin::events::EditorEvent::BufEnter {
+                    buf: handle.doc_id(),
+                });
+        });
     }
 
     fn register_buffer_kind(&mut self, spec: BufferKindSpec, origin: Option<PluginGeneration>) {

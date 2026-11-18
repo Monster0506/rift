@@ -399,3 +399,211 @@ fn buf_enter_after_closing_a_split_reads_the_remaining_buffer() {
         ),
     );
 }
+
+#[test]
+fn win_leave_and_win_enter_read_the_focus_change() {
+    let mut editor = lua_editor("hello\n");
+    let first = editor.split_tree.focused_window_id();
+    editor.execute_command_line("vsplit");
+    let second = editor.split_tree.focused_window_id();
+    assert_ne!(first, second);
+    lua_ok(
+        &editor,
+        "rift.on('WinLeave', function() _G.leave = rift.windows.current() end) \
+         rift.on('WinEnter', function() \
+           _G.enter = rift.windows.current() .. ':' .. tostring(rift.windows.previous()) \
+         end)",
+    );
+
+    editor.switch_focus(first);
+
+    let (first, second) = (first.get(), second.get());
+    lua_ok(
+        &editor,
+        &format!(
+            "assert(_G.leave == {second}, tostring(_G.leave)) \
+             assert(_G.enter == '{first}:{second}', tostring(_G.enter))"
+        ),
+    );
+}
+
+fn split_editor_recording_layout_on(event: &str) -> Editor<MockTerminal> {
+    let mut editor = lua_editor("first\n");
+    editor.execute_command_line("vsplit");
+    lua_ok(&editor, "rift.create_scratch_buf('second', { 'second' })");
+    editor.apply_plugin_mutations();
+    lua_ok(
+        &editor,
+        &format!(
+            "_G.layout = function() \
+               local t = {{}} \
+               for _, w in ipairs(rift.windows.list()) do \
+                 t[#t + 1] = w.id .. ':' .. w.buf .. ':' .. w.row .. ':' .. w.col \
+               end \
+               return table.concat(t, ' ') \
+             end \
+             rift.on('{event}', function() _G.seen = _G.layout() end)"
+        ),
+    );
+    editor.update_lua_state();
+    lua_ok(&editor, "_G.before = _G.layout()");
+    editor
+}
+
+fn assert_handler_saw_the_updated_layout(editor: &Editor<MockTerminal>) {
+    editor.update_lua_state();
+    lua_ok(
+        editor,
+        "assert(_G.seen ~= nil and _G.seen ~= _G.before and _G.seen == _G.layout(), \
+           tostring(_G.before) .. ' -> ' .. tostring(_G.seen) .. ' vs ' .. _G.layout())",
+    );
+}
+
+#[test]
+fn win_moved_from_split_command_reads_the_updated_window_list() {
+    let mut editor = split_editor_recording_layout_on("WinMoved");
+
+    editor.do_split_window(
+        crate::split::tree::SplitDirection::Vertical,
+        crate::command_line::commands::types::SplitSubcommand::Move(
+            crate::split::navigation::Direction::Left,
+        ),
+    );
+
+    assert_handler_saw_the_updated_layout(&editor);
+}
+
+#[test]
+fn win_moved_from_plugin_mutation_reads_the_updated_window_list() {
+    let mut editor = split_editor_recording_layout_on("WinMoved");
+
+    lua_ok(&editor, "rift.windows.move('left')");
+    editor.apply_plugin_mutations();
+
+    assert_handler_saw_the_updated_layout(&editor);
+}
+
+#[test]
+fn win_swapped_from_split_command_reads_the_updated_window_list() {
+    let mut editor = split_editor_recording_layout_on("WinSwapped");
+
+    editor.do_split_window(
+        crate::split::tree::SplitDirection::Vertical,
+        crate::command_line::commands::types::SplitSubcommand::Exchange,
+    );
+
+    assert_handler_saw_the_updated_layout(&editor);
+}
+
+#[test]
+fn win_swapped_from_plugin_mutation_reads_the_updated_window_list() {
+    let mut editor = split_editor_recording_layout_on("WinSwapped");
+
+    lua_ok(&editor, "rift.windows.exchange()");
+    editor.apply_plugin_mutations();
+
+    assert_handler_saw_the_updated_layout(&editor);
+}
+
+const RECORD_NEW_BUFFER_IN_LIST: &str = "rift.on('BufOpen', function(ev) \
+       _G.seen = false \
+       for _, b in ipairs(rift.get_buf_list()) do \
+         if b.id == ev.buf and b.is_current then _G.seen = true end \
+       end \
+     end)";
+
+#[test]
+fn buf_open_from_create_buffer_sees_the_new_buffer_in_the_list() {
+    let mut editor = lua_editor("hello\n");
+    lua_ok(
+        &editor,
+        "rift.register_buffer_kind('probe', { on_close = function() end })",
+    );
+    editor.apply_plugin_mutations();
+    lua_ok(&editor, RECORD_NEW_BUFFER_IN_LIST);
+
+    lua_ok(&editor, "rift.create_buffer('probe', { lines = { 'x' } })");
+    editor.apply_plugin_mutations();
+
+    lua_ok(&editor, "assert(_G.seen == true, tostring(_G.seen))");
+}
+
+#[test]
+fn buf_open_from_scratch_buffer_sees_the_new_buffer_in_the_list() {
+    let mut editor = lua_editor("hello\n");
+    lua_ok(&editor, RECORD_NEW_BUFFER_IN_LIST);
+
+    lua_ok(&editor, "rift.create_scratch_buf('scratch', { 'x' })");
+    editor.apply_plugin_mutations();
+
+    lua_ok(&editor, "assert(_G.seen == true, tostring(_G.seen))");
+}
+
+#[test]
+fn editor_quit_reads_the_final_cursor() {
+    let mut editor = lua_editor("one\ntwo\nthree\n");
+    lua_ok(
+        &editor,
+        "rift.on('EditorQuit', function() \
+           local row, col = rift.get_cursor() _G.seen = row .. ':' .. col \
+         end)",
+    );
+    editor.active_document().buffer.set_cursor(9).unwrap();
+    editor.should_quit = true;
+
+    editor.run().unwrap();
+
+    lua_ok(&editor, "assert(_G.seen == '3:1', tostring(_G.seen))");
+}
+
+#[test]
+fn reloaded_plugin_top_level_code_reads_the_open_buffer() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("open.txt");
+    std::fs::write(&path, "opened\n").unwrap();
+    let plugins = tempfile::tempdir().unwrap();
+    std::fs::write(
+        plugins.path().join("probe.lua"),
+        "_G.loaded = rift.current_buf() .. ':' .. rift.get_lines(1, 1)[1]",
+    )
+    .unwrap();
+    let mut editor = create_editor();
+    open_and_load(&mut editor, &path);
+    let buf = editor.active_document_id().get();
+
+    let errors = editor.load_plugins_from(
+        &[plugins.path().to_path_buf()],
+        &plugins.path().join("missing_init.lua"),
+    );
+
+    assert!(errors.is_empty(), "{errors:?}");
+    lua_ok(
+        &editor,
+        &format!("assert(_G.loaded == '{buf}:opened', tostring(_G.loaded))"),
+    );
+}
+
+#[test]
+fn shell_done_handler_reads_state_changed_after_the_spawn() {
+    let mut editor = lua_editor("one\ntwo\n");
+    lua_ok(
+        &editor,
+        "rift.on('UserEvent', function(ev) \
+           if ev.name == 'ShellDone' then _G.seen = rift.get_cursor() end \
+         end) \
+         rift.spawn_shell('echo done', 'probe')",
+    );
+    editor.active_document().buffer.set_cursor(4).unwrap();
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while editor.plugin_host.lua_exec("assert(_G.seen)").is_some() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "ShellDone never fired"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        editor.apply_plugin_mutations();
+    }
+
+    lua_ok(&editor, "assert(_G.seen == 2, tostring(_G.seen))");
+}

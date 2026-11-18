@@ -1031,3 +1031,20 @@ fn annotation_action_reads_the_cursor_at_activation() {
         .lua_exec("assert(_G.seen == 4, tostring(_G.seen))");
     assert!(err.is_none(), "{err:?}");
 }
+
+#[cfg(feature = "plugins")]
+#[test]
+fn annotation_on_enter_reads_the_cursor_that_entered() {
+    let mut e = editor_with_failing_plugin(
+        "rift.annotations.on_enter('test.run', function(_ctx) \
+           local _, col = rift.get_cursor() _G.seen = col \
+         end)",
+    );
+
+    e.update_annotation_hover();
+
+    let err = e
+        .plugin_host
+        .lua_exec("assert(_G.seen == 2, tostring(_G.seen))");
+    assert!(err.is_none(), "{err:?}");
+}

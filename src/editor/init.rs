@@ -268,12 +268,14 @@ impl<T: TerminalBackend> Editor<T> {
             self.split_tree.focused_window_mut().cursor_position = cursor;
         }
 
-        self.plugin_host
-            .dispatch(&crate::plugin::events::EditorEvent::WinLeave {
-                win: old_win_id.get(),
-                buf: old_doc_id,
-            });
-        self.apply_plugin_mutations();
+        self.call_plugins(|editor| {
+            editor
+                .plugin_host
+                .dispatch(&crate::plugin::events::EditorEvent::WinLeave {
+                    win: old_win_id.get(),
+                    buf: old_doc_id,
+                });
+        });
 
         self.split_tree.set_focus(target_id);
 
@@ -286,12 +288,14 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.sync_state_with_active_document();
 
-        self.plugin_host
-            .dispatch(&crate::plugin::events::EditorEvent::WinEnter {
-                win: target_id.get(),
-                buf: new_doc_id,
-            });
-        self.apply_plugin_mutations();
+        self.call_plugins(|editor| {
+            editor
+                .plugin_host
+                .dispatch(&crate::plugin::events::EditorEvent::WinEnter {
+                    win: target_id.get(),
+                    buf: new_doc_id,
+                });
+        });
     }
 
     pub(super) fn save_current_view_state(&mut self) {
@@ -398,13 +402,17 @@ impl<T: TerminalBackend> Editor<T> {
             .init_lua(Arc::clone(&self.language_loader))
             .into_iter()
             .collect();
-        for dir in dirs {
-            errors.extend(self.plugin_host.lua_load_dir(dir));
+        if init_lua.is_file() || dirs.iter().any(|dir| crate::plugin::dir_has_lua_files(dir)) {
+            self.plugin_host.mark_lua_used();
         }
-        if init_lua.is_file() {
-            errors.extend(self.plugin_host.lua_load_file(init_lua));
-        }
-        self.apply_plugin_mutations();
+        self.call_plugins(|editor| {
+            for dir in dirs {
+                errors.extend(editor.plugin_host.lua_load_dir(dir));
+            }
+            if init_lua.is_file() {
+                errors.extend(editor.plugin_host.lua_load_file(init_lua));
+            }
+        });
         errors
     }
 
