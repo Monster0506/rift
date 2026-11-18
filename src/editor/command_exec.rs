@@ -142,23 +142,25 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn flush_pending_text_changed(&mut self) {
         if let Some(buf) = self.pending_text_changed.take() {
-            self.update_lua_state();
-            crate::perf_span!(
-                "plugin_dispatch_text_changed",
-                crate::perf::PerfFields::default()
-            );
-            self.plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::TextChangedCoarse { buf });
-            self.apply_plugin_mutations();
+            self.call_plugins(|editor| {
+                crate::perf_span!(
+                    "plugin_dispatch_text_changed",
+                    crate::perf::PerfFields::default()
+                );
+                editor
+                    .plugin_host
+                    .dispatch(&crate::plugin::events::EditorEvent::TextChangedCoarse { buf });
+            });
         }
     }
 
     pub(super) fn flush_pending_cursor_moved(&mut self) {
         if let Some((buf, row, col)) = self.pending_cursor_moved.take() {
-            self.update_lua_state();
-            self.plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::CursorMoved { buf, row, col });
-            self.apply_plugin_mutations();
+            self.call_plugins(|editor| {
+                editor
+                    .plugin_host
+                    .dispatch(&crate::plugin::events::EditorEvent::CursorMoved { buf, row, col });
+            });
         }
     }
 
@@ -166,17 +168,18 @@ impl<T: TerminalBackend> Editor<T> {
         if self.pending_syntax_updated.is_empty() {
             return;
         }
-        self.update_lua_state();
-        for buf in std::mem::take(&mut self.pending_syntax_updated) {
-            let lang = self
-                .document_manager
-                .get_document(buf)
-                .and_then(|doc| doc.syntax.as_ref())
-                .map(|syntax| syntax.language_name.clone());
-            self.plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::SyntaxUpdated { buf, lang });
-        }
-        self.apply_plugin_mutations();
+        self.call_plugins(|editor| {
+            for buf in std::mem::take(&mut editor.pending_syntax_updated) {
+                let lang = editor
+                    .document_manager
+                    .get_document(buf)
+                    .and_then(|doc| doc.syntax.as_ref())
+                    .map(|syntax| syntax.language_name.clone());
+                editor
+                    .plugin_host
+                    .dispatch(&crate::plugin::events::EditorEvent::SyntaxUpdated { buf, lang });
+            }
+        });
     }
 
     pub(super) fn do_incremental_syntax_parse(&mut self) {

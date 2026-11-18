@@ -554,12 +554,14 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.clear_command_line();
         if let Some(new_buf) = self.document_manager.active_document_id() {
             if new_buf != old_buf {
-                self.update_lua_state();
-                self.plugin_host
-                    .dispatch(&crate::plugin::events::EditorEvent::BufLeave { buf: old_buf });
-                self.plugin_host
-                    .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: new_buf });
-                self.apply_plugin_mutations();
+                self.call_plugins(|editor| {
+                    editor
+                        .plugin_host
+                        .dispatch(&crate::plugin::events::EditorEvent::BufLeave { buf: old_buf });
+                    editor
+                        .plugin_host
+                        .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: new_buf });
+                });
             }
         }
         if let Err(e) = self.force_full_redraw() {
@@ -579,12 +581,14 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.clear_command_line();
         if let Some(new_buf) = self.document_manager.active_document_id() {
             if new_buf != old_buf {
-                self.update_lua_state();
-                self.plugin_host
-                    .dispatch(&crate::plugin::events::EditorEvent::BufLeave { buf: old_buf });
-                self.plugin_host
-                    .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: new_buf });
-                self.apply_plugin_mutations();
+                self.call_plugins(|editor| {
+                    editor
+                        .plugin_host
+                        .dispatch(&crate::plugin::events::EditorEvent::BufLeave { buf: old_buf });
+                    editor
+                        .plugin_host
+                        .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: new_buf });
+                });
             }
         }
         if let Err(e) = self.force_full_redraw() {
@@ -618,12 +622,14 @@ impl<T: TerminalBackend> Editor<T> {
         self.restore_view_state();
         self.sync_state_with_active_document();
         self.state.clear_command_line();
-        self.update_lua_state();
-        self.plugin_host
-            .dispatch(&crate::plugin::events::EditorEvent::BufLeave { buf: old_buf });
-        self.plugin_host
-            .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: target });
-        self.apply_plugin_mutations();
+        self.call_plugins(|editor| {
+            editor
+                .plugin_host
+                .dispatch(&crate::plugin::events::EditorEvent::BufLeave { buf: old_buf });
+            editor
+                .plugin_host
+                .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: target });
+        });
         if let Err(e) = self.force_full_redraw() {
             self.state.handle_error(e);
         }

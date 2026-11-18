@@ -353,13 +353,14 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         if old_mode != mode {
-            self.update_lua_state();
-            self.plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::ModeChanged {
-                    from: old_mode,
-                    to: mode,
-                });
-            self.apply_plugin_mutations();
+            self.call_plugins(|editor| {
+                editor
+                    .plugin_host
+                    .dispatch(&crate::plugin::events::EditorEvent::ModeChanged {
+                        from: old_mode,
+                        to: mode,
+                    });
+            });
         }
         if (old_mode == Mode::Command || old_mode == Mode::Search || old_mode == Mode::Rename)
             && mode != old_mode

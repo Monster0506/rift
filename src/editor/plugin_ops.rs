@@ -53,7 +53,16 @@ fn fingerprint<I: Hash>(items: impl IntoIterator<Item = I>) -> u64 {
     hasher.finish()
 }
 
+const PLUGIN_MUTATION_ROUNDS: usize = 16;
+
 impl<T: TerminalBackend> Editor<T> {
+    pub(super) fn call_plugins<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        self.update_lua_state();
+        let result = f(self);
+        self.apply_plugin_mutations();
+        result
+    }
+
     pub(super) fn update_lua_state(&self) {
         if !self.plugin_host.lua_state_wanted() {
             return;
@@ -388,17 +397,34 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn apply_plugin_mutations(&mut self) {
-        let envelopes: Vec<crate::plugin::PluginMutationEnvelope> =
-            self.plugin_host.drain_mutation_envelopes().collect();
-
-        for envelope in envelopes {
-            let origin = envelope.origin;
-            if let Some(gen) = origin {
-                if !self.plugin_host.is_generation_active(gen) {
-                    continue;
-                }
+        let outermost = self.plugin_mutation_rounds.is_none();
+        while self.plugin_mutation_rounds.unwrap_or(0) < PLUGIN_MUTATION_ROUNDS {
+            let envelopes: Vec<crate::plugin::PluginMutationEnvelope> =
+                self.plugin_host.drain_mutation_envelopes().collect();
+            if envelopes.is_empty() {
+                break;
             }
-            self.apply_plugin_mutation(envelope.mutation, origin);
+            self.plugin_mutation_rounds = Some(self.plugin_mutation_rounds.unwrap_or(0) + 1);
+            for envelope in envelopes {
+                let origin = envelope.origin;
+                if let Some(gen) = origin {
+                    if !self.plugin_host.is_generation_active(gen) {
+                        continue;
+                    }
+                }
+                self.apply_plugin_mutation(envelope.mutation, origin);
+            }
+        }
+        if outermost
+            && self.plugin_mutation_rounds.take() == Some(PLUGIN_MUTATION_ROUNDS)
+            && self.plugin_host.has_queued_mutations()
+        {
+            self.state.notify(
+                crate::notification::NotificationType::Error,
+                format!(
+                    "plugin mutations kept re-queuing; stopped after {PLUGIN_MUTATION_ROUNDS} rounds"
+                ),
+            );
         }
     }
 

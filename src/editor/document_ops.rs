@@ -124,10 +124,11 @@ impl<T: TerminalBackend> Editor<T> {
         }
         self.sync_state_with_active_document();
 
-        self.update_lua_state();
-        self.plugin_host
-            .dispatch(&crate::plugin::events::EditorEvent::BufClose { buf: id });
-        self.apply_plugin_mutations();
+        self.call_plugins(|editor| {
+            editor
+                .plugin_host
+                .dispatch(&crate::plugin::events::EditorEvent::BufClose { buf: id });
+        });
 
         Ok(())
     }

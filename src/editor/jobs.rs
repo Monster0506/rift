@@ -1102,13 +1102,14 @@ impl<T: TerminalBackend> Editor<T> {
             format!("Written to {}", res.path.display()),
         );
 
-        self.update_lua_state();
-        self.plugin_host
-            .dispatch(&crate::plugin::events::EditorEvent::BufSavePost {
-                buf: res.document_id,
-                path: res.path.clone(),
-            });
-        self.apply_plugin_mutations();
+        self.call_plugins(|editor| {
+            editor
+                .plugin_host
+                .dispatch(&crate::plugin::events::EditorEvent::BufSavePost {
+                    buf: res.document_id,
+                    path: res.path.clone(),
+                });
+        });
         #[cfg(feature = "lsp")]
         self.lsp_manager.did_save(&res.path, None);
 
@@ -1162,21 +1163,23 @@ impl<T: TerminalBackend> Editor<T> {
         self.attach_syntax_for_document(res.document_id);
         self.spawn_syntax_parse_job(res.document_id);
 
-        self.update_lua_state();
-        if res.is_reload {
-            self.plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::BufReload {
-                    buf: res.document_id,
-                });
-        } else {
-            self.plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::BufOpen {
-                    buf: res.document_id,
-                    path,
-                    filetype,
-                });
-        }
-        self.apply_plugin_mutations();
+        self.call_plugins(|editor| {
+            if res.is_reload {
+                editor
+                    .plugin_host
+                    .dispatch(&crate::plugin::events::EditorEvent::BufReload {
+                        buf: res.document_id,
+                    });
+            } else {
+                editor
+                    .plugin_host
+                    .dispatch(&crate::plugin::events::EditorEvent::BufOpen {
+                        buf: res.document_id,
+                        path,
+                        filetype,
+                    });
+            }
+        });
 
         #[cfg(feature = "lsp")]
         if !res.is_reload {
@@ -1236,7 +1239,6 @@ impl<T: TerminalBackend> Editor<T> {
                 doc.path().map(std::path::Path::to_path_buf)
             });
 
-        self.update_lua_state();
         let event = if res.is_reload {
             crate::plugin::events::EditorEvent::BufReload {
                 buf: res.document_id,
@@ -1248,8 +1250,7 @@ impl<T: TerminalBackend> Editor<T> {
                 filetype: None,
             }
         };
-        self.plugin_host.dispatch(&event);
-        self.apply_plugin_mutations();
+        self.call_plugins(|editor| editor.plugin_host.dispatch(&event));
 
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();

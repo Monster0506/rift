@@ -122,7 +122,6 @@ impl<T: TerminalBackend> Editor<T> {
             NotificationType::Warning,
             format!("LSP: {name} exited; reopening documents"),
         );
-        self.update_lua_state();
         // A fresh did_open respawns the server for its documents.
         self.lsp_notify_open_all();
     }
@@ -140,13 +139,14 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn lsp_server_connected(&mut self, language: String, server_name: String) {
         self.state.lsp_status = Some(format!("{server_name}: starting"));
-        self.update_lua_state();
-        self.plugin_host
-            .dispatch(&crate::plugin::events::EditorEvent::LspServerConnected {
-                language,
-                server_name,
-            });
-        self.apply_plugin_mutations();
+        self.call_plugins(|editor| {
+            editor
+                .plugin_host
+                .dispatch(&crate::plugin::events::EditorEvent::LspServerConnected {
+                    language,
+                    server_name,
+                });
+        });
     }
 
     fn lsp_server_ready(&mut self, language: String) {
@@ -157,13 +157,14 @@ impl<T: TerminalBackend> Editor<T> {
             .unwrap_or(&language)
             .to_string();
         self.refresh_lsp_diag_status(&language, &name);
-        self.update_lua_state();
-        self.plugin_host
-            .dispatch(&crate::plugin::events::EditorEvent::LspServerReady {
-                language,
-                server_name: name,
-            });
-        self.apply_plugin_mutations();
+        self.call_plugins(|editor| {
+            editor
+                .plugin_host
+                .dispatch(&crate::plugin::events::EditorEvent::LspServerReady {
+                    language,
+                    server_name: name,
+                });
+        });
     }
 
     fn lsp_progress(&mut self, language: String) {
@@ -177,13 +178,14 @@ impl<T: TerminalBackend> Editor<T> {
             None => format!("{name}: indexing"),
         };
         self.state.lsp_status = Some(status);
-        self.update_lua_state();
-        self.plugin_host
-            .dispatch(&crate::plugin::events::EditorEvent::LspProgress {
-                language,
-                server_name: name,
-            });
-        self.apply_plugin_mutations();
+        self.call_plugins(|editor| {
+            editor
+                .plugin_host
+                .dispatch(&crate::plugin::events::EditorEvent::LspProgress {
+                    language,
+                    server_name: name,
+                });
+        });
     }
 
     /// True when `uri` (normalized) is the active document. Stale results for a
@@ -325,14 +327,15 @@ impl<T: TerminalBackend> Editor<T> {
 
         let error_count = diagnostics.iter().filter(|d| d.severity == Some(1)).count();
         let warning_count = diagnostics.iter().filter(|d| d.severity == Some(2)).count();
-        self.update_lua_state();
-        self.plugin_host
-            .dispatch(&crate::plugin::events::EditorEvent::LspDiagnosticsChanged {
-                uri: key,
-                error_count,
-                warning_count,
-            });
-        self.apply_plugin_mutations();
+        self.call_plugins(|editor| {
+            editor.plugin_host.dispatch(
+                &crate::plugin::events::EditorEvent::LspDiagnosticsChanged {
+                    uri: key,
+                    error_count,
+                    warning_count,
+                },
+            );
+        });
 
         let _ = self.update_and_render();
     }

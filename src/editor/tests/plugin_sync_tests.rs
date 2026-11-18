@@ -180,3 +180,56 @@ fn registered_command_is_listed_before_any_sync() {
          assert(found)",
     );
 }
+
+fn notification_count(editor: &Editor<MockTerminal>, message: &str) -> usize {
+    editor
+        .state
+        .error_manager
+        .notifications()
+        .iter_active()
+        .filter(|n| n.message == message)
+        .count()
+}
+
+#[test]
+fn mutation_queued_by_a_nested_dispatch_applies_in_the_same_call() {
+    let mut editor = lua_editor("hello\n");
+    lua_ok(
+        &editor,
+        "rift.register_buffer_kind('probe', { on_close = function() end }) \
+         rift.on('BufOpen', function() rift.set_cursor(2, 1) end)",
+    );
+    editor.apply_plugin_mutations();
+
+    lua_ok(
+        &editor,
+        "rift.create_buffer('probe', { lines = { 'aaa', 'bbb' } })",
+    );
+    editor.apply_plugin_mutations();
+
+    let doc = editor.document_manager.active_document().unwrap();
+    assert_eq!(doc.kind.kind_str(), "probe");
+    assert_eq!(doc.buffer.cursor(), 5);
+}
+
+#[test]
+fn mutations_that_keep_requeuing_stop_at_the_round_cap() {
+    let mut editor = lua_editor("hello\n");
+    lua_ok(
+        &editor,
+        "rift.on('BufOpen', function() rift.create_scratch_buf('loop', { 'x' }) end) \
+         rift.create_scratch_buf('loop', { 'x' })",
+    );
+
+    editor.apply_plugin_mutations();
+
+    assert_eq!(editor.document_manager.documents_iter().count(), 17);
+    assert!(editor.plugin_host.has_queued_mutations());
+    assert_eq!(
+        notification_count(
+            &editor,
+            "plugin mutations kept re-queuing; stopped after 16 rounds"
+        ),
+        1
+    );
+}

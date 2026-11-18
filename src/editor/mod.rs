@@ -207,6 +207,7 @@ pub struct Editor<T: TerminalBackend> {
     dispatch_registry: crate::annotations::registry::DispatchRegistry,
     kind_registry: crate::annotations::registry::KindRegistry,
     hovered_annotation: Option<crate::annotations::AnnotationId>,
+    plugin_mutation_rounds: Option<usize>,
     pending_syntax_reparse:
         std::collections::HashMap<crate::document::DocumentId, jobs::PendingSyntaxReparse>,
     pending_git_gutter_diff:

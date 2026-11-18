@@ -232,12 +232,13 @@ impl<T: TerminalBackend> Editor<T> {
             let code = s.strip_prefix("lua").map_or("", |r| r.trim_start());
             // First :lua in a pluginless session: snapshot state for it.
             self.plugin_host.mark_lua_used();
-            self.update_lua_state();
-            if let Some(err) = self.plugin_host.lua_exec(code) {
-                self.state
-                    .notify(crate::notification::NotificationType::Error, err);
-            }
-            self.apply_plugin_mutations();
+            self.call_plugins(|editor| {
+                if let Some(err) = editor.plugin_host.lua_exec(code) {
+                    editor
+                        .state
+                        .notify(crate::notification::NotificationType::Error, err);
+                }
+            });
         } else if !self.plugin_host.execute_command(name, args) {
             self.state.handle_error(crate::error::RiftError::new(
                 crate::error::ErrorType::Parse,

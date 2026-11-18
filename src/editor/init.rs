@@ -161,6 +161,7 @@ impl<T: TerminalBackend> Editor<T> {
             dispatch_registry: crate::annotations::registry::DispatchRegistry::with_builtins(),
             kind_registry: crate::annotations::registry::KindRegistry::with_core(),
             hovered_annotation: None,
+            plugin_mutation_rounds: None,
             pending_syntax_reparse: std::collections::HashMap::new(),
             pending_git_gutter_diff: std::collections::HashMap::new(),
             git_gutter_repo_cache: std::collections::HashMap::new(),
@@ -221,23 +222,25 @@ impl<T: TerminalBackend> Editor<T> {
                 (buf, path, filetype)
             });
             if let Some((buf, path, filetype)) = buf_info {
-                self.update_lua_state();
-                self.plugin_host
-                    .dispatch(&crate::plugin::events::EditorEvent::BufOpen {
-                        buf,
-                        path,
-                        filetype,
-                    });
-                self.apply_plugin_mutations();
+                self.call_plugins(|editor| {
+                    editor
+                        .plugin_host
+                        .dispatch(&crate::plugin::events::EditorEvent::BufOpen {
+                            buf,
+                            path,
+                            filetype,
+                        });
+                });
                 #[cfg(feature = "lsp")]
                 self.lsp_notify_open(buf);
             }
         }
 
-        self.update_lua_state();
-        self.plugin_host
-            .dispatch(&crate::plugin::events::EditorEvent::EditorStart);
-        self.apply_plugin_mutations();
+        self.call_plugins(|editor| {
+            editor
+                .plugin_host
+                .dispatch(&crate::plugin::events::EditorEvent::EditorStart);
+        });
 
         if let Some(dir) = target_dir {
             self.open_explorer(dir);

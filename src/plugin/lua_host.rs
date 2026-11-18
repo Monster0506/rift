@@ -3187,6 +3187,10 @@ impl LuaHost {
         result
     }
 
+    pub(super) fn has_queued_mutations(&self) -> bool {
+        !self.shared.borrow().mutations.is_empty()
+    }
+
     /// Drain all mutations queued by Lua API calls. Fires pending shell-completion
     /// events as Lua `UserEvents` first, so their handlers can queue further mutations.
     #[must_use]

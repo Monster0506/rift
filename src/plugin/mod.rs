@@ -1419,6 +1419,15 @@ impl PluginHost {
         self.mutation_queue.drain(..).map(|env| env.mutation)
     }
 
+    pub(crate) fn has_queued_mutations(&self) -> bool {
+        self.mutation_queue
+            .iter()
+            .any(|env| env.origin.is_none_or(|gen| self.is_generation_active(gen)))
+            || self.lua.as_ref().is_some_and(|lua| {
+                lua.has_queued_mutations() && self.is_generation_active(lua.generation())
+            })
+    }
+
     /// Drain all queued mutation envelopes, discarding any whose origin generation is no longer active.
     pub(crate) fn drain_mutation_envelopes(
         &mut self,

@@ -95,9 +95,7 @@ impl<T: TerminalBackend> Editor<T> {
             let notif_tick = self.state.error_manager.notifications().tick(timeout);
 
             if let Some(hold_event) = self.plugin_host.tick_idle() {
-                self.update_lua_state();
-                self.plugin_host.dispatch(&hold_event);
-                self.apply_plugin_mutations();
+                self.call_plugins(|editor| editor.plugin_host.dispatch(&hold_event));
             }
 
             if jobs_changed
@@ -216,10 +214,11 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_terminal_resize(&mut self, rows: u16, cols: u16) -> Result<(), RiftError> {
         self.render_system.resize(rows as usize, cols as usize);
-        self.update_lua_state();
-        self.plugin_host
-            .dispatch(&crate::plugin::events::EditorEvent::WindowResized { rows, cols });
-        self.apply_plugin_mutations();
+        self.call_plugins(|editor| {
+            editor
+                .plugin_host
+                .dispatch(&crate::plugin::events::EditorEvent::WindowResized { rows, cols });
+        });
         self.update_and_render()
     }
 
