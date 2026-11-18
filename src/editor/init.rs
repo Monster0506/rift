@@ -178,20 +178,13 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         crate::keymap::defaults::register_defaults(&mut editor.keymap);
-        editor.load_startup_plugins();
+        editor.load_plugins();
         if effective_file_path.is_some() {
             editor.restore_startup_undo(initial_doc_id);
         }
         editor.finish_startup(target_dir);
 
         Ok(editor)
-    }
-
-    fn load_startup_plugins(&mut self) {
-        if let Err(e) = self.load_plugins() {
-            self.state
-                .notify(crate::notification::NotificationType::Error, e.to_string());
-        }
     }
 
     fn restore_startup_undo(&mut self, doc_id: DocumentId) {
@@ -383,39 +376,33 @@ impl<T: TerminalBackend> Editor<T> {
         self.dispatch_registry.clear_lua_handlers();
     }
 
-    pub(super) fn load_plugins(&mut self) -> Result<(), RiftError> {
-        self.retire_lua_plugins();
-        if let Some(err) = self.plugin_host.init_lua(Arc::clone(&self.language_loader)) {
-            return Err(RiftError::new(
-                ErrorType::Internal,
-                crate::constants::errors::PLUGIN_LOAD_FAILED,
-                err,
-            ));
-        }
-
-        for dir in plugin_dirs() {
-            if let Some(err) = self.plugin_host.lua_load_dir(&dir).into_iter().next() {
-                return Err(RiftError::new(
-                    ErrorType::Internal,
-                    crate::constants::errors::PLUGIN_LOAD_FAILED,
-                    err,
-                ));
-            }
-        }
-
+    pub(super) fn load_plugins(&mut self) {
         let init_lua = user_config_dir().join("init.lua");
-        if init_lua.is_file() {
-            if let Some(err) = self.plugin_host.lua_load_file(&init_lua) {
-                return Err(RiftError::new(
-                    ErrorType::Internal,
-                    crate::constants::errors::PLUGIN_LOAD_FAILED,
-                    err,
-                ));
-            }
+        for err in self.load_plugins_from(&plugin_dirs(), &init_lua) {
+            self.state
+                .notify(crate::notification::NotificationType::Error, err);
         }
+    }
 
+    pub(super) fn load_plugins_from(
+        &mut self,
+        dirs: &[std::path::PathBuf],
+        init_lua: &std::path::Path,
+    ) -> Vec<String> {
+        self.retire_lua_plugins();
+        let mut errors: Vec<String> = self
+            .plugin_host
+            .init_lua(Arc::clone(&self.language_loader))
+            .into_iter()
+            .collect();
+        for dir in dirs {
+            errors.extend(self.plugin_host.lua_load_dir(dir));
+        }
+        if init_lua.is_file() {
+            errors.extend(self.plugin_host.lua_load_file(init_lua));
+        }
         self.apply_plugin_mutations();
-        Ok(())
+        errors
     }
 
     pub(crate) const fn set_remote(&mut self, remote: bool) {

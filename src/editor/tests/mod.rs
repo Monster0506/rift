@@ -19,6 +19,8 @@ mod motion_tests;
 mod normal_cursor_tests;
 mod operator_tests;
 mod plugin_highlight_tests;
+#[cfg(feature = "plugins")]
+mod plugin_loading_tests;
 mod plugin_settings_tests;
 #[cfg(feature = "treesitter")]
 mod plugin_treesitter_tests;

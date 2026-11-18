@@ -471,9 +471,7 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::Reload => {
-                if let Err(e) = self.load_plugins() {
-                    self.state.handle_error(e);
-                }
+                self.load_plugins();
                 true
             }
             EditorAction::Save => {

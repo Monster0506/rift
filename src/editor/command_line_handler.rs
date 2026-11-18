@@ -147,11 +147,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.save_quit_to(path);
             }
             ExecutionResult::Redraw => self.redraw_from_command(),
-            ExecutionResult::Reload => {
-                if let Err(e) = self.load_plugins() {
-                    self.state.handle_error(e);
-                }
-            }
+            ExecutionResult::Reload => self.load_plugins(),
             ExecutionResult::Edit { path, bangs } => {
                 if let Err(e) = self.open_file(path, bangs > 0) {
                     self.state.handle_error(e);

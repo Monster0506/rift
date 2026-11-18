@@ -5,7 +5,6 @@ pub(crate) mod errors {
     pub(crate) const NOT_A_FILE: &str = "NOT_A_FILE";
     pub(crate) const NOT_A_DIRECTORY: &str = "NOT_A_DIRECTORY";
     pub(crate) const SEARCH_ERROR: &str = "SEARCH_ERROR";
-    pub(crate) const PLUGIN_LOAD_FAILED: &str = "PLUGIN_LOAD_FAILED";
     pub(crate) const POLL_FAILED: &str = "POLL_FAILED";
     pub(crate) const RENDER_FAILED: &str = "RENDER_FAILED";
     pub(crate) const PARENT_DIR_MISSING: &str = "PARENT_DIR_MISSING";
