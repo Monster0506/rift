@@ -608,21 +608,17 @@ impl<T: TerminalBackend> Editor<T> {
             }
             PluginMutation::ReplaceLines { start, end, lines } => {
                 if let Some(doc) = self.document_manager.active_document_mut() {
-                    let start0 = start.saturating_sub(1);
-                    let end0 = end.saturating_sub(1);
-                    let line_count = doc.buffer.line_index.line_count();
-                    if start0 < line_count {
-                        let range_start = doc.buffer.line_index.get_line_start(start0);
-                        let range_end = if end0 + 1 < line_count {
-                            doc.buffer.line_index.get_line_start(end0 + 1)
-                        } else {
-                            doc.buffer.len()
-                        };
-                        let _ = doc.delete_range(range_start, range_end);
-                        let _ = doc.buffer.set_cursor(range_start);
-                        if !lines.is_empty() {
-                            let _ = doc.insert_str(&lines.join("\n"));
+                    if let Some(edit) = doc.buffer.line_replacement(
+                        start.saturating_sub(1),
+                        end.saturating_sub(1),
+                        &lines,
+                    ) {
+                        let _ = doc.delete_range(edit.start, edit.end);
+                        let _ = doc.buffer.set_cursor(edit.start);
+                        if !edit.text.is_empty() {
+                            let _ = doc.insert_str(&edit.text);
                         }
+                        let _ = doc.buffer.set_cursor(edit.cursor.min(doc.buffer.len()));
                     }
                 }
                 self.do_incremental_syntax_parse();
@@ -635,12 +631,7 @@ impl<T: TerminalBackend> Editor<T> {
         match mutation {
             PluginMutation::SetCursor { row, col } => {
                 if let Some(doc) = self.document_manager.active_document_mut() {
-                    let row0 = row.saturating_sub(1);
-                    let line_count = doc.buffer.line_index.line_count();
-                    let row0 = row0.min(line_count.saturating_sub(1));
-                    let line_start = doc.buffer.line_index.get_line_start(row0);
-                    let total = doc.buffer.len();
-                    let pos = (line_start + col).min(total.saturating_sub(1));
+                    let pos = doc.buffer.line_col_position(row.saturating_sub(1), col);
                     let _ = doc.buffer.set_cursor(pos);
                 }
             }

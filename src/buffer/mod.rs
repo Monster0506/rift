@@ -7,6 +7,7 @@ use std::cell::RefCell;
 
 pub(crate) mod api;
 mod line_cache;
+mod line_edit;
 pub(crate) mod line_index;
 pub(crate) mod rope;
 use line_cache::LineCache;
