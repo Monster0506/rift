@@ -135,6 +135,76 @@ fn test_os_execute_is_disabled() {
 }
 
 #[test]
+fn test_unsafe_stdlib_entries_are_nil() {
+    let host = make_host();
+    let check = host.exec(
+        r"
+        assert(debug == nil, 'debug')
+        assert(io.popen == nil, 'io.popen')
+        assert(os.exit == nil, 'os.exit')
+        assert(os.remove == nil, 'os.remove')
+        assert(os.rename == nil, 'os.rename')
+        assert(os.tmpname == nil, 'os.tmpname')
+        assert(package.loadlib == nil, 'package.loadlib')
+        assert(package.cpath == nil, 'package.cpath')
+        assert(#package.searchers == 2, 'searchers: ' .. #package.searchers)
+    ",
+    );
+    assert!(check.is_none(), "assertion failed: {check:?}");
+}
+
+#[test]
+fn test_runaway_handler_cannot_remove_the_budget_hook() {
+    let host = make_host();
+    load_plugin(
+        &host,
+        "runaway.lua",
+        r"
+        rift.on('TextChangedCoarse', function(_ev)
+            pcall(function() debug.sethook() end)
+            while true do end
+        end)
+    ",
+    );
+    let started = std::time::Instant::now();
+    let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse {
+        buf: crate::document::DocumentId::new(1),
+    });
+    assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].contains("time budget"), "{:?}", errors[0]);
+}
+
+#[test]
+fn test_fs_read_works_with_restricted_stdlib() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().join("data.txt");
+    std::fs::write(&path, "hello fs").expect("write failed");
+    let host = make_host();
+    let path = path.to_string_lossy().replace('\\', "/");
+    let check = host.exec(&format!(
+        "assert(rift.fs.exists({path:?}))
+         assert(rift.fs.read({path:?}) == 'hello fs')"
+    ));
+    assert!(check.is_none(), "assertion failed: {check:?}");
+}
+
+#[test]
+fn test_require_finds_module_on_added_package_path() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let lib = dir.path().join("it's]]lib");
+    std::fs::create_dir(&lib).expect("mkdir failed");
+    std::fs::write(lib.join("isolation_mod.lua"), "return { answer = 42 }").expect("write failed");
+    let host = make_host();
+    let lib = lib.to_string_lossy().replace('\\', "/");
+    let check = host.exec(&format!(
+        "rift.add_package_path({lib:?})
+         assert(require('isolation_mod').answer == 42)"
+    ));
+    assert!(check.is_none(), "assertion failed: {check:?}");
+}
+
+#[test]
 fn test_annotations_add_queues_mutation() {
     let host = make_host();
     assert!(host

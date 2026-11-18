@@ -665,8 +665,17 @@ impl LuaHost {
         generation: crate::plugin::PluginGeneration,
         language_loader: Arc<crate::syntax::loader::LanguageLoader>,
     ) -> LuaResult<Self> {
-        // SAFETY: unsafe_new enables C modules and the debug library; rift only runs the user's own local plugin scripts.
-        let lua = unsafe { Lua::unsafe_new() };
+        let lua = Lua::new_with(
+            LuaStdLib::COROUTINE
+                | LuaStdLib::TABLE
+                | LuaStdLib::IO
+                | LuaStdLib::OS
+                | LuaStdLib::STRING
+                | LuaStdLib::UTF8
+                | LuaStdLib::MATH
+                | LuaStdLib::PACKAGE,
+            LuaOptions::default(),
+        )?;
         let shared = Rc::new(RefCell::new(LuaSharedState::new(language_loader)));
         let hook_deadline: Rc<RefCell<Option<std::time::Instant>>> = Rc::new(RefCell::new(None));
         let (shell_result_tx, shell_result_rx) = std::sync::mpsc::channel::<ShellResult>();
@@ -702,6 +711,7 @@ impl LuaHost {
             })?;
             os_table.set("execute", err_fn)?;
         }
+        Self::remove_unsafe_stdlib(&lua)?;
 
         // Internal handler/registration tables: _rift_handlers[event] = {{slot,fn}},
         // _rift_slot_{events,plugin}[slot] and _rift_plugin_{slots,keymaps}[plugin] index them for rift.off/unload.
@@ -2429,13 +2439,31 @@ impl LuaHost {
         Ok(())
     }
 
+    fn remove_unsafe_stdlib(lua: &Lua) -> LuaResult<()> {
+        let globals = lua.globals();
+        let io: LuaTable = globals.get("io")?;
+        io.set("popen", LuaNil)?;
+        let os: LuaTable = globals.get("os")?;
+        for name in ["exit", "remove", "rename", "tmpname"] {
+            os.set(name, LuaNil)?;
+        }
+        let package: LuaTable = globals.get("package")?;
+        package.set("loadlib", LuaNil)?;
+        package.set("cpath", LuaNil)?;
+        let searchers: LuaTable = package.get("searchers")?;
+        for index in (3..=searchers.raw_len()).rev() {
+            searchers.raw_set(index, LuaNil)?;
+        }
+        Ok(())
+    }
+
     fn register_package_path(lua: &Lua, api: &LuaTable) -> LuaResult<()> {
         {
             let f = lua.create_function(|lua, path: String| {
                 let path = path.replace('\\', "/");
-                let code = format!("package.path = package.path .. ';{path}/?.lua'");
-                lua.load(code.as_str()).exec()?;
-                Ok(())
+                let package: LuaTable = lua.globals().get("package")?;
+                let current: String = package.get("path")?;
+                package.set("path", format!("{current};{path}/?.lua"))
             })?;
             api.set("add_package_path", f)?;
         }
