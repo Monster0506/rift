@@ -75,7 +75,6 @@ pub(crate) enum EditorEvent {
     EditorQuit,
 
     /// The terminal was resized.
-    #[cfg(test)]
     WindowResized { rows: u16, cols: u16 },
 
     /// An LSP server process spawned and connected (before it finishes indexing).
@@ -178,7 +177,6 @@ impl EditorEvent {
                 t.set("from", format!("{from:?}").to_lowercase())?;
                 t.set("to", format!("{to:?}").to_lowercase())?;
             }
-            #[cfg(test)]
             Self::WindowResized { rows, cols } => {
                 t.set("rows", i64::from(*rows))?;
                 t.set("cols", i64::from(*cols))?;
@@ -241,7 +239,6 @@ impl EditorEvent {
             Self::ModeChanged { .. } => "ModeChanged",
             Self::EditorStart => "EditorStart",
             Self::EditorQuit => "EditorQuit",
-            #[cfg(test)]
             Self::WindowResized { .. } => "WindowResized",
             Self::WinEnter { .. } => "WinEnter",
             Self::WinLeave { .. } => "WinLeave",

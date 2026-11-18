@@ -135,6 +135,34 @@ fn resize_that_moves_the_cursor_leaves_a_single_soft_cursor() {
     assert_eq!(cursors.len(), 1, "stale cursor cells: {cursors:?}");
 }
 
+#[cfg(feature = "plugins")]
+#[test]
+fn terminal_resize_event_fires_window_resized_with_current_window_size() {
+    let mut editor = editor_with_text("hello\n");
+    let err = editor.plugin_host.lua_exec(
+        r#"
+        resized = nil
+        rift.on("WindowResized", function(ev)
+            local rows, cols = rift.get_window_size()
+            resized = { ev.rows, ev.cols, rows, cols }
+        end)
+        "#,
+    );
+    assert!(err.is_none(), "{err:?}");
+
+    send_events(&mut editor, [crate::key::InputEvent::Resize(100, 30)]);
+
+    let err = editor.plugin_host.lua_exec(
+        r#"
+        assert(resized ~= nil, "WindowResized did not fire")
+        local got = table.concat(resized, ",")
+        assert(got == "30,100,30,100", got)
+        "#,
+    );
+    assert!(err.is_none(), "{err:?}");
+    assert_eq!(editor.render_system.compositor.cols(), 100);
+}
+
 #[test]
 fn test_split_creates_second_window() {
     use crate::split::tree::SplitDirection;

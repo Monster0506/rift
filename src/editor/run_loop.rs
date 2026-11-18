@@ -201,8 +201,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return Ok(true);
             }
             InputEvent::Resize(cols, rows) => {
-                self.render_system.resize(rows as usize, cols as usize);
-                self.update_and_render()?;
+                self.handle_terminal_resize(rows, cols)?;
                 return Ok(true);
             }
             InputEvent::Key(key) => key,
@@ -213,6 +212,15 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         self.handle_key_press(key_press)
+    }
+
+    fn handle_terminal_resize(&mut self, rows: u16, cols: u16) -> Result<(), RiftError> {
+        self.render_system.resize(rows as usize, cols as usize);
+        self.update_lua_state();
+        self.plugin_host
+            .dispatch(&crate::plugin::events::EditorEvent::WindowResized { rows, cols });
+        self.apply_plugin_mutations();
+        self.update_and_render()
     }
 
     fn replay_deferred_keys(&mut self) -> Result<(), RiftError> {
@@ -717,10 +725,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.toggle_debug();
             }
             KeyAction::Resize(cols, rows) => {
-                self.render_system.resize(rows as usize, cols as usize);
-                self.plugin_host
-                    .dispatch(&crate::plugin::events::EditorEvent::WindowResized { rows, cols });
-                self.apply_plugin_mutations();
+                self.handle_terminal_resize(rows, cols).unwrap();
             }
             KeyAction::SkipAndRender | KeyAction::Continue => {}
         }

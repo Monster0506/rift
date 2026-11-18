@@ -234,7 +234,7 @@ pub(super) fn compositor_ascii<T: crate::term::TerminalBackend>(editor: &mut Edi
 
 pub(super) struct KeyQueue {
     inner: MockTerminal,
-    queue: std::collections::VecDeque<crate::key::Key>,
+    queue: std::collections::VecDeque<crate::key::InputEvent>,
 }
 
 impl crate::term::TerminalBackend for KeyQueue {
@@ -248,7 +248,7 @@ impl crate::term::TerminalBackend for KeyQueue {
         Ok(!self.queue.is_empty())
     }
     fn read_event(&mut self) -> Result<Option<crate::key::InputEvent>, crate::error::RiftError> {
-        Ok(self.queue.pop_front().map(crate::key::InputEvent::Key))
+        Ok(self.queue.pop_front())
     }
     fn write(&mut self, bytes: &[u8]) -> Result<(), crate::error::RiftError> {
         self.inner.write(bytes)
@@ -295,7 +295,17 @@ pub(super) fn editor_with_text(text: &str) -> Editor<KeyQueue> {
 }
 
 pub(super) fn press(editor: &mut Editor<KeyQueue>, keys: &[crate::key::Key]) {
-    editor.term.queue.extend(keys.iter().copied());
+    send_events(
+        editor,
+        keys.iter().copied().map(crate::key::InputEvent::Key),
+    );
+}
+
+pub(super) fn send_events(
+    editor: &mut Editor<KeyQueue>,
+    events: impl IntoIterator<Item = crate::key::InputEvent>,
+) {
+    editor.term.queue.extend(events);
     while editor.term.poll(std::time::Duration::ZERO).unwrap() {
         editor.tick().unwrap();
     }
