@@ -117,7 +117,7 @@ impl Document {
         Self {
             id,
             buffer,
-            options: DocumentOptions::default(),
+            options: crate::tracked::Tracked::default(),
             file_path: None,
             readonly_override: false,
             syntax: None,
@@ -128,7 +128,7 @@ impl Document {
             view_state: ViewState::default(),
             kind: BufferKind::file(),
             state: StateSlot::new(FILE_STATE_KEY, FileState),
-            vars: std::collections::HashMap::new(),
+            vars: crate::tracked::Tracked::default(),
             custom_highlights: Vec::new(),
             annotations: AnnotationStore::new(),
             selection_set: crate::selection::SelectionSet::default(),
@@ -182,11 +182,11 @@ impl Document {
         buffer.move_to_start();
 
         Ok(Self {
-            options: DocumentOptions {
+            options: crate::tracked::Tracked::new(DocumentOptions {
                 line_ending: decoded.line_ending,
                 has_bom: decoded.has_bom,
                 ..DocumentOptions::default()
-            },
+            }),
             file_path: path.map(Self::normalize_path),
             ..Self::skeleton(id, buffer)
         })
@@ -348,10 +348,10 @@ impl Document {
 
     pub(crate) fn new_undotree_preview(id: super::DocumentId, linked: &Self) -> Self {
         Self {
-            options: DocumentOptions {
+            options: crate::tracked::Tracked::new(DocumentOptions {
                 show_line_numbers: false,
                 ..linked.options.clone()
-            },
+            }),
             file_path: linked.file_path.clone(),
             readonly_override: true,
             history: linked.history.clone(),

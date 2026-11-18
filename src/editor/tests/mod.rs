@@ -24,6 +24,8 @@ mod plugin_keymap_tests;
 #[cfg(feature = "plugins")]
 mod plugin_loading_tests;
 mod plugin_settings_tests;
+#[cfg(feature = "plugins")]
+mod plugin_sync_tests;
 #[cfg(feature = "treesitter")]
 mod plugin_treesitter_tests;
 mod region_bank_ops_tests;

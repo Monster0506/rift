@@ -61,7 +61,7 @@ fn test_get_option_reads_document_local_setting_via_alias() {
         expand_tabs: true,
         mode: "normal",
         line_ending: "lf",
-        doc_options,
+        doc_options: Some(doc_options),
         ..Default::default()
     });
     assert!(host
@@ -90,7 +90,7 @@ fn test_get_option_falls_back_to_global_setting() {
         expand_tabs: true,
         mode: "normal",
         line_ending: "lf",
-        user_settings,
+        user_settings: Some(user_settings),
         ..Default::default()
     });
     assert!(host

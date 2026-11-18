@@ -149,7 +149,7 @@ impl<T: TerminalBackend> Editor<T> {
             #[cfg(feature = "lsp")]
             lsp_manager: crate::lsp::LspManager::new(std::env::current_dir().ok()),
             #[cfg(feature = "lsp")]
-            lsp_diagnostics: std::collections::BTreeMap::new(),
+            lsp_diagnostics: crate::tracked::Tracked::default(),
             #[cfg(feature = "lsp")]
             lsp_ready_servers: std::collections::HashSet::new(),
             #[cfg(feature = "lsp")]

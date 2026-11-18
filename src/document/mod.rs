@@ -172,7 +172,7 @@ pub(crate) struct ViewState {
 pub(crate) struct Document {
     pub(crate) id: DocumentId,
     pub(crate) buffer: TextBuffer,
-    pub(crate) options: DocumentOptions,
+    pub(crate) options: crate::tracked::Tracked<DocumentOptions>,
     file_path: Option<PathBuf>,
     readonly_override: bool,
     pub(crate) syntax: Option<Syntax>,
@@ -183,7 +183,9 @@ pub(crate) struct Document {
     view_state: ViewState,
     pub(crate) kind: BufferKind,
     pub(crate) state: StateSlot,
-    pub(crate) vars: std::collections::HashMap<String, crate::annotations::value::Value>,
+    pub(crate) vars: crate::tracked::Tracked<
+        std::collections::HashMap<String, crate::annotations::value::Value>,
+    >,
     pub(crate) custom_highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
     pub(crate) annotations: AnnotationStore,
     pub(crate) selection_set: crate::selection::SelectionSet,

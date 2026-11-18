@@ -44,7 +44,7 @@ fn set_wrap(value: &str) -> (ExecutionResult, DocumentOptions) {
         bangs: 0,
     };
     let result = execute_local_command(cmd, &mut state, &mut doc, &registry);
-    (result, doc.options)
+    (result, doc.options.clone())
 }
 
 #[test]

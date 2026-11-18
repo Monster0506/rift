@@ -356,7 +356,7 @@ impl CompletionSession {
 }
 
 pub struct State {
-    pub(crate) settings: UserSettings,
+    pub(crate) settings: crate::tracked::Tracked<UserSettings>,
     pub(crate) debug_mode: bool,
     pub(crate) file_path: Option<String>,
     pub(crate) file_name: String,
@@ -397,7 +397,7 @@ impl State {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            settings: UserSettings::new(),
+            settings: crate::tracked::Tracked::new(UserSettings::new()),
             debug_mode: false,
             file_path: None,
             file_name: "[No Name]".to_string(),
@@ -427,7 +427,7 @@ impl State {
     #[must_use]
     pub(crate) fn with_settings(settings: UserSettings) -> Self {
         Self {
-            settings,
+            settings: crate::tracked::Tracked::new(settings),
             debug_mode: false,
             file_path: None,
             file_name: "[No Name]".to_string(),
@@ -454,7 +454,7 @@ impl State {
     }
 
     #[cfg(test)]
-    const fn set_default_border_chars(&mut self, border_chars: Option<BorderChars>) {
+    fn set_default_border_chars(&mut self, border_chars: Option<BorderChars>) {
         self.settings.default_border_chars = border_chars;
     }
 
@@ -493,13 +493,13 @@ impl State {
 
     /// Line numbers draw only when both the document and the global setting allow them.
     #[must_use]
-    pub(crate) const fn line_numbers_on(&self, doc_enabled: bool) -> bool {
+    pub(crate) fn line_numbers_on(&self, doc_enabled: bool) -> bool {
         doc_enabled && self.settings.show_line_numbers
     }
 
     /// Gutter columns of the active document, 0 when its line numbers are hidden.
     #[must_use]
-    pub(crate) const fn gutter_cols(&self, doc_enabled: bool) -> usize {
+    pub(crate) fn gutter_cols(&self, doc_enabled: bool) -> usize {
         if self.line_numbers_on(doc_enabled) {
             self.gutter_width
         } else {

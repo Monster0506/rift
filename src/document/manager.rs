@@ -277,6 +277,13 @@ impl DocumentManager {
         self.documents.values()
     }
 
+    pub(crate) fn tabs(&self) -> impl Iterator<Item = (&Document, bool)> {
+        self.tab_order
+            .iter()
+            .enumerate()
+            .filter_map(|(i, id)| Some((self.documents.get(id)?, i == self.current_tab)))
+    }
+
     pub(crate) fn check_invariants(&self) -> Vec<String> {
         let mut out = Vec::new();
 

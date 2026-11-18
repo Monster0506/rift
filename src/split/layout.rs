@@ -1,6 +1,7 @@
 use super::tree::{SplitNode, SplitTree};
 use super::window::WindowId;
 use crate::num::f64_to_usize;
+use std::hash::{Hash, Hasher};
 
 pub(crate) const MIN_WINDOW_ROWS: usize = 3;
 pub(crate) const MIN_WINDOW_COLS: usize = 10;
@@ -20,6 +21,14 @@ impl SplitTree {
         let mut layouts = Vec::new();
         compute_node_layout(&self.root, 0, 0, total_rows, total_cols, &mut layouts);
         layouts
+    }
+
+    pub(crate) fn hash_layout<H: Hasher>(&self, state: &mut H) {
+        hash_node(&self.root, state);
+        for (id, window) in &self.windows {
+            id.hash(state);
+            window.document_id.get().hash(state);
+        }
     }
 }
 
@@ -92,6 +101,23 @@ fn compute_node_layout(
                     );
                 }
             }
+        }
+    }
+}
+
+fn hash_node<H: Hasher>(node: &SplitNode, state: &mut H) {
+    match node {
+        SplitNode::Leaf(window_id) => window_id.hash(state),
+        SplitNode::Split {
+            direction,
+            ratio,
+            first,
+            second,
+        } => {
+            direction.hash(state);
+            ratio.to_bits().hash(state);
+            hash_node(first, state);
+            hash_node(second, state);
         }
     }
 }

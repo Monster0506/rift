@@ -1,19 +1,56 @@
 use super::Editor;
+use crate::plugin::lua_host::{BufEntry, BufSourceUpdate, HistoryAvailability, SyncKeys};
 use crate::plugin::{HighlightRange, HighlightSpec, PluginGeneration, PluginMutation};
 use crate::term::TerminalBackend;
+use std::hash::{Hash, Hasher};
 
 struct LuaBufState {
     buf_id: usize,
     buf_kind: String,
-    source: crate::plugin::lua_host::BufSourceUpdate,
+    source: BufSourceUpdate,
     cursor: (usize, usize),
     filetype: Option<String>,
     file_path: Option<String>,
-    can_undo: bool,
-    can_redo: bool,
+    history: HistoryAvailability,
     is_dirty: bool,
     line_ending: &'static str,
-    doc_options: crate::document::definitions::DocumentOptions,
+    tab_width: usize,
+    expand_tabs: bool,
+}
+
+#[derive(Hash)]
+struct LuaBufView<'a> {
+    id: u64,
+    name: std::borrow::Cow<'a, str>,
+    is_dirty: bool,
+    is_current: bool,
+    kind: &'a str,
+    path: Option<&'a std::path::Path>,
+    line_count: usize,
+    is_read_only: bool,
+}
+
+impl From<LuaBufView<'_>> for BufEntry {
+    fn from(view: LuaBufView<'_>) -> Self {
+        Self {
+            id: usize::try_from(view.id).unwrap_or(usize::MAX),
+            name: view.name.into_owned(),
+            is_dirty: view.is_dirty,
+            is_current: view.is_current,
+            kind: view.kind.to_string(),
+            path: view.path.map(|p| p.to_string_lossy().into_owned()),
+            line_count: view.line_count,
+            is_read_only: view.is_read_only,
+        }
+    }
+}
+
+fn fingerprint<I: Hash>(items: impl IntoIterator<Item = I>) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for item in items {
+        item.hash(&mut hasher);
+    }
+    hasher.finish()
 }
 
 impl<T: TerminalBackend> Editor<T> {
@@ -23,7 +60,8 @@ impl<T: TerminalBackend> Editor<T> {
         }
         crate::perf_span!("lua_state_sync", crate::perf::PerfFields::default());
 
-        let user_settings = self.state.settings.clone();
+        let synced = self.plugin_host.lua_synced_keys();
+        let keys = self.lua_sync_keys();
         let mode = self.current_mode.as_str();
         let LuaBufState {
             buf_id,
@@ -32,33 +70,39 @@ impl<T: TerminalBackend> Editor<T> {
             cursor,
             filetype,
             file_path,
-            can_undo,
-            can_redo,
+            history,
             is_dirty,
             line_ending,
-            doc_options,
+            tab_width,
+            expand_tabs,
         } = self.lua_buf_state();
-        let tab_width = doc_options.tab_width;
-        let expand_tabs = doc_options.expand_tabs;
-        let buf_list = self.lua_buf_list();
 
         let window_size = (
             u16::try_from(self.render_system.compositor.rows()).unwrap_or(u16::MAX),
             u16::try_from(self.render_system.compositor.cols()).unwrap_or(u16::MAX),
         );
         let scroll = self.render_system.viewport.get_scroll();
-        let commands = self.lua_commands();
-        let win_list = self.lua_win_list();
         let focused_win_id = self.split_tree.focused_window_id().get();
         let previous_win_id = self
             .split_tree
             .previous_window
             .map(super::super::split::window::WindowId::get);
+        let buf_list = (keys.buf_list != synced.buf_list)
+            .then(|| self.lua_buf_views().map(BufEntry::from).collect());
+        let win_list = (keys.win_list != synced.win_list).then(|| self.lua_win_list());
         #[cfg(feature = "lsp")]
-        let lsp_diagnostics = self.lua_lsp_diagnostics();
+        let lsp_diagnostics =
+            (keys.lsp_diagnostics != synced.lsp_diagnostics).then(|| self.lua_lsp_diagnostics());
         #[cfg(not(feature = "lsp"))]
-        let lsp_diagnostics = std::collections::HashMap::new();
-        let buffer_vars = self.lua_buffer_vars();
+        let lsp_diagnostics = None;
+        let buffer_vars = (keys.buffer_vars != synced.buffer_vars).then(|| self.lua_buffer_vars());
+        let doc_options = (keys.doc_options != synced.doc_options).then(|| {
+            self.document_manager
+                .active_document()
+                .map_or_else(Default::default, |doc| doc.options.clone())
+        });
+        let user_settings =
+            (keys.user_settings != synced.user_settings).then(|| self.state.settings.clone());
         #[cfg(feature = "treesitter")]
         let syntax = self.lua_syntax_snapshots();
 
@@ -73,16 +117,16 @@ impl<T: TerminalBackend> Editor<T> {
                 mode,
                 filetype,
                 file_path,
-                buf_list,
                 window_size,
-                history: crate::plugin::lua_host::HistoryAvailability { can_undo, can_redo },
+                history,
                 is_dirty,
                 scroll,
                 line_ending,
-                commands,
-                win_list,
                 focused_win_id,
                 previous_win_id,
+                keys,
+                buf_list,
+                win_list,
                 lsp_diagnostics,
                 buffer_vars,
                 doc_options,
@@ -93,43 +137,89 @@ impl<T: TerminalBackend> Editor<T> {
         self.sync_lua_annotations();
     }
 
+    fn lua_sync_keys(&self) -> SyncKeys {
+        let mut layout = std::collections::hash_map::DefaultHasher::new();
+        (
+            self.render_system.compositor.rows(),
+            self.render_system.compositor.cols(),
+        )
+            .hash(&mut layout);
+        self.split_tree.hash_layout(&mut layout);
+        SyncKeys {
+            user_settings: Some(self.state.settings.revision()),
+            doc_options: Some(
+                self.document_manager
+                    .active_document()
+                    .map_or(0, |doc| doc.options.revision()),
+            ),
+            buf_list: Some(fingerprint(self.lua_buf_views())),
+            win_list: Some(layout.finish()),
+            #[cfg(feature = "lsp")]
+            lsp_diagnostics: Some(fingerprint(
+                std::iter::once((self.lsp_diagnostics.revision(), None)).chain(
+                    self.document_manager
+                        .documents_iter()
+                        .map(|doc| (doc.id.get(), doc.path())),
+                ),
+            )),
+            #[cfg(not(feature = "lsp"))]
+            lsp_diagnostics: None,
+            buffer_vars: Some(fingerprint(
+                self.document_manager
+                    .documents_iter()
+                    .map(|doc| (doc.id.get(), doc.vars.revision())),
+            )),
+        }
+    }
+
     #[cfg(feature = "treesitter")]
-    fn lua_syntax_snapshots(&self) -> Vec<(u64, Option<crate::syntax::snapshot::BufferSyntax>)> {
-        let synced: Vec<(u64, Option<crate::syntax::snapshot::BufferSyntax>)> = self
-            .document_manager
-            .documents_iter()
-            .filter_map(|doc| {
+    fn lua_syntax_snapshots(
+        &self,
+    ) -> Option<Vec<(u64, Option<crate::syntax::snapshot::BufferSyntax>)>> {
+        let parsed = || {
+            self.document_manager.documents_iter().filter_map(|doc| {
                 let syntax = doc.syntax.as_ref()?;
                 let root_id = syntax.tree.as_ref()?.root_node().id();
+                Some((doc, syntax, root_id))
+            })
+        };
+        if self.plugin_host.syntax_unchanged(
+            parsed().map(|(doc, _, root_id)| (doc.id.get(), doc.buffer.revision, root_id)),
+        ) {
+            return None;
+        }
+        let synced: Vec<(u64, Option<crate::syntax::snapshot::BufferSyntax>)> = parsed()
+            .map(|(doc, syntax, root_id)| {
                 let id = doc.id.get();
                 let fresh = self
                     .plugin_host
                     .syntax_needs_sync(id, doc.buffer.revision, root_id)
                     .then(|| syntax.snapshot(id, &doc.buffer))
                     .flatten();
-                Some((id, fresh))
+                (id, fresh)
             })
             .collect();
         let live: Vec<u64> = synced.iter().map(|(id, _)| *id).collect();
         self.plugin_host.retain_synced_syntax(&live);
-        synced
+        Some(synced)
     }
 
     fn lua_buf_state(&self) -> LuaBufState {
         let Some(doc) = self.document_manager.active_document() else {
             self.plugin_host.clear_synced_buf();
+            let defaults = crate::document::definitions::DocumentOptions::default();
             return LuaBufState {
                 buf_id: 0,
                 buf_kind: "file".to_string(),
-                source: crate::plugin::lua_host::BufSourceUpdate::Cleared,
+                source: BufSourceUpdate::Cleared,
                 cursor: (0, 0),
                 filetype: None,
                 file_path: None,
-                can_undo: false,
-                can_redo: false,
+                history: HistoryAvailability::default(),
                 is_dirty: false,
                 line_ending: "lf",
-                doc_options: crate::document::definitions::DocumentOptions::default(),
+                tab_width: defaults.tab_width,
+                expand_tabs: defaults.expand_tabs,
             };
         };
         let buf_id = usize::try_from(doc.id.get()).unwrap_or(usize::MAX);
@@ -138,17 +228,15 @@ impl<T: TerminalBackend> Editor<T> {
             .plugin_host
             .synced_buf_matches(doc.id.get(), doc.buffer.revision)
         {
-            crate::plugin::lua_host::BufSourceUpdate::Unchanged
+            BufSourceUpdate::Unchanged
         } else {
             self.plugin_host
                 .set_synced_buf(doc.id.get(), doc.buffer.revision);
-            crate::plugin::lua_host::BufSourceUpdate::Set(Box::new(
-                crate::plugin::lua_host::BufLinesSource {
-                    revision: doc.buffer.revision,
-                    line_count: doc.buffer.get_total_lines(),
-                    buffer: doc.buffer.clone(),
-                },
-            ))
+            BufSourceUpdate::Set(Box::new(crate::plugin::lua_host::BufLinesSource {
+                revision: doc.buffer.revision,
+                line_count: doc.buffer.get_total_lines(),
+                buffer: doc.buffer.clone(),
+            }))
         };
         let (row, col) = {
             let cursor = doc.buffer.cursor();
@@ -167,32 +255,30 @@ impl<T: TerminalBackend> Editor<T> {
             cursor: (row, col),
             filetype: doc.syntax.as_ref().map(|s| s.language_name.clone()),
             file_path: doc.path().map(|p| p.to_string_lossy().into_owned()),
-            can_undo: doc.history.can_undo(),
-            can_redo: doc.history.can_redo(),
+            history: HistoryAvailability {
+                can_undo: doc.history.can_undo(),
+                can_redo: doc.history.can_redo(),
+            },
             is_dirty: doc.is_dirty(),
             line_ending,
-            doc_options: doc.options.clone(),
+            tab_width: doc.options.tab_width,
+            expand_tabs: doc.options.expand_tabs,
         }
     }
 
-    fn lua_buf_list(&self) -> Vec<crate::plugin::lua_host::BufEntry> {
+    fn lua_buf_views(&self) -> impl Iterator<Item = LuaBufView<'_>> {
         self.document_manager
-            .get_buffer_list()
-            .into_iter()
-            .filter_map(|b| {
-                let doc = self.document_manager.get_document(b.id)?;
-                Some(crate::plugin::lua_host::BufEntry {
-                    id: usize::try_from(b.id.get()).unwrap_or(usize::MAX),
-                    name: b.name,
-                    is_dirty: b.status.is_dirty,
-                    is_current: b.is_current,
-                    kind: doc.kind.kind_str().to_string(),
-                    path: doc.path().map(|p| p.to_string_lossy().into_owned()),
-                    line_count: doc.buffer.get_total_lines(),
-                    is_read_only: b.status.is_read_only,
-                })
+            .tabs()
+            .map(|(doc, is_current)| LuaBufView {
+                id: doc.id.get(),
+                name: doc.display_name(),
+                is_dirty: doc.is_dirty(),
+                is_current,
+                kind: doc.kind.kind_str(),
+                path: doc.path(),
+                line_count: doc.buffer.get_total_lines(),
+                is_read_only: doc.is_read_only(),
             })
-            .collect()
     }
 
     fn lua_win_list(&self) -> Vec<crate::plugin::lua_host::WinEntry> {
@@ -217,18 +303,8 @@ impl<T: TerminalBackend> Editor<T> {
             .collect()
     }
 
-    fn lua_commands(&self) -> Vec<(String, String)> {
-        self.plugin_host
-            .command_list()
-            .into_iter()
-            .map(|(name, desc, _)| (name, desc))
-            .collect()
-    }
-
     #[cfg(feature = "lsp")]
-    fn lua_lsp_diagnostics(
-        &self,
-    ) -> std::collections::HashMap<String, Vec<(u32, u32, u32, String)>> {
+    fn lua_lsp_diagnostics(&self) -> crate::plugin::lua_host::LspDiagnosticsSnapshot {
         self.lsp_diagnostics
             .iter()
             .map(|(uri, diags)| {
@@ -722,7 +798,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         document.set_handle(reservation.handle());
         document.kind = crate::document::kind::BufferKind::new(descriptor.clone());
-        document.vars = vars.into_iter().collect();
+        *document.vars = vars.into_iter().collect();
         if let Some(title_str) = title {
             document.vars.insert(
                 "title".to_string(),

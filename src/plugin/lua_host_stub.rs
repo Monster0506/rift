@@ -2,8 +2,8 @@
 //! exists, so every operation is a no-op / empty result.
 
 pub(crate) use crate::plugin::lua_state::{
-    AnnotationView, BufEntry, BufLinesSource, BufSourceUpdate, HistoryAvailability, StateUpdate,
-    WinEntry,
+    AnnotationView, BufEntry, BufLinesSource, BufSourceUpdate, HistoryAvailability,
+    LspDiagnosticsSnapshot, StateUpdate, SyncKeys, WinEntry,
 };
 
 /// Stand-in for the real `LuaHost`; holds no state since there is no VM.
@@ -38,6 +38,10 @@ impl LuaHost {
     pub(super) fn set_annotations(&self, _views: Vec<AnnotationView>, _next_id: u64) {}
 
     pub(super) fn update_state(&self, _update: StateUpdate<'_>) {}
+
+    pub(super) fn synced_keys(&self) -> SyncKeys {
+        SyncKeys::default()
+    }
 
     #[must_use]
     pub(super) const fn dispatch_event(

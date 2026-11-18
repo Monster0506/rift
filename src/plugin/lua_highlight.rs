@@ -23,6 +23,7 @@ fn register_groups(lua: &Lua, hl: &LuaTable, shared: &Shared) -> LuaResult<()> {
             let style = cell_style(parse_style(&style)?);
             let mut s = sh.borrow_mut();
             s.user_settings.set_highlight_override(&group, Some(style));
+            s.synced.user_settings = None;
             s.mutations.push(PluginMutation::SetHighlightGroup {
                 name: group,
                 style: Some(style),
@@ -61,6 +62,7 @@ fn register_groups(lua: &Lua, hl: &LuaTable, shared: &Shared) -> LuaResult<()> {
                 s.user_settings.clear_highlight_overrides();
                 PluginMutation::ResetHighlightGroups
             };
+            s.synced.user_settings = None;
             s.mutations.push(mutation);
             Ok(())
         })?;

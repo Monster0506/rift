@@ -57,6 +57,7 @@ mod syntax;
 mod term;
 mod text_objects;
 mod time;
+mod tracked;
 mod transport;
 mod undotree_view;
 mod viewport;

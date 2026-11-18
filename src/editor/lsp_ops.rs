@@ -244,7 +244,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn refresh_lsp_diag_status(&mut self, language: &str, server_name: &str) {
         let mut errors = 0usize;
         let mut warnings = 0usize;
-        for (uri, diags) in &self.lsp_diagnostics {
+        for (uri, diags) in self.lsp_diagnostics.iter() {
             if self.lsp_manager.language_for_uri(uri) == Some(language) {
                 errors += diags.iter().filter(|d| d.severity == Some(1)).count();
                 warnings += diags.iter().filter(|d| d.severity == Some(2)).count();

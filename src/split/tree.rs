@@ -5,7 +5,7 @@ use crate::document::DocumentId;
 use super::navigation::Direction;
 use super::window::{Window, WindowId};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SplitDirection {
     Horizontal,
     Vertical,

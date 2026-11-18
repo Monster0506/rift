@@ -699,6 +699,19 @@ impl PluginHost {
     }
 
     #[cfg(feature = "treesitter")]
+    pub(crate) fn syntax_unchanged(
+        &self,
+        mut docs: impl Iterator<Item = (u64, u64, usize)>,
+    ) -> bool {
+        let synced = self.synced_syntax.borrow();
+        let mut count = 0;
+        docs.all(|(doc_id, revision, root_id)| {
+            count += 1;
+            synced.get(&doc_id) == Some(&(revision, root_id))
+        }) && count == synced.len()
+    }
+
+    #[cfg(feature = "treesitter")]
     pub(crate) fn retain_synced_syntax(&self, live: &[u64]) {
         self.synced_syntax
             .borrow_mut()
@@ -1026,6 +1039,12 @@ impl PluginHost {
         if let Some(lua) = &self.lua {
             lua.update_state(update);
         }
+    }
+
+    pub(crate) fn lua_synced_keys(&self) -> lua_host::SyncKeys {
+        self.lua
+            .as_ref()
+            .map_or_else(lua_host::SyncKeys::default, lua_host::LuaHost::synced_keys)
     }
 
     /// Refresh the `rift.annotations` query snapshot and the next `add{}` id.

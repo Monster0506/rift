@@ -193,7 +193,9 @@ pub struct Editor<T: TerminalBackend> {
     #[cfg(feature = "lsp")]
     lsp_manager: crate::lsp::LspManager,
     #[cfg(feature = "lsp")]
-    lsp_diagnostics: std::collections::BTreeMap<String, Vec<crate::lsp::protocol::LspDiagnostic>>,
+    lsp_diagnostics: crate::tracked::Tracked<
+        std::collections::BTreeMap<String, Vec<crate::lsp::protocol::LspDiagnostic>>,
+    >,
     #[cfg(feature = "lsp")]
     lsp_ready_servers: std::collections::HashSet<String>,
     #[cfg(feature = "lsp")]

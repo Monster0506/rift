@@ -3,8 +3,8 @@
 use crate::notification::NotificationType;
 use crate::plugin::events::EditorEvent;
 pub(crate) use crate::plugin::lua_state::{
-    AnnotationView, BufEntry, BufLinesSource, BufSourceUpdate, HistoryAvailability, StateUpdate,
-    WinEntry,
+    AnnotationView, BufEntry, BufLinesSource, BufSourceUpdate, HistoryAvailability,
+    LspDiagnosticsSnapshot, StateUpdate, SyncKeys, WinEntry,
 };
 use crate::plugin::lua_value::{
     lua_index, lua_int, value_from_lua, value_from_lua_table, value_into_lua,
@@ -196,8 +196,6 @@ struct LuaSharedState {
     scroll: (usize, usize),
     /// Current line ending: "lf" or "crlf".
     line_ending: String,
-    /// Snapshot of registered plugin commands: (name, description).
-    commands: Vec<(String, String)>,
     /// Snapshot of all split windows with layout info, updated before each dispatch.
     win_list: Vec<WinEntry>,
     /// ID of the currently focused window.
@@ -206,7 +204,7 @@ struct LuaSharedState {
     previous_win_id: Option<u64>,
     /// Snapshot of LSP diagnostics: `normalized_uri` -> [(line, col, severity, message)].
     /// severity: 1=error, 2=warning, 3=info, 4=hint
-    lsp_diagnostics: std::collections::HashMap<String, Vec<(u32, u32, u32, String)>>,
+    lsp_diagnostics: LspDiagnosticsSnapshot,
     /// The plugin file currently being loaded, used to tag registrations with their owner.
     /// Set to the file path before executing each plugin file; cleared after.
     current_plugin: Option<String>,
@@ -220,6 +218,7 @@ struct LuaSharedState {
     >,
     doc_options: crate::document::definitions::DocumentOptions,
     user_settings: crate::state::UserSettings,
+    synced: SyncKeys,
     #[cfg(feature = "treesitter")]
     language_loader: Arc<crate::syntax::loader::LanguageLoader>,
     #[cfg(feature = "treesitter")]
@@ -279,7 +278,6 @@ impl LuaSharedState {
             is_dirty: false,
             scroll: (0, 0),
             line_ending: "lf".to_string(),
-            commands: Vec::new(),
             win_list: Vec::new(),
             focused_win_id: 0,
             previous_win_id: None,
@@ -290,6 +288,7 @@ impl LuaSharedState {
             buffer_vars: std::collections::HashMap::new(),
             doc_options: crate::document::definitions::DocumentOptions::default(),
             user_settings: crate::state::UserSettings::new(),
+            synced: SyncKeys::default(),
             #[cfg(feature = "treesitter")]
             language_loader,
             #[cfg(feature = "treesitter")]
@@ -298,6 +297,20 @@ impl LuaSharedState {
             query_cache: std::collections::HashMap::new(),
         }
     }
+}
+
+fn registered_commands(lua: &Lua) -> Vec<(String, String, Option<String>)> {
+    let Ok(cmds) = lua.globals().get::<LuaTable>("_rift_commands") else {
+        return Vec::new();
+    };
+    cmds.pairs::<String, LuaTable>()
+        .flatten()
+        .map(|(name, entry)| {
+            let desc: String = entry.get("description").unwrap_or_default();
+            let arg_type: Option<String> = entry.get("arg_type").ok().flatten();
+            (name, desc, arg_type)
+        })
+        .collect()
 }
 
 /// Owns the Lua VM and registers the `rift.*` API.
@@ -1536,12 +1549,12 @@ impl LuaHost {
 
         {
             let sh = Rc::clone(shared);
+            let resolver = crate::command_line::settings::resolver::SettingsResolver::new(
+                crate::document::definitions::create_document_settings_registry(),
+                crate::command_line::settings::definitions::create_settings_registry(),
+            );
             let f = lua.create_function(move |lua, name: String| {
-                let s = sh.borrow_mut();
-                let resolver = crate::command_line::settings::resolver::SettingsResolver::new(
-                    crate::document::definitions::create_document_settings_registry(),
-                    crate::command_line::settings::definitions::create_settings_registry(),
-                );
+                let s = sh.borrow();
                 resolver
                     .get(&name, &s.doc_options, &s.user_settings)
                     .map_or_else(
@@ -1696,16 +1709,13 @@ impl LuaHost {
         shared: &Rc<RefCell<LuaSharedState>>,
     ) -> LuaResult<()> {
         // rift.get_commands() -> sequence of { name, description }
-        // Returns all registered plugin commands (both Rust and Lua).
         {
-            let sh = Rc::clone(shared);
-            let f = lua.create_function(move |lua, ()| {
-                let s = sh.borrow_mut();
+            let f = lua.create_function(|lua, ()| {
                 let result = lua.create_table()?;
-                for (i, (name, desc)) in s.commands.iter().enumerate() {
+                for (i, (name, desc, _)) in registered_commands(lua).into_iter().enumerate() {
                     let entry = lua.create_table()?;
-                    entry.set("name", name.as_str())?;
-                    entry.set("description", desc.as_str())?;
+                    entry.set("name", name)?;
+                    entry.set("description", desc)?;
                     result.set(i + 1, entry)?;
                 }
                 Ok(result)
@@ -2653,6 +2663,7 @@ impl LuaHost {
                         .entry(target_id)
                         .or_default()
                         .insert(key.clone(), val.clone());
+                    s.synced.buffer_vars = None;
                     s.mutations.push(PluginMutation::SetBufferVar {
                         buf_id: buf_id.map(crate::document::DocumentId::new),
                         key,
@@ -2709,10 +2720,22 @@ impl LuaHost {
         s.next_annotation_id = next_id;
     }
 
+    pub(super) fn synced_keys(&self) -> SyncKeys {
+        self.shared.borrow().synced
+    }
+
     /// Update the buffer snapshot that `rift.get_lines()` and friends read.
     /// Call this before dispatching an event.
     pub(super) fn update_state(&self, update: StateUpdate<'_>) {
-        let mut s = self.shared.borrow_mut();
+        fn replace<T>(slot: &mut T, synced: &mut Option<u64>, value: Option<T>, key: Option<u64>) {
+            if let Some(value) = value {
+                *slot = value;
+                *synced = key;
+            }
+        }
+
+        let mut guard = self.shared.borrow_mut();
+        let s = &mut *guard;
         s.buf_id = update.buf_id;
         s.buf_kind = update.buf_kind;
         match update.source {
@@ -2726,25 +2749,55 @@ impl LuaHost {
         s.mode = update.mode.to_string();
         s.filetype = update.filetype;
         s.file_path = update.file_path;
-        s.buf_list = update.buf_list;
         s.window_size = update.window_size;
         s.history = update.history;
         s.is_dirty = update.is_dirty;
         s.scroll = update.scroll;
         s.line_ending = update.line_ending.to_string();
-        s.commands = update.commands;
-        s.win_list = update.win_list;
         s.focused_win_id = update.focused_win_id;
         s.previous_win_id = update.previous_win_id;
-        s.lsp_diagnostics = update.lsp_diagnostics;
-        s.buffer_vars = update.buffer_vars;
-        s.doc_options = update.doc_options;
-        s.user_settings = update.user_settings;
+        let keys = update.keys;
+        let synced = &mut s.synced;
+        replace(
+            &mut s.buf_list,
+            &mut synced.buf_list,
+            update.buf_list,
+            keys.buf_list,
+        );
+        replace(
+            &mut s.win_list,
+            &mut synced.win_list,
+            update.win_list,
+            keys.win_list,
+        );
+        replace(
+            &mut s.lsp_diagnostics,
+            &mut synced.lsp_diagnostics,
+            update.lsp_diagnostics,
+            keys.lsp_diagnostics,
+        );
+        replace(
+            &mut s.buffer_vars,
+            &mut synced.buffer_vars,
+            update.buffer_vars,
+            keys.buffer_vars,
+        );
+        replace(
+            &mut s.doc_options,
+            &mut synced.doc_options,
+            update.doc_options,
+            keys.doc_options,
+        );
+        replace(
+            &mut s.user_settings,
+            &mut synced.user_settings,
+            update.user_settings,
+            keys.user_settings,
+        );
         #[cfg(feature = "treesitter")]
-        {
+        if let Some(syntax) = update.syntax {
             let mut synced = std::mem::take(&mut s.syntax);
-            s.syntax = update
-                .syntax
+            s.syntax = syntax
                 .into_iter()
                 .filter_map(|(doc, fresh)| Some((doc, fresh.or_else(|| synced.remove(&doc))?)))
                 .collect();
@@ -3053,17 +3106,7 @@ impl LuaHost {
     /// Returns all Lua-registered command names, descriptions, and arg types.
     #[must_use]
     pub(super) fn command_list(&self) -> Vec<(String, String, Option<String>)> {
-        let cmds: LuaTable = match self.lua.globals().get("_rift_commands") {
-            Ok(t) => t,
-            Err(_) => return vec![],
-        };
-        let mut list = Vec::new();
-        for (name, entry) in cmds.pairs::<String, LuaTable>().flatten() {
-            let desc: String = entry.get("description").unwrap_or_default();
-            let arg_type: Option<String> = entry.get("arg_type").ok().flatten();
-            list.push((name, desc, arg_type));
-        }
-        list
+        registered_commands(&self.lua)
     }
 
     /// Execute a plugin action registered via `rift.register_action`.

@@ -75,6 +75,20 @@ pub(crate) enum BufSourceUpdate {
     Set(Box<BufLinesSource>),
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct SyncKeys {
+    pub(crate) user_settings: Option<u64>,
+    pub(crate) doc_options: Option<u64>,
+    pub(crate) buf_list: Option<u64>,
+    pub(crate) win_list: Option<u64>,
+    pub(crate) lsp_diagnostics: Option<u64>,
+    pub(crate) buffer_vars: Option<u64>,
+}
+
+/// `normalized_uri` -> `(line, col, severity, message)`.
+pub(crate) type LspDiagnosticsSnapshot =
+    std::collections::HashMap<String, Vec<(u32, u32, u32, String)>>;
+
 /// Everything the Lua host takes before one dispatch. One value keeps the
 /// real host, the plugins-off stub, and `PluginHost` on a single signature.
 #[derive(Default)]
@@ -88,24 +102,25 @@ pub(crate) struct StateUpdate<'a> {
     pub(crate) mode: &'a str,
     pub(crate) filetype: Option<String>,
     pub(crate) file_path: Option<String>,
-    pub(crate) buf_list: Vec<BufEntry>,
     pub(crate) window_size: (u16, u16),
     pub(crate) history: HistoryAvailability,
     pub(crate) is_dirty: bool,
     pub(crate) scroll: (usize, usize),
     pub(crate) line_ending: &'a str,
-    pub(crate) commands: Vec<(String, String)>,
-    pub(crate) win_list: Vec<WinEntry>,
     pub(crate) focused_win_id: u64,
     pub(crate) previous_win_id: Option<u64>,
-    /// `normalized_uri` -> `(line, col, severity, message)`.
-    pub(crate) lsp_diagnostics: std::collections::HashMap<String, Vec<(u32, u32, u32, String)>>,
-    pub(crate) buffer_vars: std::collections::HashMap<
-        u64,
-        std::collections::HashMap<String, crate::annotations::value::Value>,
+    pub(crate) keys: SyncKeys,
+    pub(crate) buf_list: Option<Vec<BufEntry>>,
+    pub(crate) win_list: Option<Vec<WinEntry>>,
+    pub(crate) lsp_diagnostics: Option<LspDiagnosticsSnapshot>,
+    pub(crate) buffer_vars: Option<
+        std::collections::HashMap<
+            u64,
+            std::collections::HashMap<String, crate::annotations::value::Value>,
+        >,
     >,
-    pub(crate) doc_options: crate::document::definitions::DocumentOptions,
-    pub(crate) user_settings: crate::state::UserSettings,
+    pub(crate) doc_options: Option<crate::document::definitions::DocumentOptions>,
+    pub(crate) user_settings: Option<crate::state::UserSettings>,
     #[cfg(feature = "treesitter")]
-    pub(crate) syntax: Vec<(u64, Option<crate::syntax::snapshot::BufferSyntax>)>,
+    pub(crate) syntax: Option<Vec<(u64, Option<crate::syntax::snapshot::BufferSyntax>)>>,
 }
