@@ -835,3 +835,17 @@ fn unapplied_annotation_add_is_replaced_on_next_sync() {
 
     lua_ok(&editor, "assert(rift.annotations.get(_G.id) == nil)");
 }
+
+#[test]
+fn timer_callback_reads_the_cursor_moved_after_it_was_scheduled() {
+    let mut editor = lua_editor("one\ntwo\n");
+    lua_ok(
+        &editor,
+        "rift.timer(0, function() _G.seen = rift.get_cursor() end)",
+    );
+    editor.active_document().buffer.set_cursor(4).unwrap();
+
+    editor.tick().unwrap();
+
+    lua_ok(&editor, "assert(_G.seen == 2, tostring(_G.seen))");
+}

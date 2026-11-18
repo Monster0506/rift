@@ -1258,6 +1258,22 @@ impl PluginHost {
             .map(|(buf, row, col)| EditorEvent::CursorHold { buf, row, col })
     }
 
+    pub(crate) fn fire_due_timers(&self, now: crate::time::Instant) -> bool {
+        self.active_lua()
+            .is_some_and(|lua| lua.fire_due_timers(now))
+    }
+
+    pub(crate) fn next_timer_deadline(&self) -> Option<crate::time::Instant> {
+        self.active_lua()
+            .and_then(lua_host::LuaHost::next_timer_deadline)
+    }
+
+    fn active_lua(&self) -> Option<&lua_host::LuaHost> {
+        self.lua
+            .as_ref()
+            .filter(|lua| self.is_generation_active(lua.generation()))
+    }
+
     /// Update the `CursorHold` threshold from a millisecond value.
     /// `poll_ms` is the main-loop poll interval (typically 16).
     pub(crate) fn set_cursor_hold_delay_ms(&mut self, delay_ms: u32, poll_ms: u32) {

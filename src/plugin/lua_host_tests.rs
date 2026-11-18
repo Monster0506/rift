@@ -2053,3 +2053,158 @@ fn test_job_callback_error_names_the_plugin() {
         "{mutations:?}"
     );
 }
+
+const MS: std::time::Duration = std::time::Duration::from_millis(1);
+
+fn timer_deadline(host: &LuaHost) -> crate::time::Instant {
+    host.next_timer_deadline().expect("a timer is scheduled")
+}
+
+fn plugin_timer_count(host: &LuaHost, name: &str) -> i64 {
+    host.lua
+        .load(format!("return rift.plugins.info({name:?}).timers"))
+        .eval()
+        .expect("info failed")
+}
+
+#[test]
+fn test_one_shot_timer_fires_once_at_its_deadline() {
+    let host = make_host();
+    let before = crate::time::Instant::now();
+    assert!(host
+        .exec("rift.timer(100, function() rift.notify('info', 'tick') end)")
+        .is_none());
+    let deadline = timer_deadline(&host);
+    assert!(deadline >= before + 100 * MS);
+
+    let just_before = deadline
+        .checked_sub(std::time::Duration::from_nanos(1))
+        .unwrap();
+    assert!(!host.fire_due_timers(just_before));
+    assert!(notified_messages(&host).is_empty());
+
+    assert!(host.fire_due_timers(deadline));
+    assert_eq!(notified_messages(&host), ["tick"]);
+    assert!(!host.fire_due_timers(deadline + 60_000 * MS));
+    assert!(notified_messages(&host).is_empty());
+    assert_eq!(host.next_timer_deadline(), None);
+}
+
+#[test]
+fn test_repeating_timer_fires_every_interval_until_stopped() {
+    let host = make_host();
+    assert!(host
+        .exec(
+            "_G.id = rift.timer(50, function() rift.notify('info', 'tick') end, \
+             { ['repeat'] = true })"
+        )
+        .is_none());
+    let first = timer_deadline(&host);
+    for n in 0..3 {
+        let due = first + 50 * n * MS;
+        assert!(host.fire_due_timers(due));
+        assert_eq!(notified_messages(&host), ["tick"]);
+        assert_eq!(host.next_timer_deadline(), Some(due + 50 * MS));
+    }
+
+    let late = first + 1000 * MS;
+    assert!(host.fire_due_timers(late));
+    assert_eq!(
+        notified_messages(&host),
+        ["tick"],
+        "a late timer fires once"
+    );
+    assert_eq!(host.next_timer_deadline(), Some(late + 50 * MS));
+
+    assert!(host.exec("assert(rift.timer_stop(_G.id))").is_none());
+    assert_eq!(host.next_timer_deadline(), None);
+    assert!(!host.fire_due_timers(late + 60_000 * MS));
+    assert!(notified_messages(&host).is_empty());
+}
+
+#[test]
+fn test_defer_runs_on_the_next_fire() {
+    let host = make_host();
+    assert!(host
+        .exec(
+            "rift.defer(function() \
+               rift.notify('info', 'first') \
+               rift.defer(function() rift.notify('info', 'second') end) \
+             end)"
+        )
+        .is_none());
+    assert!(host.fire_due_timers(crate::time::Instant::now()));
+    assert_eq!(notified_messages(&host), ["first"]);
+    assert!(host.fire_due_timers(crate::time::Instant::now()));
+    assert_eq!(notified_messages(&host), ["second"]);
+    assert_eq!(host.next_timer_deadline(), None);
+}
+
+#[test]
+fn test_unload_stops_a_plugins_timers() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let host = make_host();
+    let name = load_named(
+        dir.path(),
+        &host,
+        "ticker.lua",
+        "rift.timer(100, function() rift.notify('info', 'once') end) \
+         rift.timer(50, function() rift.notify('info', 'again') end, { ['repeat'] = true })",
+    );
+    assert_eq!(listed_plugins(&host), std::slice::from_ref(&name));
+    assert_eq!(plugin_timer_count(&host, &name), 2);
+
+    assert!(host
+        .exec(&format!("rift.plugins.unload({name:?})"))
+        .is_none());
+    assert_eq!(host.next_timer_deadline(), None);
+    assert!(listed_plugins(&host).is_empty());
+    assert_eq!(plugin_timer_count(&host, &name), 0);
+    assert!(!host.fire_due_timers(crate::time::Instant::now() + 60_000 * MS));
+    assert!(notified_messages(&host).is_empty());
+}
+
+#[test]
+fn test_erroring_one_shot_timer_is_reported_and_dropped() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let host = make_host();
+    load_named(
+        dir.path(),
+        &host,
+        "broken.lua",
+        "rift.timer(0, function() error('boom') end)",
+    );
+    assert!(host.fire_due_timers(timer_deadline(&host)));
+    let error = drained_error(&host);
+    assert!(
+        error.starts_with("[broken:timer] ") && error.contains("boom"),
+        "{error}"
+    );
+    assert_eq!(host.next_timer_deadline(), None);
+}
+
+#[test]
+fn test_runaway_repeating_timer_disables_its_plugin() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let host = make_host();
+    let slow = load_named(
+        dir.path(),
+        &host,
+        "slow.lua",
+        "rift.timer(10, function() while true do end end, { ['repeat'] = true })",
+    );
+    for _ in 0..3 {
+        assert!(host.fire_due_timers(timer_deadline(&host)));
+        let error = drained_error(&host);
+        assert!(
+            error.starts_with("[slow:timer] ") && error.contains("time budget"),
+            "{error}"
+        );
+    }
+    assert_eq!(plugin_status(&host, &slow).0, "disabled");
+
+    let started = std::time::Instant::now();
+    assert!(!host.fire_due_timers(timer_deadline(&host)));
+    assert!(started.elapsed() < LuaHost::AUTO_DISPATCH_BUDGET);
+    assert!(host.drain_mutations().is_empty());
+}

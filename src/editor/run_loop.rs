@@ -75,9 +75,13 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         // Poll for input
+        let now = crate::time::Instant::now();
         let mut timeout = std::time::Duration::from_millis(self.state.settings.poll_timeout_ms);
-        if let Some(delay) = self.terminal_frame_delay(crate::time::Instant::now()) {
+        if let Some(delay) = self.terminal_frame_delay(now) {
             timeout = timeout.min(delay);
+        }
+        if let Some(deadline) = self.plugin_host.next_timer_deadline() {
+            timeout = timeout.min(deadline.saturating_duration_since(now));
         }
         let input_ready = self.term.poll(timeout).map_err(|e| {
             RiftError::new(
@@ -89,6 +93,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Output can arrive while polling; apply it before either kind of frame.
         jobs_changed |= self.drain_job_messages();
+        let timers_fired = self.fire_due_plugin_timers();
         if input_ready {
             self.handle_input_event()?;
         } else {
@@ -103,6 +108,7 @@ impl<T: TerminalBackend> Editor<T> {
             if jobs_changed
                 || notif_changed
                 || notif_tick
+                || timers_fired
                 || self.render_system.needs_animation_frame()
             {
                 self.update_and_render()?;
@@ -138,6 +144,18 @@ impl<T: TerminalBackend> Editor<T> {
                     FRAME_INTERVAL.saturating_sub(now.saturating_duration_since(last))
                 }),
         )
+    }
+
+    fn fire_due_plugin_timers(&mut self) -> bool {
+        let now = crate::time::Instant::now();
+        if self
+            .plugin_host
+            .next_timer_deadline()
+            .is_none_or(|deadline| deadline > now)
+        {
+            return false;
+        }
+        self.call_plugins(|editor| editor.plugin_host.fire_due_timers(now))
     }
 
     fn drain_job_messages(&mut self) -> bool {

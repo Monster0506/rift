@@ -130,6 +130,16 @@ impl LuaHost {
     }
 
     #[must_use]
+    pub(super) const fn fire_due_timers(&self, _now: crate::time::Instant) -> bool {
+        false
+    }
+
+    #[must_use]
+    pub(super) const fn next_timer_deadline(&self) -> Option<crate::time::Instant> {
+        None
+    }
+
+    #[must_use]
     pub(super) const fn exec(&self, _code: &str) -> Option<String> {
         None
     }

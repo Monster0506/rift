@@ -227,6 +227,7 @@ struct LuaSharedState {
     user_settings: crate::state::UserSettings,
     synced: SyncKeys,
     diverged: Divergence,
+    timers: timer_api::Timers,
     #[cfg(feature = "treesitter")]
     language_loader: Arc<crate::syntax::loader::LanguageLoader>,
     #[cfg(feature = "treesitter")]
@@ -357,6 +358,7 @@ impl LuaSharedState {
             user_settings: crate::state::UserSettings::new(),
             synced: SyncKeys::default(),
             diverged: Divergence::default(),
+            timers: timer_api::Timers::default(),
             #[cfg(feature = "treesitter")]
             language_loader,
             #[cfg(feature = "treesitter")]
@@ -638,6 +640,7 @@ function rift.plugins.list()
         end
     end
     for name in pairs(_rift_plugin_keymaps) do seen[name] = true end
+    for name in pairs(_rift_plugin_timers()) do seen[name] = true end
     for name in pairs(_rift_highlight_namespaces) do seen[name] = true end
     for name in pairs(_rift_load_errors) do seen[name] = true end
     local result = {}
@@ -677,7 +680,7 @@ function rift.plugins.info(name)
     local status, error = _rift_plugin_status(name)
     return {
         handlers=handlers, commands=commands, actions=actions, keys=keys,
-        jobs=jobs, status=status, error=error,
+        jobs=jobs, timers=_rift_plugin_timers()[name] or 0, status=status, error=error,
     }
 end
 
@@ -845,6 +848,7 @@ impl LuaHost {
         Self::register_buffer_vars(&lua, &api, &shared)?;
         highlight_api::register(&lua, &api, &shared)?;
         treesitter_api::register(&lua, &api, &shared)?;
+        timer_api::register(&lua, &api, &shared)?;
         Self::finish(lua, api, shared, hook_deadline, generation)
     }
 
@@ -984,6 +988,7 @@ impl LuaHost {
                 Self::stop_plugin_jobs(lua, &sh, &owner)?;
                 let mut s = sh.borrow_mut();
                 s.plugin_health.remove(&owner);
+                s.timers.remove_owned(&owner);
                 s.mutations.push(PluginMutation::UnloadPlugin { owner });
                 Ok(())
             })?,
@@ -3772,6 +3777,9 @@ impl std::fmt::Debug for LuaHost {
 
 #[path = "lua_highlight.rs"]
 mod highlight_api;
+
+#[path = "lua_timers.rs"]
+mod timer_api;
 
 #[cfg(feature = "treesitter")]
 #[path = "lua_treesitter.rs"]

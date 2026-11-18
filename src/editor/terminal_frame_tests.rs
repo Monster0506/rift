@@ -243,3 +243,18 @@ fn hidden_terminal_output_does_not_schedule_a_frame() {
     assert!(!editor.terminal_frame_pending);
     assert_eq!(editor.term.inner.flushes, 0);
 }
+
+#[cfg(feature = "plugins")]
+#[test]
+fn poll_timeout_shrinks_to_the_next_plugin_timer() {
+    let mut editor = editor();
+    assert!(editor
+        .plugin_host
+        .lua_exec("rift.timer(500, function() end)")
+        .is_none());
+
+    editor.tick().unwrap();
+
+    assert!(editor.term.polls[0] <= Duration::from_millis(500));
+    assert!(editor.term.polls[0] > Duration::from_millis(400));
+}
