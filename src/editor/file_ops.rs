@@ -245,8 +245,9 @@ impl<T: TerminalBackend> Editor<T> {
 
         match dispatch {
             crate::document::runtime::SaveDispatch::Lua => {
-                let saved = self.plugin_host.invoke_buffer_save(doc_id, &kind_name);
-                self.apply_plugin_mutations();
+                let saved = self.call_plugins(|editor| {
+                    editor.plugin_host.invoke_buffer_save(doc_id, &kind_name)
+                });
                 self.state.clear_command_line();
                 if saved {
                     crate::document::runtime::SaveResult::Saved
@@ -308,12 +309,14 @@ impl<T: TerminalBackend> Editor<T> {
                     .map(|path| (document.id, path))
             };
             if let Some((buf_id, path)) = save_info {
-                self.plugin_host
-                    .dispatch(&crate::plugin::events::EditorEvent::BufSavePre {
-                        buf: buf_id,
-                        path: path.clone(),
-                    });
-                self.apply_plugin_mutations();
+                self.call_plugins(|editor| {
+                    editor
+                        .plugin_host
+                        .dispatch(&crate::plugin::events::EditorEvent::BufSavePre {
+                            buf: buf_id,
+                            path: path.clone(),
+                        });
+                });
                 let Some(document) = self.document_manager.get_document_mut(buf_id) else {
                     self.state.handle_error(RiftError::new(
                         ErrorType::Io,
@@ -496,6 +499,11 @@ impl<T: TerminalBackend> Editor<T> {
                 let _ = doc.buffer.set_cursor(new_cursor);
             }
             self.sync_state_with_active_document();
+            self.call_plugins(|editor| {
+                editor
+                    .plugin_host
+                    .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: new_doc_id });
+            });
             if let Err(e) = self.force_full_redraw() {
                 self.state.handle_error(e);
             }
@@ -528,11 +536,12 @@ impl<T: TerminalBackend> Editor<T> {
             } else {
                 if let Some(new_doc_id) = self.document_manager.active_document_id() {
                     self.split_tree.set_focused_document(new_doc_id);
-                    self.plugin_host
-                        .dispatch(&crate::plugin::events::EditorEvent::BufEnter {
-                            buf: new_doc_id,
-                        });
-                    self.apply_plugin_mutations();
+                    self.sync_state_with_active_document();
+                    self.call_plugins(|editor| {
+                        editor.plugin_host.dispatch(
+                            &crate::plugin::events::EditorEvent::BufEnter { buf: new_doc_id },
+                        );
+                    });
                 }
                 self.sync_state_with_active_document();
                 if let Err(e) = self.force_full_redraw() {

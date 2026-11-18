@@ -239,15 +239,13 @@ impl<T: TerminalBackend> Editor<T> {
                         .notify(crate::notification::NotificationType::Error, err);
                 }
             });
-        } else if !self.plugin_host.execute_command(name, args) {
+        } else if !self.call_plugins(|editor| editor.plugin_host.execute_command(name, args)) {
             self.state.handle_error(crate::error::RiftError::new(
                 crate::error::ErrorType::Parse,
                 "UNKNOWN_COMMAND",
                 format!("Unknown command: {name}"),
             ));
             return false;
-        } else {
-            self.apply_plugin_mutations();
         }
         true
     }

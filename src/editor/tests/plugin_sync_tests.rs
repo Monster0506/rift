@@ -10,7 +10,7 @@ fn lua_editor(text: &str) -> Editor<MockTerminal> {
     editor
 }
 
-fn lua_ok(editor: &Editor<MockTerminal>, code: &str) {
+fn lua_ok<T: crate::term::TerminalBackend>(editor: &Editor<T>, code: &str) {
     let err = editor.plugin_host.lua_exec(code);
     assert!(err.is_none(), "{err:?}");
 }
@@ -231,5 +231,171 @@ fn mutations_that_keep_requeuing_stop_at_the_round_cap() {
             "plugin mutations kept re-queuing; stopped after 16 rounds"
         ),
         1
+    );
+}
+
+#[test]
+fn plugin_command_reads_the_cursor_the_previous_key_moved() {
+    let mut editor = lua_editor("one\ntwo\nthree\n");
+    lua_ok(
+        &editor,
+        "rift.register_command('zzprobe', function() \
+           local row, col = rift.get_cursor() _G.seen = row .. ':' .. col \
+         end, 'probe')",
+    );
+    editor.apply_plugin_mutations();
+
+    editor.active_document().buffer.set_cursor(5).unwrap();
+    editor.execute_command_line("zzprobe");
+
+    lua_ok(&editor, "assert(_G.seen == '2:1', tostring(_G.seen))");
+}
+
+#[test]
+fn mapped_function_reads_the_cursor_moved_earlier_in_the_key_sequence() {
+    let mut editor = editor_with_text("one\ntwo\nthree\n");
+    editor.plugin_host.mark_lua_used();
+    editor.update_lua_state();
+    lua_ok(
+        &editor,
+        "rift.map('n', '<F5>', function() \
+           local row, col = rift.get_cursor() _G.seen = row .. ':' .. col \
+         end)",
+    );
+    editor.apply_plugin_mutations();
+
+    press(&mut editor, &keys("j<F5>"));
+
+    lua_ok(&editor, "assert(_G.seen == '2:0', tostring(_G.seen))");
+}
+
+fn editor_with_probe_buffer() -> Editor<MockTerminal> {
+    let mut editor = lua_editor("hello\n");
+    lua_ok(
+        &editor,
+        "rift.register_buffer_kind('probe', { \
+           on_action = function() _G.seen = rift.get_lines(1, 1)[1] end, \
+           on_save = function() _G.seen = rift.get_lines(1, 1)[1] end, \
+           on_close = function() _G.seen = rift.get_lines(1, 1)[1] end, \
+         })",
+    );
+    editor.apply_plugin_mutations();
+    lua_ok(
+        &editor,
+        "rift.create_buffer('probe', { lines = { 'first' } })",
+    );
+    editor.apply_plugin_mutations();
+    let doc = editor.active_document();
+    doc.buffer.set_cursor(0).unwrap();
+    doc.buffer.insert_str("edited ").unwrap();
+    editor
+}
+
+#[test]
+fn buffer_kind_on_action_reads_the_edited_lines() {
+    let mut editor = editor_with_probe_buffer();
+
+    editor.handle_action(&crate::action::Action::Buffer("probe:go".to_string()));
+
+    lua_ok(
+        &editor,
+        "assert(_G.seen == 'edited first', tostring(_G.seen))",
+    );
+}
+
+#[test]
+fn buffer_kind_on_save_reads_the_edited_lines() {
+    let mut editor = editor_with_probe_buffer();
+
+    editor.do_save();
+
+    lua_ok(
+        &editor,
+        "assert(_G.seen == 'edited first', tostring(_G.seen))",
+    );
+}
+
+#[test]
+fn buffer_kind_on_close_reads_the_edited_lines() {
+    let mut editor = editor_with_probe_buffer();
+
+    editor.do_quit(true);
+
+    lua_ok(
+        &editor,
+        "assert(_G.seen == 'edited first', tostring(_G.seen))",
+    );
+}
+
+#[test]
+fn buf_save_pre_reads_the_edit_made_before_write() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("probe.txt");
+    std::fs::write(&path, "saved\n").unwrap();
+    let mut editor = lua_editor("");
+    open_and_load(&mut editor, &path);
+    lua_ok(
+        &editor,
+        "rift.on('BufSavePre', function() _G.seen = rift.get_lines(1, 1)[1] end)",
+    );
+    let doc = editor.active_document();
+    doc.buffer.set_cursor(0).unwrap();
+    doc.buffer.insert_str("unsaved ").unwrap();
+
+    editor.execute_command_line("w");
+    drain_jobs(&mut editor);
+
+    lua_ok(
+        &editor,
+        "assert(_G.seen == 'unsaved saved', tostring(_G.seen))",
+    );
+}
+
+#[test]
+fn buf_enter_after_quit_reads_the_now_active_buffer() {
+    let mut editor = lua_editor("hello\n");
+    let first = editor.document_manager.active_document_id().unwrap().get();
+    lua_ok(&editor, "rift.create_scratch_buf('second', { 'x' })");
+    editor.apply_plugin_mutations();
+    lua_ok(
+        &editor,
+        "rift.on('BufClose', function() rift.set_cursor(1, 3) end) \
+         rift.on('BufEnter', function() \
+           local _, col = rift.get_cursor() _G.seen = rift.current_buf() .. ':' .. col \
+         end)",
+    );
+
+    editor.do_quit(true);
+
+    lua_ok(
+        &editor,
+        &format!("assert(_G.seen == '{first}:3', tostring(_G.seen))"),
+    );
+}
+
+#[test]
+fn buf_enter_after_closing_a_split_reads_the_remaining_buffer() {
+    let mut editor = lua_editor("first\n");
+    let first = editor.active_document_id().get();
+    editor.execute_command_line("vsplit");
+    lua_ok(&editor, "rift.create_scratch_buf('second', { 'second' })");
+    editor.apply_plugin_mutations();
+    lua_ok(
+        &editor,
+        "rift.on('BufEnter', function(ev) \
+           _G.seen = { event_buf = ev.buf, current_buf = rift.current_buf(), \
+                       line = rift.get_lines(1, 1)[1] } \
+         end)",
+    );
+
+    editor.execute_command_line("q");
+
+    lua_ok(
+        &editor,
+        &format!(
+            "assert(_G.seen and _G.seen.event_buf == {first} \
+             and _G.seen.current_buf == {first} and _G.seen.line == 'first', \
+             rift.inspect(_G.seen))"
+        ),
     );
 }

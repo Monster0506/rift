@@ -74,9 +74,9 @@ impl<T: TerminalBackend> Editor<T> {
                         buffer: buffer.get(),
                     }
                 };
-                let ran = self.plugin_host.invoke_annotation_action(&ctx);
+                let ran =
+                    self.call_plugins(|editor| editor.plugin_host.invoke_annotation_action(&ctx));
                 if ran {
-                    self.apply_plugin_mutations();
                     let _ = self.update_and_render();
                 }
                 ran

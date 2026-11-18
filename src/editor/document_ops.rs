@@ -73,12 +73,18 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.job_manager.cancel_jobs_for_handle(handle);
         match descriptor.on_close {
-            crate::document::runtime::CloseHandler::Native(close) => close(handle),
+            crate::document::runtime::CloseHandler::Native(close) => {
+                close(handle);
+                self.apply_plugin_mutations();
+            }
             crate::document::runtime::CloseHandler::Lua => {
-                self.plugin_host.invoke_buffer_close(id, descriptor.name());
+                self.call_plugins(|editor| {
+                    editor
+                        .plugin_host
+                        .invoke_buffer_close(id, descriptor.name())
+                });
             }
         }
-        self.apply_plugin_mutations();
 
         #[cfg(feature = "lsp")]
         {

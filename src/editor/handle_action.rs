@@ -122,9 +122,11 @@ impl<T: TerminalBackend> Editor<T> {
                         }
                     }
                     ActionDispatch::Lua => {
-                        self.plugin_host
-                            .invoke_buffer_action(doc_id, &kind_name, id);
-                        self.apply_plugin_mutations();
+                        self.call_plugins(|editor| {
+                            editor
+                                .plugin_host
+                                .invoke_buffer_action(doc_id, &kind_name, id)
+                        });
                     }
                     ActionDispatch::Disabled => {}
                 }
@@ -866,8 +868,7 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::PluginAction(id) => {
-                self.plugin_host.execute_action(id);
-                self.apply_plugin_mutations();
+                self.call_plugins(|editor| editor.plugin_host.execute_action(id));
                 true
             }
 

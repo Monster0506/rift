@@ -1013,3 +1013,21 @@ fn annotation_hook_error_reaches_a_notification() {
     e.update_annotation_hover();
     assert!(has_notification(&e, "[failing:test.run.on_enter] "));
 }
+
+#[cfg(feature = "plugins")]
+#[test]
+fn annotation_action_reads_the_cursor_at_activation() {
+    let mut e = editor_with_failing_plugin(
+        "rift.annotations.on_action('test.run', 'run', function(_ctx) \
+           local _, col = rift.get_cursor() _G.seen = col \
+         end)",
+    );
+    e.active_document().buffer.set_cursor(4).ok();
+
+    assert!(e.activate_annotation_at_cursor());
+
+    let err = e
+        .plugin_host
+        .lua_exec("assert(_G.seen == 4, tostring(_G.seen))");
+    assert!(err.is_none(), "{err:?}");
+}
