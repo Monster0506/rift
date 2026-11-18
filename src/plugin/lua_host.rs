@@ -209,6 +209,7 @@ struct LuaSharedState {
     /// Completed shell commands waiting to be fired as Lua `UserEvents`.
     /// Each entry is (tag, success, output). Drained in `drain_mutations`.
     pending_shell_events: Vec<(String, bool, String)>,
+    plugin_health: std::collections::HashMap<String, PluginHealth>,
     is_active: bool,
     buffer_vars: std::collections::HashMap<
         u64,
@@ -226,6 +227,13 @@ struct LuaSharedState {
         (String, crate::syntax::loader::QueryKind),
         (String, Rc<tree_sitter::Query>),
     >,
+}
+
+#[derive(Default)]
+struct PluginHealth {
+    budget_failures: u32,
+    disabled: bool,
+    last_budget_error: Option<String>,
 }
 
 impl LuaSharedState {
@@ -249,6 +257,12 @@ impl LuaSharedState {
     /// Line count without materializing the lines (equals `lines().len()`).
     fn line_count(&self) -> usize {
         self.buf_source.as_ref().map_or(0, |s| s.line_count)
+    }
+
+    fn plugin_disabled(&self, plugin: Option<&str>) -> bool {
+        plugin
+            .and_then(|plugin| self.plugin_health.get(plugin))
+            .is_some_and(|health| health.disabled)
     }
 
     fn new(language_loader: Arc<crate::syntax::loader::LanguageLoader>) -> Self {
@@ -282,6 +296,7 @@ impl LuaSharedState {
             lsp_diagnostics: std::collections::HashMap::new(),
             current_plugin: None,
             pending_shell_events: Vec::new(),
+            plugin_health: std::collections::HashMap::new(),
             is_active: true,
             buffer_vars: std::collections::HashMap::new(),
             doc_options: crate::document::definitions::DocumentOptions::default(),
@@ -555,6 +570,7 @@ end
 
 -- rift.plugins - plugin ownership and lifecycle management
 rift.plugins = {}
+rift.plugins.enable = _rift_enable_plugin
 
 -- rift.plugins.list() -> string[]
 function rift.plugins.list()
@@ -578,12 +594,6 @@ function rift.plugins.list()
     return result
 end
 
--- rift.plugins.info(name) -> {handlers, commands, actions, keys}
--- Returns a description of everything registered by the named plugin.
--- handlers: array of {slot, event}
--- commands: array of command name strings
--- actions:  array of action id strings
--- keys:     array of {mode, keys}
 function rift.plugins.info(name)
     local handlers = {}
     if _rift_plugin_slots[name] then
@@ -608,7 +618,11 @@ function rift.plugins.info(name)
             keys[#keys+1] = {mode=k.mode, keys=k.keys}
         end
     end
-    return {handlers=handlers, commands=commands, actions=actions, keys=keys}
+    local status, error = _rift_plugin_status(name)
+    return {
+        handlers=handlers, commands=commands, actions=actions, keys=keys,
+        status=status, error=error,
+    }
 end
 
 -- rift.plugins.unload(name)
@@ -913,10 +927,39 @@ impl LuaHost {
                     }
                     namespaces.set(owner.as_str(), LuaNil)?;
                 }
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::UnloadPlugin { owner });
+                let mut s = sh.borrow_mut();
+                s.plugin_health.remove(&owner);
+                s.mutations.push(PluginMutation::UnloadPlugin { owner });
                 Ok(())
+            })?,
+        )?;
+        let sh = Rc::clone(shared);
+        lua.globals().set(
+            "_rift_enable_plugin",
+            lua.create_function(move |_, name: String| {
+                if let Some(health) = sh.borrow_mut().plugin_health.get_mut(&name) {
+                    health.disabled = false;
+                    health.budget_failures = 0;
+                }
+                Ok(())
+            })?,
+        )?;
+        let sh = Rc::clone(shared);
+        lua.globals().set(
+            "_rift_plugin_status",
+            lua.create_function(move |lua, name: String| {
+                let load_errors: LuaTable = lua.globals().get("_rift_load_errors")?;
+                if let Some(error) = load_errors.get::<Option<String>>(name.as_str())? {
+                    return Ok(("failed", Some(error)));
+                }
+                let s = sh.borrow();
+                let health = s.plugin_health.get(&name);
+                let status = if health.is_some_and(|h| h.disabled) {
+                    "disabled"
+                } else {
+                    "active"
+                };
+                Ok((status, health.and_then(|h| h.last_budget_error.clone())))
             })?,
         )?;
         Ok(())
@@ -1436,11 +1479,13 @@ impl LuaHost {
                             .sequence_values::<LuaTable>()
                             .collect::<LuaResult<_>>()?;
                         for entry in snapshot {
+                            let plugin = Self::entry_plugin(&entry);
+                            if sh.borrow().plugin_disabled(plugin.as_deref()) {
+                                continue;
+                            }
                             let f: LuaFunction = entry.get("fn")?;
-                            let previous = std::mem::replace(
-                                &mut sh.borrow_mut().current_plugin,
-                                Self::entry_plugin(&entry),
-                            );
+                            let previous =
+                                std::mem::replace(&mut sh.borrow_mut().current_plugin, plugin);
                             let result = f.call::<()>(ev.clone());
                             sh.borrow_mut().current_plugin = previous;
                             result?;
@@ -2946,13 +2991,56 @@ impl LuaHost {
         budget: std::time::Duration,
         f: impl FnOnce() -> LuaResult<T>,
     ) -> LuaResult<T> {
+        let started = std::time::Instant::now();
+        let result = self.with_current_plugin(plugin, || self.call_budgeted(budget, f));
+        if let Some(plugin) = plugin {
+            self.record_budget_outcome(plugin, &result, started.elapsed() >= budget);
+        }
+        result
+    }
+
+    fn with_current_plugin<T>(&self, plugin: Option<&str>, f: impl FnOnce() -> T) -> T {
         let previous = std::mem::replace(
             &mut self.shared.borrow_mut().current_plugin,
             plugin.map(str::to_owned),
         );
-        let result = self.call_budgeted(budget, f);
+        let result = f();
         self.shared.borrow_mut().current_plugin = previous;
         result
+    }
+
+    const BUDGET_FAILURE_LIMIT: u32 = 3;
+
+    fn record_budget_outcome<T>(&self, plugin: &str, result: &LuaResult<T>, over_budget: bool) {
+        let mut guard = self.shared.borrow_mut();
+        let s = &mut *guard;
+        match result {
+            Ok(_) => {
+                if let Some(health) = s.plugin_health.get_mut(plugin) {
+                    health.budget_failures = 0;
+                }
+            }
+            Err(error) if over_budget => {
+                let health = s.plugin_health.entry(plugin.to_owned()).or_default();
+                health.budget_failures += 1;
+                health.last_budget_error = Some(error.to_string());
+                if health.budget_failures >= Self::BUDGET_FAILURE_LIMIT && !health.disabled {
+                    health.disabled = true;
+                    s.mutations.push(PluginMutation::Notify {
+                        message: format!(
+                            "plugin {plugin} was disabled after {} consecutive time-budget overruns; run rift.plugins.enable({plugin:?}) to turn it back on",
+                            Self::BUDGET_FAILURE_LIMIT
+                        ),
+                        level: NotificationType::Warning,
+                    });
+                }
+            }
+            Err(_) => {}
+        }
+    }
+
+    fn is_disabled(&self, plugin: Option<&str>) -> bool {
+        self.shared.borrow().plugin_disabled(plugin)
     }
 
     fn callback_entry(
@@ -3024,6 +3112,9 @@ impl LuaHost {
             match entry {
                 Ok(entry) => {
                     let plugin = Self::entry_plugin(&entry);
+                    if self.is_disabled(plugin.as_deref()) {
+                        continue;
+                    }
                     let f: LuaFunction = match entry.get("fn") {
                         Ok(f) => f,
                         Err(e) => {
@@ -3075,6 +3166,10 @@ impl LuaHost {
             Ok(Some(entry)) => entry,
             _ => return false,
         };
+        let plugin = Self::entry_plugin(&entry);
+        if self.is_disabled(plugin.as_deref()) {
+            return false;
+        }
         let Ok(opts) = entry.get::<LuaTable>("opts") else {
             return false;
         };
@@ -3094,7 +3189,6 @@ impl LuaHost {
             }
         }
 
-        let plugin = Self::entry_plugin(&entry);
         if let Err(error) = self.call_plugin(plugin.as_deref(), Self::AUTO_DISPATCH_BUDGET, || {
             callback.call::<()>(context)
         }) {
@@ -3133,6 +3227,10 @@ impl LuaHost {
             Ok(Some(entry)) => entry,
             _ => return false,
         };
+        let plugin = Self::entry_plugin(&entry);
+        if self.is_disabled(plugin.as_deref()) {
+            return false;
+        }
         let Ok(f) = entry.get::<LuaFunction>("fn") else {
             return false;
         };
@@ -3150,7 +3248,6 @@ impl LuaHost {
         if let Ok(p) = value_into_lua(ctx.params.clone(), &self.lua) {
             let _ = t.set("params", p);
         }
-        let plugin = Self::entry_plugin(&entry);
         if let Err(error) = self.call_plugin(plugin.as_deref(), Self::USER_CALL_BUDGET, || {
             f.call::<()>(t)
         }) {
@@ -3184,6 +3281,10 @@ impl LuaHost {
             Ok(Some(entry)) => entry,
             _ => return false,
         };
+        let plugin = Self::entry_plugin(&entry);
+        if self.is_disabled(plugin.as_deref()) {
+            return false;
+        }
         let Ok(f) = entry.get::<LuaFunction>("fn") else {
             return false;
         };
@@ -3197,7 +3298,6 @@ impl LuaHost {
         if let Ok(p) = value_into_lua(ctx.payload.clone(), &self.lua) {
             let _ = t.set("payload", p);
         }
-        let plugin = Self::entry_plugin(&entry);
         if let Err(error) = self.call_plugin(plugin.as_deref(), Self::AUTO_DISPATCH_BUDGET, || {
             f.call::<()>(t)
         }) {
@@ -3221,6 +3321,10 @@ impl LuaHost {
         let Some(entry) = entry else {
             return false;
         };
+        let plugin = Self::entry_plugin(&entry);
+        if self.is_disabled(plugin.as_deref()) {
+            return false;
+        }
         let handler: LuaFunction = match entry.get("fn") {
             Ok(f) => f,
             Err(_) => return false,
@@ -3231,7 +3335,6 @@ impl LuaHost {
         for (i, arg) in args.iter().enumerate() {
             let _ = args_table.set(i + 1, arg.as_str());
         }
-        let plugin = Self::entry_plugin(&entry);
         if let Err(e) = self.call_plugin(plugin.as_deref(), Self::USER_CALL_BUDGET, || {
             handler.call::<()>(args_table)
         }) {
@@ -3261,11 +3364,14 @@ impl LuaHost {
         let Some(entry) = entry else {
             return false;
         };
+        let plugin = Self::entry_plugin(&entry);
+        if self.is_disabled(plugin.as_deref()) {
+            return false;
+        }
         let handler: LuaFunction = match entry.get("fn") {
             Ok(f) => f,
             Err(_) => return false,
         };
-        let plugin = Self::entry_plugin(&entry);
         if let Err(e) = self.call_plugin(plugin.as_deref(), Self::USER_CALL_BUDGET, || {
             handler.call::<()>(())
         }) {
@@ -3320,8 +3426,10 @@ impl LuaHost {
             Ok(env) => env,
             Err(e) => return Some(format!("lua: {}: {}", path.display(), e)),
         };
-        self.call_plugin(Some(name), Self::USER_CALL_BUDGET, || {
-            self.exec_plugin_chunk(&src, name, env)
+        self.with_current_plugin(Some(name), || {
+            self.call_budgeted(Self::USER_CALL_BUDGET, || {
+                self.exec_plugin_chunk(&src, name, env)
+            })
         })
         .err()
         .map(|e| format!("lua: {}: {}", path.display(), e))
@@ -3348,7 +3456,12 @@ impl LuaHost {
             .globals()
             .get::<LuaTable>(table_name)
             .and_then(|handlers| handlers.get::<Option<LuaTable>>(kind))
-            .is_ok_and(|entry| entry.is_some_and(|entry| entry.get::<LuaFunction>("fn").is_ok()))
+            .is_ok_and(|entry| {
+                entry.is_some_and(|entry| {
+                    entry.get::<LuaFunction>("fn").is_ok()
+                        && !self.is_disabled(Self::entry_plugin(&entry).as_deref())
+                })
+            })
     }
 
     fn exec_plugin_chunk(&self, src: &str, name: &str, env: LuaTable) -> LuaResult<()> {
@@ -3395,8 +3508,11 @@ impl LuaHost {
                         .sequence_values::<LuaTable>()
                         .collect::<LuaResult<_>>()?;
                     for entry in snapshot {
-                        let f: LuaFunction = entry.get("fn")?;
                         let plugin = Self::entry_plugin(&entry);
+                        if self.is_disabled(plugin.as_deref()) {
+                            continue;
+                        }
+                        let f: LuaFunction = entry.get("fn")?;
                         if let Err(e) =
                             self.call_plugin(plugin.as_deref(), Self::AUTO_DISPATCH_BUDGET, || {
                                 f.call::<()>(ev.clone())

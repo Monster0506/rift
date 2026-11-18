@@ -1773,3 +1773,168 @@ fn test_runaway_exec_is_cancelled_by_user_budget() {
     assert_cancelled_by_user_budget(started, &error, "[lua] ");
     assert_host_still_runs(&host);
 }
+
+fn plugin_status(host: &LuaHost, name: &str) -> (String, Option<String>) {
+    let info: LuaTable = host
+        .lua
+        .load(format!("return rift.plugins.info({name:?})"))
+        .eval()
+        .expect("info failed");
+    (
+        info.get("status").expect("status"),
+        info.get("error").expect("error"),
+    )
+}
+
+fn load_named(dir: &std::path::Path, host: &LuaHost, file: &str, src: &str) -> String {
+    let (path, name) = plugin_path(dir, file);
+    std::fs::write(&path, src).expect("write failed");
+    assert!(host.load_file(&path).is_none());
+    name
+}
+
+const SPIN_ON_BUF_1: &str = "rift.on('TextChangedCoarse', function(ev)
+    if ev.buf == 1 then while true do end end
+end)";
+
+fn coarse(host: &LuaHost, buf: u64) -> Vec<String> {
+    host.dispatch_event(&EditorEvent::TextChangedCoarse {
+        buf: crate::document::DocumentId::new(buf),
+    })
+}
+
+fn warnings(mutations: &[PluginMutation]) -> Vec<&str> {
+    mutations
+        .iter()
+        .filter_map(|m| match m {
+            PluginMutation::Notify {
+                message,
+                level: NotificationType::Warning,
+            } => Some(message.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn test_plugin_disabled_after_three_budget_overruns_while_others_run() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let host = make_host();
+    let slow = load_named(dir.path(), &host, "slow.lua", SPIN_ON_BUF_1);
+    let steady = load_named(
+        dir.path(),
+        &host,
+        "steady.lua",
+        "rift.on('TextChangedCoarse', function() rift.notify('info', 'steady') end)",
+    );
+
+    for _ in 0..2 {
+        assert_eq!(coarse(&host, 1).len(), 1);
+    }
+    assert!(warnings(&host.drain_mutations()).is_empty());
+    assert_eq!(plugin_status(&host, &slow).0, "active");
+
+    assert_eq!(coarse(&host, 1).len(), 1);
+    let mutations = host.drain_mutations();
+    let disabled = warnings(&mutations);
+    assert_eq!(disabled.len(), 1, "{disabled:?}");
+    assert!(disabled[0].contains(&slow), "{}", disabled[0]);
+    assert!(
+        disabled[0].contains(&format!("rift.plugins.enable({slow:?})")),
+        "{}",
+        disabled[0]
+    );
+
+    let started = std::time::Instant::now();
+    assert!(coarse(&host, 1).is_empty());
+    assert!(started.elapsed() < LuaHost::AUTO_DISPATCH_BUDGET);
+    let mutations = host.drain_mutations();
+    assert!(warnings(&mutations).is_empty());
+    assert!(mutations
+        .iter()
+        .any(|m| matches!(m, PluginMutation::Notify { message, .. } if message == "steady")));
+
+    let (status, error) = plugin_status(&host, &slow);
+    assert_eq!(status, "disabled");
+    assert!(error.is_some_and(|e| e.contains("time budget")));
+    assert_eq!(plugin_status(&host, &steady), ("active".to_string(), None));
+}
+
+#[test]
+fn test_enable_brings_a_disabled_plugin_back() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let host = make_host();
+    let slow = load_named(dir.path(), &host, "slow.lua", SPIN_ON_BUF_1);
+    for _ in 0..3 {
+        assert_eq!(coarse(&host, 1).len(), 1);
+    }
+    assert_eq!(plugin_status(&host, &slow).0, "disabled");
+
+    assert!(host
+        .exec(&format!("rift.plugins.enable({slow:?})"))
+        .is_none());
+    assert_eq!(plugin_status(&host, &slow).0, "active");
+    assert_eq!(coarse(&host, 1).len(), 1, "enabled handler runs again");
+    assert_eq!(plugin_status(&host, &slow).0, "active");
+}
+
+#[test]
+fn test_successful_call_resets_budget_failures() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let host = make_host();
+    let slow = load_named(dir.path(), &host, "slow.lua", SPIN_ON_BUF_1);
+    for buf in [1, 1, 2, 1, 1, 2, 2, 2] {
+        let _ = coarse(&host, buf);
+    }
+    assert!(warnings(&host.drain_mutations()).is_empty());
+    assert_eq!(plugin_status(&host, &slow).0, "active");
+}
+
+#[test]
+fn test_fast_handler_never_accumulates_failures() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let host = make_host();
+    let fast = load_named(
+        dir.path(),
+        &host,
+        "fast.lua",
+        "rift.on('TextChangedCoarse', function() local n = 0 for i = 1, 1000 do n = n + i end end)",
+    );
+    for _ in 0..10 {
+        assert!(coarse(&host, 1).is_empty());
+    }
+    assert_eq!(plugin_status(&host, &fast), ("active".to_string(), None));
+}
+
+#[test]
+fn test_info_reports_failed_plugin_load_error() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let host = make_host();
+    let (path, name) = plugin_path(dir.path(), "broken.lua");
+    std::fs::write(&path, "error('boom')").expect("write failed");
+    assert!(host.load_file(&path).is_some());
+    let (status, error) = plugin_status(&host, &name);
+    assert_eq!(status, "failed");
+    assert!(error.is_some_and(|e| e.contains("boom")));
+}
+
+#[test]
+fn test_disabled_plugin_hooks_are_not_reported_until_enabled() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let host = make_host();
+    let slow = load_named(
+        dir.path(),
+        &host,
+        "slow.lua",
+        &format!("{SPIN_ON_BUF_1}\nrift.annotations.on_enter('slow.kind', function() end)"),
+    );
+    assert!(host.has_annotation_hook(true, "slow.kind"));
+    for _ in 0..3 {
+        assert_eq!(coarse(&host, 1).len(), 1);
+    }
+    assert!(!host.has_annotation_hook(true, "slow.kind"));
+    assert!(host
+        .exec(&format!("rift.plugins.enable({slow:?})"))
+        .is_none());
+    assert!(host.has_annotation_hook(true, "slow.kind"));
+}
