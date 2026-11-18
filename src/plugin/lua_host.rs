@@ -1896,7 +1896,7 @@ impl LuaHost {
         api: &LuaTable,
         shared: &Rc<RefCell<LuaSharedState>>,
     ) -> LuaResult<()> {
-        // rift.exec_action(action_string) - fire a built-in editor action by name
+        // rift.exec_action(action) - fire an editor action by name, or a plugin action as "plugin:<id>"
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, action: String| {
@@ -1909,13 +1909,36 @@ impl LuaHost {
         }
 
         // rift.map(mode, keys, action) - register a key binding.
-        // mode: "n"|"i"|"c"|"s"|"g"; keys: key notation e.g. "<C-p>", "<C-S-Left>", "<F5>", "<Space>g";
-        // action: action string or plugin action id.
+        // mode: "n"|"i"|"c"|"s"|"g"|"t"|"tn"; keys: key notation e.g. "<C-p>", "<C-S-Left>", "<F5>", "<Space>g";
+        // action: action string ("editor:save", "plugin:<id>" for rift.register_action ids) or a
+        // function, registered as a generated plugin-owned action that rift.plugins.unload removes.
         {
             let sh = Rc::clone(shared);
-            let f =
-                lua.create_function(move |lua, (mode, keys, action): (String, String, String)| {
+            let next_map_action = std::cell::Cell::new(1_u64);
+            let f = lua.create_function(
+                move |lua, (mode, keys, action): (String, String, LuaValue)| {
                     let plugin_name = sh.borrow_mut().current_plugin.clone();
+                    let action = match action {
+                        LuaValue::String(s) => s.to_str()?.to_string(),
+                        LuaValue::Function(callback) => {
+                            let id = format!("map#{}", next_map_action.get());
+                            next_map_action.set(next_map_action.get() + 1);
+                            let actions: LuaTable = lua.globals().get("_rift_actions")?;
+                            let entry = lua.create_table()?;
+                            entry.set("fn", callback)?;
+                            if let Some(name) = &plugin_name {
+                                entry.set("plugin", name.as_str())?;
+                            }
+                            actions.set(id.as_str(), entry)?;
+                            format!("plugin:{id}")
+                        }
+                        other => {
+                            return Err(LuaError::RuntimeError(format!(
+                                "rift.map: action must be a string or function, got {}",
+                                other.type_name()
+                            )))
+                        }
+                    };
                     sh.borrow_mut().mutations.push(PluginMutation::MapKey {
                         mode: mode.clone(),
                         keys: keys.clone(),
@@ -1937,7 +1960,8 @@ impl LuaHost {
                         list.push(entry)?;
                     }
                     Ok(())
-                })?;
+                },
+            )?;
             api.set("map", f)?;
         }
 

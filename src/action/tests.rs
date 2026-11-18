@@ -271,6 +271,18 @@ fn test_action_from_str_noop() {
 }
 
 #[test]
+fn test_action_from_str_plugin_action() {
+    assert_eq!(
+        Action::from_str("plugin:git:blame").unwrap(),
+        Action::Editor(EditorAction::PluginAction("git:blame".to_string()))
+    );
+    assert_eq!(
+        Action::from_str("plugin:map#3").unwrap(),
+        Action::Editor(EditorAction::PluginAction("map#3".to_string()))
+    );
+}
+
+#[test]
 fn test_action_from_str_explorer_toggle_hidden() {
     assert_eq!(
         Action::from_str("explorer:toggle_hidden").unwrap(),

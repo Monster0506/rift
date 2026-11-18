@@ -600,6 +600,10 @@ impl Action {
             "editor:history_down" => Self::Editor(EditorAction::HistoryDown),
             "editor:dot_repeat" => Self::Editor(EditorAction::DotRepeat),
 
+            s if s.starts_with("plugin:") => Self::Editor(EditorAction::PluginAction(
+                s.strip_prefix("plugin:").unwrap_or_default().to_string(),
+            )),
+
             // Navigation / search (parameterised;  must precede Buffer catch-all)
             s if s.starts_with("editor:run:") => Self::Editor(EditorAction::RunCommand(
                 s.strip_prefix("editor:run:")

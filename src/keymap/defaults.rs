@@ -982,18 +982,6 @@ fn register_normal_goto_defaults(keymap: &mut KeyMap) {
         &[Key::char('G')],
         Action::Editor(EditorAction::GotoLine(0)),
     );
-    // <Space>pd: open the demo floating window
-    keymap.register_sequence(
-        KeyContext::Normal,
-        vec![Key::char(' '), Key::char('p'), Key::char('d')],
-        Action::Editor(EditorAction::PluginAction("demo:window".to_string())),
-    );
-    // <Space>pi: insert demo text into the buffer
-    keymap.register_sequence(
-        KeyContext::Normal,
-        vec![Key::char(' '), Key::char('p'), Key::char('i')],
-        Action::Editor(EditorAction::PluginAction("demo:insert".to_string())),
-    );
 }
 
 fn register_paste_defaults(keymap: &mut KeyMap) {
