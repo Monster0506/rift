@@ -204,6 +204,106 @@ fn test_require_finds_module_on_added_package_path() {
     assert!(check.is_none(), "assertion failed: {check:?}");
 }
 
+fn notified_messages(host: &LuaHost) -> Vec<String> {
+    host.drain_mutations()
+        .into_iter()
+        .filter_map(|m| match m {
+            PluginMutation::Notify { message, .. } => Some(message),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn test_plugins_keep_their_own_globals() {
+    let host = make_host();
+    for name in ["a", "b"] {
+        load_plugin(
+            &host,
+            &format!("{name}.lua"),
+            &format!(
+                "M = {{ name = '{name}' }}
+                 function setup() return M.name end
+                 rift.register_command('{name}check', function() rift.notify('info', setup()) end)"
+            ),
+        );
+    }
+    assert!(host.execute_command("acheck", &[]));
+    assert!(host.execute_command("bcheck", &[]));
+    assert_eq!(notified_messages(&host), ["a", "b"]);
+}
+
+#[test]
+fn test_handler_reads_its_plugin_global_later() {
+    let host = make_host();
+    load_plugin(
+        &host,
+        "counter.lua",
+        "count = 0
+         rift.on('EditorStart', function(_ev)
+             count = count + 1
+             rift.notify('info', tostring(count))
+         end)",
+    );
+    assert!(host.dispatch_event(&EditorEvent::EditorStart).is_empty());
+    assert!(host.dispatch_event(&EditorEvent::EditorStart).is_empty());
+    assert_eq!(notified_messages(&host), ["1", "2"]);
+}
+
+#[test]
+fn test_exec_cannot_see_plugin_globals() {
+    let host = make_host();
+    load_plugin(&host, "hidden.lua", "M = {} function setup() end");
+    let check = host.exec(
+        "assert(M == nil and setup == nil, 'plugin globals leaked')
+         assert(_rift_current_plugin_file == nil, 'plugin file name leaked')",
+    );
+    assert!(check.is_none(), "assertion failed: {check:?}");
+}
+
+#[test]
+fn test_plugin_sees_its_own_file_name() {
+    let host = make_host();
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().join("whoami.lua");
+    std::fs::write(
+        &path,
+        "local loaded_as = _rift_current_plugin_file
+         rift.register_command('whoami', function()
+             rift.notify('info', loaded_as .. '|' .. _rift_current_plugin_file)
+         end)",
+    )
+    .expect("write failed");
+    assert!(host.load_file(&path).is_none());
+    assert!(host.execute_command("whoami", &[]));
+    let name = path.to_string_lossy().replace('\\', "/");
+    assert_eq!(notified_messages(&host), [format!("{name}|{name}")]);
+}
+
+#[test]
+fn test_module_required_during_load_sees_the_loading_file() {
+    let host = make_host();
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    std::fs::write(
+        dir.path().join("whereami.lua"),
+        "return _rift_current_plugin_file",
+    )
+    .expect("write failed");
+    let path = dir.path().join("loader.lua");
+    let lib = dir.path().to_string_lossy().replace('\\', "/");
+    std::fs::write(
+        &path,
+        format!(
+            "rift.add_package_path({lib:?})
+             rift.notify('info', require('whereami'))"
+        ),
+    )
+    .expect("write failed");
+    assert!(host.load_file(&path).is_none());
+    let name = path.to_string_lossy().replace('\\', "/");
+    assert_eq!(notified_messages(&host), [name]);
+}
+
 #[test]
 fn test_annotations_add_queues_mutation() {
     let host = make_host();

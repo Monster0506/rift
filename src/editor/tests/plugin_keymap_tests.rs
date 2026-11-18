@@ -16,7 +16,7 @@ fn rift_map_runs_plugin_actions_and_functions_until_unload() {
     std::fs::write(
         &path,
         r"
-        mapper_hits = {}
+        _G.mapper_hits = {}
         rift.register_action('mapper:hit', function() table.insert(mapper_hits, 'action') end)
         rift.map('n', '<F7>', 'plugin:mapper:hit')
         rift.map('n', '<F8>', function() table.insert(mapper_hits, 'fn') end)

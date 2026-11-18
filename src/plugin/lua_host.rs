@@ -206,7 +206,6 @@ struct LuaSharedState {
     /// severity: 1=error, 2=warning, 3=info, 4=hint
     lsp_diagnostics: LspDiagnosticsSnapshot,
     /// The plugin file currently being loaded, used to tag registrations with their owner.
-    /// Set to the file path before executing each plugin file; cleared after.
     current_plugin: Option<String>,
     /// Completed shell commands waiting to be fired as Lua `UserEvents`.
     /// Each entry is (tag, success, output). Drained in `drain_mutations`.
@@ -3196,22 +3195,22 @@ impl LuaHost {
             Err(e) => return Some(format!("lua: failed to read {}: {}", path.display(), e)),
         };
         let name = path.to_string_lossy().replace('\\', "/");
-        self.shared.borrow_mut().current_plugin = Some(name.clone());
-        let _ = self
-            .lua
-            .globals()
-            .set("_rift_current_plugin_file", name.as_str());
+        let env = match self.plugin_environment(&name) {
+            Ok(env) => env,
+            Err(e) => return Some(format!("lua: {}: {}", path.display(), e)),
+        };
+        let previous = self
+            .shared
+            .borrow_mut()
+            .current_plugin
+            .replace(name.clone());
         let result = self
             .call_budgeted(Self::USER_CALL_BUDGET, || {
-                self.lua.load(src.as_str()).set_name(name.as_str()).exec()
+                self.exec_plugin_chunk(&src, &name, env)
             })
             .err()
             .map(|e| format!("lua: {}: {}", path.display(), e));
-        self.shared.borrow_mut().current_plugin = None;
-        let _ = self
-            .lua
-            .globals()
-            .set("_rift_current_plugin_file", mlua::Value::Nil);
+        self.shared.borrow_mut().current_plugin = previous;
         result
     }
 
@@ -3237,6 +3236,29 @@ impl LuaHost {
             .get::<LuaTable>(table_name)
             .and_then(|handlers| handlers.get::<Option<LuaTable>>(kind))
             .is_ok_and(|entry| entry.is_some_and(|entry| entry.get::<LuaFunction>("fn").is_ok()))
+    }
+
+    fn exec_plugin_chunk(&self, src: &str, name: &str, env: LuaTable) -> LuaResult<()> {
+        let globals = self.lua.globals();
+        let previous: LuaValue = globals.get("_rift_current_plugin_file")?;
+        globals.set("_rift_current_plugin_file", name)?;
+        let result = self
+            .lua
+            .load(src)
+            .set_name(name)
+            .set_environment(env)
+            .exec();
+        globals.set("_rift_current_plugin_file", previous)?;
+        result
+    }
+
+    fn plugin_environment(&self, name: &str) -> LuaResult<LuaTable> {
+        let env = self.lua.create_table()?;
+        env.set("_rift_current_plugin_file", name)?;
+        let meta = self.lua.create_table()?;
+        meta.set("__index", self.lua.globals())?;
+        env.set_metatable(Some(meta))?;
+        Ok(env)
     }
 
     /// Drain all mutations queued by Lua API calls. Fires pending shell-completion
