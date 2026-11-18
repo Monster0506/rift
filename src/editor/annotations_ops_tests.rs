@@ -964,3 +964,52 @@ fn next_prev_navigation_moves_cursor_between_annotations() {
     assert_eq!(e.active_cursor(), 2);
     assert!(!e.goto_prev_interactive_annotation());
 }
+
+#[cfg(feature = "plugins")]
+fn editor_with_failing_plugin(src: &str) -> Editor<MockTerminal> {
+    let mut e = editor_with_text("hello world");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("failing.lua");
+    std::fs::write(&path, src).unwrap();
+    assert_eq!(e.plugin_host.lua_load_file(&path), None);
+    e.apply_plugin_mutations();
+    e.active_document().annotations.add(
+        Annotation::new(
+            Kind::new("test.run"),
+            Anchor::range(0, 5),
+            AnnotationOwner::User,
+        )
+        .with_actions(vec![Action::new("run").with_default()]),
+    );
+    e.active_document().buffer.set_cursor(2).ok();
+    e
+}
+
+#[cfg(feature = "plugins")]
+fn has_notification(e: &Editor<MockTerminal>, prefix: &str) -> bool {
+    e.state
+        .error_manager
+        .notifications()
+        .iter_active()
+        .any(|n| n.message.starts_with(prefix) && n.message.contains("boom"))
+}
+
+#[cfg(feature = "plugins")]
+#[test]
+fn annotation_action_error_reaches_a_notification() {
+    let mut e = editor_with_failing_plugin(
+        "rift.annotations.on_action('test.run', 'run', function(_ctx) error('boom') end)",
+    );
+    assert!(e.activate_annotation_at_cursor());
+    assert!(has_notification(&e, "[failing:test.run.run] "));
+}
+
+#[cfg(feature = "plugins")]
+#[test]
+fn annotation_hook_error_reaches_a_notification() {
+    let mut e = editor_with_failing_plugin(
+        "rift.annotations.on_enter('test.run', function(_ctx) error('boom') end)",
+    );
+    e.update_annotation_hover();
+    assert!(has_notification(&e, "[failing:test.run.on_enter] "));
+}

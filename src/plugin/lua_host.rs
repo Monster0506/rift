@@ -1132,7 +1132,7 @@ impl LuaHost {
                 move |lua, (kind, verb, handler): (String, String, mlua::Function)| {
                     let key = format!("{kind}\u{0}{verb}");
                     let handlers: LuaTable = lua.globals().get("_rift_action_handlers")?;
-                    handlers.set(key, handler)?;
+                    handlers.set(key, Self::callback_entry(lua, &sh, handler)?)?;
                     sh.borrow_mut()
                         .mutations
                         .push(PluginMutation::RegisterAnnotationAction {
@@ -1188,10 +1188,11 @@ impl LuaHost {
             ("on_enter", "_rift_enter_handlers"),
             ("on_leave", "_rift_leave_handlers"),
         ] {
+            let sh = Rc::clone(shared);
             let f =
                 lua.create_function(move |lua, (kind, handler): (String, mlua::Function)| {
                     let handlers: LuaTable = lua.globals().get(table_name)?;
-                    handlers.set(kind, handler)?;
+                    handlers.set(kind, Self::callback_entry(lua, &sh, handler)?)?;
                     Ok(())
                 })?;
             annotations.set(method, f)?;
@@ -2474,7 +2475,12 @@ impl LuaHost {
                 }
 
                 let kinds: LuaTable = lua.globals().get("_rift_buffer_kinds")?;
-                kinds.set(name.as_str(), opts.clone())?;
+                let entry = lua.create_table()?;
+                entry.set("opts", opts.clone())?;
+                if let Some(plugin) = s.current_plugin.as_deref() {
+                    entry.set("plugin", plugin)?;
+                }
+                kinds.set(name.as_str(), entry)?;
                 s.mutations.push(PluginMutation::RegisterBufferKind {
                     name,
                     read_only: read_only_opt,
@@ -2735,6 +2741,41 @@ impl LuaHost {
         result
     }
 
+    fn callback_entry(
+        lua: &Lua,
+        shared: &RefCell<LuaSharedState>,
+        callback: LuaFunction,
+    ) -> LuaResult<LuaTable> {
+        let entry = lua.create_table()?;
+        entry.set("fn", callback)?;
+        if let Some(plugin) = shared.borrow().current_plugin.as_deref() {
+            entry.set("plugin", plugin)?;
+        }
+        Ok(entry)
+    }
+
+    fn entry_plugin(entry: &LuaTable) -> Option<String> {
+        entry.get::<Option<String>>("plugin").ok().flatten()
+    }
+
+    fn plugin_error(plugin: Option<&str>, origin: &str, error: &dyn std::fmt::Display) -> String {
+        let stem = plugin
+            .and_then(|p| std::path::Path::new(p).file_stem())
+            .and_then(std::ffi::OsStr::to_str)
+            .unwrap_or("lua");
+        format!("[{stem}:{origin}] {error}")
+    }
+
+    fn report_error(&self, plugin: Option<&str>, origin: &str, error: &dyn std::fmt::Display) {
+        self.shared
+            .borrow_mut()
+            .mutations
+            .push(PluginMutation::Notify {
+                message: Self::plugin_error(plugin, origin, error),
+                level: NotificationType::Error,
+            });
+    }
+
     /// Dispatch an `EditorEvent` to all registered Lua handlers.
     /// Returns error strings for any handlers that raised a Lua error.
     #[must_use]
@@ -2768,19 +2809,28 @@ impl LuaHost {
         for entry in snapshot {
             match entry {
                 Ok(entry) => {
+                    let plugin = Self::entry_plugin(&entry);
                     let f: LuaFunction = match entry.get("fn") {
                         Ok(f) => f,
                         Err(e) => {
-                            errors.push(format!("[lua:{}] bad handler entry: {}", event.name(), e));
+                            errors.push(Self::plugin_error(
+                                plugin.as_deref(),
+                                event.name(),
+                                &format_args!("bad handler entry: {e}"),
+                            ));
                             continue;
                         }
                     };
                     let call_result = self.call_budgeted(|| f.call::<()>(ev_table.clone()));
                     if let Err(e) = call_result {
-                        errors.push(format!("[lua:{}] {}", event.name(), e));
+                        errors.push(Self::plugin_error(plugin.as_deref(), event.name(), &e));
                     }
                 }
-                Err(e) => errors.push(format!("[lua:{}] bad handler: {}", event.name(), e)),
+                Err(e) => errors.push(Self::plugin_error(
+                    None,
+                    event.name(),
+                    &format_args!("bad handler: {e}"),
+                )),
             }
         }
         errors
@@ -2808,7 +2858,10 @@ impl LuaHost {
             Ok(Some(entry)) => entry,
             _ => return false,
         };
-        let callback: LuaFunction = match entry.get::<Option<LuaFunction>>(field) {
+        let Ok(opts) = entry.get::<LuaTable>("opts") else {
+            return false;
+        };
+        let callback: LuaFunction = match opts.get::<Option<LuaFunction>>(field) {
             Ok(Some(callback)) => callback,
             _ => return false,
         };
@@ -2824,19 +2877,11 @@ impl LuaHost {
             }
         }
 
-        match self.call_budgeted(|| callback.call::<()>(context)) {
-            Ok(()) => true,
-            Err(error) => {
-                self.shared
-                    .borrow_mut()
-                    .mutations
-                    .push(PluginMutation::Notify {
-                        message: format!("[lua:{kind}.{field}] {error}"),
-                        level: NotificationType::Error,
-                    });
-                true
-            }
+        if let Err(error) = self.call_budgeted(|| callback.call::<()>(context)) {
+            let plugin = Self::entry_plugin(&entry);
+            self.report_error(plugin.as_deref(), &format!("{kind}.{field}"), &error);
         }
+        true
     }
 
     #[must_use]
@@ -2865,9 +2910,12 @@ impl LuaHost {
             Err(_) => return false,
         };
         let key = format!("{}\u{0}{}", ctx.kind, ctx.verb);
-        let f: LuaFunction = match handlers.get::<Option<LuaFunction>>(key.as_str()) {
-            Ok(Some(f)) => f,
+        let entry: LuaTable = match handlers.get::<Option<LuaTable>>(key.as_str()) {
+            Ok(Some(entry)) => entry,
             _ => return false,
+        };
+        let Ok(f) = entry.get::<LuaFunction>("fn") else {
+            return false;
         };
         let Ok(t) = self.lua.create_table() else {
             return false;
@@ -2883,7 +2931,15 @@ impl LuaHost {
         if let Ok(p) = value_into_lua(ctx.params.clone(), &self.lua) {
             let _ = t.set("params", p);
         }
-        f.call::<()>(t).is_ok()
+        if let Err(error) = f.call::<()>(t) {
+            let plugin = Self::entry_plugin(&entry);
+            self.report_error(
+                plugin.as_deref(),
+                &format!("{}.{}", ctx.kind, ctx.verb),
+                &error,
+            );
+        }
+        true
     }
 
     /// Invoke the Lua cursor enter/leave hook for an annotation kind, if registered.
@@ -2894,18 +2950,21 @@ impl LuaHost {
         enter: bool,
         ctx: &crate::plugin::AnnotationHoverCtx,
     ) -> bool {
-        let table_name = if enter {
-            "_rift_enter_handlers"
+        let (table_name, hook) = if enter {
+            ("_rift_enter_handlers", "on_enter")
         } else {
-            "_rift_leave_handlers"
+            ("_rift_leave_handlers", "on_leave")
         };
         let handlers: LuaTable = match self.lua.globals().get(table_name) {
             Ok(t) => t,
             Err(_) => return false,
         };
-        let f: LuaFunction = match handlers.get::<Option<LuaFunction>>(ctx.kind.as_str()) {
-            Ok(Some(f)) => f,
+        let entry: LuaTable = match handlers.get::<Option<LuaTable>>(ctx.kind.as_str()) {
+            Ok(Some(entry)) => entry,
             _ => return false,
+        };
+        let Ok(f) = entry.get::<LuaFunction>("fn") else {
+            return false;
         };
         let Ok(t) = self.lua.create_table() else {
             return false;
@@ -2917,7 +2976,11 @@ impl LuaHost {
         if let Ok(p) = value_into_lua(ctx.payload.clone(), &self.lua) {
             let _ = t.set("payload", p);
         }
-        self.call_budgeted(|| f.call::<()>(t)).is_ok()
+        if let Err(error) = self.call_budgeted(|| f.call::<()>(t)) {
+            let plugin = Self::entry_plugin(&entry);
+            self.report_error(plugin.as_deref(), &format!("{}.{hook}", ctx.kind), &error);
+        }
+        true
     }
 
     /// Execute a plugin command registered via `rift.register_command`.
@@ -2946,13 +3009,7 @@ impl LuaHost {
             let _ = args_table.set(i + 1, arg.as_str());
         }
         if let Err(e) = handler.call::<()>(args_table) {
-            self.shared
-                .borrow_mut()
-                .mutations
-                .push(PluginMutation::Notify {
-                    message: format!("[lua:{name}] {e}"),
-                    level: NotificationType::Error,
-                });
+            self.report_error(Self::entry_plugin(&entry).as_deref(), name, &e);
         }
         true
     }
@@ -2993,13 +3050,7 @@ impl LuaHost {
             Err(_) => return false,
         };
         if let Err(e) = handler.call::<()>(()) {
-            self.shared
-                .borrow_mut()
-                .mutations
-                .push(PluginMutation::Notify {
-                    message: format!("[lua:{id}] {e}"),
-                    level: NotificationType::Error,
-                });
+            self.report_error(Self::entry_plugin(&entry).as_deref(), id, &e);
         }
         true
     }
@@ -3087,13 +3138,8 @@ impl LuaHost {
                     for entry in snapshot {
                         let f: LuaFunction = entry.get("fn")?;
                         if let Err(e) = self.call_budgeted(|| f.call::<()>(ev.clone())) {
-                            self.shared
-                                .borrow_mut()
-                                .mutations
-                                .push(PluginMutation::Notify {
-                                    message: format!("[lua:ShellDone] {e}"),
-                                    level: NotificationType::Error,
-                                });
+                            let plugin = Self::entry_plugin(&entry);
+                            self.report_error(plugin.as_deref(), "ShellDone", &e);
                         }
                     }
                 }

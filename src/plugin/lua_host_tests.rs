@@ -18,6 +18,14 @@ fn lines_source(lines: &[&str]) -> BufSourceUpdate {
     }))
 }
 
+fn load_plugin(host: &LuaHost, file: &str, src: &str) {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().join(file);
+    std::fs::write(&path, src).expect("write failed");
+    let err = host.load_file(&path);
+    assert!(err.is_none(), "load error: {err:?}");
+}
+
 #[test]
 fn test_new_succeeds() {
     let _ = make_host();
@@ -630,11 +638,18 @@ fn test_load_dir_loads_lua_file() {
 #[test]
 fn test_error_in_handler_returned_from_dispatch() {
     let host = make_host();
-    assert!(host
-        .exec("rift.on('EditorStart', function(_ev) error('handler error') end)")
-        .is_none());
+    load_plugin(
+        &host,
+        "failing.lua",
+        "rift.on('EditorStart', function(_ev) error('handler error') end)",
+    );
     let errors = host.dispatch_event(&EditorEvent::EditorStart);
-    assert!(!errors.is_empty(), "expected errors from bad handler");
+    assert_eq!(errors.len(), 1, "expected one error from bad handler");
+    assert!(
+        errors[0].starts_with("[failing:EditorStart] "),
+        "error: {}",
+        errors[0]
+    );
     assert!(errors[0].contains("handler error"), "error: {}", errors[0]);
 }
 
@@ -1024,18 +1039,18 @@ fn test_shelldone_fanout_does_not_invoke_handlers_registered_during_same_pass() 
 #[test]
 fn test_shell_done_handler_error_surfaces_as_notification() {
     let host = make_host();
-    assert!(host
-        .exec(
-            r"
+    load_plugin(
+        &host,
+        "failing.lua",
+        r"
         rift.on('UserEvent', function(ev)
             if ev.name == 'ShellDone' then
                 local x = nil
                 return x.boom
             end
         end)
-    "
-        )
-        .is_none());
+    ",
+    );
 
     host.shared.borrow_mut().pending_shell_events.push((
         "mytag".to_string(),
@@ -1049,8 +1064,8 @@ fn test_shell_done_handler_error_surfaces_as_notification() {
             m,
             PluginMutation::Notify {
                 level: NotificationType::Error,
-                ..
-            }
+                message,
+            } if message.starts_with("[failing:ShellDone] ")
         )
     });
     assert!(
@@ -1165,15 +1180,15 @@ fn test_lsp_stub_functions_are_callable_and_no_op() {
 #[test]
 fn test_dispatch_event_aborts_a_runaway_handler_past_its_time_budget() {
     let host = make_host();
-    assert!(host
-        .exec(
-            r"
-            rift.on('TextChangedCoarse', function(_ev)
-                while true do end
-            end)
-        "
-        )
-        .is_none());
+    load_plugin(
+        &host,
+        "runaway.lua",
+        r"
+        rift.on('TextChangedCoarse', function(_ev)
+            while true do end
+        end)
+    ",
+    );
 
     let started = std::time::Instant::now();
     let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse {
@@ -1187,8 +1202,8 @@ fn test_dispatch_event_aborts_a_runaway_handler_past_its_time_budget() {
     );
     assert_eq!(errors.len(), 1, "the aborted handler must report an error");
     assert!(
-        errors[0].contains("time budget"),
-        "error should explain the abort: {:?}",
+        errors[0].starts_with("[runaway:TextChangedCoarse] ") && errors[0].contains("time budget"),
+        "error should name the plugin and explain the abort: {:?}",
         errors[0]
     );
 }
