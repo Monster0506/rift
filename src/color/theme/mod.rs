@@ -30,6 +30,8 @@ impl ThemeHandler for DefaultThemeHandler {
         settings.editor_fg = Some(theme.foreground);
         settings.syntax_colors.clone_from(&theme.syntax);
         settings.cursor_color = Some(theme.cursor_color);
+        settings.selection_bg = None;
+        settings.selection_fg = None;
         if !settings.highlight_overrides.is_empty() {
             let colors = settings
                 .syntax_colors
@@ -38,6 +40,7 @@ impl ThemeHandler for DefaultThemeHandler {
                 colors.set_style(name, *style);
             }
         }
+        settings.refresh_derived_highlights();
     }
 }
 

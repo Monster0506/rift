@@ -22,3 +22,17 @@ fn style_override_carries_color() {
     assert_eq!(back.fg, Some(Color::Red));
     assert!(back.attrs.is_bold());
 }
+
+#[test]
+fn selection_faces_fall_back_to_a_bg_only_blue_when_no_group_resolves() {
+    let colors = crate::color::theme::SyntaxColors::default();
+    for name in ["ui.selection", "ui.selection.active", "ui.selection.banked"] {
+        let style = resolve_face(&FaceRef::new(name), Some(&colors)).unwrap();
+        assert_eq!(style.fg, None, "{name} must let syntax colors show through");
+        assert_eq!(style.bg, Some(FALLBACK_SELECTION_BG), "{name}");
+    }
+    assert_eq!(
+        resolve_face(&FaceRef::new("ui.selectionish"), Some(&colors)),
+        None
+    );
+}

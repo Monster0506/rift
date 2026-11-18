@@ -70,3 +70,56 @@ fn lua_get_tab_width_and_expand_tabs_reflect_document_local_overrides() {
     );
     assert!(err.is_none(), "{err:?}");
 }
+
+#[test]
+fn plugin_selection_options_recolor_selected_cells_and_read_back_after_resync() {
+    use crate::action::{Action, EditorAction};
+    use crate::color::Color;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world\n");
+    editor.plugin_host.mark_lua_used();
+    editor.update_lua_state();
+
+    let err = editor.plugin_host.lua_exec(
+        r##"
+        rift.set_option("appearance.selection_background", "#ff0000")
+        rift.set_option("appearance.selection_foreground", "#ffffff")
+        "##,
+    );
+    assert!(err.is_none(), "{err:?}");
+    editor.apply_plugin_mutations();
+
+    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+    editor.active_document().buffer.set_cursor(4).unwrap();
+    editor.update_and_render().unwrap();
+
+    let cols = editor.render_system.compositor.cols();
+    let row: String = editor.render_system.compositor.get_composited_slice()[..cols]
+        .iter()
+        .map(|c| c.to_char())
+        .collect();
+    let col = row[..row.find("hello").unwrap()].chars().count();
+    let cell = editor.render_system.compositor.get_composited_slice()[col];
+    assert_eq!(
+        (cell.fg, cell.bg),
+        (
+            Some(Color::Rgb {
+                r: 255,
+                g: 255,
+                b: 255
+            }),
+            Some(Color::Rgb { r: 255, g: 0, b: 0 })
+        )
+    );
+
+    editor.update_lua_state();
+    let err = editor.plugin_host.lua_exec(
+        r##"
+        local bg = rift.get_option("appearance.selection_background")
+        assert(bg == "#ff0000", "selection_background=" .. tostring(bg))
+        "##,
+    );
+    assert!(err.is_none(), "{err:?}");
+}

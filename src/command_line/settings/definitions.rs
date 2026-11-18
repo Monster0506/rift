@@ -167,6 +167,7 @@ fn set_editor_bg(settings: &mut UserSettings, value: &SettingValue) -> Result<()
             } else {
                 Some(color)
             };
+            settings.refresh_derived_highlights();
             Ok(())
         }
         _ => Err(SettingError::ValidationError("Expected color".to_string())),
@@ -181,6 +182,7 @@ fn set_editor_fg(settings: &mut UserSettings, value: &SettingValue) -> Result<()
             } else {
                 Some(color)
             };
+            settings.refresh_derived_highlights();
             Ok(())
         }
         _ => Err(SettingError::ValidationError("Expected color".to_string())),
@@ -324,6 +326,58 @@ fn set_cursor_color(settings: &mut UserSettings, value: &SettingValue) -> Result
 
 fn get_cursor_color(s: &UserSettings) -> SettingValue {
     SettingValue::Color(s.cursor_color.unwrap_or(Color::Reset))
+}
+
+fn set_selection_bg(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
+    match value {
+        &SettingValue::Color(color) => {
+            settings.selection_bg = if color == Color::Reset {
+                None
+            } else {
+                Some(color)
+            };
+            settings.refresh_derived_highlights();
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError("Expected color".to_string())),
+    }
+}
+
+fn get_selection_bg(s: &UserSettings) -> SettingValue {
+    SettingValue::Color(
+        selection_style(s)
+            .and_then(|style| style.bg)
+            .unwrap_or(Color::Reset),
+    )
+}
+
+fn set_selection_fg(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
+    match value {
+        &SettingValue::Color(color) => {
+            settings.selection_fg = if color == Color::Reset {
+                None
+            } else {
+                Some(color)
+            };
+            settings.refresh_derived_highlights();
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError("Expected color".to_string())),
+    }
+}
+
+fn get_selection_fg(s: &UserSettings) -> SettingValue {
+    SettingValue::Color(
+        selection_style(s)
+            .and_then(|style| style.fg)
+            .unwrap_or(Color::Reset),
+    )
+}
+
+fn selection_style(s: &UserSettings) -> Option<crate::layer::CellStyle> {
+    s.syntax_colors
+        .as_ref()
+        .and_then(|colors| colors.exact_style("ui.selection"))
 }
 
 fn set_cursor_speed(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
@@ -555,6 +609,24 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         set: set_cursor_color,
         get: Some(get_cursor_color),
         needs_full_redraw: false,
+    },
+    SettingDescriptor {
+        name: "appearance.selection_background",
+        aliases: &["selbg"],
+        description: "Visual selection background color (default: derived from the theme)",
+        ty: SettingType::Color,
+        set: set_selection_bg,
+        get: Some(get_selection_bg),
+        needs_full_redraw: true,
+    },
+    SettingDescriptor {
+        name: "appearance.selection_foreground",
+        aliases: &["selfg"],
+        description: "Visual selection text color (default: none, syntax colors show through)",
+        ty: SettingType::Color,
+        set: set_selection_fg,
+        get: Some(get_selection_fg),
+        needs_full_redraw: true,
     },
     SettingDescriptor {
         name: "appearance.cursor_speed",

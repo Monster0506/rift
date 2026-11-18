@@ -1003,3 +1003,120 @@ fn test_execute_setting_undodir_sets_and_expands_path() {
     assert_eq!(state.settings.undo.dir, None);
     assert!(errors.is_empty());
 }
+
+fn set(settings: &mut UserSettings, name: &str, value: &str) {
+    let mut errors = Vec::new();
+    create_settings_registry().execute_setting(name, Some(value), settings, &mut |e| {
+        errors.push(e);
+    });
+    assert!(errors.is_empty(), "set {name} {value}: {errors:?}");
+}
+
+fn get(settings: &UserSettings, name: &str) -> String {
+    create_settings_registry()
+        .get_setting(name, settings)
+        .unwrap_or_else(|| panic!("{name} has no getter"))
+        .to_display_string()
+}
+
+fn selection(settings: &UserSettings) -> Option<crate::layer::CellStyle> {
+    settings
+        .syntax_colors
+        .as_ref()
+        .and_then(|c| c.exact_style("ui.selection"))
+}
+
+fn rgb(hex: &str) -> Option<crate::color::Color> {
+    match SettingsRegistry::<UserSettings>::parse_value(&SettingType::Color, hex) {
+        Ok(SettingValue::Color(color)) => Some(color),
+        other => panic!("{hex}: {other:?}"),
+    }
+}
+
+#[test]
+fn selection_tint_follows_editor_bg_and_disappears_when_bg_is_reset() {
+    let mut settings = UserSettings::new();
+    assert_eq!(get(&settings, "selbg"), "#4f4c3d", "gruvbox derived tint");
+
+    set(&mut settings, "bg", "#000000");
+    assert_eq!(selection(&settings).and_then(|s| s.bg), rgb("#2f2c24"));
+
+    set(&mut settings, "fg", "#ffffff");
+    assert_eq!(selection(&settings).and_then(|s| s.bg), rgb("#333333"));
+
+    set(&mut settings, "bg", "reset");
+    assert_eq!(selection(&settings), None);
+    assert_eq!(get(&settings, "selbg"), "none");
+}
+
+#[test]
+fn selection_options_set_single_fields_over_the_derived_tint() {
+    let mut settings = UserSettings::new();
+    let derived = selection(&settings);
+
+    set(&mut settings, "selbg", "#ff0000");
+    assert_eq!(
+        selection(&settings).map(|s| (s.fg, s.bg)),
+        Some((None, rgb("#ff0000")))
+    );
+    assert_eq!(get(&settings, "appearance.selection_background"), "#ff0000");
+    assert_eq!(get(&settings, "selfg"), "none");
+
+    set(&mut settings, "selbg", "reset");
+    set(&mut settings, "appearance.selection_foreground", "#ffffff");
+    assert_eq!(
+        selection(&settings).map(|s| (s.fg, s.bg)),
+        Some((rgb("#ffffff"), rgb("#4f4c3d"))),
+        "selfg keeps the derived bg"
+    );
+    assert_eq!(get(&settings, "selfg"), "#ffffff");
+
+    set(&mut settings, "selfg", "reset");
+    assert_eq!(selection(&settings), derived);
+}
+
+#[test]
+fn selection_options_reach_a_terminal_default_bg() {
+    let mut settings = UserSettings::new();
+    set(&mut settings, "bg", "reset");
+    set(&mut settings, "selfg", "black");
+    assert_eq!(
+        selection(&settings).map(|s| (s.fg, s.bg)),
+        Some((Some(crate::color::Color::Black), None))
+    );
+}
+
+#[test]
+fn highlight_override_wins_over_selection_options_until_reset() {
+    let mut settings = UserSettings::new();
+    set(&mut settings, "selbg", "#ff0000");
+    let blue = crate::layer::CellStyle {
+        bg: rgb("#0000ff"),
+        ..Default::default()
+    };
+    settings.set_highlight_override("ui.selection", Some(blue));
+    assert_eq!(selection(&settings), Some(blue));
+
+    set(&mut settings, "bg", "#000000");
+    set(&mut settings, "selfg", "#ffffff");
+    assert_eq!(
+        selection(&settings),
+        Some(blue),
+        "options must not touch an override"
+    );
+    assert_eq!(
+        get(&settings, "selbg"),
+        "#0000ff",
+        "get reports what is drawn"
+    );
+
+    settings.set_highlight_override("ui.selection", None);
+    assert_eq!(
+        selection(&settings).map(|s| (s.fg, s.bg)),
+        Some((rgb("#ffffff"), rgb("#ff0000")))
+    );
+
+    set(&mut settings, "selbg", "reset");
+    set(&mut settings, "selfg", "reset");
+    assert_eq!(selection(&settings).and_then(|s| s.bg), rgb("#2f2c24"));
+}

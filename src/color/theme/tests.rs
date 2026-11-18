@@ -128,6 +128,60 @@ fn test_theme_apply_to_settings() {
     assert_eq!(settings.editor_fg, Some(theme.foreground));
 }
 
+fn selection_style(settings: &UserSettings) -> Option<CellStyle> {
+    settings
+        .syntax_colors
+        .as_ref()
+        .and_then(|c| c.exact_style("ui.selection"))
+}
+
+#[test]
+fn every_builtin_theme_gets_a_bg_only_selection_tint_from_its_editor_colors() {
+    let expected = [
+        (Theme::light(), (0xcc, 0xcc, 0xcc)),
+        (Theme::dark(), (0x45, 0x45, 0x45)),
+        (Theme::gruvbox(), (0x4f, 0x4c, 0x3d)),
+        (Theme::nordic(), (0x4a, 0x51, 0x5e)),
+    ];
+    let mut settings = UserSettings::new();
+    for (theme, (r, g, b)) in expected {
+        theme.apply_to_settings(&mut settings);
+        assert_eq!(
+            selection_style(&settings),
+            Some(CellStyle {
+                bg: Some(Color::Rgb { r, g, b }),
+                ..CellStyle::default()
+            }),
+            "theme {}",
+            theme.name
+        );
+    }
+}
+
+#[test]
+fn switching_themes_clears_the_selection_options() {
+    let mut settings = UserSettings::new();
+    settings.selection_bg = Some(Color::Red);
+    settings.selection_fg = Some(Color::White);
+    settings.refresh_derived_highlights();
+
+    Theme::nordic().apply_to_settings(&mut settings);
+
+    assert_eq!(settings.selection_bg, None);
+    assert_eq!(settings.selection_fg, None);
+    assert_eq!(
+        selection_style(&settings).map(|s| (s.fg, s.bg)),
+        Some((
+            None,
+            Some(Color::Rgb {
+                r: 0x4a,
+                g: 0x51,
+                b: 0x5e
+            })
+        ))
+    );
+}
+
 #[test]
 fn test_all_themes_have_valid_colors() {
     let themes = vec![

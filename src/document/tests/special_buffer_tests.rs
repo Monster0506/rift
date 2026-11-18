@@ -157,7 +157,8 @@ fn sync_selection_annotations_creates_one_entry_per_banked_region_plus_active() 
 }
 
 #[test]
-fn sync_selection_annotations_active_region_uses_a_visible_contrasting_blue() {
+fn sync_selection_annotations_active_region_draws_through_its_face_without_own_style() {
+    use crate::annotations::presentation::FaceRef;
     use crate::selection::Region;
     use crate::wrap::RangeKind;
 
@@ -171,26 +172,16 @@ fn sync_selection_annotations_active_region_uses_a_visible_contrasting_blue() {
         .query_kind("ui.selection.active")
         .next()
         .unwrap();
-    let style = active
-        .presentation
-        .as_ref()
-        .unwrap()
-        .style
-        .as_ref()
-        .unwrap();
-    assert_ne!(
-        style.bg,
-        Some(crate::color::Color::Blue),
-        "ANSI Blue renders as a dark, easily-missed navy in most terminal themes"
-    );
-    assert!(
-        style.fg.is_some(),
-        "active selection must set an explicit contrasting foreground"
+    let presentation = active.presentation.as_ref().unwrap();
+    assert_eq!(presentation.face, Some(FaceRef::new("ui.selection.active")));
+    assert_eq!(
+        presentation.style, None,
+        "an own style would force an fg and hide syntax colors"
     );
 }
 
 #[test]
-fn sync_selection_annotations_banked_regions_all_share_the_same_blue_as_active() {
+fn sync_selection_annotations_banked_and_active_resolve_to_the_same_style() {
     use crate::selection::Region;
     use crate::wrap::RangeKind;
 
@@ -202,18 +193,20 @@ fn sync_selection_annotations_banked_regions_all_share_the_same_blue_as_active()
         Region::new(3, 4, RangeKind::Charwise),
         Region::new(6, 7, RangeKind::Charwise),
     ];
-    doc.sync_selection_annotations(None, &banked);
+    doc.sync_selection_annotations(Some(Region::new(9, 9, RangeKind::Charwise)), &banked);
 
+    let colors = crate::state::UserSettings::new().syntax_colors;
     let styles: Vec<_> = doc
         .annotations
-        .query_kind("ui.selection.banked")
-        .map(|a| a.presentation.as_ref().unwrap().style.unwrap())
+        .presentation_spans(colors.as_ref(), None, 0.."0123456789".len())
+        .into_iter()
+        .map(|(_, style)| style)
         .collect();
-    assert_eq!(styles.len(), 3);
-    let first = styles[0];
+    assert_eq!(styles.len(), 4);
+    assert!(styles[0].bg.is_some(), "selection must draw a background");
     assert!(
-        styles.iter().all(|s| *s == first),
-        "every banked region must share one consistent color, not a rainbow per index"
+        styles.iter().all(|s| *s == styles[0]),
+        "banked and active regions must share one color, not a rainbow: {styles:?}"
     );
 }
 

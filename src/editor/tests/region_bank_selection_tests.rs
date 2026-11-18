@@ -632,19 +632,11 @@ fn real_keymap_v_then_l_renders_a_visible_highlight_in_the_composited_cells() {
     editor.update_and_render().unwrap();
 
     let cols = editor.render_system.compositor.cols();
+    let selection_bg = selection_bg(&editor);
     let cells = editor.render_system.compositor.get_composited_slice();
     let highlighted = cells[..cols]
         .iter()
-        .filter(|c| {
-            matches!(
-                c.bg,
-                Some(crate::color::Color::Rgb {
-                    r: 100,
-                    g: 160,
-                    b: 220
-                })
-            )
-        })
+        .filter(|c| c.bg == selection_bg)
         .count();
     assert_eq!(
         highlighted, 2,
@@ -685,22 +677,29 @@ fn visual_highlight_redraws_on_a_frame_after_the_initial_one() {
     editor.update_and_render().unwrap();
 
     let cols = editor.render_system.compositor.cols();
+    let selection_bg = selection_bg(&editor);
     let cells = editor.render_system.compositor.get_composited_slice();
     let highlighted = cells[..cols]
         .iter()
-        .filter(|c| {
-            matches!(
-                c.bg,
-                Some(crate::color::Color::Rgb {
-                    r: 100,
-                    g: 160,
-                    b: 220
-                })
-            )
-        })
+        .filter(|c| c.bg == selection_bg)
         .count();
     assert_eq!(
         highlighted, 2,
         "selection highlight must redraw on a later frame, not just the first ever render"
     );
+}
+
+fn selection_bg(editor: &Editor<MockTerminal>) -> Option<crate::color::Color> {
+    let bg = editor
+        .state
+        .settings
+        .syntax_colors
+        .as_ref()
+        .and_then(|c| c.exact_style("ui.selection"))
+        .and_then(|s| s.bg);
+    assert!(
+        bg.is_some(),
+        "the default theme must resolve a ui.selection bg"
+    );
+    bg
 }

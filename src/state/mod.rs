@@ -134,6 +134,8 @@ pub(crate) struct UserSettings {
     pub(crate) wrap_width: Option<usize>,
     pub(crate) clipboard_ring_size: usize,
     pub(crate) equalize_proportional: bool,
+    pub(crate) selection_bg: Option<Color>,
+    pub(crate) selection_fg: Option<Color>,
     pub(crate) cursor_color: Option<Color>,
     pub(crate) cursor_speed: f64,
     pub(crate) lsp: LspSettings,
@@ -161,6 +163,8 @@ impl UserSettings {
             wrap_width: None,
             clipboard_ring_size: crate::clipboard::DEFAULT_RING_CAPACITY,
             equalize_proportional: false,
+            selection_bg: None,
+            selection_fg: None,
             cursor_color: None,
             cursor_speed: 0.8,
             lsp: LspSettings::default(),
@@ -187,6 +191,7 @@ impl UserSettings {
             self.syntax_colors
                 .get_or_insert_with(crate::color::theme::SyntaxColors::default)
                 .set_style(name, style);
+            self.refresh_derived_highlights();
             return;
         }
         if self.highlight_overrides.remove(name).is_none() {
@@ -203,6 +208,7 @@ impl UserSettings {
                 None => colors.remove_style(name),
             }
         }
+        self.refresh_derived_highlights();
     }
 
     pub(crate) fn clear_highlight_overrides(&mut self) {
@@ -211,12 +217,74 @@ impl UserSettings {
             self.set_highlight_override(&name, None);
         }
     }
+
+    pub(crate) fn refresh_derived_highlights(&mut self) {
+        if self.highlight_overrides.contains_key(SELECTION_GROUP) {
+            return;
+        }
+        let mut style = self
+            .theme
+            .as_deref()
+            .and_then(Theme::by_name)
+            .and_then(|theme| theme.syntax_style(SELECTION_GROUP))
+            .or_else(|| self.derived_selection_style())
+            .unwrap_or_default();
+        if let Some(bg) = self.selection_bg {
+            style.bg = Some(bg);
+        }
+        if let Some(fg) = self.selection_fg {
+            style.fg = Some(fg);
+        }
+        if style == crate::layer::CellStyle::default() {
+            if let Some(colors) = &mut self.syntax_colors {
+                colors.remove_style(SELECTION_GROUP);
+            }
+        } else {
+            self.syntax_colors
+                .get_or_insert_with(crate::color::theme::SyntaxColors::default)
+                .set_style(SELECTION_GROUP, style);
+        }
+    }
+
+    fn derived_selection_style(&self) -> Option<crate::layer::CellStyle> {
+        let (
+            Some(Color::Rgb { r, g, b }),
+            Some(Color::Rgb {
+                r: fr,
+                g: fg,
+                b: fb,
+            }),
+        ) = (self.editor_bg, self.editor_fg)
+        else {
+            return None;
+        };
+        let (r, g, b) = mix((fr, fg, fb), (r, g, b), SELECTION_TINT_PERCENT);
+        Some(crate::layer::CellStyle {
+            bg: Some(Color::Rgb { r, g, b }),
+            ..Default::default()
+        })
+    }
 }
 
 impl Default for UserSettings {
     fn default() -> Self {
         Self::new()
     }
+}
+
+const SELECTION_GROUP: &str = "ui.selection";
+const SELECTION_TINT_PERCENT: u16 = 20;
+
+fn mix(top: (u8, u8, u8), under: (u8, u8, u8), percent: u16) -> (u8, u8, u8) {
+    let channel = |top: u8, under: u8| {
+        let blended = (u16::from(under) * (100 - percent) + u16::from(top) * percent + 50) / 100;
+        u8::try_from(blended).unwrap_or(u8::MAX)
+    };
+    (
+        channel(top.0, under.0),
+        channel(top.1, under.1),
+        channel(top.2, under.2),
+    )
 }
 
 const COMPLETION_MAX_VISIBLE: usize = 8;

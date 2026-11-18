@@ -224,6 +224,53 @@ fn highlight_groups_restyle_rendered_captures_and_survive_a_theme_switch() {
     assert_ne!(cell_of(&mut editor, 0, "fn").bg, navy);
 }
 
+fn select_fn_main(editor: &mut Editor<MockTerminal>) {
+    use crate::action::{Action, EditorAction};
+    set_cursor(editor, "fn");
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+    set_cursor(editor, "n()");
+}
+
+#[test]
+fn visual_selection_keeps_syntax_colors_under_the_ui_selection_tint() {
+    let mut editor = editor_with(RUST, "rust");
+    set_cursor(&mut editor, "answer");
+    let colors = editor.state.settings.syntax_colors.clone().unwrap();
+    let keyword = cell_of(&mut editor, 0, "fn").fg;
+    let function = cell_of(&mut editor, 0, "main").fg;
+    assert_eq!(keyword, colors.get_color("keyword"));
+    assert_eq!(function, colors.get_color("function"));
+    assert_ne!(
+        keyword, function,
+        "the check needs two distinct syntax colors"
+    );
+
+    select_fn_main(&mut editor);
+
+    let tint = colors.exact_style("ui.selection").and_then(|s| s.bg);
+    assert!(tint.is_some());
+    for (text, fg) in [("fn", keyword), ("main", function)] {
+        let cell = cell_of(&mut editor, 0, text);
+        assert_eq!((cell.fg, cell.bg), (fg, tint), "{text}");
+    }
+}
+
+#[test]
+fn plugins_restyle_the_selection_through_the_ui_selection_group() {
+    let mut editor = editor_with(RUST, "rust");
+    set_cursor(&mut editor, "answer");
+    let keyword = cell_of(&mut editor, 0, "fn").fg;
+    lua(
+        &mut editor,
+        r##"rift.highlight.set("ui.selection", { bg = "#ff0000" })"##,
+    );
+    select_fn_main(&mut editor);
+
+    let cell = cell_of(&mut editor, 0, "fn");
+    assert_eq!(cell.bg, Some(Color::Rgb { r: 255, g: 0, b: 0 }));
+    assert_eq!(cell.fg, keyword);
+}
+
 #[test]
 fn namespaced_highlights_from_nodes_render_over_syntax() {
     let mut editor = editor_with(RUST, "rust");

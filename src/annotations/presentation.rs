@@ -117,6 +117,12 @@ impl Presentation {
     }
 }
 
+const FALLBACK_SELECTION_BG: Color = Color::Rgb {
+    r: 100,
+    g: 160,
+    b: 220,
+};
+
 #[must_use]
 pub(super) fn resolve_face(
     face: &FaceRef,
@@ -125,7 +131,14 @@ pub(super) fn resolve_face(
     if let Some(style) = colors.and_then(|s| s.get_style(face.as_str())) {
         return Some(style);
     }
-    let fg = match face.as_str() {
+    let name = face.as_str();
+    if name == "ui.selection" || name.starts_with("ui.selection.") {
+        return Some(crate::layer::CellStyle {
+            bg: Some(FALLBACK_SELECTION_BG),
+            ..Default::default()
+        });
+    }
+    let fg = match name {
         "diag.error" => Color::Red,
         "diag.warning" => Color::Yellow,
         "diag.info" | "diag.hint" | "button" => Color::Cyan,
