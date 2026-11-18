@@ -205,7 +205,6 @@ struct LuaSharedState {
     /// Snapshot of LSP diagnostics: `normalized_uri` -> [(line, col, severity, message)].
     /// severity: 1=error, 2=warning, 3=info, 4=hint
     lsp_diagnostics: LspDiagnosticsSnapshot,
-    /// The plugin file currently being loaded, used to tag registrations with their owner.
     current_plugin: Option<String>,
     /// Completed shell commands waiting to be fired as Lua `UserEvents`.
     /// Each entry is (tag, success, output). Drained in `drain_mutations`.
@@ -558,17 +557,21 @@ end
 rift.plugins = {}
 
 -- rift.plugins.list() -> string[]
--- Returns all plugin names that have registered anything, sorted lexicographically.
 function rift.plugins.list()
     local seen = {}
     for _, name in pairs(_rift_slot_plugin) do seen[name] = true end
-    for _, entry in pairs(_rift_commands) do
-        if entry.plugin then seen[entry.plugin] = true end
-    end
-    for _, entry in pairs(_rift_actions) do
-        if type(entry) == "table" and entry.plugin then seen[entry.plugin] = true end
+    for _, registry in ipairs({
+        _rift_commands, _rift_actions, _rift_action_handlers,
+        _rift_enter_handlers, _rift_leave_handlers, _rift_buffer_kinds,
+        _rift_annotation_kinds, _rift_annotation_bindings
+    }) do
+        for _, entry in pairs(registry) do
+            if entry.plugin then seen[entry.plugin] = true end
+        end
     end
     for name in pairs(_rift_plugin_keymaps) do seen[name] = true end
+    for name in pairs(_rift_highlight_namespaces) do seen[name] = true end
+    for name in pairs(_rift_load_errors) do seen[name] = true end
     local result = {}
     for name in pairs(seen) do result[#result+1] = name end
     table.sort(result)
@@ -609,8 +612,6 @@ function rift.plugins.info(name)
 end
 
 -- rift.plugins.unload(name)
--- Remove all handlers, commands, actions, and keymaps registered by this plugin.
--- Handlers are unregistered immediately; keymaps queue UnmapKey mutations.
 function rift.plugins.unload(name)
     if _rift_plugin_slots[name] then
         for _, slot_id in ipairs(_rift_plugin_slots[name]) do
@@ -636,6 +637,18 @@ function rift.plugins.unload(name)
         end
         _rift_plugin_keymaps[name] = nil
     end
+    for _, registry in ipairs({
+        _rift_action_handlers, _rift_enter_handlers, _rift_leave_handlers,
+        _rift_buffer_kinds, _rift_annotation_kinds, _rift_annotation_bindings
+    }) do
+        local keys = {}
+        for key, entry in pairs(registry) do
+            if entry.plugin == name then keys[#keys+1] = key end
+        end
+        for _, key in ipairs(keys) do registry[key] = nil end
+    end
+    _rift_unload_owned(name)
+    _rift_load_errors[name] = nil
 end
 "#;
 
@@ -737,12 +750,13 @@ impl LuaHost {
 
         let api = lua.create_table()?;
 
+        Self::register_lifecycle(&lua, &shared)?;
         Self::register_handlers(&lua, &api, &shared)?;
         Self::register_float(&lua, &api, &shared)?;
         Self::register_annotations(&lua, &api, &shared)?;
         Self::register_cursor_lines(&lua, &api, &shared)?;
         Self::register_commands(&lua, &api, &shared)?;
-        Self::register_emit(&lua, &api)?;
+        Self::register_emit(&lua, &api, &shared)?;
         Self::register_spawn(&lua, &api, &shell_result_tx)?;
         Self::register_edits(&lua, &api, &shared)?;
         Self::register_line_edits(&lua, &api, &shared)?;
@@ -843,6 +857,8 @@ impl LuaHost {
                     handlers.set(event_name.as_str(), new_list)?;
                 }
                 slot_events.set(handle, LuaValue::Nil)?;
+                let slot_plugin: LuaTable = lua.globals().get("_rift_slot_plugin")?;
+                slot_plugin.set(handle, LuaNil)?;
                 Ok(())
             })?;
             api.set("off", f)?;
@@ -868,6 +884,56 @@ impl LuaHost {
         }
 
         Ok(())
+    }
+
+    fn register_lifecycle(lua: &Lua, shared: &Rc<RefCell<LuaSharedState>>) -> LuaResult<()> {
+        for name in [
+            "_rift_highlight_namespaces",
+            "_rift_annotation_kinds",
+            "_rift_annotation_bindings",
+            "_rift_load_errors",
+        ] {
+            lua.globals().set(name, lua.create_table()?)?;
+        }
+        let sh = Rc::clone(shared);
+        lua.globals().set(
+            "_rift_unload_owned",
+            lua.create_function(move |lua, owner: String| {
+                let namespaces: LuaTable = lua.globals().get("_rift_highlight_namespaces")?;
+                if let Some(owned) = namespaces.get::<Option<LuaTable>>(owner.as_str())? {
+                    for ns in owned.pairs::<String, bool>() {
+                        let (ns, _) = ns?;
+                        sh.borrow_mut()
+                            .mutations
+                            .push(PluginMutation::ClearNsHighlights {
+                                buf: None,
+                                ns,
+                                owner: Some(owner.clone()),
+                            });
+                    }
+                    namespaces.set(owner.as_str(), LuaNil)?;
+                }
+                sh.borrow_mut()
+                    .mutations
+                    .push(PluginMutation::UnloadPlugin { owner });
+                Ok(())
+            })?,
+        )?;
+        Ok(())
+    }
+
+    fn resource_owner(
+        lua: &Lua,
+        shared: &RefCell<LuaSharedState>,
+        registry: &str,
+        key: &str,
+    ) -> LuaResult<Option<String>> {
+        let owner = shared.borrow().current_plugin.clone();
+        let entries: LuaTable = lua.globals().get(registry)?;
+        let entry = lua.create_table()?;
+        entry.set("plugin", owner.as_deref())?;
+        entries.set(key, entry)?;
+        Ok(owner)
     }
 
     fn register_float(
@@ -1155,12 +1221,14 @@ impl LuaHost {
                     let key = format!("{kind}\u{0}{verb}");
                     let handlers: LuaTable = lua.globals().get("_rift_action_handlers")?;
                     handlers.set(key, Self::callback_entry(lua, &sh, handler)?)?;
+                    let owner = sh.borrow().current_plugin.clone();
                     sh.borrow_mut()
                         .mutations
                         .push(PluginMutation::RegisterAnnotationAction {
                             kind,
                             verb,
                             command: None,
+                            owner,
                         });
                     Ok(())
                 },
@@ -1171,17 +1239,25 @@ impl LuaHost {
         // rift.annotations.bind_command(kind, verb, ex_command)
         {
             let sh = Rc::clone(shared);
-            let f =
-                lua.create_function(move |_, (kind, verb, command): (String, String, String)| {
+            let f = lua.create_function(
+                move |lua, (kind, verb, command): (String, String, String)| {
+                    let owner = Self::resource_owner(
+                        lua,
+                        &sh,
+                        "_rift_annotation_bindings",
+                        &format!("{kind}\u{0}{verb}"),
+                    )?;
                     sh.borrow_mut()
                         .mutations
                         .push(PluginMutation::RegisterAnnotationAction {
                             kind,
                             verb,
                             command: Some(command),
+                            owner,
                         });
                     Ok(())
-                })?;
+                },
+            )?;
             annotations.set("bind_command", f)?;
         }
 
@@ -1189,15 +1265,17 @@ impl LuaHost {
         // description }) - per-kind render/hover defaults (sec 4).
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, (kind, opts): (String, LuaTable)| {
+            let f = lua.create_function(move |lua, (kind, opts): (String, LuaTable)| {
                 let presentation = build_presentation(&opts)?;
                 let description: Option<String> = opts.get("description").ok().flatten();
+                let owner = Self::resource_owner(lua, &sh, "_rift_annotation_kinds", &kind)?;
                 sh.borrow_mut()
                     .mutations
                     .push(PluginMutation::RegisterKindDefaults {
                         kind,
                         presentation,
                         description,
+                        owner,
                     });
                 Ok(())
             })?;
@@ -1330,10 +1408,15 @@ impl LuaHost {
         Ok(())
     }
 
-    fn register_emit(lua: &Lua, api: &LuaTable) -> LuaResult<()> {
+    fn register_emit(
+        lua: &Lua,
+        api: &LuaTable,
+        shared: &Rc<RefCell<LuaSharedState>>,
+    ) -> LuaResult<()> {
         // rift.emit(event_name [, payload])  - fire a UserEvent to all registered handlers
         // Optional payload table keys are merged into the event table alongside `name`.
         {
+            let sh = Rc::clone(shared);
             let f =
                 lua.create_function(move |lua, (name, payload): (String, Option<LuaTable>)| {
                     let handlers: LuaTable = lua.globals().get("_rift_handlers")?;
@@ -1354,7 +1437,13 @@ impl LuaHost {
                             .collect::<LuaResult<_>>()?;
                         for entry in snapshot {
                             let f: LuaFunction = entry.get("fn")?;
-                            f.call::<()>(ev.clone())?;
+                            let previous = std::mem::replace(
+                                &mut sh.borrow_mut().current_plugin,
+                                Self::entry_plugin(&entry),
+                            );
+                            let result = f.call::<()>(ev.clone());
+                            sh.borrow_mut().current_plugin = previous;
+                            result?;
                         }
                     }
                     Ok(())
@@ -2851,6 +2940,21 @@ impl LuaHost {
         result
     }
 
+    fn call_plugin<T>(
+        &self,
+        plugin: Option<&str>,
+        budget: std::time::Duration,
+        f: impl FnOnce() -> LuaResult<T>,
+    ) -> LuaResult<T> {
+        let previous = std::mem::replace(
+            &mut self.shared.borrow_mut().current_plugin,
+            plugin.map(str::to_owned),
+        );
+        let result = self.call_budgeted(budget, f);
+        self.shared.borrow_mut().current_plugin = previous;
+        result
+    }
+
     fn callback_entry(
         lua: &Lua,
         shared: &RefCell<LuaSharedState>,
@@ -2931,9 +3035,10 @@ impl LuaHost {
                             continue;
                         }
                     };
-                    let call_result = self.call_budgeted(Self::AUTO_DISPATCH_BUDGET, || {
-                        f.call::<()>(ev_table.clone())
-                    });
+                    let call_result =
+                        self.call_plugin(plugin.as_deref(), Self::AUTO_DISPATCH_BUDGET, || {
+                            f.call::<()>(ev_table.clone())
+                        });
                     if let Err(e) = call_result {
                         errors.push(Self::plugin_error(plugin.as_deref(), event.name(), &e));
                     }
@@ -2989,10 +3094,10 @@ impl LuaHost {
             }
         }
 
-        if let Err(error) =
-            self.call_budgeted(Self::AUTO_DISPATCH_BUDGET, || callback.call::<()>(context))
-        {
-            let plugin = Self::entry_plugin(&entry);
+        let plugin = Self::entry_plugin(&entry);
+        if let Err(error) = self.call_plugin(plugin.as_deref(), Self::AUTO_DISPATCH_BUDGET, || {
+            callback.call::<()>(context)
+        }) {
             self.report_error(plugin.as_deref(), &format!("{kind}.{field}"), &error);
         }
         true
@@ -3045,8 +3150,10 @@ impl LuaHost {
         if let Ok(p) = value_into_lua(ctx.params.clone(), &self.lua) {
             let _ = t.set("params", p);
         }
-        if let Err(error) = self.call_budgeted(Self::USER_CALL_BUDGET, || f.call::<()>(t)) {
-            let plugin = Self::entry_plugin(&entry);
+        let plugin = Self::entry_plugin(&entry);
+        if let Err(error) = self.call_plugin(plugin.as_deref(), Self::USER_CALL_BUDGET, || {
+            f.call::<()>(t)
+        }) {
             self.report_error(
                 plugin.as_deref(),
                 &format!("{}.{}", ctx.kind, ctx.verb),
@@ -3090,8 +3197,10 @@ impl LuaHost {
         if let Ok(p) = value_into_lua(ctx.payload.clone(), &self.lua) {
             let _ = t.set("payload", p);
         }
-        if let Err(error) = self.call_budgeted(Self::AUTO_DISPATCH_BUDGET, || f.call::<()>(t)) {
-            let plugin = Self::entry_plugin(&entry);
+        let plugin = Self::entry_plugin(&entry);
+        if let Err(error) = self.call_plugin(plugin.as_deref(), Self::AUTO_DISPATCH_BUDGET, || {
+            f.call::<()>(t)
+        }) {
             self.report_error(plugin.as_deref(), &format!("{}.{hook}", ctx.kind), &error);
         }
         true
@@ -3122,10 +3231,11 @@ impl LuaHost {
         for (i, arg) in args.iter().enumerate() {
             let _ = args_table.set(i + 1, arg.as_str());
         }
-        if let Err(e) =
-            self.call_budgeted(Self::USER_CALL_BUDGET, || handler.call::<()>(args_table))
-        {
-            self.report_error(Self::entry_plugin(&entry).as_deref(), name, &e);
+        let plugin = Self::entry_plugin(&entry);
+        if let Err(e) = self.call_plugin(plugin.as_deref(), Self::USER_CALL_BUDGET, || {
+            handler.call::<()>(args_table)
+        }) {
+            self.report_error(plugin.as_deref(), name, &e);
         }
         true
     }
@@ -3155,8 +3265,11 @@ impl LuaHost {
             Ok(f) => f,
             Err(_) => return false,
         };
-        if let Err(e) = self.call_budgeted(Self::USER_CALL_BUDGET, || handler.call::<()>(())) {
-            self.report_error(Self::entry_plugin(&entry).as_deref(), id, &e);
+        let plugin = Self::entry_plugin(&entry);
+        if let Err(e) = self.call_plugin(plugin.as_deref(), Self::USER_CALL_BUDGET, || {
+            handler.call::<()>(())
+        }) {
+            self.report_error(plugin.as_deref(), id, &e);
         }
         true
     }
@@ -3190,28 +3303,28 @@ impl LuaHost {
 
     /// Execute a single `.lua` file. Returns an error string on failure.
     pub(super) fn load_file(&self, path: &std::path::Path) -> Option<String> {
+        let name = path.to_string_lossy().replace('\\', "/");
+        let error = self.run_plugin_file(path, &name);
+        if let Ok(load_errors) = self.lua.globals().get::<LuaTable>("_rift_load_errors") {
+            let _ = load_errors.set(name.as_str(), error.as_deref());
+        }
+        error
+    }
+
+    fn run_plugin_file(&self, path: &std::path::Path, name: &str) -> Option<String> {
         let src = match std::fs::read_to_string(path) {
             Ok(s) => s,
             Err(e) => return Some(format!("lua: failed to read {}: {}", path.display(), e)),
         };
-        let name = path.to_string_lossy().replace('\\', "/");
-        let env = match self.plugin_environment(&name) {
+        let env = match self.plugin_environment(name) {
             Ok(env) => env,
             Err(e) => return Some(format!("lua: {}: {}", path.display(), e)),
         };
-        let previous = self
-            .shared
-            .borrow_mut()
-            .current_plugin
-            .replace(name.clone());
-        let result = self
-            .call_budgeted(Self::USER_CALL_BUDGET, || {
-                self.exec_plugin_chunk(&src, &name, env)
-            })
-            .err()
-            .map(|e| format!("lua: {}: {}", path.display(), e));
-        self.shared.borrow_mut().current_plugin = previous;
-        result
+        self.call_plugin(Some(name), Self::USER_CALL_BUDGET, || {
+            self.exec_plugin_chunk(&src, name, env)
+        })
+        .err()
+        .map(|e| format!("lua: {}: {}", path.display(), e))
     }
 
     pub(super) fn has_queued_mutations(&self) -> bool {
@@ -3283,10 +3396,12 @@ impl LuaHost {
                         .collect::<LuaResult<_>>()?;
                     for entry in snapshot {
                         let f: LuaFunction = entry.get("fn")?;
-                        if let Err(e) = self
-                            .call_budgeted(Self::AUTO_DISPATCH_BUDGET, || f.call::<()>(ev.clone()))
+                        let plugin = Self::entry_plugin(&entry);
+                        if let Err(e) =
+                            self.call_plugin(plugin.as_deref(), Self::AUTO_DISPATCH_BUDGET, || {
+                                f.call::<()>(ev.clone())
+                            })
                         {
-                            let plugin = Self::entry_plugin(&entry);
                             self.report_error(plugin.as_deref(), "ShellDone", &e);
                         }
                     }

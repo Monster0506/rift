@@ -241,6 +241,7 @@ pub(crate) enum PluginMutation {
     AddNsHighlight {
         buf: DocumentId,
         ns: String,
+        owner: Option<String>,
         range: HighlightRange,
         hl: HighlightSpec,
         priority: i32,
@@ -248,6 +249,7 @@ pub(crate) enum PluginMutation {
     ClearNsHighlights {
         buf: Option<DocumentId>,
         ns: String,
+        owner: Option<String>,
     },
     /// Set a per-document option. Values are strings such as `"4"` or `"true"`.
     SetOption {
@@ -389,12 +391,17 @@ pub(crate) enum PluginMutation {
         kind: String,
         verb: String,
         command: Option<String>,
+        owner: Option<String>,
     },
     /// Register per-kind render/hover defaults into the kind registry (sec 4).
     RegisterKindDefaults {
         kind: String,
         presentation: Option<crate::annotations::presentation::Presentation>,
         description: Option<String>,
+        owner: Option<String>,
+    },
+    UnloadPlugin {
+        owner: String,
     },
     /// Create and activate an in-memory buffer. Fires `BufOpen` after creation.
     CreateScratchBuf {

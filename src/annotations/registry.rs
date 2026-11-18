@@ -29,7 +29,7 @@ pub(crate) enum Handler {
 /// Maps (kind-or-prefix, verb) to a handler, with namespace-prefix fallback.
 #[derive(Default)]
 pub(crate) struct DispatchRegistry {
-    handlers: HashMap<(String, String), Handler>,
+    handlers: HashMap<(String, String), (Handler, Option<String>)>,
 }
 
 impl DispatchRegistry {
@@ -66,7 +66,23 @@ impl DispatchRegistry {
         verb: impl Into<String>,
         handler: Handler,
     ) {
-        self.handlers.insert((key.into(), verb.into()), handler);
+        self.register_owned(key, verb, handler, None);
+    }
+
+    pub(crate) fn register_owned(
+        &mut self,
+        key: impl Into<String>,
+        verb: impl Into<String>,
+        handler: Handler,
+        owner: Option<String>,
+    ) {
+        self.handlers
+            .insert((key.into(), verb.into()), (handler, owner));
+    }
+
+    pub(crate) fn remove_owner(&mut self, owner: &str) {
+        self.handlers
+            .retain(|_, (_, registered_owner)| registered_owner.as_deref() != Some(owner));
     }
 
     #[cfg(test)]
@@ -78,7 +94,7 @@ impl DispatchRegistry {
     /// Drop all Lua-backed handlers (e.g. before a plugin reload). Builtins,
     /// commands, and remote handlers are kept; Lua handlers re-register on reload.
     pub(crate) fn clear_lua_handlers(&mut self) {
-        self.handlers.retain(|_, h| *h != Handler::Lua);
+        self.handlers.retain(|_, (h, _)| *h != Handler::Lua);
     }
 
     /// Resolve a handler for a kind and verb, falling back from the full kind to
@@ -93,7 +109,7 @@ impl DispatchRegistry {
             "*".to_string(),
         ];
         for key in candidates {
-            if let Some(h) = self.handlers.get(&(key, verb.to_string())) {
+            if let Some((h, _)) = self.handlers.get(&(key, verb.to_string())) {
                 return Some(h);
             }
         }
@@ -106,7 +122,9 @@ impl DispatchRegistry {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct KindDefaults {
     presentation: Option<crate::annotations::presentation::Presentation>,
+    presentation_owner: Option<String>,
     description: Option<String>,
+    description_owner: Option<String>,
 }
 
 /// Per-kind (or per-prefix) defaults resolved with namespace-prefix fallback.
@@ -165,7 +183,9 @@ impl KindRegistry {
         key: impl Into<String>,
         presentation: crate::annotations::presentation::Presentation,
     ) {
-        self.defaults.entry(key.into()).or_default().presentation = Some(presentation);
+        let defaults = self.defaults.entry(key.into()).or_default();
+        defaults.presentation = Some(presentation);
+        defaults.presentation_owner = None;
         self.generation += 1;
     }
 
@@ -174,8 +194,52 @@ impl KindRegistry {
         key: impl Into<String>,
         description: impl Into<String>,
     ) {
-        self.defaults.entry(key.into()).or_default().description = Some(description.into());
+        let defaults = self.defaults.entry(key.into()).or_default();
+        defaults.description = Some(description.into());
+        defaults.description_owner = None;
         self.generation += 1;
+    }
+
+    pub(crate) fn register_owned(
+        &mut self,
+        key: impl Into<String>,
+        presentation: Option<crate::annotations::presentation::Presentation>,
+        description: Option<String>,
+        owner: Option<String>,
+    ) {
+        if presentation.is_none() && description.is_none() {
+            return;
+        }
+        let defaults = self.defaults.entry(key.into()).or_default();
+        if let Some(presentation) = presentation {
+            defaults.presentation = Some(presentation);
+            defaults.presentation_owner.clone_from(&owner);
+        }
+        if let Some(description) = description {
+            defaults.description = Some(description);
+            defaults.description_owner = owner;
+        }
+        self.generation += 1;
+    }
+
+    pub(crate) fn remove_owner(&mut self, owner: &str) {
+        let mut changed = false;
+        self.defaults.retain(|_, defaults| {
+            if defaults.presentation_owner.as_deref() == Some(owner) {
+                defaults.presentation = None;
+                defaults.presentation_owner = None;
+                changed = true;
+            }
+            if defaults.description_owner.as_deref() == Some(owner) {
+                defaults.description = None;
+                defaults.description_owner = None;
+                changed = true;
+            }
+            defaults.presentation.is_some() || defaults.description.is_some()
+        });
+        if changed {
+            self.generation += 1;
+        }
     }
 
     fn resolve(&self, kind: &Kind) -> Option<&KindDefaults> {

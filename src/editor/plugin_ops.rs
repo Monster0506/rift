@@ -495,10 +495,13 @@ impl<T: TerminalBackend> Editor<T> {
             PluginMutation::AddAnnotation { .. }
             | PluginMutation::UpdateAnnotation { .. }
             | PluginMutation::RemoveAnnotation(_)
-            | PluginMutation::ClearAnnotations { .. }
-            | PluginMutation::RegisterAnnotationAction { .. }
-            | PluginMutation::RegisterKindDefaults { .. } => {
+            | PluginMutation::ClearAnnotations { .. } => {
                 self.apply_annotation_mutation(mutation);
+            }
+            PluginMutation::RegisterAnnotationAction { .. }
+            | PluginMutation::RegisterKindDefaults { .. }
+            | PluginMutation::UnloadPlugin { .. } => {
+                self.apply_registry_mutation(mutation);
             }
             PluginMutation::SetHighlightGroup { .. }
             | PluginMutation::ResetHighlightGroups
@@ -1274,26 +1277,35 @@ impl<T: TerminalBackend> Editor<T> {
                     doc.annotations.clear_by_kind_prefix(&kind_prefix);
                 }
             }
+            _ => self.report_misrouted(),
+        }
+    }
+
+    fn apply_registry_mutation(&mut self, mutation: PluginMutation) {
+        match mutation {
             PluginMutation::RegisterAnnotationAction {
                 kind,
                 verb,
                 command,
+                owner,
             } => {
                 use crate::annotations::registry::Handler;
                 let handler = command.map_or(Handler::Lua, Handler::Command);
-                self.dispatch_registry.register(kind, verb, handler);
+                self.dispatch_registry
+                    .register_owned(kind, verb, handler, owner);
             }
             PluginMutation::RegisterKindDefaults {
                 kind,
                 presentation,
                 description,
+                owner,
             } => {
-                if let Some(pres) = presentation {
-                    self.kind_registry.set_presentation(kind.clone(), pres);
-                }
-                if let Some(desc) = description {
-                    self.kind_registry.set_description(kind, desc);
-                }
+                self.kind_registry
+                    .register_owned(kind, presentation, description, owner);
+            }
+            PluginMutation::UnloadPlugin { owner } => {
+                self.dispatch_registry.remove_owner(&owner);
+                self.kind_registry.remove_owner(&owner);
             }
             _ => self.report_misrouted(),
         }
@@ -1308,6 +1320,7 @@ impl<T: TerminalBackend> Editor<T> {
             PluginMutation::AddNsHighlight {
                 buf,
                 ns,
+                owner,
                 range,
                 hl,
                 priority,
@@ -1325,10 +1338,15 @@ impl<T: TerminalBackend> Editor<T> {
                     HighlightSpec::Style(style) => Presentation::with_style(style),
                 }
                 .with_priority(priority);
-                doc.annotations
-                    .add_ns_highlight(&ns, bytes.start, bytes.end, presentation);
+                doc.annotations.add_ns_highlight(
+                    &owned_namespace(ns, owner),
+                    bytes.start,
+                    bytes.end,
+                    presentation,
+                );
             }
-            PluginMutation::ClearNsHighlights { buf, ns } => {
+            PluginMutation::ClearNsHighlights { buf, ns, owner } => {
+                let ns = owned_namespace(ns, owner);
                 let ids: Vec<crate::document::DocumentId> = match buf {
                     Some(buf) => vec![buf],
                     None => self
@@ -1345,6 +1363,13 @@ impl<T: TerminalBackend> Editor<T> {
             }
             _ => self.report_misrouted(),
         }
+    }
+}
+
+fn owned_namespace(ns: String, owner: Option<String>) -> String {
+    match owner {
+        Some(owner) => format!("{owner}\u{0}{ns}"),
+        None => ns,
     }
 }
 

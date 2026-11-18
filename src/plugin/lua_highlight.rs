@@ -91,7 +91,7 @@ fn register_namespaces(lua: &Lua, hl: &LuaTable, shared: &Shared) -> LuaResult<(
     {
         let sh = Rc::clone(shared);
         let f = lua.create_function(
-            move |_, (ns, range, spec, opts): (String, LuaValue, LuaValue, Option<LuaTable>)| {
+            move |lua, (ns, range, spec, opts): (String, LuaValue, LuaValue, Option<LuaTable>)| {
                 let ns = namespace(ns)?;
                 let (node_buf, range) = parse_range(&range)?;
                 let hl = match spec {
@@ -112,11 +112,25 @@ fn register_namespaces(lua: &Lua, hl: &LuaTable, shared: &Shared) -> LuaResult<(
                     .transpose()?
                     .flatten()
                     .unwrap_or(0);
+                let owner = sh.borrow().current_plugin.clone();
+                if let Some(owner) = owner.as_deref() {
+                    let namespaces: LuaTable = lua.globals().get("_rift_highlight_namespaces")?;
+                    let plugin_namespaces =
+                        if let Some(table) = namespaces.get::<Option<LuaTable>>(owner)? {
+                            table
+                        } else {
+                            let table = lua.create_table()?;
+                            namespaces.set(owner, &table)?;
+                            table
+                        };
+                    plugin_namespaces.set(ns.as_str(), true)?;
+                }
                 let mut s = sh.borrow_mut();
                 let buf = opt_buf.or(node_buf).unwrap_or(s.buf_id as u64);
                 s.mutations.push(PluginMutation::AddNsHighlight {
                     buf: DocumentId::new(buf),
                     ns,
+                    owner,
                     range,
                     hl,
                     priority,
@@ -131,11 +145,13 @@ fn register_namespaces(lua: &Lua, hl: &LuaTable, shared: &Shared) -> LuaResult<(
         let sh = Rc::clone(shared);
         let f = lua.create_function(move |_, (ns, buf): (String, Option<u64>)| {
             let ns = namespace(ns)?;
+            let owner = sh.borrow().current_plugin.clone();
             sh.borrow_mut()
                 .mutations
                 .push(PluginMutation::ClearNsHighlights {
                     buf: buf.map(DocumentId::new),
                     ns,
+                    owner,
                 });
             Ok(())
         })?;

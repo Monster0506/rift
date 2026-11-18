@@ -518,6 +518,7 @@ fn test_annotations_register_kind_queues_mutation() {
             kind,
             presentation,
             description,
+            ..
         } => {
             assert_eq!(kind, "vcs.hunk");
             assert_eq!(description.as_deref(), Some("a staged hunk"));
@@ -1056,35 +1057,296 @@ fn test_plugins_info_returns_correct_counts() {
 
 #[test]
 fn test_plugins_unload_removes_all_registrations() {
-    use std::io::Write;
     let dir = tempfile::tempdir().expect("tempdir failed");
     let path = dir.path().join("unloadme.lua");
-    let mut f = std::fs::File::create(&path).expect("create failed");
-    writeln!(f, "rift.on('EditorStart', function(_) end)").unwrap();
-    writeln!(f, "rift.register_command('DropCmd', function() end)").unwrap();
-    writeln!(f, "rift.register_action('drop:act', function() end)").unwrap();
-    writeln!(f, "rift.map('n', 'zq', 'editor:save')").unwrap();
-    drop(f);
-
+    std::fs::write(
+        &path,
+        r#"
+        local function notify(message)
+            return function() rift.notify("info", message) end
+        end
+        rift.on("EditorStart", notify("event"))
+        rift.register_command("DropCmd", notify("command"))
+        rift.register_action("drop:act", notify("action"))
+        rift.map("n", "zq", "editor:save")
+        rift.annotations.on_action("drop.kind", "run", notify("annotation"))
+        rift.annotations.on_enter("drop.kind", notify("enter"))
+        rift.annotations.on_leave("drop.kind", notify("leave"))
+        rift.register_buffer_kind("drop.buffer", {
+            on_close = notify("close"),
+            on_save = notify("save"),
+            on_action = notify("buffer-action"),
+        })
+        rift.highlight.add("drop", {1, 0, 1, 1}, {underline = true}, {buf = 1})
+        rift.highlight.add("drop", {1, 0, 1, 1}, {underline = true}, {buf = 2})
+        rift.highlight.add("drop.extra", {1, 0, 1, 1}, {underline = true})
+        rift.annotations.register_kind("drop.kind", {description = "drop defaults"})
+        rift.annotations.bind_command("drop.kind", "open", "DropCmd")
+        "#,
+    )
+    .expect("write failed");
+    let owner = path.to_string_lossy().replace('\\', "/");
     let host = make_host();
-    host.load_file(&path);
+    let error = host.load_file(&path);
+    assert!(error.is_none(), "load error: {error:?}");
+    let registrations = host.drain_mutations();
+    assert!(registrations.iter().any(|mutation| matches!(
+        mutation,
+        PluginMutation::RegisterAnnotationAction { kind, verb, command: Some(command), owner: Some(name) }
+            if kind == "drop.kind" && verb == "open" && command == "DropCmd" && name == &owner
+    )));
+    assert!(registrations.iter().any(|mutation| matches!(
+        mutation,
+        PluginMutation::RegisterKindDefaults { kind, owner: Some(name), .. }
+            if kind == "drop.kind" && name == &owner
+    )));
+    let action = crate::plugin::AnnotationActionCtx {
+        annotation_id: 1,
+        kind: "drop.kind".into(),
+        verb: "run".into(),
+        payload: crate::annotations::value::Value::Null,
+        params: crate::annotations::value::Value::Null,
+        position: 0,
+        buffer: 1,
+    };
+    let hover = crate::plugin::AnnotationHoverCtx {
+        annotation_id: 1,
+        kind: "drop.kind".into(),
+        payload: crate::annotations::value::Value::Null,
+        position: 0,
+        buffer: 1,
+    };
+    assert!(host.dispatch_event(&EditorEvent::EditorStart).is_empty());
+    assert!(host.execute_command("DropCmd", &[]));
+    assert!(host.execute_action("drop:act"));
+    assert!(host.invoke_annotation_action(&action));
+    assert!(host.invoke_annotation_hook(true, &hover));
+    assert!(host.invoke_annotation_hook(false, &hover));
+    assert!(host.invoke_buffer_close(1, "drop.buffer"));
+    assert!(host.invoke_buffer_save(1, "drop.buffer"));
+    assert!(host.invoke_buffer_action(1, "drop.buffer", "run"));
+    assert_eq!(
+        notified_messages(&host),
+        [
+            "event",
+            "command",
+            "action",
+            "annotation",
+            "enter",
+            "leave",
+            "close",
+            "save",
+            "buffer-action",
+        ]
+    );
 
     let check = host.exec(
         r#"
         local names = rift.plugins.list()
         assert(#names == 1, "expected one plugin before unload")
         local name = names[1]
+        assert(_rift_annotation_kinds["drop.kind"].plugin == name)
+        assert(_rift_annotation_bindings["drop.kind\0open"].plugin == name)
+        assert(_rift_highlight_namespaces[name]["drop"])
+        assert(_rift_highlight_namespaces[name]["drop.extra"])
+        local slot = _rift_plugin_slots[name][1]
         rift.plugins.unload(name)
         local info = rift.plugins.info(name)
-        assert(#info.handlers == 0, "handlers not cleared: " .. #info.handlers)
-        assert(#info.commands == 0, "commands not cleared: " .. #info.commands)
-        assert(#info.actions  == 0, "actions not cleared: " .. #info.actions)
-        assert(#info.keys     == 0, "keys not cleared: " .. #info.keys)
-        -- _rift_plugin_slots entry should be gone
-        assert(_rift_plugin_slots[name] == nil, "plugin_slots not cleared")
-    "#,
+        assert(#info.handlers == 0, "handlers not cleared")
+        assert(#info.commands == 0, "commands not cleared")
+        assert(#info.actions == 0, "actions not cleared")
+        assert(#info.keys == 0, "keys not cleared")
+        assert(#rift.plugins.list() == 0, "unloaded plugin still listed")
+        assert(#_rift_handlers.EditorStart == 0)
+        assert(_rift_slot_events[slot] == nil)
+        assert(_rift_slot_plugin[slot] == nil)
+        assert(_rift_plugin_slots[name] == nil)
+        assert(_rift_plugin_keymaps[name] == nil)
+        assert(_rift_commands.DropCmd == nil)
+        assert(_rift_actions["drop:act"] == nil)
+        assert(_rift_action_handlers["drop.kind\0run"] == nil)
+        assert(_rift_enter_handlers["drop.kind"] == nil)
+        assert(_rift_leave_handlers["drop.kind"] == nil)
+        assert(_rift_buffer_kinds["drop.buffer"] == nil)
+        assert(_rift_highlight_namespaces[name] == nil)
+        assert(_rift_annotation_kinds["drop.kind"] == nil)
+        assert(_rift_annotation_bindings["drop.kind\0open"] == nil)
+        "#,
     );
     assert!(check.is_none(), "assertion failed: {check:?}");
+    let mutations = host.drain_mutations();
+    let clears: Vec<_> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            PluginMutation::ClearNsHighlights {
+                buf,
+                ns,
+                owner: Some(name),
+            } if buf.is_none() && name == &owner => Some(ns.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(clears.len(), 2);
+    assert!(clears.contains(&"drop"));
+    assert!(clears.contains(&"drop.extra"));
+    assert_eq!(
+        mutations
+            .iter()
+            .filter(|mutation| matches!(mutation, PluginMutation::UnloadPlugin { owner: name } if name == &owner))
+            .count(),
+        1
+    );
+    assert!(mutations.iter().any(|mutation| matches!(
+        mutation,
+        PluginMutation::UnmapKey { mode, keys } if mode == "n" && keys == "zq"
+    )));
+    assert!(host.dispatch_event(&EditorEvent::EditorStart).is_empty());
+    assert!(!host.execute_command("DropCmd", &[]));
+    assert!(!host.execute_action("drop:act"));
+    assert!(!host.invoke_annotation_action(&action));
+    assert!(!host.invoke_annotation_hook(true, &hover));
+    assert!(!host.invoke_annotation_hook(false, &hover));
+    assert!(!host.invoke_buffer_close(1, "drop.buffer"));
+    assert!(!host.invoke_buffer_save(1, "drop.buffer"));
+    assert!(!host.invoke_buffer_action(1, "drop.buffer", "run"));
+    assert!(host.drain_mutations().is_empty());
+}
+
+fn plugin_path(dir: &std::path::Path, file: &str) -> (std::path::PathBuf, String) {
+    let path = dir.join(file);
+    let name = path.to_string_lossy().replace('\\', "/");
+    (path, name)
+}
+
+fn listed_plugins(host: &LuaHost) -> Vec<String> {
+    let list: LuaTable = host
+        .lua
+        .load("return rift.plugins.list()")
+        .eval()
+        .expect("list failed");
+    list.sequence_values::<String>()
+        .collect::<LuaResult<_>>()
+        .expect("names")
+}
+
+#[test]
+fn test_plugins_list_includes_resource_only_and_failed_plugins() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let (kinds, kinds_name) = plugin_path(dir.path(), "kinds.lua");
+    let (binds, binds_name) = plugin_path(dir.path(), "binds.lua");
+    let (marks, marks_name) = plugin_path(dir.path(), "marks.lua");
+    let (broken, broken_name) = plugin_path(dir.path(), "broken.lua");
+    let (missing, missing_name) = plugin_path(dir.path(), "missing.lua");
+    std::fs::write(
+        &kinds,
+        "rift.annotations.register_kind('k.x', { description = 'x' })",
+    )
+    .expect("write failed");
+    std::fs::write(
+        &binds,
+        "rift.annotations.bind_command('k.x', 'open', 'Open')",
+    )
+    .expect("write failed");
+    std::fs::write(
+        &marks,
+        "local h
+         h = rift.on('EditorStart', function()
+             rift.highlight.add('marks', {1, 0, 1, 1}, 'error', {buf = 1})
+             rift.off(h)
+         end)",
+    )
+    .expect("write failed");
+    std::fs::write(&broken, "error('boom')").expect("write failed");
+
+    let host = make_host();
+    for path in [&kinds, &binds, &marks] {
+        assert!(host.load_file(path).is_none());
+    }
+    assert!(host.load_file(&broken).is_some());
+    assert!(host.load_file(&missing).is_some());
+    let _ = host.drain_mutations();
+    assert!(host.dispatch_event(&EditorEvent::EditorStart).is_empty());
+    assert!(host.drain_mutations().iter().any(|m| matches!(
+        m,
+        PluginMutation::AddNsHighlight { ns, owner: Some(owner), .. }
+            if ns == "marks" && *owner == marks_name
+    )));
+
+    let mut expected = vec![
+        kinds_name,
+        binds_name,
+        marks_name,
+        broken_name,
+        missing_name,
+    ];
+    expected.sort();
+    assert_eq!(listed_plugins(&host), expected);
+}
+
+#[test]
+fn test_off_clears_handler_owner_from_list() {
+    let host = make_host();
+    load_plugin(
+        &host,
+        "transient.lua",
+        "rift.off(rift.on('EditorStart', function() end))",
+    );
+    assert!(listed_plugins(&host).is_empty());
+    let check = host.exec("assert(next(_rift_slot_plugin) == nil, 'slot owner left behind')");
+    assert!(check.is_none(), "assertion failed: {check:?}");
+}
+
+#[test]
+fn test_unload_keeps_other_plugins_registrations() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let host = make_host();
+    let mut names = Vec::new();
+    for plugin in ["a", "b"] {
+        let (path, name) = plugin_path(dir.path(), &format!("{plugin}.lua"));
+        std::fs::write(
+            &path,
+            format!(
+                "rift.register_command('{plugin}cmd', function() rift.notify('info', '{plugin}') end)
+                 rift.annotations.on_enter('{plugin}.kind', function() rift.notify('info', '{plugin}-enter') end)
+                 rift.annotations.register_kind('{plugin}.kind', {{ description = '{plugin}' }})
+                 rift.highlight.add('marks', {{1, 0, 1, 1}}, 'error', {{buf = 1}})"
+            ),
+        )
+        .expect("write failed");
+        assert!(host.load_file(&path).is_none());
+        names.push(name);
+    }
+    let _ = host.drain_mutations();
+
+    assert!(host
+        .exec(&format!("rift.plugins.unload({:?})", names[0]))
+        .is_none());
+    let mutations = host.drain_mutations();
+    let clears: Vec<_> = mutations
+        .iter()
+        .filter_map(|m| match m {
+            PluginMutation::ClearNsHighlights { owner, .. } => owner.as_deref(),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(clears, [names[0].as_str()]);
+    assert!(mutations
+        .iter()
+        .any(|m| matches!(m, PluginMutation::UnloadPlugin { owner } if *owner == names[0])));
+
+    assert!(!host.execute_command("acmd", &[]));
+    assert!(host.execute_command("bcmd", &[]));
+    let hover = |kind: &str| crate::plugin::AnnotationHoverCtx {
+        annotation_id: 1,
+        kind: kind.into(),
+        payload: crate::annotations::value::Value::Null,
+        position: 0,
+        buffer: 1,
+    };
+    assert!(!host.invoke_annotation_hook(true, &hover("a.kind")));
+    assert!(host.invoke_annotation_hook(true, &hover("b.kind")));
+    assert_eq!(notified_messages(&host), ["b", "b-enter"]);
+    assert_eq!(listed_plugins(&host), [names[1].clone()]);
 }
 
 #[test]

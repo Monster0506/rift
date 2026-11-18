@@ -126,3 +126,68 @@ fn toggle_checked_defaults_missing_to_true() {
     toggle_checked(&mut p);
     assert_eq!(p.get("checked"), Some(&Value::Bool(true)));
 }
+
+#[test]
+fn remove_owner_drops_only_that_owners_bindings() {
+    let mut r = DispatchRegistry::with_builtins();
+    r.register_owned("a.kind", "run", Handler::Lua, Some("a.lua".into()));
+    r.register_owned(
+        "b.kind",
+        "run",
+        Handler::Command("b".into()),
+        Some("b.lua".into()),
+    );
+    r.register_owned(
+        "shared",
+        "open",
+        Handler::Command("a".into()),
+        Some("a.lua".into()),
+    );
+    r.register_owned(
+        "shared",
+        "open",
+        Handler::Command("b".into()),
+        Some("b.lua".into()),
+    );
+    r.remove_owner("a.lua");
+    assert_eq!(r.resolve(&Kind::new("a.kind"), "run"), None);
+    assert_eq!(
+        r.resolve(&Kind::new("b.kind"), "run"),
+        Some(&Handler::Command("b".into()))
+    );
+    assert_eq!(
+        r.resolve(&Kind::new("shared"), "open"),
+        Some(&Handler::Command("b".into()))
+    );
+    assert_eq!(
+        r.resolve(&Kind::new("ui.link"), "activate"),
+        Some(&Handler::Builtin(Builtin::FollowLink))
+    );
+}
+
+#[test]
+fn remove_owner_drops_only_that_owners_kind_defaults() {
+    use super::super::presentation::{FaceRef, Presentation};
+    let mut r = KindRegistry::with_core();
+    r.register_owned(
+        "a.kind",
+        Some(Presentation::with_face(FaceRef::new("a"))),
+        Some("from a".into()),
+        Some("a.lua".into()),
+    );
+    r.register_owned("b.kind", None, Some("from b".into()), Some("b.lua".into()));
+    r.register_owned(
+        "b.kind",
+        Some(Presentation::with_face(FaceRef::new("a"))),
+        None,
+        Some("a.lua".into()),
+    );
+    let generation = r.generation();
+    r.remove_owner("a.lua");
+    assert!(r.generation() > generation);
+    assert!(r.default_presentation(&Kind::new("a.kind")).is_none());
+    assert_eq!(r.default_description(&Kind::new("a.kind")), None);
+    assert!(r.default_presentation(&Kind::new("b.kind")).is_none());
+    assert_eq!(r.default_description(&Kind::new("b.kind")), Some("from b"));
+    assert!(r.default_presentation(&Kind::new("ui.link")).is_some());
+}

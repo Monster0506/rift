@@ -6,12 +6,22 @@ use crate::plugin::{HighlightRange, HighlightSpec, PluginMutation};
 use crate::test_utils::MockTerminal;
 
 fn highlight_row0(editor: &mut Editor<MockTerminal>, ns: &str, cols: std::ops::Range<usize>) {
+    highlight_row0_owned(editor, ns, None, cols);
+}
+
+fn highlight_row0_owned(
+    editor: &mut Editor<MockTerminal>,
+    ns: &str,
+    owner: Option<&str>,
+    cols: std::ops::Range<usize>,
+) {
     let buf = editor.active_document().id;
     editor
         .plugin_host
         .queue_mutation(PluginMutation::AddNsHighlight {
             buf,
             ns: ns.to_string(),
+            owner: owner.map(str::to_owned),
             range: HighlightRange::Points {
                 start: (0, cols.start),
                 end: (0, cols.end),
@@ -95,6 +105,7 @@ fn clearing_a_highlight_namespace_leaves_other_namespaces() {
         .queue_mutation(PluginMutation::ClearNsHighlights {
             buf: None,
             ns: "one".to_string(),
+            owner: None,
         });
     editor.apply_plugin_mutations();
     assert_eq!(
@@ -117,4 +128,27 @@ fn point_highlights_clamp_columns_to_the_line() {
         vec![(1, 2)],
         "a column past the line end stops at the line end, not in the next line"
     );
+}
+
+#[test]
+fn clearing_an_owned_namespace_keeps_other_owners_highlights() {
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world\n");
+    highlight_row0_owned(&mut editor, "marks", Some("a.lua"), 0..5);
+    highlight_row0_owned(&mut editor, "marks", Some("b.lua"), 6..11);
+    highlight_row0(&mut editor, "marks", 2..4);
+    editor.apply_plugin_mutations();
+    assert_eq!(highlight_ranges(&mut editor).len(), 3);
+
+    editor
+        .plugin_host
+        .queue_mutation(PluginMutation::ClearNsHighlights {
+            buf: None,
+            ns: "marks".to_string(),
+            owner: Some("a.lua".to_string()),
+        });
+    editor.apply_plugin_mutations();
+    let mut ranges = highlight_ranges(&mut editor);
+    ranges.sort_unstable();
+    assert_eq!(ranges, vec![(2, 4), (6, 11)]);
 }
