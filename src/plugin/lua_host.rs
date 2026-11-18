@@ -2731,10 +2731,16 @@ impl LuaHost {
     /// handlers, not explicit commands/actions the user just triggered.
     const AUTO_DISPATCH_BUDGET: std::time::Duration = std::time::Duration::from_millis(150);
 
+    const USER_CALL_BUDGET: std::time::Duration = std::time::Duration::from_secs(2);
+
     /// Runs `f` with `hook_deadline` set so the VM hook can abort it past
     /// budget. Saves/restores the prior deadline for reentrant dispatch.
-    fn call_budgeted<T>(&self, f: impl FnOnce() -> LuaResult<T>) -> LuaResult<T> {
-        let deadline = std::time::Instant::now() + Self::AUTO_DISPATCH_BUDGET;
+    fn call_budgeted<T>(
+        &self,
+        budget: std::time::Duration,
+        f: impl FnOnce() -> LuaResult<T>,
+    ) -> LuaResult<T> {
+        let deadline = std::time::Instant::now() + budget;
         let prev = self.hook_deadline.borrow_mut().replace(deadline);
         let result = f();
         *self.hook_deadline.borrow_mut() = prev;
@@ -2821,7 +2827,9 @@ impl LuaHost {
                             continue;
                         }
                     };
-                    let call_result = self.call_budgeted(|| f.call::<()>(ev_table.clone()));
+                    let call_result = self.call_budgeted(Self::AUTO_DISPATCH_BUDGET, || {
+                        f.call::<()>(ev_table.clone())
+                    });
                     if let Err(e) = call_result {
                         errors.push(Self::plugin_error(plugin.as_deref(), event.name(), &e));
                     }
@@ -2877,7 +2885,9 @@ impl LuaHost {
             }
         }
 
-        if let Err(error) = self.call_budgeted(|| callback.call::<()>(context)) {
+        if let Err(error) =
+            self.call_budgeted(Self::AUTO_DISPATCH_BUDGET, || callback.call::<()>(context))
+        {
             let plugin = Self::entry_plugin(&entry);
             self.report_error(plugin.as_deref(), &format!("{kind}.{field}"), &error);
         }
@@ -2931,7 +2941,7 @@ impl LuaHost {
         if let Ok(p) = value_into_lua(ctx.params.clone(), &self.lua) {
             let _ = t.set("params", p);
         }
-        if let Err(error) = f.call::<()>(t) {
+        if let Err(error) = self.call_budgeted(Self::USER_CALL_BUDGET, || f.call::<()>(t)) {
             let plugin = Self::entry_plugin(&entry);
             self.report_error(
                 plugin.as_deref(),
@@ -2976,7 +2986,7 @@ impl LuaHost {
         if let Ok(p) = value_into_lua(ctx.payload.clone(), &self.lua) {
             let _ = t.set("payload", p);
         }
-        if let Err(error) = self.call_budgeted(|| f.call::<()>(t)) {
+        if let Err(error) = self.call_budgeted(Self::AUTO_DISPATCH_BUDGET, || f.call::<()>(t)) {
             let plugin = Self::entry_plugin(&entry);
             self.report_error(plugin.as_deref(), &format!("{}.{hook}", ctx.kind), &error);
         }
@@ -3008,7 +3018,9 @@ impl LuaHost {
         for (i, arg) in args.iter().enumerate() {
             let _ = args_table.set(i + 1, arg.as_str());
         }
-        if let Err(e) = handler.call::<()>(args_table) {
+        if let Err(e) =
+            self.call_budgeted(Self::USER_CALL_BUDGET, || handler.call::<()>(args_table))
+        {
             self.report_error(Self::entry_plugin(&entry).as_deref(), name, &e);
         }
         true
@@ -3049,7 +3061,7 @@ impl LuaHost {
             Ok(f) => f,
             Err(_) => return false,
         };
-        if let Err(e) = handler.call::<()>(()) {
+        if let Err(e) = self.call_budgeted(Self::USER_CALL_BUDGET, || handler.call::<()>(())) {
             self.report_error(Self::entry_plugin(&entry).as_deref(), id, &e);
         }
         true
@@ -3095,10 +3107,9 @@ impl LuaHost {
             .globals()
             .set("_rift_current_plugin_file", name.as_str());
         let result = self
-            .lua
-            .load(src.as_str())
-            .set_name(name.as_str())
-            .exec()
+            .call_budgeted(Self::USER_CALL_BUDGET, || {
+                self.lua.load(src.as_str()).set_name(name.as_str()).exec()
+            })
             .err()
             .map(|e| format!("lua: {}: {}", path.display(), e));
         self.shared.borrow_mut().current_plugin = None;
@@ -3137,7 +3148,9 @@ impl LuaHost {
                         .collect::<LuaResult<_>>()?;
                     for entry in snapshot {
                         let f: LuaFunction = entry.get("fn")?;
-                        if let Err(e) = self.call_budgeted(|| f.call::<()>(ev.clone())) {
+                        if let Err(e) = self
+                            .call_budgeted(Self::AUTO_DISPATCH_BUDGET, || f.call::<()>(ev.clone()))
+                        {
                             let plugin = Self::entry_plugin(&entry);
                             self.report_error(plugin.as_deref(), "ShellDone", &e);
                         }
@@ -3152,9 +3165,7 @@ impl LuaHost {
     /// Execute a string of Lua code. Returns an error string on failure.
     #[must_use]
     pub(super) fn exec(&self, code: &str) -> Option<String> {
-        self.lua
-            .load(code)
-            .exec()
+        self.call_budgeted(Self::USER_CALL_BUDGET, || self.lua.load(code).exec())
             .err()
             .map(|e| format!("[lua] {e}"))
     }

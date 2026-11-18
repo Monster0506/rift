@@ -1230,3 +1230,112 @@ fn test_dispatch_event_does_not_abort_a_fast_handler() {
     assert_eq!(mutations.len(), 1);
     assert!(matches!(&mutations[0], PluginMutation::Notify { .. }));
 }
+
+fn assert_cancelled_by_user_budget(started: std::time::Instant, error: &str, prefix: &str) {
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed >= LuaHost::USER_CALL_BUDGET && elapsed < std::time::Duration::from_secs(5),
+        "runaway call must run for the user budget, then stop; took {elapsed:?}"
+    );
+    assert!(
+        error.starts_with(prefix) && error.contains("time budget"),
+        "error should name the plugin and explain the abort: {error:?}"
+    );
+}
+
+fn assert_host_still_runs(host: &LuaHost) {
+    assert!(host.exec("rift.notify('info', 'alive')").is_none());
+    assert!(host.drain_mutations().iter().any(|m| matches!(
+        m,
+        PluginMutation::Notify { message, .. } if message == "alive"
+    )));
+}
+
+fn drained_error(host: &LuaHost) -> String {
+    host.drain_mutations()
+        .into_iter()
+        .find_map(|m| match m {
+            PluginMutation::Notify {
+                level: NotificationType::Error,
+                message,
+            } => Some(message),
+            _ => None,
+        })
+        .expect("expected an error notification")
+}
+
+#[test]
+fn test_runaway_command_is_cancelled_by_user_budget() {
+    let host = make_host();
+    load_plugin(
+        &host,
+        "runaway.lua",
+        "rift.register_command('spin', function() while true do end end)",
+    );
+    let started = std::time::Instant::now();
+    assert!(host.execute_command("spin", &[]));
+    assert_cancelled_by_user_budget(started, &drained_error(&host), "[runaway:spin] ");
+    assert_host_still_runs(&host);
+}
+
+#[test]
+fn test_runaway_action_is_cancelled_by_user_budget() {
+    let host = make_host();
+    load_plugin(
+        &host,
+        "runaway.lua",
+        "rift.register_action('spin', function() while true do end end)",
+    );
+    let started = std::time::Instant::now();
+    assert!(host.execute_action("spin"));
+    assert_cancelled_by_user_budget(started, &drained_error(&host), "[runaway:spin] ");
+    assert_host_still_runs(&host);
+}
+
+#[test]
+fn test_runaway_annotation_action_is_cancelled_by_user_budget() {
+    let host = make_host();
+    load_plugin(
+        &host,
+        "runaway.lua",
+        "rift.annotations.on_action('test.run', 'run', function(_ctx) while true do end end)",
+    );
+    let _ = host.drain_mutations();
+    let ctx = crate::plugin::AnnotationActionCtx {
+        annotation_id: 1,
+        kind: "test.run".into(),
+        verb: "run".into(),
+        payload: crate::annotations::value::Value::Null,
+        params: crate::annotations::value::Value::Null,
+        position: 0,
+        buffer: 1,
+    };
+    let started = std::time::Instant::now();
+    assert!(host.invoke_annotation_action(&ctx));
+    assert_cancelled_by_user_budget(started, &drained_error(&host), "[runaway:test.run.run] ");
+    assert_host_still_runs(&host);
+}
+
+#[test]
+fn test_runaway_plugin_load_is_cancelled_by_user_budget() {
+    let host = make_host();
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().join("runaway.lua");
+    std::fs::write(&path, "while true do end").expect("write failed");
+    let started = std::time::Instant::now();
+    let error = host.load_file(&path).expect("expected a load error");
+    assert_cancelled_by_user_budget(started, &error, "lua: ");
+    assert!(error.contains("runaway.lua"), "{error:?}");
+    assert_host_still_runs(&host);
+}
+
+#[test]
+fn test_runaway_exec_is_cancelled_by_user_budget() {
+    let host = make_host();
+    let started = std::time::Instant::now();
+    let error = host
+        .exec("while true do end")
+        .expect("expected an exec error");
+    assert_cancelled_by_user_budget(started, &error, "[lua] ");
+    assert_host_still_runs(&host);
+}
