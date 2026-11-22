@@ -583,31 +583,6 @@ fn reloaded_plugin_top_level_code_reads_the_open_buffer() {
     );
 }
 
-#[test]
-fn shell_done_handler_reads_state_changed_after_the_spawn() {
-    let mut editor = lua_editor("one\ntwo\n");
-    lua_ok(
-        &editor,
-        "rift.on('UserEvent', function(ev) \
-           if ev.name == 'ShellDone' then _G.seen = rift.get_cursor() end \
-         end) \
-         rift.spawn_shell('echo done', 'probe')",
-    );
-    editor.active_document().buffer.set_cursor(4).unwrap();
-
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while editor.plugin_host.lua_exec("assert(_G.seen)").is_some() {
-        assert!(
-            std::time::Instant::now() < deadline,
-            "ShellDone never fired"
-        );
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        editor.apply_plugin_mutations();
-    }
-
-    lua_ok(&editor, "assert(_G.seen == 2, tostring(_G.seen))");
-}
-
 fn editor_with_two_buffers() -> (Editor<MockTerminal>, u64, u64) {
     let mut editor = lua_editor("first");
     let first = editor.active_document_id().get();

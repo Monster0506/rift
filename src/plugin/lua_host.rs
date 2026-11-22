@@ -217,9 +217,6 @@ struct LuaSharedState {
     /// severity: 1=error, 2=warning, 3=info, 4=hint
     lsp_diagnostics: LspDiagnosticsSnapshot,
     current_plugin: Option<String>,
-    /// Completed shell commands waiting to be fired as Lua `UserEvents`.
-    /// Each entry is (tag, success, output). Drained in `drain_mutations`.
-    pending_shell_events: Vec<(String, bool, String)>,
     plugin_health: std::collections::HashMap<String, PluginHealth>,
     is_active: bool,
     buffer_vars: std::collections::HashMap<
@@ -353,7 +350,6 @@ impl LuaSharedState {
             previous_win_id: None,
             lsp_diagnostics: std::collections::HashMap::new(),
             current_plugin: None,
-            pending_shell_events: Vec::new(),
             plugin_health: std::collections::HashMap::new(),
             is_active: true,
             buffer_vars: std::collections::HashMap::new(),
@@ -392,11 +388,8 @@ pub(super) struct LuaHost {
     /// Absolute deadline for the in-flight Lua call, checked by a VM
     /// instruction hook so a runaway handler aborts instead of freezing.
     hook_deadline: Rc<RefCell<Option<std::time::Instant>>>,
-    shell_result_rx: std::sync::mpsc::Receiver<ShellResult>,
     generation: crate::plugin::PluginGeneration,
 }
-
-type ShellResult = (String, bool, String);
 
 const PRELUDE: &str = r#"
 -- rift.log level constants
@@ -767,7 +760,6 @@ impl LuaHost {
         )?;
         let shared = Rc::new(RefCell::new(LuaSharedState::new(language_loader)));
         let hook_deadline: Rc<RefCell<Option<std::time::Instant>>> = Rc::new(RefCell::new(None));
-        let (shell_result_tx, shell_result_rx) = std::sync::mpsc::channel::<ShellResult>();
         {
             let deadline = Rc::clone(&hook_deadline);
             // Checked every 100k VM instructions - cheap enough to run continuously,
@@ -788,13 +780,11 @@ impl LuaHost {
             );
         }
 
-        // os.execute() blocks the calling thread on a subprocess; route through
-        // rift.spawn_shell instead, which runs off-thread and reports via a UserEvent.
         {
             let os_table: LuaTable = lua.globals().get("os")?;
             let err_fn = lua.create_function(|_, _: LuaMultiValue| -> LuaResult<()> {
                 Err(LuaError::RuntimeError(
-                    "os.execute() is disabled; use rift.spawn_shell(cmd, tag) or rift.spawn(prog, args, tag) instead"
+                    "os.execute() is disabled; use rift.job.start(opts) or rift.job.shell(cmd, opts) instead"
                         .to_string(),
                 ))
             })?;
@@ -834,7 +824,6 @@ impl LuaHost {
         Self::register_cursor_lines(&lua, &api, &shared)?;
         Self::register_commands(&lua, &api, &shared)?;
         Self::register_emit(&lua, &api, &shared)?;
-        Self::register_spawn(&lua, &api, &shell_result_tx)?;
         Self::register_jobs(&lua, &api, &shared)?;
         Self::register_edits(&lua, &api, &shared)?;
         Self::register_line_edits(&lua, &api, &shared)?;
@@ -856,7 +845,7 @@ impl LuaHost {
         Self::register_buffer_vars(&lua, &api, &shared)?;
         highlight_api::register(&lua, &api, &shared)?;
         treesitter_api::register(&lua, &api, &shared)?;
-        Self::finish(lua, api, shared, hook_deadline, shell_result_rx, generation)
+        Self::finish(lua, api, shared, hook_deadline, generation)
     }
 
     fn register_handlers(
@@ -1602,67 +1591,6 @@ impl LuaHost {
                     Ok(())
                 })?;
             api.set("emit", f)?;
-        }
-
-        Ok(())
-    }
-
-    fn register_spawn(
-        lua: &Lua,
-        api: &LuaTable,
-        shell_result_tx: &std::sync::mpsc::Sender<ShellResult>,
-    ) -> LuaResult<()> {
-        // rift.spawn_shell(cmd, tag): runs asynchronously; on completion fires a
-        // UserEvent name="ShellDone", tag=<tag>, success=<bool>, output=<string>.
-        {
-            let tx = shell_result_tx.clone();
-            let f = lua.create_function(move |_, (cmd, tag): (String, String)| {
-                let tx = tx.clone();
-                std::thread::spawn(move || {
-                    let result = if cfg!(windows) {
-                        std::process::Command::new("cmd")
-                            .args(["/C", &cmd])
-                            .output()
-                    } else {
-                        std::process::Command::new("sh").args(["-c", &cmd]).output()
-                    };
-                    let (success, out_text) = match result {
-                        Ok(o) => {
-                            let text = String::from_utf8_lossy(&o.stdout).to_string()
-                                + &String::from_utf8_lossy(&o.stderr);
-                            (o.status.success(), text.trim_end().to_string())
-                        }
-                        Err(e) => (false, e.to_string()),
-                    };
-                    let _ = tx.send((tag, success, out_text));
-                });
-                Ok(())
-            })?;
-            api.set("spawn_shell", f)?;
-        }
-
-        // rift.spawn(prog, args, tag): run a program directly (no shell), one
-        // OS arg per list element. Fires the same ShellDone UserEvent as spawn_shell.
-        {
-            let tx = shell_result_tx.clone();
-            let f =
-                lua.create_function(move |_, (prog, args, tag): (String, Vec<String>, String)| {
-                    let tx = tx.clone();
-                    std::thread::spawn(move || {
-                        let result = std::process::Command::new(&prog).args(&args).output();
-                        let (success, out_text) = match result {
-                            Ok(o) => {
-                                let text = String::from_utf8_lossy(&o.stdout).to_string()
-                                    + &String::from_utf8_lossy(&o.stderr);
-                                (o.status.success(), text.trim_end().to_string())
-                            }
-                            Err(e) => (false, e.to_string()),
-                        };
-                        let _ = tx.send((tag, success, out_text));
-                    });
-                    Ok(())
-                })?;
-            api.set("spawn", f)?;
         }
 
         Ok(())
@@ -3132,7 +3060,6 @@ impl LuaHost {
         api: LuaTable,
         shared: Rc<RefCell<LuaSharedState>>,
         hook_deadline: Rc<RefCell<Option<std::time::Instant>>>,
-        shell_result_rx: std::sync::mpsc::Receiver<ShellResult>,
         generation: crate::plugin::PluginGeneration,
     ) -> LuaResult<Self> {
         lua.globals().set("rift", api)?;
@@ -3144,7 +3071,6 @@ impl LuaHost {
             lua,
             shared,
             hook_deadline,
-            shell_result_rx,
             generation,
         })
     }
@@ -3783,13 +3709,6 @@ impl LuaHost {
         !self.shared.borrow().mutations.is_empty()
     }
 
-    pub(super) fn has_pending_shell_events(&self) -> bool {
-        let mut s = self.shared.borrow_mut();
-        s.pending_shell_events
-            .extend(self.shell_result_rx.try_iter());
-        !s.pending_shell_events.is_empty()
-    }
-
     pub(super) fn has_annotation_hook(&self, enter: bool, kind: &str) -> bool {
         let table_name = if enter {
             "_rift_enter_handlers"
@@ -3831,44 +3750,8 @@ impl LuaHost {
         Ok(env)
     }
 
-    /// Drain all mutations queued by Lua API calls. Fires pending shell-completion
-    /// events as Lua `UserEvents` first, so their handlers can queue further mutations.
     #[must_use]
     pub(super) fn drain_mutations(&self) -> Vec<PluginMutation> {
-        let pending = std::mem::take(&mut self.shared.borrow_mut().pending_shell_events);
-        for (tag, success, output) in pending {
-            let _ = (|| -> LuaResult<()> {
-                let handlers: LuaTable = self.lua.globals().get("_rift_handlers")?;
-                let list: Option<LuaTable> = handlers.get("UserEvent")?;
-                if let Some(list) = list {
-                    let ev = self.lua.create_table()?;
-                    ev.set("name", "ShellDone")?;
-                    ev.set("tag", tag.as_str())?;
-                    ev.set("success", success)?;
-                    ev.set("output", output.as_str())?;
-                    // Snapshot the handler list before dispatch so handlers that
-                    // call rift.on/rift.off mid-pass only affect the next event.
-                    let snapshot: Vec<LuaTable> = list
-                        .sequence_values::<LuaTable>()
-                        .collect::<LuaResult<_>>()?;
-                    for entry in snapshot {
-                        let plugin = Self::entry_plugin(&entry);
-                        if self.is_disabled(plugin.as_deref()) {
-                            continue;
-                        }
-                        let f: LuaFunction = entry.get("fn")?;
-                        if let Err(e) =
-                            self.call_plugin(plugin.as_deref(), Self::AUTO_DISPATCH_BUDGET, || {
-                                f.call::<()>(ev.clone())
-                            })
-                        {
-                            self.report_error(plugin.as_deref(), "ShellDone", &e);
-                        }
-                    }
-                }
-                Ok(())
-            })();
-        }
         std::mem::take(&mut self.shared.borrow_mut().mutations)
     }
 

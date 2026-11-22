@@ -131,7 +131,7 @@ fn test_os_execute_is_disabled() {
     let host = make_host();
     let err = host.exec("os.execute('echo hi')");
     assert!(err.is_some(), "os.execute() must raise a Lua error");
-    assert!(err.unwrap().contains("spawn_shell"));
+    assert!(err.unwrap().contains("rift.job.start"));
 }
 
 #[test]
@@ -1453,101 +1453,6 @@ fn test_dispatch_event_does_not_invoke_handlers_registered_during_same_pass() {
     assert!(errors.is_empty(), "unexpected errors: {errors:?}");
     let check = host.exec("assert(_G.count == 1, 'count was ' .. _G.count)");
     assert!(check.is_none(), "assertion failed: {check:?}");
-}
-
-#[test]
-fn test_shelldone_fanout_does_not_invoke_handlers_registered_during_same_pass() {
-    let host = make_host();
-    assert!(host.exec("_G.count = 0").is_none());
-    assert!(host
-        .exec(
-            r"
-        rift.on('UserEvent', function(ev)
-            _G.count = _G.count + 1
-            rift.on('UserEvent', function(_ev) _G.count = _G.count + 1 end)
-        end)
-    "
-        )
-        .is_none());
-    host.shared.borrow_mut().pending_shell_events.push((
-        "tag1".to_string(),
-        true,
-        "out".to_string(),
-    ));
-    let _ = host.drain_mutations();
-    let check = host.exec("assert(_G.count == 1, 'count was ' .. _G.count)");
-    assert!(check.is_none(), "assertion failed: {check:?}");
-}
-
-#[test]
-fn test_shell_done_handler_error_surfaces_as_notification() {
-    let host = make_host();
-    load_plugin(
-        &host,
-        "failing.lua",
-        r"
-        rift.on('UserEvent', function(ev)
-            if ev.name == 'ShellDone' then
-                local x = nil
-                return x.boom
-            end
-        end)
-    ",
-    );
-
-    host.shared.borrow_mut().pending_shell_events.push((
-        "mytag".to_string(),
-        true,
-        "output".to_string(),
-    ));
-
-    let mutations = host.drain_mutations();
-    let got_error = mutations.iter().any(|m| {
-        matches!(
-            m,
-            PluginMutation::Notify {
-                level: NotificationType::Error,
-                message,
-            } if message.starts_with("[failing:ShellDone] ")
-        )
-    });
-    assert!(
-        got_error,
-        "expected an error notification from the failing ShellDone handler, got: {mutations:?}"
-    );
-}
-
-#[test]
-fn test_spawn_shell_delivers_result_from_background_thread() {
-    let host = make_host();
-    assert!(host
-        .exec(
-            r"
-        _G.got = nil
-        rift.on('UserEvent', function(ev)
-            if ev.name == 'ShellDone' then
-                _G.got = ev.tag
-            end
-        end)
-        rift.spawn_shell('echo hello', 'mytag')
-    "
-        )
-        .is_none());
-
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    loop {
-        if host.has_pending_shell_events() {
-            let _ = host.drain_mutations();
-        }
-        if host.exec("assert(_G.got == 'mytag')").is_none() {
-            break;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "background shell command never delivered its ShellDone event"
-        );
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
 }
 
 #[test]

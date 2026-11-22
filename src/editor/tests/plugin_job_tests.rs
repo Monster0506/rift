@@ -330,3 +330,17 @@ fn dropping_the_editor_kills_running_jobs() {
 
     wait_for_exit(&probe);
 }
+
+#[test]
+fn job_callback_reads_state_changed_after_the_start() {
+    let mut editor = lua_editor();
+    load_text(&mut editor, "one\ntwo\n");
+    run_lua(
+        &mut editor,
+        "rift.job.shell('exit 0', { on_exit = function() _G.seen = rift.get_cursor() end })",
+    );
+    editor.active_document().buffer.set_cursor(4).unwrap();
+
+    tick_until(&mut editor, "_G.seen ~= nil");
+    assert!(lua_holds(&editor, "_G.seen == 2"));
+}

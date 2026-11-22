@@ -386,9 +386,6 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn apply_plugin_mutations(&mut self) {
         let outermost = self.plugin_mutation_rounds.is_none();
         while self.plugin_mutation_rounds.unwrap_or(0) < PLUGIN_MUTATION_ROUNDS {
-            if self.plugin_host.has_pending_shell_results() {
-                self.update_lua_state();
-            }
             let envelopes: Vec<crate::plugin::PluginMutationEnvelope> =
                 self.plugin_host.drain_mutation_envelopes().collect();
             if envelopes.is_empty() {

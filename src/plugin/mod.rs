@@ -1158,12 +1158,6 @@ impl PluginHost {
             .is_some_and(|lua| lua.has_annotation_hook(enter, kind))
     }
 
-    pub(crate) fn has_pending_shell_results(&self) -> bool {
-        self.lua
-            .as_ref()
-            .is_some_and(lua_host::LuaHost::has_pending_shell_events)
-    }
-
     /// Invoke a Lua buffer-kind action callback. Returns `true` if handled.
     pub(crate) fn invoke_buffer_action(
         &self,
