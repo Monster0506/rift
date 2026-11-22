@@ -2208,3 +2208,53 @@ fn test_runaway_repeating_timer_disables_its_plugin() {
     assert!(started.elapsed() < LuaHost::AUTO_DISPATCH_BUDGET);
     assert!(host.drain_mutations().is_empty());
 }
+
+fn debounce_host() -> LuaHost {
+    let host = make_host();
+    assert!(host
+        .exec(
+            "_G.debounced = rift.debounce(function(a, b) \
+               rift.notify('info', a .. ':' .. tostring(b)) \
+             end, 100)"
+        )
+        .is_none());
+    host
+}
+
+#[test]
+fn test_debounce_fires_once_with_the_last_arguments_after_a_burst() {
+    let host = debounce_host();
+    assert!(host.exec("debounced('a', 1) debounced('b', 2)").is_none());
+    let last_call = crate::time::Instant::now();
+    assert!(host.exec("debounced('c', nil)").is_none());
+    let deadline = timer_deadline(&host);
+    assert!(deadline >= last_call + 100 * MS);
+
+    let just_before = deadline
+        .checked_sub(std::time::Duration::from_nanos(1))
+        .unwrap();
+    assert!(!host.fire_due_timers(just_before));
+    assert!(notified_messages(&host).is_empty());
+
+    assert!(host.fire_due_timers(deadline));
+    assert_eq!(notified_messages(&host), ["c:nil"]);
+    assert_eq!(host.next_timer_deadline(), None);
+}
+
+#[test]
+fn test_debounce_fires_each_time_calls_are_spaced_wider_than_the_delay() {
+    let host = debounce_host();
+    for (call, expected) in [("debounced('a', 1)", "a:1"), ("debounced('b', 2)", "b:2")] {
+        assert!(host.exec(call).is_none());
+        assert!(host.fire_due_timers(timer_deadline(&host)));
+        assert_eq!(notified_messages(&host), [expected]);
+    }
+}
+
+#[test]
+fn test_debounce_without_calls_never_fires() {
+    let host = debounce_host();
+    assert_eq!(host.next_timer_deadline(), None);
+    assert!(!host.fire_due_timers(crate::time::Instant::now() + 60_000 * MS));
+    assert!(notified_messages(&host).is_empty());
+}

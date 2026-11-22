@@ -605,20 +605,15 @@ function rift.get_word_at_cursor()
     return line:sub(s, e)
 end
 
--- rift.debounce(fn, polls) -> debounced_fn
--- Returns a wrapper that only calls fn after it has been invoked `polls`
--- consecutive times without being reset. Intended for use with
--- TextChangedCoarse handlers where you want to wait for a pause in typing.
--- `polls` maps to main-loop idle cycles (~16 ms each by default).
-function rift.debounce(fn, polls)
-    polls = polls or 10
-    local count = 0
+function rift.debounce(fn, ms)
+    local id
     return function(...)
-        count = count + 1
-        if count >= polls then
-            count = 0
-            fn(...)
-        end
+        local args = table.pack(...)
+        if id then rift.timer_stop(id) end
+        id = rift.timer(ms, function()
+            id = nil
+            fn(table.unpack(args, 1, args.n))
+        end)
     end
 end
 
