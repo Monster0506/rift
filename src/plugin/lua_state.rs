@@ -97,8 +97,6 @@ pub(crate) struct StateUpdate<'a> {
     pub(crate) buf_kind: String,
     pub(crate) source: BufSourceUpdate,
     pub(crate) cursor: (usize, usize),
-    pub(crate) tab_width: usize,
-    pub(crate) expand_tabs: bool,
     pub(crate) mode: &'a str,
     pub(crate) filetype: Option<String>,
     pub(crate) file_path: Option<String>,

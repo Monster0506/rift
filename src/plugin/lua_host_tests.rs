@@ -61,8 +61,6 @@ fn test_get_option_reads_document_local_setting_via_alias() {
         buf_id: 1,
         buf_kind: "file".to_string(),
         source: BufSourceUpdate::Cleared,
-        tab_width: 4,
-        expand_tabs: true,
         mode: "normal",
         line_ending: "lf",
         doc_options: Some(doc_options),
@@ -90,8 +88,6 @@ fn test_get_option_falls_back_to_global_setting() {
         buf_id: 1,
         buf_kind: "file".to_string(),
         source: BufSourceUpdate::Cleared,
-        tab_width: 4,
-        expand_tabs: true,
         mode: "normal",
         line_ending: "lf",
         user_settings: Some(user_settings),
@@ -645,8 +641,6 @@ fn test_get_lines_returns_correct_lines() {
         buf_id: 1,
         buf_kind: "file".to_string(),
         source: lines_source(&["alpha", "beta", "gamma"]),
-        tab_width: 4,
-        expand_tabs: true,
         mode: "normal",
         line_ending: "lf",
         ..Default::default()
@@ -660,14 +654,33 @@ fn test_get_lines_returns_correct_lines() {
     }
 }
 
+#[test]
+fn get_lines_reads_a_resent_buffer_with_an_equal_revision() {
+    let host = make_host();
+    let update = |lines: &[&str]| StateUpdate {
+        buf_id: 1,
+        buf_kind: "file".to_string(),
+        source: lines_source(lines),
+        mode: "normal",
+        line_ending: "lf",
+        ..Default::default()
+    };
+    host.update_state(update(&["old"]));
+    assert!(host
+        .exec("assert(rift.get_lines(1, 1)[1] == 'old')")
+        .is_none());
+
+    host.update_state(update(&["new"]));
+    let err = host.exec("assert(rift.get_lines(1, 1)[1] == 'new', rift.get_lines(1, 1)[1])");
+    assert!(err.is_none(), "{err:?}");
+}
+
 fn count_lines_returned(call: &str) -> i64 {
     let host = make_host();
     host.update_state(StateUpdate {
         buf_id: 1,
         buf_kind: "file".to_string(),
         source: lines_source(&["alpha", "beta", "gamma"]),
-        tab_width: 4,
-        expand_tabs: true,
         mode: "normal",
         line_ending: "lf",
         ..Default::default()
@@ -705,8 +718,6 @@ fn test_line_count_and_find_materialize_from_deferred_source() {
         buf_id: 1,
         buf_kind: "file".to_string(),
         source: lines_source(&["needle here", "no match", "another needle"]),
-        tab_width: 4,
-        expand_tabs: true,
         mode: "normal",
         line_ending: "lf",
         ..Default::default()
@@ -738,8 +749,6 @@ fn test_get_cursor_returns_1indexed_row() {
         buf_kind: "file".to_string(),
         source: BufSourceUpdate::Cleared,
         cursor: (4, 2),
-        tab_width: 4,
-        expand_tabs: true,
         mode: "normal",
         line_ending: "lf",
         ..Default::default()
@@ -761,8 +770,6 @@ fn test_current_buf_returns_id() {
         buf_id: 42,
         buf_kind: "file".to_string(),
         source: BufSourceUpdate::Cleared,
-        tab_width: 4,
-        expand_tabs: true,
         mode: "normal",
         line_ending: "lf",
         ..Default::default()

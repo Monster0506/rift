@@ -176,8 +176,6 @@ struct LuaSharedState {
     buf_kind: String,
     /// Cursor position (row 0-indexed, col 0-indexed).
     cursor: (usize, usize),
-    tab_width: usize,
-    expand_tabs: bool,
     mode: String,
     /// Detected filetype of the active buffer, e.g. "rust", "python".
     filetype: Option<String>,
@@ -282,8 +280,6 @@ impl LuaSharedState {
             buf_id: 0,
             buf_kind: "file".to_string(),
             cursor: (0, 0),
-            tab_width: 4,
-            expand_tabs: true,
             mode: "normal".to_string(),
             filetype: None,
             file_path: None,
@@ -1909,14 +1905,15 @@ impl LuaHost {
         // rift.get_tab_width() -> integer
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| Ok(lua_int(sh.borrow_mut().tab_width)))?;
+            let f =
+                lua.create_function(move |_, ()| Ok(lua_int(sh.borrow().doc_options.tab_width)))?;
             api.set("get_tab_width", f)?;
         }
 
         // rift.get_expand_tabs() -> boolean
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| Ok(sh.borrow_mut().expand_tabs))?;
+            let f = lua.create_function(move |_, ()| Ok(sh.borrow().doc_options.expand_tabs))?;
             api.set("get_expand_tabs", f)?;
         }
 
@@ -2933,11 +2930,12 @@ impl LuaHost {
         match update.source {
             BufSourceUpdate::Unchanged => {}
             BufSourceUpdate::Cleared => s.buf_source = None,
-            BufSourceUpdate::Set(src) => s.buf_source = Some(*src),
+            BufSourceUpdate::Set(src) => {
+                s.buf_source = Some(*src);
+                s.buf_lines_cache_rev = None;
+            }
         }
         s.cursor = update.cursor;
-        s.tab_width = update.tab_width;
-        s.expand_tabs = update.expand_tabs;
         s.mode = update.mode.to_string();
         s.filetype = update.filetype;
         s.file_path = update.file_path;

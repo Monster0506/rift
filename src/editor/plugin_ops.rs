@@ -14,8 +14,6 @@ struct LuaBufState {
     history: HistoryAvailability,
     is_dirty: bool,
     line_ending: &'static str,
-    tab_width: usize,
-    expand_tabs: bool,
 }
 
 #[derive(Hash)]
@@ -82,8 +80,6 @@ impl<T: TerminalBackend> Editor<T> {
             history,
             is_dirty,
             line_ending,
-            tab_width,
-            expand_tabs,
         } = self.lua_buf_state();
 
         let window_size = (
@@ -121,8 +117,6 @@ impl<T: TerminalBackend> Editor<T> {
                 buf_kind,
                 source,
                 cursor,
-                tab_width,
-                expand_tabs,
                 mode,
                 filetype,
                 file_path,
@@ -216,7 +210,6 @@ impl<T: TerminalBackend> Editor<T> {
     fn lua_buf_state(&self) -> LuaBufState {
         let Some(doc) = self.document_manager.active_document() else {
             self.plugin_host.clear_synced_buf();
-            let defaults = crate::document::definitions::DocumentOptions::default();
             return LuaBufState {
                 buf_id: 0,
                 buf_kind: "file".to_string(),
@@ -227,8 +220,6 @@ impl<T: TerminalBackend> Editor<T> {
                 history: HistoryAvailability::default(),
                 is_dirty: false,
                 line_ending: "lf",
-                tab_width: defaults.tab_width,
-                expand_tabs: defaults.expand_tabs,
             };
         };
         let buf_id = usize::try_from(doc.id.get()).unwrap_or(usize::MAX);
@@ -270,8 +261,6 @@ impl<T: TerminalBackend> Editor<T> {
             },
             is_dirty: doc.is_dirty(),
             line_ending,
-            tab_width: doc.options.tab_width,
-            expand_tabs: doc.options.expand_tabs,
         }
     }
 
