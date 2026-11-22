@@ -493,6 +493,16 @@ pub(crate) enum AnnotationAnchorSpec {
     Range(usize, usize),
 }
 
+pub(crate) fn annotation_owner(owner: Option<&str>) -> crate::annotations::AnnotationOwner {
+    use crate::annotations::AnnotationOwner;
+    match owner {
+        Some("system") => AnnotationOwner::System,
+        Some("lsp") => AnnotationOwner::Lsp,
+        Some("user") => AnnotationOwner::User,
+        _ => AnnotationOwner::Plugin(String::new()),
+    }
+}
+
 /// Context passed to a Lua annotation action handler on activation.
 #[derive(Debug, Clone)]
 pub(crate) struct AnnotationActionCtx {
@@ -714,6 +724,19 @@ impl PluginHost {
     /// Forget the last-synced annotations, e.g. when there's no active document.
     pub(crate) fn clear_synced_annotations(&self) {
         self.last_synced_annotations.set(None);
+    }
+
+    pub(crate) fn resync_diverged_lua_state(&self) {
+        let Some(lua) = &self.lua else {
+            return;
+        };
+        let (buf, annotations) = lua.take_divergence();
+        if buf {
+            self.clear_synced_buf();
+        }
+        if annotations {
+            self.clear_synced_annotations();
+        }
     }
 
     #[cfg(feature = "treesitter")]

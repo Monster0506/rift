@@ -2,7 +2,7 @@ use super::{lua_index, lua_int, LuaSharedState};
 use crate::document::DocumentId;
 use crate::plugin::PluginMutation;
 use crate::syntax::loader::QueryKind;
-use crate::syntax::snapshot::{QueryWindow, SyntaxSnapshot};
+use crate::syntax::snapshot::{QueryWindow, SnapshotText, SyntaxSnapshot};
 use mlua::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -205,6 +205,19 @@ impl LuaUserData for LuaTree {
         });
         methods.add_method("lang", |_, this, ()| Ok(this.0.lang_name.clone()));
         methods.add_method("buf", |_, this, ()| Ok(this.0.buf));
+        methods.add_method("is_stale", |lua, this, ()| {
+            let (Some(buf), SnapshotText::Buffer(text)) = (this.0.buf, &*this.0.text) else {
+                return Ok(false);
+            };
+            let shared = lua
+                .app_data_ref::<Shared>()
+                .ok_or_else(|| LuaError::RuntimeError("plugin state unavailable".into()))?;
+            let s = shared.borrow();
+            Ok(s.buf_id as u64 == buf
+                && s.buf_source
+                    .as_ref()
+                    .is_some_and(|src| src.revision != text.revision))
+        });
         methods.add_meta_method(LuaMetaMethod::ToString, |_, this, ()| {
             Ok(format!("<tree {}>", this.0.lang_name))
         });
@@ -433,6 +446,7 @@ fn target_byte(
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn register(lua: &Lua, api: &LuaTable, shared: &Shared) -> LuaResult<()> {
+    lua.set_app_data(Rc::clone(shared));
     let ts = lua.create_table()?;
 
     {

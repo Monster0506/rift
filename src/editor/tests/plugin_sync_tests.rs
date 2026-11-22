@@ -659,3 +659,204 @@ fn edit_queued_before_switch_buf_lands_in_the_buffer_current_when_queued() {
     assert_eq!(buffer_text(&editor, first), "first");
     assert_eq!(buffer_text(&editor, second), "xsecond");
 }
+
+fn drop_queued_writes(editor: &mut Editor<MockTerminal>) {
+    let _ = editor.plugin_host.drain_mutation_envelopes().count();
+    editor.update_lua_state();
+}
+
+fn sync_applied_writes(editor: &mut Editor<MockTerminal>) {
+    editor.apply_plugin_mutations();
+    editor.update_lua_state();
+}
+
+#[test]
+fn set_option_reads_back_in_the_same_call() {
+    let mut editor = lua_editor("hello\n");
+    let reads = "assert(rift.get_option('tab_width') == 7 and rift.get_tab_width() == 7) \
+                 assert(rift.get_option('clipboard.size') == 42)";
+    lua_ok(
+        &editor,
+        &format!("rift.set_option('tab_width', 7) rift.set_option('clipboard.size', 42) {reads}"),
+    );
+
+    sync_applied_writes(&mut editor);
+
+    lua_ok(&editor, reads);
+}
+
+#[test]
+fn unapplied_set_option_is_replaced_on_next_sync() {
+    let mut editor = lua_editor("hello\n");
+    lua_ok(
+        &editor,
+        "rift.set_option('tab_width', 7) rift.set_option('clipboard.size', 42)",
+    );
+
+    drop_queued_writes(&mut editor);
+
+    lua_ok(
+        &editor,
+        "assert(rift.get_option('tab_width') == 4) \
+         assert(rift.get_option('clipboard.size') ~= 42)",
+    );
+}
+
+#[test]
+fn text_edits_read_back_in_the_same_call_and_match_the_editor() {
+    let mut editor = lua_editor("one\ntwo\nthree\n");
+    lua_ok(
+        &editor,
+        r"
+        rift.set_cursor(2, 0)
+        rift.insert('>')
+        local row, col = rift.get_cursor()
+        assert(row == 2 and col == 1, row .. ':' .. col)
+        assert(rift.get_lines(2, 2)[1] == '>two')
+        rift.delete_before(1)
+        rift.delete_forward(1)
+        assert(rift.get_current_line() == 'wo', rift.get_current_line())
+        rift.set_current_line('TWO')
+        assert(rift.get_current_line() == 'TWO')
+        rift.append_lines({ 'four' })
+        assert(rift.get_line_count() == 4 and rift.get_lines(4, 4)[1] == 'four')
+        rift.delete_current_line()
+        assert(rift.get_line_count() == 3, rift.get_line_count())
+        assert(rift.search('TWO')[1].row == 2)
+        _G.local_text = table.concat(rift.get_lines(1, -1), '|')
+        ",
+    );
+
+    sync_applied_writes(&mut editor);
+
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "one\nTWO\nthree"
+    );
+    lua_ok(
+        &editor,
+        "assert(table.concat(rift.get_lines(1, -1), '|') == _G.local_text, _G.local_text)",
+    );
+}
+
+#[test]
+fn unapplied_text_edit_is_replaced_on_next_sync() {
+    let mut editor = lua_editor("one\n");
+    lua_ok(
+        &editor,
+        "rift.insert('x') assert(rift.get_lines(1, 1)[1] == 'xone')",
+    );
+
+    drop_queued_writes(&mut editor);
+
+    lua_ok(
+        &editor,
+        "assert(rift.get_lines(1, 1)[1] == 'one') \
+         local row, col = rift.get_cursor() assert(row == 1 and col == 0)",
+    );
+}
+
+#[test]
+fn cursor_moves_read_back_in_the_same_call() {
+    let mut editor = lua_editor("one\ntwo\nthree\n");
+    lua_ok(
+        &editor,
+        "rift.set_cursor(2, 50) \
+         local row, col = rift.get_cursor() assert(row == 2 and col == 3, row .. ':' .. col) \
+         rift.center_on_line(3) \
+         row, col = rift.get_cursor() assert(row == 3 and col == 0, row .. ':' .. col)",
+    );
+
+    sync_applied_writes(&mut editor);
+
+    lua_ok(
+        &editor,
+        "local row, col = rift.get_cursor() assert(row == 3 and col == 0, row .. ':' .. col)",
+    );
+}
+
+#[test]
+fn unapplied_cursor_move_is_replaced_on_next_sync() {
+    let mut editor = lua_editor("one\ntwo\n");
+    lua_ok(&editor, "rift.set_cursor(2, 1)");
+
+    drop_queued_writes(&mut editor);
+
+    lua_ok(
+        &editor,
+        "local row, col = rift.get_cursor() assert(row == 1 and col == 0, row .. ':' .. col)",
+    );
+}
+
+#[test]
+fn scroll_and_line_ending_read_back_in_the_same_call() {
+    let mut editor = lua_editor("one\n");
+    lua_ok(
+        &editor,
+        "rift.set_scroll(5, 2) rift.set_line_ending('CRLF') \
+         local top, left = rift.get_scroll() assert(top == 5 and left == 2) \
+         assert(rift.get_line_ending() == 'crlf')",
+    );
+
+    sync_applied_writes(&mut editor);
+
+    lua_ok(&editor, "assert(rift.get_line_ending() == 'crlf')");
+}
+
+#[test]
+fn unapplied_scroll_and_line_ending_are_replaced_on_next_sync() {
+    let mut editor = lua_editor("one\n");
+    lua_ok(
+        &editor,
+        "rift.set_scroll(5, 2) rift.set_line_ending('crlf')",
+    );
+
+    drop_queued_writes(&mut editor);
+
+    lua_ok(
+        &editor,
+        "local top, left = rift.get_scroll() assert(top == 0 and left == 0) \
+         assert(rift.get_line_ending() == 'lf')",
+    );
+}
+
+#[test]
+fn annotation_edits_read_back_in_the_same_call() {
+    let mut editor = lua_editor("hello\n");
+    lua_ok(
+        &editor,
+        "_G.kept = rift.annotations.add{ kind = 'keep.mark', point = 1, actions = { { verb = 'go' } } } \
+         local a = rift.annotations.get(_G.kept) \
+         assert(a and a.kind == 'keep.mark' and a.interactive and a.anchor == 'point') \
+         assert(#rift.annotations.at(1) == 1) \
+         rift.annotations.update(_G.kept, { visible = false }) \
+         assert(rift.annotations.get(_G.kept).visible == false) \
+         local gone = rift.annotations.add{ kind = 'probe.a', line = 1 } \
+         rift.annotations.remove(gone) \
+         assert(rift.annotations.get(gone) == nil) \
+         rift.annotations.add{ kind = 'probe.b', line = 1 } \
+         rift.annotations.clear('probe.') \
+         assert(#rift.annotations.by_kind('probe.') == 0)",
+    );
+
+    sync_applied_writes(&mut editor);
+
+    lua_ok(
+        &editor,
+        "assert(rift.annotations.get(_G.kept).visible == false) \
+         assert(#rift.annotations.by_kind('probe.') == 0)",
+    );
+}
+
+#[test]
+fn unapplied_annotation_add_is_replaced_on_next_sync() {
+    let mut editor = lua_editor("hello\n");
+    lua_ok(
+        &editor,
+        "_G.id = rift.annotations.add{ kind = 'probe.mark', line = 1 }",
+    );
+
+    drop_queued_writes(&mut editor);
+
+    lua_ok(&editor, "assert(rift.annotations.get(_G.id) == nil)");
+}

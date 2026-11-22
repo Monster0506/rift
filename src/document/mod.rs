@@ -161,6 +161,23 @@ impl LineEnding {
             Self::Crlf => b"\r\n",
         }
     }
+
+    #[must_use]
+    pub(crate) fn from_name(name: &str) -> Self {
+        if name.eq_ignore_ascii_case("crlf") {
+            Self::Crlf
+        } else {
+            Self::LF
+        }
+    }
+
+    #[must_use]
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Self::LF => "lf",
+            Self::Crlf => "crlf",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]

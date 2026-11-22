@@ -66,6 +66,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
         crate::perf_span!("lua_state_sync", crate::perf::PerfFields::default());
+        self.plugin_host.resync_diverged_lua_state();
 
         let synced = self.plugin_host.lua_synced_keys();
         let keys = self.lua_sync_keys();
@@ -244,10 +245,7 @@ impl<T: TerminalBackend> Editor<T> {
             let col = cursor.saturating_sub(doc.buffer.line_index.get_line_start(row));
             (row, col)
         };
-        let line_ending = match doc.options.line_ending {
-            crate::document::LineEnding::LF => "lf",
-            crate::document::LineEnding::Crlf => "crlf",
-        };
+        let line_ending = doc.options.line_ending.name();
         LuaBufState {
             buf_id,
             buf_kind,
@@ -673,10 +671,7 @@ impl<T: TerminalBackend> Editor<T> {
                     self.drop_plugin_write(buf, "set_line_ending");
                     return;
                 };
-                doc.options.line_ending = match ending.to_lowercase().as_str() {
-                    "crlf" => crate::document::LineEnding::Crlf,
-                    _ => crate::document::LineEnding::LF,
-                };
+                doc.options.line_ending = crate::document::LineEnding::from_name(&ending);
             }
             PluginMutation::SetBufferVar { buf_id, key, value } => {
                 let doc_id = buf_id.or_else(|| self.document_manager.active_document_id());
@@ -1251,7 +1246,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let mut ann = Annotation::new(
                     Kind::new(kind),
                     annotation_anchor(&anchor),
-                    annotation_owner(owner.as_deref()),
+                    crate::plugin::annotation_owner(owner.as_deref()),
                 )
                 .with_payload(payload)
                 .with_visible(visible)
@@ -1429,16 +1424,6 @@ const fn annotation_anchor(
         AnnotationAnchorSpec::Line(l) => Anchor::Line(l),
         AnnotationAnchorSpec::Point(p) => Anchor::point(p),
         AnnotationAnchorSpec::Range(s, e) => Anchor::range(s, e),
-    }
-}
-
-fn annotation_owner(owner: Option<&str>) -> crate::annotations::AnnotationOwner {
-    use crate::annotations::AnnotationOwner;
-    match owner {
-        Some("system") => AnnotationOwner::System,
-        Some("lsp") => AnnotationOwner::Lsp,
-        Some("user") => AnnotationOwner::User,
-        _ => AnnotationOwner::Plugin(String::new()),
     }
 }
 

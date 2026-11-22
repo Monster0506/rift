@@ -138,6 +138,15 @@ fn lua_to_json(v: LuaValue) -> Result<serde_json::Value, String> {
     }
 }
 
+const fn anchor_view(anchor: &crate::plugin::AnnotationAnchorSpec) -> (&'static str, usize, usize) {
+    use crate::plugin::AnnotationAnchorSpec;
+    match *anchor {
+        AnnotationAnchorSpec::Line(l) => ("line", l, l),
+        AnnotationAnchorSpec::Point(p) => ("point", p, p),
+        AnnotationAnchorSpec::Range(s, e) => ("range", s, e),
+    }
+}
+
 /// Build the Lua table a query function hands back for one annotation.
 fn annotation_view_to_table(lua: &Lua, v: &AnnotationView) -> LuaResult<LuaTable> {
     let t = lua.create_table()?;
@@ -216,6 +225,7 @@ struct LuaSharedState {
     doc_options: crate::document::definitions::DocumentOptions,
     user_settings: crate::state::UserSettings,
     synced: SyncKeys,
+    diverged: Divergence,
     #[cfg(feature = "treesitter")]
     language_loader: Arc<crate::syntax::loader::LanguageLoader>,
     #[cfg(feature = "treesitter")]
@@ -225,6 +235,12 @@ struct LuaSharedState {
         (String, crate::syntax::loader::QueryKind),
         (String, Rc<tree_sitter::Query>),
     >,
+}
+
+#[derive(Default, Clone, Copy)]
+struct Divergence {
+    buf: bool,
+    annotations: bool,
 }
 
 #[derive(Default)]
@@ -259,6 +275,44 @@ impl LuaSharedState {
 
     fn doc_id(&self) -> crate::document::DocumentId {
         crate::document::DocumentId::new(self.buf_id as u64)
+    }
+
+    fn edit_local_buf(&mut self, edit: impl FnOnce(&mut crate::buffer::TextBuffer)) {
+        let Some(src) = self.buf_source.as_mut() else {
+            return;
+        };
+        let buffer = &mut src.buffer;
+        let (row, col) = self.cursor;
+        let pos = buffer.line_index.get_line_start(row) + col;
+        let _ = buffer.set_cursor(pos.min(buffer.len()));
+        edit(buffer);
+        let pos = buffer.cursor();
+        let row = buffer.line_index.get_line_at(pos);
+        self.cursor = (row, pos - buffer.line_index.get_line_start(row));
+        src.revision = buffer.revision;
+        src.line_count = buffer.get_total_lines();
+        self.diverged.buf = true;
+    }
+
+    fn move_local_cursor(&mut self, row: usize, col: usize) {
+        let Some(src) = &self.buf_source else {
+            return;
+        };
+        let buffer = &src.buffer;
+        let pos = buffer.line_col_position(row, col);
+        let row = buffer.line_index.get_line_at(pos);
+        self.cursor = (row, pos - buffer.line_index.get_line_start(row));
+    }
+
+    fn local_buf_read_only(&self) -> bool {
+        self.buf_list
+            .iter()
+            .any(|entry| entry.id == self.buf_id && entry.is_read_only)
+    }
+
+    fn edit_local_annotations(&mut self, edit: impl FnOnce(&mut Vec<AnnotationView>)) {
+        edit(Arc::make_mut(&mut self.annotations));
+        self.diverged.annotations = true;
     }
 
     fn plugin_disabled(&self, plugin: Option<&str>) -> bool {
@@ -302,6 +356,7 @@ impl LuaSharedState {
             doc_options: crate::document::definitions::DocumentOptions::default(),
             user_settings: crate::state::UserSettings::new(),
             synced: SyncKeys::default(),
+            diverged: Divergence::default(),
             #[cfg(feature = "treesitter")]
             language_loader,
             #[cfg(feature = "treesitter")]
@@ -993,6 +1048,11 @@ impl LuaHost {
                     v.push(s?);
                 }
                 let mut s = sh.borrow_mut();
+                let text = v.join("\n");
+                s.edit_local_buf(|buffer| {
+                    let _ = buffer.set_cursor(buffer.len());
+                    let _ = buffer.insert_str(&text);
+                });
                 let buf = s.doc_id();
                 s.mutations
                     .push(PluginMutation::AppendLines { buf, lines: v });
@@ -1037,6 +1097,7 @@ impl LuaHost {
     ) -> LuaResult<()> {
         // rift.annotations.* - author and handle interactive annotations
         let annotations = lua.create_table()?;
+        Self::register_annotation_add(lua, &annotations, shared)?;
         Self::register_annotation_edits(lua, &annotations, shared)?;
         Self::register_annotation_queries(lua, &annotations, shared)?;
         Self::register_annotation_hooks(lua, &annotations, shared)?;
@@ -1044,7 +1105,7 @@ impl LuaHost {
         Ok(())
     }
 
-    fn register_annotation_edits(
+    fn register_annotation_add(
         lua: &Lua,
         annotations: &LuaTable,
         shared: &Rc<RefCell<LuaSharedState>>,
@@ -1093,6 +1154,19 @@ impl LuaHost {
                     let id = s.next_annotation_id;
                     s.next_annotation_id += 1;
                     let buf = s.doc_id();
+                    let (anchor_name, start, end) = anchor_view(&anchor);
+                    let view = AnnotationView {
+                        id,
+                        kind: Arc::from(kind.as_str()),
+                        owner: crate::plugin::annotation_owner(owner.as_deref()).as_str(),
+                        anchor: anchor_name,
+                        start,
+                        end,
+                        payload: payload.clone(),
+                        visible,
+                        interactive: !actions.is_empty(),
+                    };
+                    s.edit_local_annotations(|views| views.push(view));
                     s.mutations.push(PluginMutation::AddAnnotation {
                         buf,
                         id,
@@ -1112,11 +1186,20 @@ impl LuaHost {
             annotations.set("add", f)?;
         }
 
+        Ok(())
+    }
+
+    fn register_annotation_edits(
+        lua: &Lua,
+        annotations: &LuaTable,
+        shared: &Rc<RefCell<LuaSharedState>>,
+    ) -> LuaResult<()> {
         // rift.annotations.remove(id)
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, id: u64| {
                 let mut s = sh.borrow_mut();
+                s.edit_local_annotations(|views| views.retain(|v| v.id != id));
                 let buf = s.doc_id();
                 s.mutations
                     .push(PluginMutation::RemoveAnnotation { buf, id });
@@ -1137,6 +1220,16 @@ impl LuaHost {
                 let visible: Option<bool> = opts.get("visible")?;
                 let presentation = build_presentation(&opts)?;
                 let mut s = sh.borrow_mut();
+                s.edit_local_annotations(|views| {
+                    if let Some(view) = views.iter_mut().find(|v| v.id == id) {
+                        if let Some(p) = &payload {
+                            view.payload = p.clone();
+                        }
+                        if let Some(v) = visible {
+                            view.visible = v;
+                        }
+                    }
+                });
                 let buf = s.doc_id();
                 s.mutations.push(PluginMutation::UpdateAnnotation {
                     buf,
@@ -1158,9 +1251,6 @@ impl LuaHost {
         annotations: &LuaTable,
         shared: &Rc<RefCell<LuaSharedState>>,
     ) -> LuaResult<()> {
-        // Queries read the pre-dispatch snapshot (like rift.get_lines), so they
-        // do not reflect adds queued earlier in the same handler.
-
         // rift.annotations.get(id) -> table | nil
         {
             let sh = Rc::clone(shared);
@@ -1244,6 +1334,7 @@ impl LuaHost {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, prefix: String| {
                 let mut s = sh.borrow_mut();
+                s.edit_local_annotations(|views| views.retain(|v| !v.kind.starts_with(&prefix)));
                 let buf = s.doc_id();
                 s.mutations.push(PluginMutation::ClearAnnotations {
                     buf,
@@ -1576,6 +1667,9 @@ impl LuaHost {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, text: String| {
                 let mut s = sh.borrow_mut();
+                s.edit_local_buf(|buffer| {
+                    let _ = buffer.insert_str(&text);
+                });
                 let buf = s.doc_id();
                 s.mutations
                     .push(PluginMutation::InsertAtCursor { buf, text });
@@ -1590,11 +1684,17 @@ impl LuaHost {
             let f = lua.create_function(move |_, n: i64| {
                 if n > 0 {
                     let mut s = sh.borrow_mut();
+                    let count = lua_index(n);
+                    if !s.local_buf_read_only() {
+                        s.edit_local_buf(|buffer| {
+                            for _ in 0..count {
+                                buffer.delete_backward();
+                            }
+                        });
+                    }
                     let buf = s.doc_id();
-                    s.mutations.push(PluginMutation::DeleteBefore {
-                        buf,
-                        count: lua_index(n),
-                    });
+                    s.mutations
+                        .push(PluginMutation::DeleteBefore { buf, count });
                 }
                 Ok(())
             })?;
@@ -1607,11 +1707,17 @@ impl LuaHost {
             let f = lua.create_function(move |_, n: i64| {
                 if n > 0 {
                     let mut s = sh.borrow_mut();
+                    let count = lua_index(n);
+                    if !s.local_buf_read_only() {
+                        s.edit_local_buf(|buffer| {
+                            for _ in 0..count {
+                                buffer.delete_forward();
+                            }
+                        });
+                    }
                     let buf = s.doc_id();
-                    s.mutations.push(PluginMutation::DeleteForward {
-                        buf,
-                        count: lua_index(n),
-                    });
+                    s.mutations
+                        .push(PluginMutation::DeleteForward { buf, count });
                 }
                 Ok(())
             })?;
@@ -1624,12 +1730,11 @@ impl LuaHost {
             let f = lua.create_function(move |_, (row, col): (i64, i64)| {
                 if row >= 1 {
                     let mut s = sh.borrow_mut();
+                    let (row, col) = (lua_index(row), lua_index(col));
+                    s.move_local_cursor(row - 1, col);
                     let buf = s.doc_id();
-                    s.mutations.push(PluginMutation::SetCursor {
-                        buf,
-                        row: lua_index(row),
-                        col: lua_index(col),
-                    });
+                    s.mutations
+                        .push(PluginMutation::SetCursor { buf, row, col });
                 }
                 Ok(())
             })?;
@@ -1654,11 +1759,20 @@ impl LuaHost {
                 }
                 if start >= 1 && end_ >= start {
                     let mut s = sh.borrow_mut();
+                    let (start, end) = (lua_index(start), lua_index(end_));
+                    s.edit_local_buf(|buffer| {
+                        if let Some(edit) = buffer.line_replacement(start - 1, end - 1, &v) {
+                            buffer.delete_range(edit.start, edit.end - edit.start);
+                            let _ = buffer.set_cursor(edit.start);
+                            let _ = buffer.insert_str(&edit.text);
+                            let _ = buffer.set_cursor(edit.cursor.min(buffer.len()));
+                        }
+                    });
                     let buf = s.doc_id();
                     s.mutations.push(PluginMutation::ReplaceLines {
                         buf,
-                        start: lua_index(start),
-                        end: lua_index(end_),
+                        start,
+                        end,
                         lines: v,
                     });
                 }
@@ -1702,8 +1816,22 @@ impl LuaHost {
                     LuaValue::String(s) => s.to_str()?.to_string(),
                     _ => return Ok(()),
                 };
-                let mut s = sh.borrow_mut();
-                let buf = resolver.is_local(&name).then(|| s.doc_id());
+                let mut guard = sh.borrow_mut();
+                let s = &mut *guard;
+                let local = resolver.is_local(&name);
+                let _ = resolver.set(
+                    &name,
+                    Some(&value_str),
+                    &mut s.doc_options,
+                    &mut s.user_settings,
+                    &mut |_| {},
+                );
+                if local {
+                    s.synced.doc_options = None;
+                } else {
+                    s.synced.user_settings = None;
+                }
+                let buf = local.then(|| s.doc_id());
                 s.mutations.push(PluginMutation::SetOption {
                     buf,
                     name,
@@ -1974,9 +2102,9 @@ impl LuaHost {
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, (top, left): (usize, usize)| {
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::SetScroll(top, left));
+                let mut s = sh.borrow_mut();
+                s.scroll = (top, left);
+                s.mutations.push(PluginMutation::SetScroll(top, left));
                 Ok(())
             })?;
             api.set("set_scroll", f)?;
@@ -1994,6 +2122,9 @@ impl LuaHost {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, ending: String| {
                 let mut s = sh.borrow_mut();
+                s.line_ending = crate::document::LineEnding::from_name(&ending)
+                    .name()
+                    .to_string();
                 let buf = s.doc_id();
                 s.mutations
                     .push(PluginMutation::SetLineEnding { buf, ending });
@@ -2151,6 +2282,7 @@ impl LuaHost {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, row: usize| {
                 let mut s = sh.borrow_mut();
+                s.move_local_cursor(row.saturating_sub(1), 0);
                 let buf = s.doc_id();
                 s.mutations.push(PluginMutation::CenterOnLine { buf, row });
                 Ok(())
@@ -2911,6 +3043,11 @@ impl LuaHost {
 
     pub(super) fn synced_keys(&self) -> SyncKeys {
         self.shared.borrow().synced
+    }
+
+    pub(super) fn take_divergence(&self) -> (bool, bool) {
+        let diverged = std::mem::take(&mut self.shared.borrow_mut().diverged);
+        (diverged.buf, diverged.annotations)
     }
 
     /// Update the buffer snapshot that `rift.get_lines()` and friends read.

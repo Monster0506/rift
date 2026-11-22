@@ -343,6 +343,36 @@ fn syntax_updated_hands_handlers_the_reparsed_tree() {
 }
 
 #[test]
+fn tree_is_stale_after_a_local_edit_until_the_next_syntax_update() {
+    let mut editor = editor_with(RUST, "rust");
+    lua(
+        &mut editor,
+        r#"
+        STALE = {}
+        rift.on("SyntaxUpdated", function()
+          STALE[#STALE + 1] = rift.treesitter.get_tree():is_stale()
+        end)
+        "#,
+    );
+    lua(
+        &mut editor,
+        r#"
+        local tree = rift.treesitter.get_tree()
+        assert(not tree:is_stale())
+        rift.insert("// note\n")
+        assert(tree:is_stale())
+        assert(rift.treesitter.get_tree():is_stale())
+        "#,
+    );
+    editor.update_and_render().unwrap();
+    lua(
+        &mut editor,
+        "assert(#STALE > 0 and STALE[#STALE] == false, tostring(STALE[#STALE])) \
+         assert(not rift.treesitter.get_tree():is_stale())",
+    );
+}
+
+#[test]
 fn parse_and_captures_at_cover_strings_and_injected_layers() {
     let mut editor = editor_with("# Title\n\n```rust\nlet x = 1;\n```\n", "markdown");
     set_cursor(&mut editor, "let");

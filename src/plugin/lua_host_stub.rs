@@ -43,6 +43,10 @@ impl LuaHost {
         SyncKeys::default()
     }
 
+    pub(super) const fn take_divergence(&self) -> (bool, bool) {
+        (false, false)
+    }
+
     #[must_use]
     pub(super) const fn dispatch_event(
         &self,
