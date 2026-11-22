@@ -149,6 +149,15 @@ impl NotificationManager {
         self.generation += 1;
     }
 
+    pub(crate) fn log(&mut self, kind: NotificationType, message: impl Into<String>) {
+        self.push_log_entry(MessageEntry::Notification {
+            time: SystemTime::now(),
+            kind,
+            message: message.into(),
+        });
+        self.generation += 1;
+    }
+
     pub(crate) fn log_job_event(
         &mut self,
         job_id: usize,

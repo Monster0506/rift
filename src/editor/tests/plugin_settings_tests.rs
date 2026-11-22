@@ -6,9 +6,11 @@ fn plugin_set_option_document_local_setting_updates_active_document() {
     let mut editor = create_editor();
     load_text(&mut editor, "hello\n");
 
+    let buf = Some(editor.active_document().id);
     editor
         .plugin_host
         .queue_mutation(PluginMutation::SetOption {
+            buf,
             name: "tab_width".to_string(),
             value: "8".to_string(),
         });
@@ -26,6 +28,7 @@ fn plugin_set_option_global_setting_updates_user_settings() {
     editor
         .plugin_host
         .queue_mutation(PluginMutation::SetOption {
+            buf: None,
             name: "ghostcut".to_string(),
             value: "false".to_string(),
         });
@@ -42,6 +45,7 @@ fn plugin_set_option_unknown_name_reports_error_without_panicking() {
     editor
         .plugin_host
         .queue_mutation(PluginMutation::SetOption {
+            buf: None,
             name: "not_a_real_setting".to_string(),
             value: "1".to_string(),
         });

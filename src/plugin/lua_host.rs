@@ -259,6 +259,10 @@ impl LuaSharedState {
         self.buf_source.as_ref().map_or(0, |s| s.line_count)
     }
 
+    fn doc_id(&self) -> crate::document::DocumentId {
+        crate::document::DocumentId::new(self.buf_id as u64)
+    }
+
     fn plugin_disabled(&self, plugin: Option<&str>) -> bool {
         plugin
             .and_then(|plugin| self.plugin_health.get(plugin))
@@ -992,9 +996,10 @@ impl LuaHost {
                 for s in lines.sequence_values::<String>() {
                     v.push(s?);
                 }
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::AppendLines(v));
+                let mut s = sh.borrow_mut();
+                let buf = s.doc_id();
+                s.mutations
+                    .push(PluginMutation::AppendLines { buf, lines: v });
                 Ok(())
             })?;
             api.set("append_lines", f)?;
@@ -1091,7 +1096,9 @@ impl LuaHost {
                     let mut s = sh.borrow_mut();
                     let id = s.next_annotation_id;
                     s.next_annotation_id += 1;
+                    let buf = s.doc_id();
                     s.mutations.push(PluginMutation::AddAnnotation {
+                        buf,
                         id,
                         kind,
                         anchor,
@@ -1113,9 +1120,10 @@ impl LuaHost {
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, id: u64| {
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::RemoveAnnotation(id));
+                let mut s = sh.borrow_mut();
+                let buf = s.doc_id();
+                s.mutations
+                    .push(PluginMutation::RemoveAnnotation { buf, id });
                 Ok(())
             })?;
             annotations.set("remove", f)?;
@@ -1132,14 +1140,15 @@ impl LuaHost {
                 };
                 let visible: Option<bool> = opts.get("visible")?;
                 let presentation = build_presentation(&opts)?;
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::UpdateAnnotation {
-                        id,
-                        payload,
-                        visible,
-                        presentation,
-                    });
+                let mut s = sh.borrow_mut();
+                let buf = s.doc_id();
+                s.mutations.push(PluginMutation::UpdateAnnotation {
+                    buf,
+                    id,
+                    payload,
+                    visible,
+                    presentation,
+                });
                 Ok(())
             })?;
             annotations.set("update", f)?;
@@ -1238,11 +1247,12 @@ impl LuaHost {
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, prefix: String| {
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::ClearAnnotations {
-                        kind_prefix: prefix,
-                    });
+                let mut s = sh.borrow_mut();
+                let buf = s.doc_id();
+                s.mutations.push(PluginMutation::ClearAnnotations {
+                    buf,
+                    kind_prefix: prefix,
+                });
                 Ok(())
             })?;
             annotations.set("clear", f)?;
@@ -1569,9 +1579,10 @@ impl LuaHost {
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, text: String| {
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::InsertAtCursor(text));
+                let mut s = sh.borrow_mut();
+                let buf = s.doc_id();
+                s.mutations
+                    .push(PluginMutation::InsertAtCursor { buf, text });
                 Ok(())
             })?;
             api.set("insert", f)?;
@@ -1582,9 +1593,12 @@ impl LuaHost {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, n: i64| {
                 if n > 0 {
-                    sh.borrow_mut()
-                        .mutations
-                        .push(PluginMutation::DeleteBefore(lua_index(n)));
+                    let mut s = sh.borrow_mut();
+                    let buf = s.doc_id();
+                    s.mutations.push(PluginMutation::DeleteBefore {
+                        buf,
+                        count: lua_index(n),
+                    });
                 }
                 Ok(())
             })?;
@@ -1596,9 +1610,12 @@ impl LuaHost {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, n: i64| {
                 if n > 0 {
-                    sh.borrow_mut()
-                        .mutations
-                        .push(PluginMutation::DeleteForward(lua_index(n)));
+                    let mut s = sh.borrow_mut();
+                    let buf = s.doc_id();
+                    s.mutations.push(PluginMutation::DeleteForward {
+                        buf,
+                        count: lua_index(n),
+                    });
                 }
                 Ok(())
             })?;
@@ -1610,7 +1627,10 @@ impl LuaHost {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, (row, col): (i64, i64)| {
                 if row >= 1 {
-                    sh.borrow_mut().mutations.push(PluginMutation::SetCursor {
+                    let mut s = sh.borrow_mut();
+                    let buf = s.doc_id();
+                    s.mutations.push(PluginMutation::SetCursor {
+                        buf,
                         row: lua_index(row),
                         col: lua_index(col),
                     });
@@ -1637,13 +1657,14 @@ impl LuaHost {
                     v.push(s?);
                 }
                 if start >= 1 && end_ >= start {
-                    sh.borrow_mut()
-                        .mutations
-                        .push(PluginMutation::ReplaceLines {
-                            start: lua_index(start),
-                            end: lua_index(end_),
-                            lines: v,
-                        });
+                    let mut s = sh.borrow_mut();
+                    let buf = s.doc_id();
+                    s.mutations.push(PluginMutation::ReplaceLines {
+                        buf,
+                        start: lua_index(start),
+                        end: lua_index(end_),
+                        lines: v,
+                    });
                 }
                 Ok(())
             })?;
@@ -1670,6 +1691,10 @@ impl LuaHost {
         api: &LuaTable,
         shared: &Rc<RefCell<LuaSharedState>>,
     ) -> LuaResult<()> {
+        let resolver = crate::command_line::settings::resolver::SettingsResolver::new(
+            crate::document::definitions::create_document_settings_registry(),
+            crate::command_line::settings::definitions::create_settings_registry(),
+        );
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, (name, value): (String, LuaValue)| {
@@ -1681,7 +1706,10 @@ impl LuaHost {
                     LuaValue::String(s) => s.to_str()?.to_string(),
                     _ => return Ok(()),
                 };
-                sh.borrow_mut().mutations.push(PluginMutation::SetOption {
+                let mut s = sh.borrow_mut();
+                let buf = resolver.is_local(&name).then(|| s.doc_id());
+                s.mutations.push(PluginMutation::SetOption {
+                    buf,
                     name,
                     value: value_str,
                 });
@@ -1692,10 +1720,6 @@ impl LuaHost {
 
         {
             let sh = Rc::clone(shared);
-            let resolver = crate::command_line::settings::resolver::SettingsResolver::new(
-                crate::document::definitions::create_document_settings_registry(),
-                crate::command_line::settings::definitions::create_settings_registry(),
-            );
             let f = lua.create_function(move |lua, name: String| {
                 let s = sh.borrow();
                 resolver
@@ -1805,7 +1829,10 @@ impl LuaHost {
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, force: Option<bool>| {
-                sh.borrow_mut().mutations.push(PluginMutation::CloseBuffer {
+                let mut s = sh.borrow_mut();
+                let buf = s.doc_id();
+                s.mutations.push(PluginMutation::CloseBuffer {
+                    buf,
                     force: force.unwrap_or(false),
                 });
                 Ok(())
@@ -1833,11 +1860,12 @@ impl LuaHost {
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, force: Option<bool>| {
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::ReloadBuffer {
-                        force: force.unwrap_or(false),
-                    });
+                let mut s = sh.borrow_mut();
+                let buf = s.doc_id();
+                s.mutations.push(PluginMutation::ReloadBuffer {
+                    buf,
+                    force: force.unwrap_or(false),
+                });
                 Ok(())
             })?;
             api.set("reload_buf", f)?;
@@ -1870,7 +1898,9 @@ impl LuaHost {
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, ()| {
-                sh.borrow_mut().mutations.push(PluginMutation::SaveBuffer);
+                let mut s = sh.borrow_mut();
+                let buf = s.doc_id();
+                s.mutations.push(PluginMutation::SaveBuffer { buf });
                 Ok(())
             })?;
             api.set("save", f)?;
@@ -1966,9 +1996,10 @@ impl LuaHost {
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, ending: String| {
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::SetLineEnding(ending));
+                let mut s = sh.borrow_mut();
+                let buf = s.doc_id();
+                s.mutations
+                    .push(PluginMutation::SetLineEnding { buf, ending });
                 Ok(())
             })?;
             api.set("set_line_ending", f)?;
@@ -2122,9 +2153,9 @@ impl LuaHost {
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, row: usize| {
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::CenterOnLine(row));
+                let mut s = sh.borrow_mut();
+                let buf = s.doc_id();
+                s.mutations.push(PluginMutation::CenterOnLine { buf, row });
                 Ok(())
             })?;
             api.set("center_on_line", f)?;

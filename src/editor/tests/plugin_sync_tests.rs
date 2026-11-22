@@ -607,3 +607,55 @@ fn shell_done_handler_reads_state_changed_after_the_spawn() {
 
     lua_ok(&editor, "assert(_G.seen == 2, tostring(_G.seen))");
 }
+
+fn editor_with_two_buffers() -> (Editor<MockTerminal>, u64, u64) {
+    let mut editor = lua_editor("first");
+    let first = editor.active_document_id().get();
+    lua_ok(&editor, "rift.create_scratch_buf('second', { 'second' })");
+    editor.apply_plugin_mutations();
+    let second = editor.active_document_id().get();
+    assert_ne!(first, second);
+    editor.update_lua_state();
+    (editor, first, second)
+}
+
+fn buffer_text(editor: &Editor<MockTerminal>, id: u64) -> String {
+    editor
+        .document_manager
+        .get_document(crate::document::DocumentId::new(id))
+        .unwrap()
+        .buffer
+        .to_string()
+}
+
+#[test]
+fn edit_queued_after_switch_buf_lands_in_the_buffer_current_when_queued() {
+    let (mut editor, first, second) = editor_with_two_buffers();
+
+    lua_ok(
+        &editor,
+        &format!("rift.switch_buf({first}) rift.set_cursor(1, 0) rift.insert('x')"),
+    );
+    editor.apply_plugin_mutations();
+
+    let active = editor.document_manager.active_document_id().unwrap();
+    assert_eq!(active.get(), first);
+    assert_eq!(buffer_text(&editor, first), "first");
+    assert_eq!(buffer_text(&editor, second), "xsecond");
+}
+
+#[test]
+fn edit_queued_before_switch_buf_lands_in_the_buffer_current_when_queued() {
+    let (mut editor, first, second) = editor_with_two_buffers();
+
+    lua_ok(
+        &editor,
+        &format!("rift.set_cursor(1, 0) rift.insert('x') rift.switch_buf({first})"),
+    );
+    editor.apply_plugin_mutations();
+
+    let active = editor.document_manager.active_document_id().unwrap();
+    assert_eq!(active.get(), first);
+    assert_eq!(buffer_text(&editor, first), "first");
+    assert_eq!(buffer_text(&editor, second), "xsecond");
+}

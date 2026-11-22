@@ -1,20 +1,28 @@
 use super::common::*;
+use crate::document::DocumentId;
 use crate::plugin::PluginMutation;
 
-fn apply(text: &str, mutation: PluginMutation) -> (String, usize) {
+fn apply(text: &str, mutation: impl FnOnce(DocumentId) -> PluginMutation) -> (String, usize) {
     let mut editor = create_editor();
     load_text(&mut editor, text);
-    editor.plugin_host.queue_mutation(mutation);
+    let buf = editor.active_document().id;
+    editor.plugin_host.queue_mutation(mutation(buf));
     editor.apply_plugin_mutations();
     let doc = editor.active_document();
     (doc.buffer.to_string(), doc.buffer.cursor())
 }
 
-fn replace_lines(start: usize, end: usize, lines: &[&str]) -> PluginMutation {
-    PluginMutation::ReplaceLines {
+fn replace_lines(
+    start: usize,
+    end: usize,
+    lines: &[&str],
+) -> impl FnOnce(DocumentId) -> PluginMutation {
+    let lines = lines.iter().map(ToString::to_string).collect();
+    move |buf| PluginMutation::ReplaceLines {
+        buf,
         start,
         end,
-        lines: lines.iter().map(ToString::to_string).collect(),
+        lines,
     }
 }
 
@@ -45,15 +53,26 @@ fn replace_lines_with_an_empty_list_deletes_whole_lines() {
 
 #[test]
 fn set_cursor_clamps_the_column_to_its_line() {
-    let (_, cursor) = apply(
-        "one\ntwo\nthree",
-        PluginMutation::SetCursor { row: 1, col: 50 },
-    );
+    let (_, cursor) = apply("one\ntwo\nthree", |buf| PluginMutation::SetCursor {
+        buf,
+        row: 1,
+        col: 50,
+    });
     assert_eq!(cursor, 3);
 
-    let (_, cursor) = apply(
-        "one\ntwo\nthree",
-        PluginMutation::SetCursor { row: 9, col: 2 },
-    );
+    let (_, cursor) = apply("one\ntwo\nthree", |buf| PluginMutation::SetCursor {
+        buf,
+        row: 9,
+        col: 2,
+    });
     assert_eq!(cursor, 10);
+}
+
+#[test]
+fn writes_queued_for_a_closed_buffer_do_not_reach_the_active_one() {
+    let (text, _) = apply("one", |_| PluginMutation::InsertAtCursor {
+        buf: DocumentId::new(9999),
+        text: "stray ".to_string(),
+    });
+    assert_eq!(text, "one");
 }

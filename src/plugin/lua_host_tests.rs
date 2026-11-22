@@ -38,7 +38,11 @@ fn test_set_option_queues_mutation_with_string_value() {
     let mutations = host.drain_mutations();
     assert_eq!(mutations.len(), 1);
     match &mutations[0] {
-        PluginMutation::SetOption { name, value } => {
+        PluginMutation::SetOption {
+            buf: None,
+            name,
+            value,
+        } => {
             assert_eq!(name, "ghostcut");
             assert_eq!(value, "true");
         }
@@ -444,7 +448,7 @@ fn test_annotations_clear_queues_mutation() {
     let mutations = host.drain_mutations();
     assert_eq!(mutations.len(), 1);
     match &mutations[0] {
-        PluginMutation::ClearAnnotations { kind_prefix } => assert_eq!(kind_prefix, "md."),
+        PluginMutation::ClearAnnotations { kind_prefix, .. } => assert_eq!(kind_prefix, "md."),
         _ => panic!("expected ClearAnnotations"),
     }
 }
@@ -585,7 +589,7 @@ fn test_append_lines_queues_mutation() {
     let mutations = host.drain_mutations();
     assert_eq!(mutations.len(), 1);
     match &mutations[0] {
-        PluginMutation::AppendLines(lines) => {
+        PluginMutation::AppendLines { lines, .. } => {
             assert_eq!(lines, &vec!["line1".to_string(), "line2".to_string()]);
         }
         _ => panic!("expected AppendLines"),
@@ -831,7 +835,7 @@ fn test_insert_queues_mutation() {
     let mutations = host.drain_mutations();
     assert_eq!(mutations.len(), 1);
     match &mutations[0] {
-        PluginMutation::InsertAtCursor(text) => assert_eq!(text, "hello"),
+        PluginMutation::InsertAtCursor { text, .. } => assert_eq!(text, "hello"),
         _ => panic!("expected InsertAtCursor"),
     }
 }

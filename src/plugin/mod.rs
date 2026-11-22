@@ -213,22 +213,32 @@ pub(crate) enum PluginMutation {
         message: String,
         level: NotificationType,
     },
-    /// Append lines to the end of the active buffer.
-    AppendLines(Vec<String>),
-    /// Insert text at the current cursor position in the active buffer.
-    InsertAtCursor(String),
-    /// Delete `n` characters immediately before the cursor.
-    DeleteBefore(usize),
-    /// Delete `n` characters immediately after the cursor.
-    DeleteForward(usize),
+    AppendLines {
+        buf: DocumentId,
+        lines: Vec<String>,
+    },
+    InsertAtCursor {
+        buf: DocumentId,
+        text: String,
+    },
+    DeleteBefore {
+        buf: DocumentId,
+        count: usize,
+    },
+    DeleteForward {
+        buf: DocumentId,
+        count: usize,
+    },
     /// Move the cursor to a specific position. `row` is 1-indexed; `col` is 0-indexed.
     SetCursor {
+        buf: DocumentId,
         row: usize,
         col: usize,
     },
     /// Replace a line range with new content. `start` and `end` are 1-indexed and inclusive.
     /// The replaced region is deleted and `lines` are inserted in its place.
     ReplaceLines {
+        buf: DocumentId,
         start: usize,
         end: usize,
         lines: Vec<String>,
@@ -253,11 +263,13 @@ pub(crate) enum PluginMutation {
     },
     /// Set a per-document option. Values are strings such as `"4"` or `"true"`.
     SetOption {
+        buf: Option<DocumentId>,
         name: String,
         value: String,
     },
-    /// Trigger a save of the active buffer to disk.
-    SaveBuffer,
+    SaveBuffer {
+        buf: DocumentId,
+    },
     /// Open a plugin-owned floating window.
     OpenFloat(PluginFloat),
     /// Close the currently open plugin float.
@@ -274,15 +286,20 @@ pub(crate) enum PluginMutation {
     },
     /// Set the viewport scroll position (`top_line`, `left_col`).
     SetScroll(usize, usize),
-    /// Set the line ending for the active document ("lf" or "crlf").
-    SetLineEnding(String),
+    SetLineEnding {
+        buf: DocumentId,
+        ending: String,
+    },
     /// Remove a key binding for the selected mode and key sequence.
     UnmapKey {
         mode: String,
         keys: String,
     },
     /// Move the cursor to `row` (1-indexed) and center the viewport on it.
-    CenterOnLine(usize),
+    CenterOnLine {
+        buf: DocumentId,
+        row: usize,
+    },
     /// Set the `CursorHold` idle delay in milliseconds.
     SetCursorHoldDelay(u32),
     /// Switch the active buffer to the given document ID.
@@ -292,8 +309,8 @@ pub(crate) enum PluginMutation {
         path: String,
         force: bool,
     },
-    /// Close the current buffer. `force` discards unsaved changes.
     CloseBuffer {
+        buf: DocumentId,
         force: bool,
     },
     /// Move the focused window in the given direction.
@@ -359,9 +376,8 @@ pub(crate) enum PluginMutation {
     LspDiagnosticPrev,
     /// Open the diagnostics panel.
     LspDiagnosticsPanel,
-    /// Add an annotation to the active document (plugin-authored). `id` is the
-    /// caller pre-claimed id (so `add{}` can return it synchronously).
     AddAnnotation {
+        buf: DocumentId,
         id: u64,
         kind: String,
         anchor: AnnotationAnchorSpec,
@@ -374,15 +390,18 @@ pub(crate) enum PluginMutation {
     },
     /// Mutate an existing annotation in place; `None` fields are left unchanged.
     UpdateAnnotation {
+        buf: DocumentId,
         id: u64,
         payload: Option<crate::annotations::value::Value>,
         visible: Option<bool>,
         presentation: Option<crate::annotations::presentation::Presentation>,
     },
-    /// Remove an annotation from the active document by id.
-    RemoveAnnotation(u64),
-    /// Remove every annotation in the active document whose kind starts with this prefix.
+    RemoveAnnotation {
+        buf: DocumentId,
+        id: u64,
+    },
     ClearAnnotations {
+        buf: DocumentId,
         kind_prefix: String,
     },
     /// Register a handler for an annotation (kind, verb). With `command` set, the
@@ -408,8 +427,8 @@ pub(crate) enum PluginMutation {
         name: String,
         lines: Vec<String>,
     },
-    /// Reload active buffer content from disk. Force discards unsaved changes.
     ReloadBuffer {
+        buf: DocumentId,
         force: bool,
     },
     /// Register a custom buffer kind from a plugin.

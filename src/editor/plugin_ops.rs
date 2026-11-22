@@ -444,20 +444,20 @@ impl<T: TerminalBackend> Editor<T> {
             | PluginMutation::SetCursorHoldDelay(_)
             | PluginMutation::ExecAction(_)
             | PluginMutation::SetOption { .. } => self.apply_ui_mutation(mutation),
-            PluginMutation::AppendLines(_)
-            | PluginMutation::InsertAtCursor(_)
-            | PluginMutation::DeleteBefore(_)
-            | PluginMutation::DeleteForward(_)
+            PluginMutation::AppendLines { .. }
+            | PluginMutation::InsertAtCursor { .. }
+            | PluginMutation::DeleteBefore { .. }
+            | PluginMutation::DeleteForward { .. }
             | PluginMutation::ReplaceLines { .. } => self.apply_text_mutation(mutation),
             PluginMutation::SetCursor { .. }
-            | PluginMutation::CenterOnLine(_)
+            | PluginMutation::CenterOnLine { .. }
             | PluginMutation::SetScroll(..)
-            | PluginMutation::SetLineEnding(_)
+            | PluginMutation::SetLineEnding { .. }
             | PluginMutation::SetBufferVar { .. } => self.apply_cursor_mutation(mutation),
             PluginMutation::MoveWindow { .. }
             | PluginMutation::SwapWindows
             | PluginMutation::FocusPreviousWindow => self.apply_window_mutation(&mutation),
-            PluginMutation::SaveBuffer
+            PluginMutation::SaveBuffer { .. }
             | PluginMutation::SwitchToBuffer(_)
             | PluginMutation::OpenFile { .. }
             | PluginMutation::CloseBuffer { .. }
@@ -494,7 +494,7 @@ impl<T: TerminalBackend> Editor<T> {
             PluginMutation::LspRegisterServer { .. } => self.apply_lsp_mutation(mutation),
             PluginMutation::AddAnnotation { .. }
             | PluginMutation::UpdateAnnotation { .. }
-            | PluginMutation::RemoveAnnotation(_)
+            | PluginMutation::RemoveAnnotation { .. }
             | PluginMutation::ClearAnnotations { .. } => {
                 self.apply_annotation_mutation(mutation);
             }
@@ -520,6 +520,26 @@ impl<T: TerminalBackend> Editor<T> {
         );
     }
 
+    fn drop_plugin_write(&mut self, buf: crate::document::DocumentId, write: &str) {
+        let reason = if self.document_manager.get_document(buf).is_some() {
+            "is no longer active"
+        } else {
+            "is closed"
+        };
+        self.state.error_manager.notifications_mut().log(
+            crate::notification::NotificationType::Info,
+            format!("plugin {write} skipped: buffer {} {reason}", buf.get()),
+        );
+    }
+
+    fn plugin_target_is_active(&mut self, buf: crate::document::DocumentId, write: &str) -> bool {
+        if self.document_manager.active_document_id() == Some(buf) {
+            return true;
+        }
+        self.drop_plugin_write(buf, write);
+        false
+    }
+
     fn apply_ui_mutation(&mut self, mutation: PluginMutation) {
         match mutation {
             PluginMutation::Notify { message, level } => {
@@ -538,11 +558,15 @@ impl<T: TerminalBackend> Editor<T> {
                     self.handle_action(&action);
                 }
             }
-            PluginMutation::SetOption { name, value } => {
+            PluginMutation::SetOption { buf, name, value } => {
                 let mut errors = Vec::new();
                 let mut error_handler = |e: crate::error::RiftError| errors.push(e);
-                match self.document_manager.active_document_mut() {
-                    Some(doc) => {
+                match buf {
+                    Some(buf) => {
+                        let Some(doc) = self.document_manager.get_document_mut(buf) else {
+                            self.drop_plugin_write(buf, "set_option");
+                            return;
+                        };
                         let resolver =
                             crate::command_line::settings::resolver::SettingsResolver::new(
                                 self.document_settings_registry,
@@ -574,87 +598,96 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn apply_text_mutation(&mut self, mutation: PluginMutation) {
+        let buf = match &mutation {
+            PluginMutation::AppendLines { buf, .. }
+            | PluginMutation::InsertAtCursor { buf, .. }
+            | PluginMutation::DeleteBefore { buf, .. }
+            | PluginMutation::DeleteForward { buf, .. }
+            | PluginMutation::ReplaceLines { buf, .. } => *buf,
+            _ => {
+                self.report_misrouted();
+                return;
+            }
+        };
+        let Some(doc) = self.document_manager.get_document_mut(buf) else {
+            self.drop_plugin_write(buf, "text edit");
+            return;
+        };
         match mutation {
-            PluginMutation::AppendLines(lines) => {
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    let end = doc.buffer.len();
-                    let _ = doc.buffer.set_cursor(end);
-                    let text = lines.join("\n");
-                    let _ = doc.insert_str(&text);
-                }
-                self.do_incremental_syntax_parse();
+            PluginMutation::AppendLines { lines, .. } => {
+                let end = doc.buffer.len();
+                let _ = doc.buffer.set_cursor(end);
+                let _ = doc.insert_str(&lines.join("\n"));
             }
-            PluginMutation::InsertAtCursor(text) => {
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    let _ = doc.insert_str(&text);
-                }
-                self.do_incremental_syntax_parse();
+            PluginMutation::InsertAtCursor { text, .. } => {
+                let _ = doc.insert_str(&text);
             }
-            PluginMutation::DeleteBefore(n) => {
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    for _ in 0..n {
-                        doc.delete_backward();
+            PluginMutation::DeleteBefore { count, .. } => {
+                for _ in 0..count {
+                    doc.delete_backward();
+                }
+            }
+            PluginMutation::DeleteForward { count, .. } => {
+                for _ in 0..count {
+                    doc.delete_forward();
+                }
+            }
+            PluginMutation::ReplaceLines {
+                start, end, lines, ..
+            } => {
+                if let Some(edit) = doc.buffer.line_replacement(
+                    start.saturating_sub(1),
+                    end.saturating_sub(1),
+                    &lines,
+                ) {
+                    let _ = doc.delete_range(edit.start, edit.end);
+                    let _ = doc.buffer.set_cursor(edit.start);
+                    if !edit.text.is_empty() {
+                        let _ = doc.insert_str(&edit.text);
                     }
+                    let _ = doc.buffer.set_cursor(edit.cursor.min(doc.buffer.len()));
                 }
-                self.do_incremental_syntax_parse();
             }
-            PluginMutation::DeleteForward(n) => {
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    for _ in 0..n {
-                        doc.delete_forward();
-                    }
-                }
-                self.do_incremental_syntax_parse();
-            }
-            PluginMutation::ReplaceLines { start, end, lines } => {
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    if let Some(edit) = doc.buffer.line_replacement(
-                        start.saturating_sub(1),
-                        end.saturating_sub(1),
-                        &lines,
-                    ) {
-                        let _ = doc.delete_range(edit.start, edit.end);
-                        let _ = doc.buffer.set_cursor(edit.start);
-                        if !edit.text.is_empty() {
-                            let _ = doc.insert_str(&edit.text);
-                        }
-                        let _ = doc.buffer.set_cursor(edit.cursor.min(doc.buffer.len()));
-                    }
-                }
-                self.do_incremental_syntax_parse();
-            }
-            _ => self.report_misrouted(),
+            _ => {}
         }
+        self.do_incremental_syntax_parse_for(buf);
     }
 
     fn apply_cursor_mutation(&mut self, mutation: PluginMutation) {
         match mutation {
-            PluginMutation::SetCursor { row, col } => {
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    let pos = doc.buffer.line_col_position(row.saturating_sub(1), col);
-                    let _ = doc.buffer.set_cursor(pos);
-                }
+            PluginMutation::SetCursor { buf, row, col } => {
+                let Some(doc) = self.document_manager.get_document_mut(buf) else {
+                    self.drop_plugin_write(buf, "set_cursor");
+                    return;
+                };
+                let pos = doc.buffer.line_col_position(row.saturating_sub(1), col);
+                let _ = doc.buffer.set_cursor(pos);
             }
-            PluginMutation::CenterOnLine(row) => {
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    let row0 = row.saturating_sub(1);
-                    let total = doc.buffer.get_total_lines();
-                    let row0 = row0.min(total.saturating_sub(1));
-                    let line_start = doc.buffer.line_index.get_line_start(row0);
-                    let _ = doc.buffer.set_cursor(line_start);
+            PluginMutation::CenterOnLine { buf, row } => {
+                let active = self.document_manager.active_document_id() == Some(buf);
+                let Some(doc) = self.document_manager.get_document_mut(buf) else {
+                    self.drop_plugin_write(buf, "center_on_line");
+                    return;
+                };
+                let total = doc.buffer.get_total_lines();
+                let row0 = row.saturating_sub(1).min(total.saturating_sub(1));
+                let _ = doc.buffer.set_cursor(doc.buffer.line_col_position(row0, 0));
+                if active {
                     self.render_system.viewport.center_on(row0, total);
                 }
             }
             PluginMutation::SetScroll(top, left) => {
                 self.render_system.viewport.set_scroll(top, left);
             }
-            PluginMutation::SetLineEnding(ending) => {
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    doc.options.line_ending = match ending.to_lowercase().as_str() {
-                        "crlf" => crate::document::LineEnding::Crlf,
-                        _ => crate::document::LineEnding::LF,
-                    };
-                }
+            PluginMutation::SetLineEnding { buf, ending } => {
+                let Some(doc) = self.document_manager.get_document_mut(buf) else {
+                    self.drop_plugin_write(buf, "set_line_ending");
+                    return;
+                };
+                doc.options.line_ending = match ending.to_lowercase().as_str() {
+                    "crlf" => crate::document::LineEnding::Crlf,
+                    _ => crate::document::LineEnding::LF,
+                };
             }
             PluginMutation::SetBufferVar { buf_id, key, value } => {
                 let doc_id = buf_id.or_else(|| self.document_manager.active_document_id());
@@ -728,8 +761,10 @@ impl<T: TerminalBackend> Editor<T> {
         origin: Option<PluginGeneration>,
     ) {
         match mutation {
-            PluginMutation::SaveBuffer => {
-                self.do_save();
+            PluginMutation::SaveBuffer { buf } => {
+                if self.plugin_target_is_active(buf, "save") {
+                    self.do_save();
+                }
             }
             PluginMutation::SwitchToBuffer(id) => {
                 if self.document_manager.switch_to_document(id).is_ok() {
@@ -750,8 +785,10 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 let _ = self.open_file(Some(path), force);
             }
-            PluginMutation::CloseBuffer { force } => {
-                self.do_quit(force);
+            PluginMutation::CloseBuffer { buf, force } => {
+                if self.plugin_target_is_active(buf, "close_buf") {
+                    self.do_quit(force);
+                }
             }
             PluginMutation::CreateScratchBuf { name, lines } => {
                 if let Err(e) = self.create_scratch_buffer(name, &lines) {
@@ -761,8 +798,10 @@ impl<T: TerminalBackend> Editor<T> {
                     );
                 }
             }
-            PluginMutation::ReloadBuffer { force } => {
-                let _ = self.open_file(None, force);
+            PluginMutation::ReloadBuffer { buf, force } => {
+                if self.plugin_target_is_active(buf, "reload_buf") {
+                    let _ = self.open_file(None, force);
+                }
             }
             PluginMutation::CreateBuffer {
                 kind,
@@ -1192,6 +1231,20 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn apply_annotation_mutation(&mut self, mutation: PluginMutation) {
+        let buf = match &mutation {
+            PluginMutation::AddAnnotation { buf, .. }
+            | PluginMutation::UpdateAnnotation { buf, .. }
+            | PluginMutation::RemoveAnnotation { buf, .. }
+            | PluginMutation::ClearAnnotations { buf, .. } => *buf,
+            _ => {
+                self.report_misrouted();
+                return;
+            }
+        };
+        let Some(doc) = self.document_manager.get_document_mut(buf) else {
+            self.drop_plugin_write(buf, "annotation edit");
+            return;
+        };
         match mutation {
             PluginMutation::AddAnnotation {
                 id,
@@ -1203,6 +1256,7 @@ impl<T: TerminalBackend> Editor<T> {
                 visible,
                 stickiness,
                 owner,
+                ..
             } => {
                 use crate::annotations::{action::Action, kind::Kind, Annotation, Stickiness};
                 let mut ann = Annotation::new(
@@ -1231,44 +1285,37 @@ impl<T: TerminalBackend> Editor<T> {
                 if let Some(pres) = presentation {
                     ann = ann.with_presentation(pres);
                 }
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    doc.annotations
-                        .add_with_id(crate::annotations::AnnotationId::new(id), ann);
-                }
+                doc.annotations
+                    .add_with_id(crate::annotations::AnnotationId::new(id), ann);
             }
             PluginMutation::UpdateAnnotation {
                 id,
                 payload,
                 visible,
                 presentation,
+                ..
             } => {
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    doc.annotations
-                        .update(crate::annotations::AnnotationId::new(id), |a| {
-                            if let Some(p) = payload {
-                                a.payload = p;
-                            }
-                            if let Some(v) = visible {
-                                a.visible = v;
-                            }
-                            if let Some(pres) = presentation {
-                                a.presentation = Some(pres);
-                            }
-                        });
-                }
+                doc.annotations
+                    .update(crate::annotations::AnnotationId::new(id), |a| {
+                        if let Some(p) = payload {
+                            a.payload = p;
+                        }
+                        if let Some(v) = visible {
+                            a.visible = v;
+                        }
+                        if let Some(pres) = presentation {
+                            a.presentation = Some(pres);
+                        }
+                    });
             }
-            PluginMutation::RemoveAnnotation(id) => {
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    doc.annotations
-                        .remove(crate::annotations::AnnotationId::new(id));
-                }
+            PluginMutation::RemoveAnnotation { id, .. } => {
+                doc.annotations
+                    .remove(crate::annotations::AnnotationId::new(id));
             }
-            PluginMutation::ClearAnnotations { kind_prefix } => {
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    doc.annotations.clear_by_kind_prefix(&kind_prefix);
-                }
+            PluginMutation::ClearAnnotations { kind_prefix, .. } => {
+                doc.annotations.clear_by_kind_prefix(&kind_prefix);
             }
-            _ => self.report_misrouted(),
+            _ => {}
         }
     }
 

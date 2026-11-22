@@ -58,9 +58,13 @@ fn host_generation_lifecycle_and_mutation_filtering() {
     host.queue_mutation(PluginMutation::CloseFloat);
 
     // Active generation mutation is accepted
-    assert!(
-        host.queue_mutation_with_origin(PluginMutation::InsertAtCursor("active".to_string()), gen,)
-    );
+    assert!(host.queue_mutation_with_origin(
+        PluginMutation::InsertAtCursor {
+            buf: DocumentId::new(1),
+            text: "active".to_string(),
+        },
+        gen,
+    ));
     assert_eq!(host.queued_mutation_count(), 2);
 
     // Mark retiring
@@ -68,8 +72,13 @@ fn host_generation_lifecycle_and_mutation_filtering() {
     assert!(host.is_generation_retiring(gen));
 
     // New mutation from retiring generation is rejected
-    assert!(!host
-        .queue_mutation_with_origin(PluginMutation::InsertAtCursor("rejected".to_string()), gen,));
+    assert!(!host.queue_mutation_with_origin(
+        PluginMutation::InsertAtCursor {
+            buf: DocumentId::new(1),
+            text: "rejected".to_string(),
+        },
+        gen,
+    ));
     assert_eq!(host.queued_mutation_count(), 2);
 
     // Drain discards the retiring generation's mutation and preserves native
@@ -87,7 +96,12 @@ fn discard_mutations_for_generation_explicitly() {
     let gen2 = host.new_generation(pid2);
 
     host.queue_mutation_with_origin(PluginMutation::CloseFloat, gen1);
-    host.queue_mutation_with_origin(PluginMutation::SaveBuffer, gen2);
+    host.queue_mutation_with_origin(
+        PluginMutation::SaveBuffer {
+            buf: DocumentId::new(1),
+        },
+        gen2,
+    );
     host.queue_mutation(PluginMutation::SwapWindows);
 
     assert_eq!(host.queued_mutation_count(), 3);
@@ -97,7 +111,7 @@ fn discard_mutations_for_generation_explicitly() {
 
     let drained: Vec<PluginMutation> = host.drain_mutations().collect();
     assert_eq!(drained.len(), 2);
-    assert!(matches!(drained[0], PluginMutation::SaveBuffer));
+    assert!(matches!(drained[0], PluginMutation::SaveBuffer { .. }));
     assert!(matches!(drained[1], PluginMutation::SwapWindows));
 }
 

@@ -25,7 +25,10 @@ fn save_does_not_write_another_buffers_content_when_a_bufsavepre_hook_closes_the
     // Simulate a BufSavePre Lua hook that closes the buffer being saved.
     editor
         .plugin_host
-        .queue_mutation(PluginMutation::CloseBuffer { force: true });
+        .queue_mutation(PluginMutation::CloseBuffer {
+            buf: doc1_id,
+            force: true,
+        });
 
     editor.do_save();
     drain_jobs(&mut editor);
