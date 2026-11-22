@@ -1,5 +1,6 @@
 //! Lua 5.4 plugin host - embeds mlua and exposes the `rift.*` API.
 
+use crate::job_manager::jobs::plugin_process::{JobCommand, JobSpec, JobStream, PluginJobEvent};
 use crate::notification::NotificationType;
 use crate::plugin::events::EditorEvent;
 pub(crate) use crate::plugin::lua_state::{
@@ -13,7 +14,10 @@ use crate::plugin::{PluginFloat, PluginMutation};
 use mlua::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+
+static NEXT_JOB_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Parse a `{ fg, bg, bold, italic, underline, strike, reverse }` style subtable.
 fn parse_style(st: &LuaTable) -> LuaResult<crate::annotations::presentation::StyleOverride> {
@@ -634,7 +638,7 @@ function rift.plugins.list()
     for _, registry in ipairs({
         _rift_commands, _rift_actions, _rift_action_handlers,
         _rift_enter_handlers, _rift_leave_handlers, _rift_buffer_kinds,
-        _rift_annotation_kinds, _rift_annotation_bindings
+        _rift_annotation_kinds, _rift_annotation_bindings, _rift_jobs
     }) do
         for _, entry in pairs(registry) do
             if entry.plugin then seen[entry.plugin] = true end
@@ -673,10 +677,14 @@ function rift.plugins.info(name)
             keys[#keys+1] = {mode=k.mode, keys=k.keys}
         end
     end
+    local jobs = 0
+    for _, entry in pairs(_rift_jobs) do
+        if entry.plugin == name then jobs = jobs + 1 end
+    end
     local status, error = _rift_plugin_status(name)
     return {
         handlers=handlers, commands=commands, actions=actions, keys=keys,
-        status=status, error=error,
+        jobs=jobs, status=status, error=error,
     }
 end
 
@@ -827,6 +835,7 @@ impl LuaHost {
         Self::register_commands(&lua, &api, &shared)?;
         Self::register_emit(&lua, &api, &shared)?;
         Self::register_spawn(&lua, &api, &shell_result_tx)?;
+        Self::register_jobs(&lua, &api, &shared)?;
         Self::register_edits(&lua, &api, &shared)?;
         Self::register_line_edits(&lua, &api, &shared)?;
         Self::register_options(&lua, &api, &shared)?;
@@ -961,6 +970,7 @@ impl LuaHost {
             "_rift_annotation_kinds",
             "_rift_annotation_bindings",
             "_rift_load_errors",
+            "_rift_jobs",
         ] {
             lua.globals().set(name, lua.create_table()?)?;
         }
@@ -982,6 +992,7 @@ impl LuaHost {
                     }
                     namespaces.set(owner.as_str(), LuaNil)?;
                 }
+                Self::stop_plugin_jobs(lua, &sh, &owner)?;
                 let mut s = sh.borrow_mut();
                 s.plugin_health.remove(&owner);
                 s.mutations.push(PluginMutation::UnloadPlugin { owner });
@@ -1654,6 +1665,123 @@ impl LuaHost {
             api.set("spawn", f)?;
         }
 
+        Ok(())
+    }
+
+    fn register_jobs(
+        lua: &Lua,
+        api: &LuaTable,
+        shared: &Rc<RefCell<LuaSharedState>>,
+    ) -> LuaResult<()> {
+        let job = lua.create_table()?;
+        let sh = Rc::clone(shared);
+        job.set(
+            "start",
+            lua.create_function(move |lua, opts: LuaTable| {
+                let program: String = opts.get("cmd")?;
+                let args: Option<Vec<String>> = opts.get("args")?;
+                let command = JobCommand::Program {
+                    program,
+                    args: args.unwrap_or_default(),
+                };
+                Self::start_job(lua, &sh, command, &opts)
+            })?,
+        )?;
+        let sh = Rc::clone(shared);
+        job.set(
+            "shell",
+            lua.create_function(move |lua, (line, opts): (String, Option<LuaTable>)| {
+                let opts = match opts {
+                    Some(opts) => opts,
+                    None => lua.create_table()?,
+                };
+                Self::start_job(lua, &sh, JobCommand::Shell(line), &opts)
+            })?,
+        )?;
+        let sh = Rc::clone(shared);
+        job.set(
+            "send",
+            lua.create_function(move |lua, (id, data): (u64, LuaString)| {
+                let data = data.as_bytes().to_vec();
+                Self::queue_job_control(lua, &sh, id, PluginMutation::JobInput { id, data })
+            })?,
+        )?;
+        let sh = Rc::clone(shared);
+        job.set(
+            "close_stdin",
+            lua.create_function(move |lua, id: u64| {
+                Self::queue_job_control(lua, &sh, id, PluginMutation::JobCloseStdin(id))
+            })?,
+        )?;
+        let sh = Rc::clone(shared);
+        job.set(
+            "stop",
+            lua.create_function(move |lua, id: u64| {
+                Self::queue_job_control(lua, &sh, id, PluginMutation::StopJob(id))
+            })?,
+        )?;
+        api.set("job", job)
+    }
+
+    fn start_job(
+        lua: &Lua,
+        shared: &RefCell<LuaSharedState>,
+        command: JobCommand,
+        opts: &LuaTable,
+    ) -> LuaResult<u64> {
+        let cwd: Option<String> = opts.get("cwd")?;
+        let env = match opts.get::<Option<LuaTable>>("env")? {
+            Some(env) => env.pairs::<String, String>().collect::<LuaResult<_>>()?,
+            None => Vec::new(),
+        };
+        let entry = lua.create_table()?;
+        for field in ["on_stdout", "on_stderr", "on_exit"] {
+            entry.set(field, opts.get::<Option<LuaFunction>>(field)?)?;
+        }
+        entry.set("plugin", shared.borrow().current_plugin.as_deref())?;
+        let id = NEXT_JOB_ID.fetch_add(1, Ordering::Relaxed);
+        lua.globals()
+            .get::<LuaTable>("_rift_jobs")?
+            .set(id, entry)?;
+        shared
+            .borrow_mut()
+            .mutations
+            .push(PluginMutation::StartJob {
+                id,
+                spec: JobSpec { command, cwd, env },
+            });
+        Ok(id)
+    }
+
+    fn queue_job_control(
+        lua: &Lua,
+        shared: &RefCell<LuaSharedState>,
+        id: u64,
+        mutation: PluginMutation,
+    ) -> LuaResult<bool> {
+        let jobs: LuaTable = lua.globals().get("_rift_jobs")?;
+        if !jobs.contains_key(id)? {
+            return Ok(false);
+        }
+        shared.borrow_mut().mutations.push(mutation);
+        Ok(true)
+    }
+
+    fn stop_plugin_jobs(lua: &Lua, shared: &RefCell<LuaSharedState>, owner: &str) -> LuaResult<()> {
+        let jobs: LuaTable = lua.globals().get("_rift_jobs")?;
+        let job_ids: Vec<u64> = jobs
+            .pairs::<u64, LuaTable>()
+            .filter_map(Result::ok)
+            .filter(|(_, entry)| Self::entry_plugin(entry).as_deref() == Some(owner))
+            .map(|(id, _)| id)
+            .collect();
+        for id in job_ids {
+            jobs.set(id, LuaNil)?;
+            shared
+                .borrow_mut()
+                .mutations
+                .push(PluginMutation::StopJob(id));
+        }
         Ok(())
     }
 
@@ -3178,30 +3306,39 @@ impl LuaHost {
     const BUDGET_FAILURE_LIMIT: u32 = 3;
 
     fn record_budget_outcome<T>(&self, plugin: &str, result: &LuaResult<T>, over_budget: bool) {
-        let mut guard = self.shared.borrow_mut();
-        let s = &mut *guard;
-        match result {
-            Ok(_) => {
-                if let Some(health) = s.plugin_health.get_mut(plugin) {
-                    health.budget_failures = 0;
+        let disabled = {
+            let mut guard = self.shared.borrow_mut();
+            let s = &mut *guard;
+            match result {
+                Ok(_) => {
+                    if let Some(health) = s.plugin_health.get_mut(plugin) {
+                        health.budget_failures = 0;
+                    }
+                    false
                 }
-            }
-            Err(error) if over_budget => {
-                let health = s.plugin_health.entry(plugin.to_owned()).or_default();
-                health.budget_failures += 1;
-                health.last_budget_error = Some(error.to_string());
-                if health.budget_failures >= Self::BUDGET_FAILURE_LIMIT && !health.disabled {
-                    health.disabled = true;
-                    s.mutations.push(PluginMutation::Notify {
-                        message: format!(
-                            "plugin {plugin} was disabled after {} consecutive time-budget overruns; run rift.plugins.enable({plugin:?}) to turn it back on",
-                            Self::BUDGET_FAILURE_LIMIT
-                        ),
-                        level: NotificationType::Warning,
-                    });
+                Err(error) if over_budget => {
+                    let health = s.plugin_health.entry(plugin.to_owned()).or_default();
+                    health.budget_failures += 1;
+                    health.last_budget_error = Some(error.to_string());
+                    let disable =
+                        health.budget_failures >= Self::BUDGET_FAILURE_LIMIT && !health.disabled;
+                    if disable {
+                        health.disabled = true;
+                        s.mutations.push(PluginMutation::Notify {
+                            message: format!(
+                                "plugin {plugin} was disabled after {} consecutive time-budget overruns; run rift.plugins.enable({plugin:?}) to turn it back on",
+                                Self::BUDGET_FAILURE_LIMIT
+                            ),
+                            level: NotificationType::Warning,
+                        });
+                    }
+                    disable
                 }
+                Err(_) => false,
             }
-            Err(_) => {}
+        };
+        if disabled {
+            let _ = Self::stop_plugin_jobs(&self.lua, &self.shared, plugin);
         }
     }
 
@@ -3376,6 +3513,47 @@ impl LuaHost {
     #[must_use]
     pub(super) fn invoke_buffer_close(&self, buf_id: u64, kind: &str) -> bool {
         self.invoke_buffer_callback(buf_id, kind, "on_close", None)
+    }
+
+    pub(super) fn deliver_job_event(&self, job: u64, event: PluginJobEvent) {
+        let Ok(jobs) = self.lua.globals().get::<LuaTable>("_rift_jobs") else {
+            return;
+        };
+        let Ok(Some(entry)) = jobs.get::<Option<LuaTable>>(job) else {
+            return;
+        };
+        if event.is_final() {
+            let _ = jobs.set(job, LuaNil);
+        }
+        let plugin = Self::entry_plugin(&entry);
+        if self.is_disabled(plugin.as_deref()) {
+            return;
+        }
+        let (field, arg) = match event {
+            PluginJobEvent::Output(stream, lines) => {
+                let field = match stream {
+                    JobStream::Stdout => "on_stdout",
+                    JobStream::Stderr => "on_stderr",
+                };
+                let Ok(lines) = self.lua.create_sequence_from(lines) else {
+                    return;
+                };
+                (field, LuaValue::Table(lines))
+            }
+            PluginJobEvent::Exit(code) => ("on_exit", LuaValue::Integer(i64::from(code))),
+            PluginJobEvent::Failed(error) => {
+                self.report_error(plugin.as_deref(), "job", &error);
+                ("on_exit", LuaValue::Integer(-1))
+            }
+        };
+        let Ok(Some(callback)) = entry.get::<Option<LuaFunction>>(field) else {
+            return;
+        };
+        if let Err(error) = self.call_plugin(plugin.as_deref(), Self::AUTO_DISPATCH_BUDGET, || {
+            callback.call::<()>(arg)
+        }) {
+            self.report_error(plugin.as_deref(), &format!("job.{field}"), &error);
+        }
     }
 
     /// context table. Returns `true` if a handler was found and called.

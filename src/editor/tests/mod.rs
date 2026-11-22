@@ -21,6 +21,8 @@ mod operator_tests;
 mod plugin_edit_tests;
 mod plugin_highlight_tests;
 #[cfg(feature = "plugins")]
+mod plugin_job_tests;
+#[cfg(feature = "plugins")]
 mod plugin_keymap_tests;
 #[cfg(feature = "plugins")]
 mod plugin_loading_tests;

@@ -467,6 +467,16 @@ pub(crate) enum PluginMutation {
         key: String,
         value: crate::annotations::value::Value,
     },
+    StartJob {
+        id: u64,
+        spec: crate::job_manager::jobs::plugin_process::JobSpec,
+    },
+    JobInput {
+        id: u64,
+        data: Vec<u8>,
+    },
+    JobCloseStdin(u64),
+    StopJob(u64),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1195,6 +1205,18 @@ impl PluginHost {
                 lua.invoke_buffer_close(buf_id.get(), kind)
             }
             None => false,
+        }
+    }
+
+    pub(crate) fn deliver_job_event(
+        &self,
+        job: u64,
+        event: crate::job_manager::jobs::plugin_process::PluginJobEvent,
+    ) {
+        if let Some(lua) = &self.lua {
+            if self.is_generation_active(lua.generation()) {
+                lua.deliver_job_event(job, event);
+            }
         }
     }
 

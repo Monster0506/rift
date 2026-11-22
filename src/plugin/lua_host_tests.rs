@@ -1949,3 +1949,202 @@ fn test_disabled_plugin_hooks_are_not_reported_until_enabled() {
         .is_none());
     assert!(host.has_annotation_hook(true, "slow.kind"));
 }
+
+fn started_job(mutations: &[PluginMutation]) -> (u64, JobSpec) {
+    match mutations {
+        [PluginMutation::StartJob { id, spec }] => (*id, spec.clone()),
+        other => panic!("expected one StartJob, got {other:?}"),
+    }
+}
+
+fn job_count(host: &LuaHost, name: &str) -> i64 {
+    host.lua
+        .load(format!("return rift.plugins.info({name:?}).jobs"))
+        .eval()
+        .expect("info failed")
+}
+
+#[test]
+fn test_job_start_queues_its_spec_and_counts_for_the_plugin() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let host = make_host();
+    let name = load_named(
+        dir.path(),
+        &host,
+        "jobs.lua",
+        "_G.id = rift.job.start({ cmd = 'git', args = { 'status', '-s' }, cwd = 'repo', env = { GIT_PAGER = 'cat' } })",
+    );
+    let (id, spec) = started_job(&host.drain_mutations());
+    assert_eq!(
+        spec,
+        JobSpec {
+            command: JobCommand::Program {
+                program: "git".to_string(),
+                args: vec!["status".to_string(), "-s".to_string()],
+            },
+            cwd: Some("repo".to_string()),
+            env: vec![("GIT_PAGER".to_string(), "cat".to_string())],
+        }
+    );
+    assert!(host.exec(&format!("assert(_G.id == {id})")).is_none());
+    assert_eq!(job_count(&host, &name), 1);
+    assert_eq!(listed_plugins(&host), vec![name]);
+}
+
+#[test]
+fn test_job_shell_queues_a_shell_command() {
+    let host = make_host();
+    assert!(host.exec("rift.job.shell('echo hi')").is_none());
+    let (_, spec) = started_job(&host.drain_mutations());
+    assert_eq!(
+        spec,
+        JobSpec {
+            command: JobCommand::Shell("echo hi".to_string()),
+            cwd: None,
+            env: Vec::new(),
+        }
+    );
+}
+
+#[test]
+fn test_job_controls_queue_only_for_known_jobs() {
+    let host = make_host();
+    assert!(host.exec("_G.id = rift.job.shell('cat')").is_none());
+    let (id, _) = started_job(&host.drain_mutations());
+    let check = host.exec(
+        "assert(rift.job.send(_G.id, 'a\\0b')) \
+         assert(rift.job.close_stdin(_G.id)) \
+         assert(rift.job.stop(_G.id)) \
+         assert(not rift.job.send(0, 'x')) \
+         assert(not rift.job.close_stdin(0)) \
+         assert(not rift.job.stop(0))",
+    );
+    assert!(check.is_none(), "{check:?}");
+    let mutations = host.drain_mutations();
+    assert!(
+        matches!(
+            mutations.as_slice(),
+            [
+                PluginMutation::JobInput { id: a, data },
+                PluginMutation::JobCloseStdin(b),
+                PluginMutation::StopJob(c),
+            ] if *a == id && *b == id && *c == id && data == b"a\0b"
+        ),
+        "{mutations:?}"
+    );
+}
+
+#[test]
+fn test_unload_stops_and_forgets_only_that_plugins_jobs() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let host = make_host();
+    let watcher = load_named(dir.path(), &host, "watcher.lua", "rift.job.shell('a')");
+    let (watcher_job, _) = started_job(&host.drain_mutations());
+    let other = load_named(dir.path(), &host, "other.lua", "rift.job.shell('b')");
+    let (other_job, _) = started_job(&host.drain_mutations());
+
+    assert!(host
+        .exec(&format!("rift.plugins.unload({watcher:?})"))
+        .is_none());
+
+    let mutations = host.drain_mutations();
+    assert!(mutations
+        .iter()
+        .any(|m| matches!(m, PluginMutation::StopJob(id) if *id == watcher_job)));
+    assert!(!mutations
+        .iter()
+        .any(|m| matches!(m, PluginMutation::StopJob(id) if *id == other_job)));
+    assert_eq!(job_count(&host, &watcher), 0);
+    assert_eq!(job_count(&host, &other), 1);
+    assert_eq!(listed_plugins(&host), vec![other]);
+    assert!(host
+        .exec(&format!("assert(not rift.job.stop({watcher_job}))"))
+        .is_none());
+}
+
+#[test]
+fn test_disabling_a_plugin_stops_its_jobs() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let host = make_host();
+    let slow = load_named(
+        dir.path(),
+        &host,
+        "slow.lua",
+        &format!("{SPIN_ON_BUF_1}\nrift.job.shell('watch')"),
+    );
+    let (job, _) = started_job(&host.drain_mutations());
+    for _ in 0..3 {
+        assert_eq!(coarse(&host, 1).len(), 1);
+    }
+    let mutations = host.drain_mutations();
+    assert!(
+        mutations
+            .iter()
+            .any(|m| matches!(m, PluginMutation::StopJob(id) if *id == job)),
+        "{mutations:?}"
+    );
+    assert_eq!(job_count(&host, &slow), 0);
+}
+
+#[test]
+fn test_job_events_reach_callbacks_until_exit() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let host = make_host();
+    load_named(
+        dir.path(),
+        &host,
+        "events.lua",
+        "rift.job.shell('x', { \
+           on_stdout = function(lines) _G.out = table.concat(lines, ',') end, \
+           on_stderr = function(lines) _G.err = lines[1] end, \
+           on_exit = function(code) _G.code = code end })",
+    );
+    let (id, _) = started_job(&host.drain_mutations());
+
+    host.deliver_job_event(
+        id,
+        PluginJobEvent::Output(JobStream::Stdout, vec!["a".to_string(), "b".to_string()]),
+    );
+    host.deliver_job_event(
+        id,
+        PluginJobEvent::Output(JobStream::Stderr, vec!["oops".to_string()]),
+    );
+    host.deliver_job_event(id, PluginJobEvent::Exit(5));
+    host.deliver_job_event(id, PluginJobEvent::Exit(6));
+
+    let check = host.exec(&format!(
+        "assert(_G.out == 'a,b', tostring(_G.out)) \
+         assert(_G.err == 'oops', tostring(_G.err)) \
+         assert(_G.code == 5, tostring(_G.code)) \
+         assert(not rift.job.send({id}, 'x'))"
+    ));
+    assert!(check.is_none(), "{check:?}");
+}
+
+#[test]
+fn test_job_callback_error_names_the_plugin() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let host = make_host();
+    load_named(
+        dir.path(),
+        &host,
+        "failing.lua",
+        "rift.job.shell('x', { on_stdout = function() local x = nil return x.boom end })",
+    );
+    let (id, _) = started_job(&host.drain_mutations());
+
+    host.deliver_job_event(
+        id,
+        PluginJobEvent::Output(JobStream::Stdout, vec!["line".to_string()]),
+    );
+
+    let mutations = host.drain_mutations();
+    assert!(
+        mutations.iter().any(|m| matches!(
+            m,
+            PluginMutation::Notify { level: NotificationType::Error, message }
+                if message.starts_with("[failing:job.on_stdout] ")
+        )),
+        "{mutations:?}"
+    );
+}

@@ -264,6 +264,10 @@ pub trait Job: Send + std::fmt::Debug + 'static {
     fn target_domain(&self) -> Option<AsyncOpDomain> {
         None
     }
+
+    fn is_long_lived(&self) -> bool {
+        false
+    }
 }
 
 impl Job for Box<dyn Job> {
@@ -287,6 +291,9 @@ impl Job for Box<dyn Job> {
     fn target_domain(&self) -> Option<AsyncOpDomain> {
         (**self).target_domain()
     }
+    fn is_long_lived(&self) -> bool {
+        (**self).is_long_lived()
+    }
 }
 
 impl Job for Box<dyn Job + Send> {
@@ -309,6 +316,9 @@ impl Job for Box<dyn Job + Send> {
     }
     fn target_domain(&self) -> Option<AsyncOpDomain> {
         (**self).target_domain()
+    }
+    fn is_long_lived(&self) -> bool {
+        (**self).is_long_lived()
     }
 }
 
@@ -384,13 +394,16 @@ impl JobManager {
         };
         let silent = job.is_silent();
         let name = job.name();
+        let needs_permit = !job.is_long_lived();
         let job_box = Box::new(job);
         let limiter = self.concurrency_limiter.clone();
 
         let handle = thread::spawn(move || {
             // Signal start
             if sender.send(JobMessage::Started(id, silent)).is_ok() {
-                limiter.acquire();
+                if needs_permit {
+                    limiter.acquire();
+                }
                 if signal.is_cancelled() {
                     let _ = sender.send(JobMessage::Cancelled(id));
                 } else {
@@ -405,7 +418,9 @@ impl JobManager {
                         ));
                     }
                 }
-                limiter.release();
+                if needs_permit {
+                    limiter.release();
+                }
             }
         });
 

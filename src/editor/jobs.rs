@@ -472,6 +472,16 @@ impl<T: TerminalBackend> Editor<T> {
         token: Option<AsyncToken>,
         any_payload: Box<dyn std::any::Any>,
     ) {
+        let any_payload = match any_payload
+            .downcast::<crate::job_manager::jobs::plugin_process::PluginJobPayload>(
+        ) {
+            Ok(payload) => {
+                self.deliver_plugin_job_payload(*payload);
+                return;
+            }
+            Err(p) => p,
+        };
+
         let any_payload =
             match any_payload.downcast::<crate::job_manager::jobs::explorer::DirectoryListing>() {
                 Ok(listing) => {

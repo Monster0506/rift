@@ -28,6 +28,7 @@ mod multi_region;
 mod operators;
 mod panel_handlers;
 mod pending_grammar;
+mod plugin_jobs;
 mod plugin_ops;
 pub(crate) mod rendering;
 mod replace_mode;
@@ -184,6 +185,7 @@ pub struct Editor<T: TerminalBackend> {
     panel_layout: Option<PanelLayout>,
     last_notification_generation: u64,
     plugin_host: crate::plugin::PluginHost,
+    plugin_jobs: std::collections::HashMap<u64, plugin_jobs::PluginJob>,
     clipboard_ring: crate::clipboard::ClipboardRing,
     system_clipboard_cache: crate::clipboard::SystemClipboardCache,
     clipboard_panel_register: Option<ClipboardPanelRegister>,

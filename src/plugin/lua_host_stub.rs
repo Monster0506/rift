@@ -92,6 +92,13 @@ impl LuaHost {
         false
     }
 
+    pub(super) fn deliver_job_event(
+        &self,
+        _job: u64,
+        _event: crate::job_manager::jobs::plugin_process::PluginJobEvent,
+    ) {
+    }
+
     #[must_use]
     pub(super) const fn execute_command(&self, _name: &str, _args: &[String]) -> bool {
         false

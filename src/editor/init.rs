@@ -140,6 +140,7 @@ impl<T: TerminalBackend> Editor<T> {
             panel_layout: None,
             last_notification_generation: 0,
             plugin_host: crate::plugin::PluginHost::new(25),
+            plugin_jobs: std::collections::HashMap::new(),
             clipboard_ring: crate::clipboard::ClipboardRing::new(),
             system_clipboard_cache: crate::clipboard::SystemClipboardCache::new(),
             clipboard_panel_register: None,
@@ -352,6 +353,7 @@ impl<T: TerminalBackend> Editor<T> {
         let active_gens = self.plugin_host.active_generations();
         for gen in active_gens {
             self.plugin_host.retire_generation(gen);
+            self.stop_generation_jobs(gen);
             self.keymap.unregister_owner(gen.keymap_owner_token());
 
             let retired_kind_ids = self.buffer_kinds.retire_plugin(

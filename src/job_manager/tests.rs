@@ -496,3 +496,65 @@ fn test_spawn_document_job_auto_generates_token() {
     assert!(manager.is_token_current(&token2));
     assert!(!manager.is_token_current(&token));
 }
+
+#[derive(Debug)]
+struct PermitHoldingJob {
+    started: Arc<AtomicUsize>,
+    release: Arc<AtomicBool>,
+}
+
+impl Job for PermitHoldingJob {
+    fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, _signal: CancellationSignal) {
+        self.started.fetch_add(1, Ordering::SeqCst);
+        while !self.release.load(Ordering::SeqCst) {
+            thread::sleep(Duration::from_millis(2));
+        }
+        let _ = sender.send(JobMessage::Finished(id, true));
+    }
+}
+
+#[derive(Debug)]
+struct LongLivedProbeJob;
+
+impl Job for LongLivedProbeJob {
+    fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, _signal: CancellationSignal) {
+        let _ = sender.send(JobMessage::Progress(id, 0, "ran".to_string()));
+    }
+
+    fn is_long_lived(&self) -> bool {
+        true
+    }
+}
+
+#[test]
+fn test_long_lived_job_runs_while_every_permit_is_held() {
+    let mut manager = JobManager::new();
+    let started = Arc::new(AtomicUsize::new(0));
+    let release = Arc::new(AtomicBool::new(false));
+    for _ in 0..MAX_CONCURRENT_JOBS {
+        manager.spawn(PermitHoldingJob {
+            started: started.clone(),
+            release: release.clone(),
+        });
+    }
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while started.load(Ordering::SeqCst) < MAX_CONCURRENT_JOBS {
+        assert!(std::time::Instant::now() < deadline, "permits never filled");
+        thread::sleep(Duration::from_millis(2));
+    }
+
+    let probe = manager.spawn(LongLivedProbeJob);
+    let ran = loop {
+        match manager.receiver().recv_timeout(Duration::from_secs(5)) {
+            Ok(JobMessage::Progress(id, ..)) if id == probe => break true,
+            Ok(_) => {}
+            Err(_) => break false,
+        }
+    };
+    release.store(true, Ordering::SeqCst);
+
+    assert!(
+        ran,
+        "a long-lived job must not wait for a concurrency permit"
+    );
+}

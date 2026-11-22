@@ -496,11 +496,15 @@ impl<T: TerminalBackend> Editor<T> {
             | PluginMutation::ClearNsHighlights { .. } => {
                 self.apply_highlight_mutation(mutation);
             }
+            PluginMutation::StartJob { .. }
+            | PluginMutation::JobInput { .. }
+            | PluginMutation::JobCloseStdin(_)
+            | PluginMutation::StopJob(_) => self.apply_job_mutation(mutation, origin),
         }
     }
 
     // Reached only if apply_plugin_mutation routes a variant to the wrong group.
-    fn report_misrouted(&mut self) {
+    pub(super) fn report_misrouted(&mut self) {
         self.state.notify(
             crate::notification::NotificationType::Error,
             "internal error: plugin mutation misrouted".to_string(),
