@@ -142,6 +142,14 @@ fn lua_to_json(v: LuaValue) -> Result<serde_json::Value, String> {
     }
 }
 
+fn line_bytes(buffer: &crate::buffer::TextBuffer, row: usize) -> Vec<u8> {
+    let mut bytes = buffer.get_line_bytes(row);
+    while bytes.last() == Some(&b'\r') {
+        bytes.pop();
+    }
+    bytes
+}
+
 const fn anchor_view(anchor: &crate::plugin::AnnotationAnchorSpec) -> (&'static str, usize, usize) {
     use crate::plugin::AnnotationAnchorSpec;
     match *anchor {
@@ -179,10 +187,6 @@ struct LuaSharedState {
     next_annotation_id: u64,
     /// Deferred source of the active buffer's lines, set before each dispatch.
     buf_source: Option<BufLinesSource>,
-    /// Lines materialized from `buf_source` on first read, with the revision
-    /// they were built at so an unchanged buffer reuses them.
-    buf_lines_cache: Arc<Vec<String>>,
-    buf_lines_cache_rev: Option<u64>,
     /// Active buffer ID.
     buf_id: usize,
     /// Kind string for the active buffer ("file", "terminal", "directory", ...).
@@ -253,24 +257,10 @@ struct PluginHealth {
 }
 
 impl LuaSharedState {
-    /// Materialize (and cache) the active buffer's lines, rebuilding only when
-    /// the source revision differs from the cached one.
-    fn lines(&mut self) -> Arc<Vec<String>> {
-        if let Some(src) = &self.buf_source {
-            if self.buf_lines_cache_rev != Some(src.revision) {
-                let text = src.buffer.to_string();
-                self.buf_lines_cache = Arc::new(
-                    text.split('\n')
-                        .map(|l| l.trim_end_matches('\r').to_string())
-                        .collect(),
-                );
-                self.buf_lines_cache_rev = Some(src.revision);
-            }
-        }
-        self.buf_lines_cache.clone()
+    fn buffer(&self) -> Option<&crate::buffer::TextBuffer> {
+        self.buf_source.as_ref().map(|src| &src.buffer)
     }
 
-    /// Line count without materializing the lines (equals `lines().len()`).
     fn line_count(&self) -> usize {
         self.buf_source.as_ref().map_or(0, |s| s.line_count)
     }
@@ -331,8 +321,6 @@ impl LuaSharedState {
             annotations: Arc::new(vec![]),
             next_annotation_id: 1,
             buf_source: None,
-            buf_lines_cache: Arc::new(vec![]),
-            buf_lines_cache_rev: None,
             buf_id: 0,
             buf_kind: "file".to_string(),
             cursor: (0, 0),
@@ -1468,20 +1456,21 @@ impl LuaHost {
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |lua, (start, end_): (i64, i64)| {
-                let lines = sh.borrow_mut().lines();
-                let len = lua_int(lines.len());
-                let start = lua_index(start.saturating_sub(1)).min(lines.len());
+                let s = sh.borrow();
+                let t = lua.create_table()?;
+                let Some(buffer) = s.buffer() else {
+                    return Ok(t);
+                };
+                let count = buffer.get_total_lines();
+                let len = lua_int(count);
+                let start = lua_index(start.saturating_sub(1)).min(count);
                 let end_ = lua_index(if end_ < 0 {
                     len + end_ + 1
                 } else {
                     end_.min(len)
                 });
-                let t = lua.create_table()?;
-                if start >= end_ {
-                    return Ok(t);
-                }
-                for (i, line) in lines[start..end_].iter().enumerate() {
-                    t.set(i + 1, line.as_str())?;
+                for (i, row) in (start..end_).enumerate() {
+                    t.set(i + 1, lua.create_string(line_bytes(buffer, row))?)?;
                 }
                 Ok(t)
             })?;
@@ -2207,17 +2196,21 @@ impl LuaHost {
                         .as_ref()
                         .and_then(|t| t.get::<bool>("whole_word").ok())
                         .unwrap_or(false);
-                    let lines = sh.borrow_mut().lines();
+                    let s = sh.borrow();
                     let results = lua.create_table()?;
+                    let Some(buffer) = s.buffer() else {
+                        return Ok(results);
+                    };
+                    let needle = needle.as_bytes();
                     if needle.is_empty() {
                         return Ok(results);
                     }
-                    for (row_idx, line) in lines.iter().enumerate() {
-                        let bytes = line.as_bytes();
+                    for row_idx in 0..buffer.get_total_lines() {
+                        let bytes = line_bytes(buffer, row_idx);
                         let mut start = 0;
-                        while let Some(pos) = line
+                        while let Some(pos) = bytes
                             .get(start..)
-                            .and_then(|rest| rest.find(needle.as_str()))
+                            .and_then(|rest| rest.windows(needle.len()).position(|w| w == needle))
                         {
                             let col_start = start + pos;
                             let col_end = col_start + needle.len();
@@ -3121,10 +3114,7 @@ impl LuaHost {
         match update.source {
             BufSourceUpdate::Unchanged => {}
             BufSourceUpdate::Cleared => s.buf_source = None,
-            BufSourceUpdate::Set(src) => {
-                s.buf_source = Some(*src);
-                s.buf_lines_cache_rev = None;
-            }
+            BufSourceUpdate::Set(src) => s.buf_source = Some(*src),
         }
         s.cursor = update.cursor;
         s.mode = update.mode.to_string();

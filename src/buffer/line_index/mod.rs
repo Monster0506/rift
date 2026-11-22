@@ -4,13 +4,14 @@
 use super::rope::PieceTable;
 use crate::character::Character;
 use std::cell::RefCell;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct LineIndex {
     pub(crate) table: PieceTable,
     /// Char offset of the start of each line; built lazily, then maintained
     /// incrementally on insert/delete. `None` means "not built".
-    line_starts: RefCell<Option<Vec<usize>>>,
+    line_starts: RefCell<Option<Arc<Vec<usize>>>>,
 }
 
 impl LineIndex {
@@ -43,7 +44,7 @@ impl LineIndex {
         );
         Self {
             table,
-            line_starts: RefCell::new(Some(starts)),
+            line_starts: RefCell::new(Some(Arc::new(starts))),
         }
     }
 
@@ -63,14 +64,14 @@ impl LineIndex {
                 starts.push(pos);
             }
         }
-        *cache = Some(starts);
+        *cache = Some(Arc::new(starts));
     }
 
     /// Run `f` over the line-start index, building it first if needed.
     fn with_starts<R>(&self, f: impl FnOnce(&[usize]) -> R) -> R {
         self.ensure_built();
         let cache = self.line_starts.borrow();
-        f(cache.as_deref().unwrap_or_default())
+        f(cache.as_deref().map_or(&[], Vec::as_slice))
     }
 
     /// Shift entries after `pos` right by `chars.len()`; insert a new line
@@ -159,6 +160,7 @@ impl LineIndex {
     pub(super) fn insert(&mut self, pos: usize, chars: &[Character]) {
         self.table.insert(pos, chars);
         if let Some(starts) = self.line_starts.get_mut().as_mut() {
+            let starts = Arc::make_mut(starts);
             Self::apply_insert(starts, pos, chars);
             debug_assert_eq!(
                 starts.len(),
@@ -171,6 +173,7 @@ impl LineIndex {
     pub(super) fn delete(&mut self, pos: usize, len: usize) {
         self.table.delete(pos..pos + len);
         if let Some(starts) = self.line_starts.get_mut().as_mut() {
+            let starts = Arc::make_mut(starts);
             Self::apply_delete(starts, pos, len);
             debug_assert_eq!(
                 starts.len(),
@@ -183,6 +186,7 @@ impl LineIndex {
     pub(super) fn replace(&mut self, pos: usize, count: usize, chars: &[Character]) {
         self.table.replace(pos, count, chars);
         if let Some(starts) = self.line_starts.get_mut().as_mut() {
+            let starts = Arc::make_mut(starts);
             Self::apply_delete(starts, pos, count);
             Self::apply_insert(starts, pos, chars);
             debug_assert_eq!(

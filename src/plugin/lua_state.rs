@@ -44,8 +44,6 @@ pub(crate) struct AnnotationView {
     pub(crate) interactive: bool,
 }
 
-/// Deferred source for the active buffer's lines: `update_state` stores a cheap
-/// buffer clone, and the getters materialize `Vec<String>` only when Lua reads.
 pub(crate) struct BufLinesSource {
     pub(crate) revision: u64,
     pub(crate) line_count: usize,

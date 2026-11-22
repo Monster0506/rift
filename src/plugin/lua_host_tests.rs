@@ -722,11 +722,9 @@ fn test_line_count_and_find_materialize_from_deferred_source() {
         line_ending: "lf",
         ..Default::default()
     });
-    // get_line_count is served from the cheap scalar without materializing.
     assert!(host
         .exec("rift.notify('info', tostring(rift.get_line_count()))")
         .is_none());
-    // search materializes lines lazily and scans them.
     assert!(host
         .exec("rift.notify('info', tostring(#rift.search('needle')))")
         .is_none());

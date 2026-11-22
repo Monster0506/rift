@@ -167,3 +167,21 @@ fn test_incremental_line_cache_matches_oracle_under_random_edits() {
         }
     }
 }
+
+#[test]
+fn clone_keeps_its_lines_after_the_original_is_edited() {
+    let mut idx = LineIndex::new();
+    idx.insert(0, &chars("one\ntwo\nthree"));
+    assert_eq!(idx.get_start(2), Some(8));
+    let snapshot = idx.clone();
+
+    idx.insert(0, &chars("zero\n"));
+    idx.delete(9, 4);
+
+    assert_eq!(snapshot.line_count(), 3);
+    assert_eq!(snapshot.get_start(1), Some(4));
+    assert_eq!(snapshot.get_start(2), Some(8));
+    assert_eq!(snapshot.get_line_at(9), 2);
+    assert_eq!(idx.line_count(), 3);
+    assert_eq!(idx.get_start(2), Some(9));
+}
