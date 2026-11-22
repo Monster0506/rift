@@ -1,4 +1,4 @@
-use super::{lua_index, lua_int, LuaSharedState};
+use super::{buf_or_current, lua_index, lua_int, LuaSharedState};
 use crate::document::DocumentId;
 use crate::plugin::PluginMutation;
 use crate::syntax::loader::QueryKind;
@@ -213,10 +213,9 @@ impl LuaUserData for LuaTree {
                 .app_data_ref::<Shared>()
                 .ok_or_else(|| LuaError::RuntimeError("plugin state unavailable".into()))?;
             let s = shared.borrow();
-            Ok(s.buf_id as u64 == buf
-                && s.bufs
-                    .get(&buf)
-                    .is_some_and(|snap| snap.buffer.revision != text.revision))
+            Ok(s.bufs
+                .get(&buf)
+                .is_some_and(|snap| snap.buffer.revision != text.revision))
         });
         methods.add_meta_method(LuaMetaMethod::ToString, |_, this, ()| {
             Ok(format!("<tree {}>", this.0.lang_name))
@@ -410,10 +409,6 @@ fn editor_query(shared: &Shared, lang: &str, kind: QueryKind) -> LuaResult<Optio
     Ok(Some(query))
 }
 
-fn buf_or_current(shared: &Shared, buf: Option<u64>) -> u64 {
-    buf.unwrap_or_else(|| shared.borrow().buf_id as u64)
-}
-
 fn trees_of(shared: &Shared, buf: u64) -> Option<Vec<Rc<SyntaxSnapshot>>> {
     let s = shared.borrow();
     let syntax = s.syntax.get(&buf)?;
@@ -432,15 +427,12 @@ fn target_byte(
     col: Option<i64>,
 ) -> usize {
     let s = shared.borrow();
-    match row {
-        Some(row) => snap
-            .text
-            .byte_at(lua_index(row - 1), lua_index(col.unwrap_or(0))),
-        None if buf == s.buf_id as u64 => {
-            let (row, char_col) = s.bufs.get(&buf).map_or((0, 0), |b| b.meta.cursor);
-            snap.text.byte_at(row, snap.text.byte_col(row, char_col))
-        }
-        None => 0,
+    if let Some(row) = row {
+        snap.text
+            .byte_at(lua_index(row - 1), lua_index(col.unwrap_or(0)))
+    } else {
+        let (row, char_col) = s.bufs.get(&buf).map_or((0, 0), |b| b.meta.cursor);
+        snap.text.byte_at(row, snap.text.byte_col(row, char_col))
     }
 }
 
@@ -470,7 +462,7 @@ pub(super) fn register(lua: &Lua, api: &LuaTable, shared: &Shared) -> LuaResult<
     {
         let sh = Rc::clone(shared);
         let f = lua.create_function(move |_, buf: Option<u64>| {
-            let buf = buf_or_current(&sh, buf);
+            let buf = buf_or_current(&sh, buf)?;
             Ok(sh
                 .borrow()
                 .syntax
@@ -483,7 +475,7 @@ pub(super) fn register(lua: &Lua, api: &LuaTable, shared: &Shared) -> LuaResult<
     {
         let sh = Rc::clone(shared);
         let f = lua.create_function(move |_, buf: Option<u64>| {
-            let buf = buf_or_current(&sh, buf);
+            let buf = buf_or_current(&sh, buf)?;
             Ok(sh
                 .borrow()
                 .syntax
@@ -496,7 +488,7 @@ pub(super) fn register(lua: &Lua, api: &LuaTable, shared: &Shared) -> LuaResult<
     {
         let sh = Rc::clone(shared);
         let f = lua.create_function(move |_, buf: Option<u64>| {
-            let buf = buf_or_current(&sh, buf);
+            let buf = buf_or_current(&sh, buf)?;
             Ok(trees_of(&sh, buf)
                 .unwrap_or_default()
                 .into_iter()
@@ -512,7 +504,7 @@ pub(super) fn register(lua: &Lua, api: &LuaTable, shared: &Shared) -> LuaResult<
             let get = |key: &str| -> LuaResult<Option<LuaValue>> {
                 opts.as_ref().map(|o| o.get(key)).transpose()
             };
-            let buf = buf_or_current(&sh, get("buf")?.and_then(|v| v.as_u64()));
+            let buf = buf_or_current(&sh, get("buf")?.and_then(|v| v.as_u64()))?;
             let row = get("row")?.and_then(|v| v.as_i64());
             let col = get("col")?.and_then(|v| v.as_i64());
             let named = get("named")?.and_then(|v| v.as_boolean()).unwrap_or(true);
@@ -604,7 +596,7 @@ pub(super) fn register(lua: &Lua, api: &LuaTable, shared: &Shared) -> LuaResult<
     {
         let sh = Rc::clone(shared);
         let f = lua.create_function(move |_, (buf, lang): (Option<u64>, Option<String>)| {
-            let buf = DocumentId::new(buf_or_current(&sh, buf));
+            let buf = DocumentId::new(buf_or_current(&sh, buf)?);
             sh.borrow_mut()
                 .mutations
                 .push(PluginMutation::StartSyntax { buf, lang });
@@ -616,7 +608,7 @@ pub(super) fn register(lua: &Lua, api: &LuaTable, shared: &Shared) -> LuaResult<
     {
         let sh = Rc::clone(shared);
         let f = lua.create_function(move |_, buf: Option<u64>| {
-            let buf = DocumentId::new(buf_or_current(&sh, buf));
+            let buf = DocumentId::new(buf_or_current(&sh, buf)?);
             sh.borrow_mut()
                 .mutations
                 .push(PluginMutation::StopSyntax { buf });
@@ -629,7 +621,7 @@ pub(super) fn register(lua: &Lua, api: &LuaTable, shared: &Shared) -> LuaResult<
         let sh = Rc::clone(shared);
         let f = lua.create_function(
             move |lua, (row, col, buf): (Option<i64>, Option<i64>, Option<u64>)| {
-                let buf = buf_or_current(&sh, buf);
+                let buf = buf_or_current(&sh, buf)?;
                 let out = lua.create_table()?;
                 let Some(trees) = trees_of(&sh, buf) else {
                     return Ok(out);

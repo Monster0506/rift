@@ -270,21 +270,37 @@ struct PluginHealth {
     last_budget_error: Option<String>,
 }
 
+fn opts_buf(opts: Option<&LuaTable>) -> LuaResult<Option<u64>> {
+    opts.map_or(Ok(None), |opts| opts.get("buf"))
+}
+
+fn buf_or_current(shared: &RefCell<LuaSharedState>, buf: Option<u64>) -> LuaResult<u64> {
+    shared.borrow().target(buf)
+}
+
+fn opts_target(shared: &RefCell<LuaSharedState>, opts: Option<&LuaTable>) -> LuaResult<u64> {
+    buf_or_current(shared, opts_buf(opts)?)
+}
+
 impl LuaSharedState {
     const fn current_id(&self) -> u64 {
         self.buf_id as u64
     }
 
-    fn current(&self) -> Option<&BufSnapshot> {
-        self.bufs.get(&self.current_id())
+    fn target(&self, buf: Option<u64>) -> LuaResult<u64> {
+        match buf {
+            None => Ok(self.current_id()),
+            Some(id) if self.bufs.contains_key(&id) => Ok(id),
+            Some(id) => Err(LuaError::RuntimeError(format!("no open buffer {id}"))),
+        }
+    }
+
+    fn snapshot(&self, buf: u64) -> Option<&BufSnapshot> {
+        self.bufs.get(&buf)
     }
 
     fn annotations(&self, buf: u64) -> &[AnnotationView] {
-        self.bufs.get(&buf).map_or(&[], |snap| &snap.annotations)
-    }
-
-    fn doc_id(&self) -> crate::document::DocumentId {
-        crate::document::DocumentId::new(self.current_id())
+        self.snapshot(buf).map_or(&[], |snap| &snap.annotations)
     }
 
     fn edit_local_buf(&mut self, buf: u64, edit: impl FnOnce(&mut crate::buffer::TextBuffer)) {
@@ -395,23 +411,20 @@ const PRELUDE: &str = r#"
 -- rift.log level constants
 rift.log = { DEBUG = "debug", INFO = "info", WARN = "warn", ERROR = "error" }
 
--- rift.get_current_line() -> string
-function rift.get_current_line()
-    local row = select(1, rift.get_cursor())
-    local lines = rift.get_lines(row, row)
+function rift.get_current_line(opts)
+    local row = select(1, rift.get_cursor(opts))
+    local lines = rift.get_lines(row, row, opts)
     return lines[1] or ""
 end
 
--- rift.set_current_line(text)
-function rift.set_current_line(text)
-    local row = select(1, rift.get_cursor())
-    rift.replace_lines(row, row, {text})
+function rift.set_current_line(text, opts)
+    local row = select(1, rift.get_cursor(opts))
+    rift.replace_lines(row, row, {text}, opts)
 end
 
--- rift.delete_current_line()
-function rift.delete_current_line()
-    local row = select(1, rift.get_cursor())
-    rift.replace_lines(row, row, {})
+function rift.delete_current_line(opts)
+    local row = select(1, rift.get_cursor(opts))
+    rift.replace_lines(row, row, {}, opts)
 end
 
 -- rift.inspect(val) -> string  (pretty-prints any Lua value)
@@ -585,11 +598,10 @@ do
     end
 end
 
--- rift.get_word_at_cursor() -> string
 -- Returns the word (alphanumeric + underscore) under the cursor, or "" if none.
-function rift.get_word_at_cursor()
-    local row, col = rift.get_cursor()
-    local line = rift.get_lines(row, row)[1] or ""
+function rift.get_word_at_cursor(opts)
+    local row, col = rift.get_cursor(opts)
+    local line = rift.get_lines(row, row, opts)[1] or ""
     -- col is 0-indexed byte offset; Lua strings are 1-indexed
     local pos = col + 1
     if pos > #line then pos = #line end
@@ -1038,27 +1050,27 @@ impl LuaHost {
         api: &LuaTable,
         shared: &Rc<RefCell<LuaSharedState>>,
     ) -> LuaResult<()> {
-        // rift.append_lines(lines)  - appends a Lua sequence of strings to the active buffer
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, lines: LuaTable| {
-                let mut v = Vec::new();
-                for s in lines.sequence_values::<String>() {
-                    v.push(s?);
-                }
-                let mut s = sh.borrow_mut();
-                let text = v.join("\n");
-                let buf = s.current_id();
-                s.edit_local_buf(buf, |buffer| {
-                    let _ = buffer.set_cursor(buffer.len());
-                    let _ = buffer.insert_str(&text);
-                });
-                s.mutations.push(PluginMutation::AppendLines {
-                    buf: DocumentId::new(buf),
-                    lines: v,
-                });
-                Ok(())
-            })?;
+            let f =
+                lua.create_function(move |_, (lines, opts): (LuaTable, Option<LuaTable>)| {
+                    let mut v = Vec::new();
+                    for s in lines.sequence_values::<String>() {
+                        v.push(s?);
+                    }
+                    let buf = opts_target(&sh, opts.as_ref())?;
+                    let mut s = sh.borrow_mut();
+                    let text = v.join("\n");
+                    s.edit_local_buf(buf, |buffer| {
+                        let _ = buffer.set_cursor(buffer.len());
+                        let _ = buffer.insert_str(&text);
+                    });
+                    s.mutations.push(PluginMutation::AppendLines {
+                        buf: DocumentId::new(buf),
+                        lines: v,
+                    });
+                    Ok(())
+                })?;
             api.set("append_lines", f)?;
         }
 
@@ -1111,7 +1123,6 @@ impl LuaHost {
         annotations: &LuaTable,
         shared: &Rc<RefCell<LuaSharedState>>,
     ) -> LuaResult<()> {
-        // rift.annotations.add{ kind, line|point|range, payload, face, actions }
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, opts: LuaTable| {
@@ -1149,10 +1160,10 @@ impl LuaHost {
                 let visible: bool = opts.get::<Option<bool>>("visible")?.unwrap_or(true);
                 let stickiness: Option<String> = opts.get("stickiness")?;
                 let owner: Option<String> = opts.get("owner")?;
+                let buf = opts_target(&sh, Some(&opts))?;
                 // Pre-claim the id so add{} can return it synchronously.
                 let id = {
                     let mut s = sh.borrow_mut();
-                    let buf = s.current_id();
                     let id = s.bufs.get(&buf).map_or(1, |snap| snap.next_annotation_id);
                     let (anchor_name, start, end) = anchor_view(&anchor);
                     let view = AnnotationView {
@@ -1197,12 +1208,11 @@ impl LuaHost {
         annotations: &LuaTable,
         shared: &Rc<RefCell<LuaSharedState>>,
     ) -> LuaResult<()> {
-        // rift.annotations.remove(id)
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, id: u64| {
+            let f = lua.create_function(move |_, (id, opts): (u64, Option<LuaTable>)| {
+                let buf = opts_target(&sh, opts.as_ref())?;
                 let mut s = sh.borrow_mut();
-                let buf = s.current_id();
                 s.edit_local_snapshot(buf, |snap| snap.annotations.retain(|v| v.id != id));
                 s.mutations.push(PluginMutation::RemoveAnnotation {
                     buf: DocumentId::new(buf),
@@ -1224,8 +1234,8 @@ impl LuaHost {
                 };
                 let visible: Option<bool> = opts.get("visible")?;
                 let presentation = build_presentation(&opts)?;
+                let buf = opts_target(&sh, Some(&opts))?;
                 let mut s = sh.borrow_mut();
-                let buf = s.current_id();
                 s.edit_local_snapshot(buf, |snap| {
                     if let Some(view) = snap.annotations.iter_mut().find(|v| v.id == id) {
                         if let Some(p) = &payload {
@@ -1256,12 +1266,12 @@ impl LuaHost {
         annotations: &LuaTable,
         shared: &Rc<RefCell<LuaSharedState>>,
     ) -> LuaResult<()> {
-        // rift.annotations.get(id) -> table | nil
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |lua, id: u64| {
+            let f = lua.create_function(move |lua, (id, opts): (u64, Option<LuaTable>)| {
+                let buf = opts_target(&sh, opts.as_ref())?;
                 let s = sh.borrow();
-                match s.annotations(s.current_id()).iter().find(|v| v.id == id) {
+                match s.annotations(buf).iter().find(|v| v.id == id) {
                     Some(v) => Ok(Some(annotation_view_to_table(lua, v)?)),
                     None => Ok(None),
                 }
@@ -1269,15 +1279,15 @@ impl LuaHost {
             annotations.set("get", f)?;
         }
 
-        // rift.annotations.at(byte_offset) -> array of tables
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |lua, offset: i64| {
+            let f = lua.create_function(move |lua, (offset, opts): (i64, Option<LuaTable>)| {
                 let off = lua_index(offset);
+                let buf = opts_target(&sh, opts.as_ref())?;
                 let s = sh.borrow();
                 let out = lua.create_table()?;
                 let mut i = 1;
-                for v in s.annotations(s.current_id()) {
+                for v in s.annotations(buf) {
                     let hit = match v.anchor {
                         "point" => v.start == off,
                         "range" => v.start <= off && off < v.end,
@@ -1293,56 +1303,57 @@ impl LuaHost {
             annotations.set("at", f)?;
         }
 
-        // rift.annotations.in_range(start, end) -> array of tables
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |lua, (start, end_): (i64, i64)| {
-                let s0 = lua_index(start);
-                let e0 = usize::try_from(end_.max(start)).unwrap_or(usize::MAX);
-                let s = sh.borrow();
-                let out = lua.create_table()?;
-                let mut i = 1;
-                for v in s.annotations(s.current_id()) {
-                    let hit = match v.anchor {
-                        "point" => v.start >= s0 && v.start < e0,
-                        "range" => v.start < e0 && v.end > s0,
-                        _ => false,
-                    };
-                    if hit {
-                        out.set(i, annotation_view_to_table(lua, v)?)?;
-                        i += 1;
+            let f = lua.create_function(
+                move |lua, (start, end_, opts): (i64, i64, Option<LuaTable>)| {
+                    let s0 = lua_index(start);
+                    let e0 = usize::try_from(end_.max(start)).unwrap_or(usize::MAX);
+                    let buf = opts_target(&sh, opts.as_ref())?;
+                    let s = sh.borrow();
+                    let out = lua.create_table()?;
+                    let mut i = 1;
+                    for v in s.annotations(buf) {
+                        let hit = match v.anchor {
+                            "point" => v.start >= s0 && v.start < e0,
+                            "range" => v.start < e0 && v.end > s0,
+                            _ => false,
+                        };
+                        if hit {
+                            out.set(i, annotation_view_to_table(lua, v)?)?;
+                            i += 1;
+                        }
                     }
-                }
-                Ok(out)
-            })?;
+                    Ok(out)
+                },
+            )?;
             annotations.set("in_range", f)?;
         }
 
-        // rift.annotations.by_kind(prefix) -> array of tables (kind starts_with)
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |lua, prefix: String| {
-                let s = sh.borrow();
-                let out = lua.create_table()?;
-                let matching = s
-                    .annotations(s.current_id())
-                    .iter()
-                    .filter(|v| v.kind.starts_with(&prefix));
-                for (i, v) in (1..).zip(matching) {
-                    out.set(i, annotation_view_to_table(lua, v)?)?;
-                }
-                Ok(out)
-            })?;
+            let f =
+                lua.create_function(move |lua, (prefix, opts): (String, Option<LuaTable>)| {
+                    let buf = opts_target(&sh, opts.as_ref())?;
+                    let s = sh.borrow();
+                    let out = lua.create_table()?;
+                    let matching = s
+                        .annotations(buf)
+                        .iter()
+                        .filter(|v| v.kind.starts_with(&prefix));
+                    for (i, v) in (1..).zip(matching) {
+                        out.set(i, annotation_view_to_table(lua, v)?)?;
+                    }
+                    Ok(out)
+                })?;
             annotations.set("by_kind", f)?;
         }
 
-        // rift.annotations.clear(kind_prefix) - drop every annotation whose
-        // kind starts with the prefix (e.g. a plugin clearing its own "md.").
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, prefix: String| {
+            let f = lua.create_function(move |_, (prefix, opts): (String, Option<LuaTable>)| {
+                let buf = opts_target(&sh, opts.as_ref())?;
                 let mut s = sh.borrow_mut();
-                let buf = s.current_id();
                 s.edit_local_snapshot(buf, |snap| {
                     snap.annotations.retain(|v| !v.kind.starts_with(&prefix));
                 });
@@ -1463,40 +1474,42 @@ impl LuaHost {
             api.set("current_buf", f)?;
         }
 
-        // rift.get_cursor() -> row (1-indexed), col (0-indexed)
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| {
+            let f = lua.create_function(move |_, opts: Option<LuaTable>| {
+                let buf = opts_target(&sh, opts.as_ref())?;
                 let s = sh.borrow();
-                let (row, col) = s.current().map_or((0, 0), |snap| snap.meta.cursor);
+                let (row, col) = s.snapshot(buf).map_or((0, 0), |snap| snap.meta.cursor);
                 Ok((lua_int(row) + 1, lua_int(col)))
             })?;
             api.set("get_cursor", f)?;
         }
 
-        // rift.get_lines(start, end) -> sequence of strings
         // start/end are 1-indexed; end = -1 means last line
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |lua, (start, end_): (i64, i64)| {
-                let s = sh.borrow();
-                let t = lua.create_table()?;
-                let Some(buffer) = s.current().map(|snap| &snap.buffer) else {
-                    return Ok(t);
-                };
-                let count = buffer.get_total_lines();
-                let len = lua_int(count);
-                let start = lua_index(start.saturating_sub(1)).min(count);
-                let end_ = lua_index(if end_ < 0 {
-                    len + end_ + 1
-                } else {
-                    end_.min(len)
-                });
-                for (i, row) in (start..end_).enumerate() {
-                    t.set(i + 1, lua.create_string(line_bytes(buffer, row))?)?;
-                }
-                Ok(t)
-            })?;
+            let f = lua.create_function(
+                move |lua, (start, end_, opts): (i64, i64, Option<LuaTable>)| {
+                    let buf = opts_target(&sh, opts.as_ref())?;
+                    let s = sh.borrow();
+                    let t = lua.create_table()?;
+                    let Some(buffer) = s.snapshot(buf).map(|snap| &snap.buffer) else {
+                        return Ok(t);
+                    };
+                    let count = buffer.get_total_lines();
+                    let len = lua_int(count);
+                    let start = lua_index(start.saturating_sub(1)).min(count);
+                    let end_ = lua_index(if end_ < 0 {
+                        len + end_ + 1
+                    } else {
+                        end_.min(len)
+                    });
+                    for (i, row) in (start..end_).enumerate() {
+                        t.set(i + 1, lua.create_string(line_bytes(buffer, row))?)?;
+                    }
+                    Ok(t)
+                },
+            )?;
             api.set("get_lines", f)?;
         }
 
@@ -1730,15 +1743,16 @@ impl LuaHost {
         api: &LuaTable,
         shared: &Rc<RefCell<LuaSharedState>>,
     ) -> LuaResult<()> {
-        // rift.insert(text) - insert text at the current cursor position
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, text: String| {
+            let f = lua.create_function(move |_, (text, opts): (String, Option<LuaTable>)| {
+                let buf = opts_target(&sh, opts.as_ref())?;
                 let mut s = sh.borrow_mut();
-                let buf = s.current_id();
-                s.edit_local_buf(buf, |buffer| {
-                    let _ = buffer.insert_str(&text);
-                });
+                if !s.local_buf_read_only(buf) {
+                    s.edit_local_buf(buf, |buffer| {
+                        let _ = buffer.insert_str(&text);
+                    });
+                }
                 s.mutations.push(PluginMutation::InsertAtCursor {
                     buf: DocumentId::new(buf),
                     text,
@@ -1748,14 +1762,13 @@ impl LuaHost {
             api.set("insert", f)?;
         }
 
-        // rift.delete_before(n) - delete n chars immediately before the cursor
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, n: i64| {
+            let f = lua.create_function(move |_, (n, opts): (i64, Option<LuaTable>)| {
+                let buf = opts_target(&sh, opts.as_ref())?;
                 if n > 0 {
                     let mut s = sh.borrow_mut();
                     let count = lua_index(n);
-                    let buf = s.current_id();
                     if !s.local_buf_read_only(buf) {
                         s.edit_local_buf(buf, |buffer| {
                             for _ in 0..count {
@@ -1773,14 +1786,13 @@ impl LuaHost {
             api.set("delete_before", f)?;
         }
 
-        // rift.delete_forward(n) - delete n chars immediately after the cursor
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, n: i64| {
+            let f = lua.create_function(move |_, (n, opts): (i64, Option<LuaTable>)| {
+                let buf = opts_target(&sh, opts.as_ref())?;
                 if n > 0 {
                     let mut s = sh.borrow_mut();
                     let count = lua_index(n);
-                    let buf = s.current_id();
                     if !s.local_buf_read_only(buf) {
                         s.edit_local_buf(buf, |buffer| {
                             for _ in 0..count {
@@ -1798,23 +1810,23 @@ impl LuaHost {
             api.set("delete_forward", f)?;
         }
 
-        // rift.set_cursor(row, col) - move cursor (row 1-indexed, col 0-indexed)
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, (row, col): (i64, i64)| {
-                if row >= 1 {
-                    let mut s = sh.borrow_mut();
-                    let (row, col) = (lua_index(row), lua_index(col));
-                    let buf = s.current_id();
-                    s.move_local_cursor(buf, row - 1, col);
-                    s.mutations.push(PluginMutation::SetCursor {
-                        buf: DocumentId::new(buf),
-                        row,
-                        col,
-                    });
-                }
-                Ok(())
-            })?;
+            let f =
+                lua.create_function(move |_, (row, col, opts): (i64, i64, Option<LuaTable>)| {
+                    let buf = opts_target(&sh, opts.as_ref())?;
+                    if row >= 1 {
+                        let mut s = sh.borrow_mut();
+                        let (row, col) = (lua_index(row), lua_index(col));
+                        s.move_local_cursor(buf, row - 1, col);
+                        s.mutations.push(PluginMutation::SetCursor {
+                            buf: DocumentId::new(buf),
+                            row,
+                            col,
+                        });
+                    }
+                    Ok(())
+                })?;
             api.set("set_cursor", f)?;
         }
 
@@ -1826,35 +1838,36 @@ impl LuaHost {
         api: &LuaTable,
         shared: &Rc<RefCell<LuaSharedState>>,
     ) -> LuaResult<()> {
-        // rift.replace_lines(start, end, lines) - replace 1-indexed inclusive line range
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, (start, end_, lines): (i64, i64, LuaTable)| {
-                let mut v = Vec::new();
-                for s in lines.sequence_values::<String>() {
-                    v.push(s?);
-                }
-                if start >= 1 && end_ >= start {
-                    let mut s = sh.borrow_mut();
-                    let (start, end) = (lua_index(start), lua_index(end_));
-                    let buf = s.current_id();
-                    s.edit_local_buf(buf, |buffer| {
-                        if let Some(edit) = buffer.line_replacement(start - 1, end - 1, &v) {
-                            buffer.delete_range(edit.start, edit.end - edit.start);
-                            let _ = buffer.set_cursor(edit.start);
-                            let _ = buffer.insert_str(&edit.text);
-                            let _ = buffer.set_cursor(edit.cursor.min(buffer.len()));
-                        }
-                    });
-                    s.mutations.push(PluginMutation::ReplaceLines {
-                        buf: DocumentId::new(buf),
-                        start,
-                        end,
-                        lines: v,
-                    });
-                }
-                Ok(())
-            })?;
+            let f = lua.create_function(
+                move |_, (start, end_, lines, opts): (i64, i64, LuaTable, Option<LuaTable>)| {
+                    let mut v = Vec::new();
+                    for s in lines.sequence_values::<String>() {
+                        v.push(s?);
+                    }
+                    let buf = opts_target(&sh, opts.as_ref())?;
+                    if start >= 1 && end_ >= start {
+                        let mut s = sh.borrow_mut();
+                        let (start, end) = (lua_index(start), lua_index(end_));
+                        s.edit_local_buf(buf, |buffer| {
+                            if let Some(edit) = buffer.line_replacement(start - 1, end - 1, &v) {
+                                buffer.delete_range(edit.start, edit.end - edit.start);
+                                let _ = buffer.set_cursor(edit.start);
+                                let _ = buffer.insert_str(&edit.text);
+                                let _ = buffer.set_cursor(edit.cursor.min(buffer.len()));
+                            }
+                        });
+                        s.mutations.push(PluginMutation::ReplaceLines {
+                            buf: DocumentId::new(buf),
+                            start,
+                            end,
+                            lines: v,
+                        });
+                    }
+                    Ok(())
+                },
+            )?;
             api.set("replace_lines", f)?;
         }
 
@@ -1884,53 +1897,56 @@ impl LuaHost {
         );
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, (name, value): (String, LuaValue)| {
-                // Lua floats truncate toward zero and saturate, matching the integer option form.
-                let value_str = match &value {
-                    LuaValue::Boolean(b) => b.to_string(),
-                    LuaValue::Integer(n) => n.to_string(),
-                    LuaValue::Number(n) => crate::num::f64_to_i64(*n).to_string(),
-                    LuaValue::String(s) => s.to_str()?.to_string(),
-                    _ => return Ok(()),
-                };
-                let mut guard = sh.borrow_mut();
-                let s = &mut *guard;
-                let local = resolver.is_local(&name);
-                let buf = s.current_id();
-                let mut scratch = crate::document::definitions::DocumentOptions::default();
-                let options = s
-                    .bufs
-                    .get_mut(&buf)
-                    .map_or(&mut scratch, |snap| &mut snap.options);
-                let _ = resolver.set(
-                    &name,
-                    Some(&value_str),
-                    options,
-                    &mut s.user_settings,
-                    &mut |_| {},
-                );
-                if local {
-                    s.diverged.insert(buf);
-                } else {
-                    s.synced.user_settings = None;
-                }
-                let buf = local.then(|| DocumentId::new(buf));
-                s.mutations.push(PluginMutation::SetOption {
-                    buf,
-                    name,
-                    value: value_str,
-                });
-                Ok(())
-            })?;
+            let f = lua.create_function(
+                move |_, (name, value, opts): (String, LuaValue, Option<LuaTable>)| {
+                    // Lua floats truncate toward zero and saturate, matching the integer option form.
+                    let value_str = match &value {
+                        LuaValue::Boolean(b) => b.to_string(),
+                        LuaValue::Integer(n) => n.to_string(),
+                        LuaValue::Number(n) => crate::num::f64_to_i64(*n).to_string(),
+                        LuaValue::String(s) => s.to_str()?.to_string(),
+                        _ => return Ok(()),
+                    };
+                    let buf = opts_target(&sh, opts.as_ref())?;
+                    let mut guard = sh.borrow_mut();
+                    let s = &mut *guard;
+                    let local = resolver.is_local(&name);
+                    let mut scratch = crate::document::definitions::DocumentOptions::default();
+                    let options = s
+                        .bufs
+                        .get_mut(&buf)
+                        .map_or(&mut scratch, |snap| &mut snap.options);
+                    let _ = resolver.set(
+                        &name,
+                        Some(&value_str),
+                        options,
+                        &mut s.user_settings,
+                        &mut |_| {},
+                    );
+                    if local {
+                        s.diverged.insert(buf);
+                    } else {
+                        s.synced.user_settings = None;
+                    }
+                    let buf = local.then(|| DocumentId::new(buf));
+                    s.mutations.push(PluginMutation::SetOption {
+                        buf,
+                        name,
+                        value: value_str,
+                    });
+                    Ok(())
+                },
+            )?;
             api.set("set_option", f)?;
         }
 
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |lua, name: String| {
+            let f = lua.create_function(move |lua, (name, opts): (String, Option<LuaTable>)| {
+                let buf = opts_target(&sh, opts.as_ref())?;
                 let s = sh.borrow();
                 let default_options;
-                let options = if let Some(snap) = s.current() {
+                let options = if let Some(snap) = s.snapshot(buf) {
                     &snap.options
                 } else {
                     default_options = crate::document::definitions::DocumentOptions::default();
@@ -1952,12 +1968,12 @@ impl LuaHost {
         api: &LuaTable,
         shared: &Rc<RefCell<LuaSharedState>>,
     ) -> LuaResult<()> {
-        // rift.get_filetype() -> string or nil
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |lua, ()| {
+            let f = lua.create_function(move |lua, opts: Option<LuaTable>| {
+                let buf = opts_target(&sh, opts.as_ref())?;
                 let s = sh.borrow();
-                match s.current().and_then(|snap| snap.meta.filetype.as_ref()) {
+                match s.snapshot(buf).and_then(|snap| snap.meta.filetype.as_ref()) {
                     Some(ft) => Ok(LuaValue::String(lua.create_string(ft)?)),
                     None => Ok(LuaValue::Nil),
                 }
@@ -1965,12 +1981,15 @@ impl LuaHost {
             api.set("get_filetype", f)?;
         }
 
-        // rift.get_filepath() -> string or nil
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |lua, ()| {
+            let f = lua.create_function(move |lua, opts: Option<LuaTable>| {
+                let buf = opts_target(&sh, opts.as_ref())?;
                 let s = sh.borrow();
-                match s.current().and_then(|snap| snap.meta.file_path.as_ref()) {
+                match s
+                    .snapshot(buf)
+                    .and_then(|snap| snap.meta.file_path.as_ref())
+                {
                     Some(p) => Ok(LuaValue::String(lua.create_string(p)?)),
                     None => Ok(LuaValue::Nil),
                 }
@@ -2011,12 +2030,12 @@ impl LuaHost {
         api: &LuaTable,
         shared: &Rc<RefCell<LuaSharedState>>,
     ) -> LuaResult<()> {
-        // rift.buf_kind() -> "file" | "terminal" | "directory" | "undotree" | "messages" | ,
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| {
+            let f = lua.create_function(move |_, opts: Option<LuaTable>| {
+                let buf = opts_target(&sh, opts.as_ref())?;
                 let s = sh.borrow();
-                Ok(s.current()
+                Ok(s.snapshot(buf)
                     .map_or_else(|| "file".to_string(), |snap| snap.meta.kind.clone()))
             })?;
             api.set("buf_kind", f)?;
@@ -2049,18 +2068,17 @@ impl LuaHost {
             api.set("open_file", f)?;
         }
 
-        // rift.close_buf([force]) - close the current buffer, optionally discarding changes
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, force: Option<bool>| {
-                let mut s = sh.borrow_mut();
-                let buf = s.doc_id();
-                s.mutations.push(PluginMutation::CloseBuffer {
-                    buf,
-                    force: force.unwrap_or(false),
-                });
-                Ok(())
-            })?;
+            let f =
+                lua.create_function(move |_, (force, opts): (Option<bool>, Option<LuaTable>)| {
+                    let buf = opts_target(&sh, opts.as_ref())?;
+                    sh.borrow_mut().mutations.push(PluginMutation::CloseBuffer {
+                        buf: DocumentId::new(buf),
+                        force: force.unwrap_or(false),
+                    });
+                    Ok(())
+                })?;
             api.set("close_buf", f)?;
         }
 
@@ -2080,18 +2098,19 @@ impl LuaHost {
             api.set("create_scratch_buf", f)?;
         }
 
-        // rift.reload_buf([force]) - reload the active buffer's content from disk, discarding in-memory edits if `force`.
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, force: Option<bool>| {
-                let mut s = sh.borrow_mut();
-                let buf = s.doc_id();
-                s.mutations.push(PluginMutation::ReloadBuffer {
-                    buf,
-                    force: force.unwrap_or(false),
-                });
-                Ok(())
-            })?;
+            let f =
+                lua.create_function(move |_, (force, opts): (Option<bool>, Option<LuaTable>)| {
+                    let buf = opts_target(&sh, opts.as_ref())?;
+                    sh.borrow_mut()
+                        .mutations
+                        .push(PluginMutation::ReloadBuffer {
+                            buf: DocumentId::new(buf),
+                            force: force.unwrap_or(false),
+                        });
+                    Ok(())
+                })?;
             api.set("reload_buf", f)?;
         }
 
@@ -2118,13 +2137,13 @@ impl LuaHost {
             api.set("get_commands", f)?;
         }
 
-        // rift.save() - request a save of the active buffer to disk
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| {
-                let mut s = sh.borrow_mut();
-                let buf = s.doc_id();
-                s.mutations.push(PluginMutation::SaveBuffer { buf });
+            let f = lua.create_function(move |_, opts: Option<LuaTable>| {
+                let buf = opts_target(&sh, opts.as_ref())?;
+                sh.borrow_mut().mutations.push(PluginMutation::SaveBuffer {
+                    buf: DocumentId::new(buf),
+                });
                 Ok(())
             })?;
             api.set("save", f)?;
@@ -2135,7 +2154,7 @@ impl LuaHost {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, ()| {
                 let s = sh.borrow();
-                Ok(lua_int(s.current().map_or(
+                Ok(lua_int(s.snapshot(s.current_id()).map_or(
                     crate::document::definitions::DocumentOptions::default().tab_width,
                     |snap| snap.options.tab_width,
                 )))
@@ -2148,7 +2167,7 @@ impl LuaHost {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, ()| {
                 let s = sh.borrow();
-                Ok(s.current().map_or(
+                Ok(s.snapshot(s.current_id()).map_or(
                     crate::document::definitions::DocumentOptions::default().expand_tabs,
                     |snap| snap.options.expand_tabs,
                 ))
@@ -2163,47 +2182,51 @@ impl LuaHost {
             api.set("get_mode", f)?;
         }
 
-        // rift.get_line_count() -> integer
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| {
+            let f = lua.create_function(move |_, opts: Option<LuaTable>| {
+                let buf = opts_target(&sh, opts.as_ref())?;
                 let s = sh.borrow();
                 Ok(lua_int(
-                    s.current().map_or(0, |snap| snap.buffer.get_total_lines()),
+                    s.snapshot(buf)
+                        .map_or(0, |snap| snap.buffer.get_total_lines()),
                 ))
             })?;
             api.set("get_line_count", f)?;
         }
 
-        // rift.can_undo() -> bool
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| {
+            let f = lua.create_function(move |_, opts: Option<LuaTable>| {
+                let buf = opts_target(&sh, opts.as_ref())?;
                 Ok(sh
                     .borrow()
-                    .current()
+                    .snapshot(buf)
                     .is_some_and(|snap| snap.meta.history.can_undo))
             })?;
             api.set("can_undo", f)?;
         }
 
-        // rift.can_redo() -> bool
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| {
+            let f = lua.create_function(move |_, opts: Option<LuaTable>| {
+                let buf = opts_target(&sh, opts.as_ref())?;
                 Ok(sh
                     .borrow()
-                    .current()
+                    .snapshot(buf)
                     .is_some_and(|snap| snap.meta.history.can_redo))
             })?;
             api.set("can_redo", f)?;
         }
 
-        // rift.is_dirty() -> bool
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| {
-                Ok(sh.borrow().current().is_some_and(|snap| snap.meta.is_dirty))
+            let f = lua.create_function(move |_, opts: Option<LuaTable>| {
+                let buf = opts_target(&sh, opts.as_ref())?;
+                Ok(sh
+                    .borrow()
+                    .snapshot(buf)
+                    .is_some_and(|snap| snap.meta.is_dirty))
             })?;
             api.set("is_dirty", f)?;
         }
@@ -2238,13 +2261,13 @@ impl LuaHost {
             api.set("set_scroll", f)?;
         }
 
-        // rift.get_line_ending() -> "lf" | "crlf"
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| {
+            let f = lua.create_function(move |_, opts: Option<LuaTable>| {
+                let buf = opts_target(&sh, opts.as_ref())?;
                 Ok(sh
                     .borrow()
-                    .current()
+                    .snapshot(buf)
                     .map_or("lf", |snap| snap.options.line_ending.name()))
             })?;
             api.set("get_line_ending", f)?;
@@ -2253,9 +2276,9 @@ impl LuaHost {
         // rift.set_line_ending(type) - "lf" | "crlf"
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ending: String| {
+            let f = lua.create_function(move |_, (ending, opts): (String, Option<LuaTable>)| {
+                let buf = opts_target(&sh, opts.as_ref())?;
                 let mut s = sh.borrow_mut();
-                let buf = s.current_id();
                 s.edit_local_snapshot(buf, |snap| {
                     snap.options.line_ending = crate::document::LineEnding::from_name(&ending);
                 });
@@ -2286,9 +2309,10 @@ impl LuaHost {
                         .as_ref()
                         .and_then(|t| t.get::<bool>("whole_word").ok())
                         .unwrap_or(false);
+                    let buf = opts_target(&sh, opts.as_ref())?;
                     let s = sh.borrow();
                     let results = lua.create_table()?;
-                    let Some(buffer) = s.current().map(|snap| &snap.buffer) else {
+                    let Some(buffer) = s.snapshot(buf).map(|snap| &snap.buffer) else {
                         return Ok(results);
                     };
                     let needle = needle.as_bytes();
@@ -2416,12 +2440,11 @@ impl LuaHost {
             api.set("map", f)?;
         }
 
-        // rift.center_on_line(n) - move cursor to line n (1-indexed) and center it in viewport
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, row: usize| {
+            let f = lua.create_function(move |_, (row, opts): (usize, Option<LuaTable>)| {
+                let buf = opts_target(&sh, opts.as_ref())?;
                 let mut s = sh.borrow_mut();
-                let buf = s.current_id();
                 s.move_local_cursor(buf, row.saturating_sub(1), 0);
                 s.mutations.push(PluginMutation::CenterOnLine {
                     buf: DocumentId::new(buf),
@@ -2820,7 +2843,7 @@ impl LuaHost {
                 let lookup_key = if let Some(u) = uri {
                     Some(u)
                 } else {
-                    s.current()
+                    s.snapshot(s.current_id())
                         .and_then(|snap| snap.meta.file_path.as_deref())
                         .map(|p| {
                             format!("file:///{}", p.replace('\\', "/").trim_start_matches('/'))
@@ -3130,7 +3153,7 @@ impl LuaHost {
                         .insert(key.clone(), val.clone());
                     s.synced.buffer_vars = None;
                     s.mutations.push(PluginMutation::SetBufferVar {
-                        buf_id: buf_id.map(crate::document::DocumentId::new),
+                        buf: DocumentId::new(target_id),
                         key,
                         value: val,
                     });

@@ -18,6 +18,8 @@ mod key_input_tests;
 mod motion_tests;
 mod normal_cursor_tests;
 mod operator_tests;
+#[cfg(feature = "plugins")]
+mod plugin_any_buffer_tests;
 mod plugin_edit_tests;
 mod plugin_highlight_tests;
 #[cfg(feature = "plugins")]

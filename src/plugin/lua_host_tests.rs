@@ -30,6 +30,14 @@ fn set_annotations(host: &LuaHost, views: Vec<AnnotationView>, next_id: u64) {
     });
 }
 
+fn open_bufs(host: &LuaHost, ids: &[u64]) {
+    host.update_state(StateUpdate {
+        buf_id: 1,
+        bufs: Some(ids.iter().map(|&id| (id, BufUpdate::default())).collect()),
+        ..Default::default()
+    });
+}
+
 fn load_plugin(host: &LuaHost, file: &str, src: &str) {
     let dir = tempfile::tempdir().expect("tempdir failed");
     let path = dir.path().join(file);
@@ -1097,6 +1105,7 @@ fn test_plugins_unload_removes_all_registrations() {
     .expect("write failed");
     let owner = path.to_string_lossy().replace('\\', "/");
     let host = make_host();
+    open_bufs(&host, &[1, 2]);
     let error = host.load_file(&path);
     assert!(error.is_none(), "load error: {error:?}");
     let registrations = host.drain_mutations();
@@ -1269,6 +1278,7 @@ fn test_plugins_list_includes_resource_only_and_failed_plugins() {
     std::fs::write(&broken, "error('boom')").expect("write failed");
 
     let host = make_host();
+    open_bufs(&host, &[1]);
     for path in [&kinds, &binds, &marks] {
         assert!(host.load_file(path).is_none());
     }
@@ -1310,6 +1320,7 @@ fn test_off_clears_handler_owner_from_list() {
 fn test_unload_keeps_other_plugins_registrations() {
     let dir = tempfile::tempdir().expect("tempdir failed");
     let host = make_host();
+    open_bufs(&host, &[1]);
     let mut names = Vec::new();
     for plugin in ["a", "b"] {
         let (path, name) = plugin_path(dir.path(), &format!("{plugin}.lua"));

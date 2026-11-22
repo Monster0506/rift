@@ -1,4 +1,4 @@
-use super::{lua_index, parse_style, LuaSharedState};
+use super::{buf_or_current, lua_index, parse_style, LuaSharedState};
 use crate::document::DocumentId;
 use crate::layer::CellStyle;
 use crate::plugin::{HighlightRange, HighlightSpec, PluginMutation};
@@ -106,6 +106,7 @@ fn register_namespaces(lua: &Lua, hl: &LuaTable, shared: &Shared) -> LuaResult<(
                 };
                 let opt_buf: Option<u64> =
                     opts.as_ref().map(|o| o.get("buf")).transpose()?.flatten();
+                let buf = buf_or_current(&sh, opt_buf.or(node_buf))?;
                 let priority: i32 = opts
                     .as_ref()
                     .map(|o| o.get::<Option<i32>>("priority"))
@@ -126,7 +127,6 @@ fn register_namespaces(lua: &Lua, hl: &LuaTable, shared: &Shared) -> LuaResult<(
                     plugin_namespaces.set(ns.as_str(), true)?;
                 }
                 let mut s = sh.borrow_mut();
-                let buf = opt_buf.or(node_buf).unwrap_or(s.buf_id as u64);
                 s.mutations.push(PluginMutation::AddNsHighlight {
                     buf: DocumentId::new(buf),
                     ns,
@@ -145,6 +145,7 @@ fn register_namespaces(lua: &Lua, hl: &LuaTable, shared: &Shared) -> LuaResult<(
         let sh = Rc::clone(shared);
         let f = lua.create_function(move |_, (ns, buf): (String, Option<u64>)| {
             let ns = namespace(ns)?;
+            let buf = buf.map(|buf| buf_or_current(&sh, Some(buf))).transpose()?;
             let owner = sh.borrow().current_plugin.clone();
             sh.borrow_mut()
                 .mutations

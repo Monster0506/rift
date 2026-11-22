@@ -576,7 +576,9 @@ impl<T: TerminalBackend> Editor<T> {
                 let _ = doc.insert_str(&lines.join("\n"));
             }
             PluginMutation::InsertAtCursor { text, .. } => {
-                let _ = doc.insert_str(&text);
+                if !doc.is_read_only() {
+                    let _ = doc.insert_str(&text);
+                }
             }
             PluginMutation::DeleteBefore { count, .. } => {
                 for _ in 0..count {
@@ -642,13 +644,12 @@ impl<T: TerminalBackend> Editor<T> {
                 };
                 doc.options.line_ending = crate::document::LineEnding::from_name(&ending);
             }
-            PluginMutation::SetBufferVar { buf_id, key, value } => {
-                let doc_id = buf_id.or_else(|| self.document_manager.active_document_id());
-                if let Some(document) =
-                    doc_id.and_then(|id| self.document_manager.get_document_mut(id))
-                {
-                    document.vars.insert(key, value);
-                }
+            PluginMutation::SetBufferVar { buf, key, value } => {
+                let Some(doc) = self.document_manager.get_document_mut(buf) else {
+                    self.drop_plugin_write(buf, "set_buffer_var");
+                    return;
+                };
+                doc.vars.insert(key, value);
             }
             _ => self.report_misrouted(),
         }

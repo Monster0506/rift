@@ -373,6 +373,26 @@ fn tree_is_stale_after_a_local_edit_until_the_next_syntax_update() {
 }
 
 #[test]
+fn background_tree_is_stale_after_a_local_edit() {
+    let mut editor = editor_with(RUST, "rust");
+    let first = editor.active_document_id().get();
+    lua(&mut editor, "rift.create_scratch_buf('other', { 'x' })");
+    lua(
+        &mut editor,
+        &format!(
+            r#"
+            assert(rift.current_buf() ~= {first})
+            local tree = rift.treesitter.get_tree({first})
+            assert(not tree:is_stale())
+            rift.insert("// note\n", {{ buf = {first} }})
+            assert(tree:is_stale())
+            assert(rift.treesitter.get_tree() == nil)
+            "#
+        ),
+    );
+}
+
+#[test]
 fn parse_and_captures_at_cover_strings_and_injected_layers() {
     let mut editor = editor_with("# Title\n\n```rust\nlet x = 1;\n```\n", "markdown");
     set_cursor(&mut editor, "let");

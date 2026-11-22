@@ -461,9 +461,8 @@ pub(crate) enum PluginMutation {
         kind: String,
         keys: String,
     },
-    /// Set a buffer-local variable. `buf_id == None` targets the active document.
     SetBufferVar {
-        buf_id: Option<DocumentId>,
+        buf: DocumentId,
         key: String,
         value: crate::annotations::value::Value,
     },
