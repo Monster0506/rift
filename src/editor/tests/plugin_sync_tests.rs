@@ -609,14 +609,24 @@ fn edit_queued_after_switch_buf_lands_in_the_buffer_current_when_queued() {
 
     lua_ok(
         &editor,
-        &format!("rift.switch_buf({first}) rift.set_cursor(1, 0) rift.insert('x')"),
+        &format!("rift.switch_buf({first}) assert(rift.current_buf() == {first}) assert(rift.get_lines(1, 1)[1] == 'first') rift.set_cursor(1, 0) rift.insert('x')"),
     );
     editor.apply_plugin_mutations();
 
     let active = editor.document_manager.active_document_id().unwrap();
     assert_eq!(active.get(), first);
-    assert_eq!(buffer_text(&editor, first), "first");
-    assert_eq!(buffer_text(&editor, second), "xsecond");
+    assert_eq!(buffer_text(&editor, first), "xfirst");
+    assert_eq!(buffer_text(&editor, second), "second");
+}
+
+#[test]
+fn switching_to_an_unknown_buffer_raises_without_changing_the_current_buffer() {
+    let (mut editor, _first, second) = editor_with_two_buffers();
+    lua_ok(&editor, &format!(
+        "local ok, err = pcall(rift.switch_buf, 9999) assert(not ok and tostring(err):find('no open buffer 9999')) assert(rift.current_buf() == {second})"
+    ));
+    editor.apply_plugin_mutations();
+    assert_eq!(editor.active_document_id().get(), second);
 }
 
 #[test]

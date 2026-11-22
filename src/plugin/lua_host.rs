@@ -2045,11 +2045,15 @@ impl LuaHost {
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, id: u64| {
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::SwitchToBuffer(
-                        crate::document::DocumentId::new(id),
-                    ));
+                let mut s = sh.borrow_mut();
+                let id = s.target(Some(id))?;
+                s.buf_id = usize::try_from(id).map_err(LuaError::external)?;
+                for entry in &mut s.buf_list {
+                    entry.is_current = entry.id as u64 == id;
+                }
+                s.synced.buf_list = None;
+                s.mutations
+                    .push(PluginMutation::SwitchToBuffer(DocumentId::new(id)));
                 Ok(())
             })?;
             api.set("switch_buf", f)?;
