@@ -479,23 +479,10 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn drop_plugin_write(&mut self, buf: crate::document::DocumentId, write: &str) {
-        let reason = if self.document_manager.get_document(buf).is_some() {
-            "is no longer active"
-        } else {
-            "is closed"
-        };
         self.state.error_manager.notifications_mut().log(
             crate::notification::NotificationType::Info,
-            format!("plugin {write} skipped: buffer {} {reason}", buf.get()),
+            format!("plugin {write} skipped: buffer {} is closed", buf.get()),
         );
-    }
-
-    fn plugin_target_is_active(&mut self, buf: crate::document::DocumentId, write: &str) -> bool {
-        if self.document_manager.active_document_id() == Some(buf) {
-            return true;
-        }
-        self.drop_plugin_write(buf, write);
-        false
     }
 
     fn apply_ui_mutation(&mut self, mutation: PluginMutation) {
@@ -716,8 +703,10 @@ impl<T: TerminalBackend> Editor<T> {
     ) {
         match mutation {
             PluginMutation::SaveBuffer { buf } => {
-                if self.plugin_target_is_active(buf, "save") {
-                    self.do_save();
+                if self.document_manager.get_document(buf).is_some() {
+                    self.save_document_to(buf, None);
+                } else {
+                    self.drop_plugin_write(buf, "save");
                 }
             }
             PluginMutation::SwitchToBuffer(id) => {
@@ -740,8 +729,19 @@ impl<T: TerminalBackend> Editor<T> {
                 let _ = self.open_file(Some(path), force);
             }
             PluginMutation::CloseBuffer { buf, force } => {
-                if self.plugin_target_is_active(buf, "close_buf") {
+                if self.document_manager.get_document(buf).is_none() {
+                    self.drop_plugin_write(buf, "close_buf");
+                } else if self.active_document_id() == buf {
                     self.do_quit(force);
+                } else {
+                    let result = if force {
+                        self.remove_document_force(buf)
+                    } else {
+                        self.remove_document(buf)
+                    };
+                    if let Err(error) = result {
+                        self.state.handle_error(error);
+                    }
                 }
             }
             PluginMutation::CreateScratchBuf { name, lines } => {
@@ -753,8 +753,10 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             PluginMutation::ReloadBuffer { buf, force } => {
-                if self.plugin_target_is_active(buf, "reload_buf") {
-                    let _ = self.open_file(None, force);
+                if self.document_manager.get_document(buf).is_none() {
+                    self.drop_plugin_write(buf, "reload_buf");
+                } else if let Err(error) = self.reload_document(buf, force) {
+                    self.state.handle_error(error);
                 }
             }
             PluginMutation::CreateBuffer {
@@ -1319,6 +1321,7 @@ impl<T: TerminalBackend> Editor<T> {
             } => {
                 use crate::annotations::presentation::{FaceRef, Presentation};
                 let Some(doc) = self.document_manager.get_document_mut(buf) else {
+                    self.drop_plugin_write(buf, "highlight.add");
                     return;
                 };
                 let bytes = highlight_bytes(&doc.buffer, &range);

@@ -126,7 +126,6 @@ impl<T: TerminalBackend> Editor<T> {
             for win_id in self.split_tree.windows_for_document(id) {
                 self.split_tree.set_window_document(win_id, doc_id);
             }
-            self.split_tree.set_focused_document(doc_id);
         }
         self.sync_state_with_active_document();
 
@@ -200,35 +199,8 @@ impl<T: TerminalBackend> Editor<T> {
                 #[cfg(not(feature = "lsp"))]
                 let _ = doc_id;
             }
-        } else if let Some(doc) = self.document_manager.active_document() {
-            if doc.buffer_kind_id() == crate::document::runtime::BufferKindId::FILE {
-                let Some(path) = doc.path() else {
-                    return Err(RiftError::new(
-                        ErrorType::Execution,
-                        crate::constants::errors::NO_PATH,
-                        "No file name",
-                    ));
-                };
-                if !force && doc.is_dirty() {
-                    return Err(RiftError {
-                        severity: ErrorSeverity::Warning,
-                        kind: ErrorType::Execution,
-                        code: crate::constants::errors::UNSAVED_CHANGES.to_string(),
-                        message: crate::constants::errors::MSG_UNSAVED_CHANGES.to_string(),
-                    });
-                }
-                let job = crate::job_manager::jobs::file_operations::FileLoadJob::new_reload(
-                    doc.id,
-                    path.to_path_buf(),
-                );
-                let doc_id = doc.id;
-                let job_id = self.job_manager.spawn(job);
-                self.file_load_jobs.insert(job_id, doc_id);
-            } else {
-                let kind_id = doc.buffer_kind_id();
-                let reload_dispatch = doc.descriptor().reload_dispatch;
-                self.reload_native_document(kind_id, reload_dispatch)?;
-            }
+        } else if let Some(buf) = self.document_manager.active_document_id() {
+            self.reload_document(buf, force)?;
         } else {
             return Err(RiftError::new(
                 ErrorType::Internal,
@@ -241,6 +213,79 @@ impl<T: TerminalBackend> Editor<T> {
             self.split_tree.set_focused_document(doc_id);
         }
         self.sync_state_with_active_document();
+        Ok(())
+    }
+
+    pub(super) fn with_document_target<R>(
+        &mut self,
+        buf: DocumentId,
+        f: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let win = self.split_tree.focused_window_id();
+        let original = self.active_document_id();
+        let original_tab = self.document_manager.active_document_id();
+        let scroll = self.render_system.viewport.get_scroll();
+        self.split_tree.set_window_document(win, buf);
+        let _ = self.document_manager.switch_to_document(buf);
+        let result = f(self);
+        if original != buf && self.document_manager.get_document(original).is_some() {
+            if self
+                .split_tree
+                .get_window(win)
+                .is_some_and(|w| w.document_id == buf)
+            {
+                self.split_tree.set_window_document(win, original);
+                if self.split_tree.focused_window_id() == win {
+                    self.render_system.viewport.set_scroll(scroll.0, scroll.1);
+                }
+            }
+            if self.document_manager.active_document_id() == Some(buf) {
+                if let Some(tab) = original_tab {
+                    let _ = self.document_manager.switch_to_document(tab);
+                }
+            }
+            self.sync_state_with_active_document();
+        }
+        result
+    }
+
+    pub(super) fn reload_document(
+        &mut self,
+        buf: DocumentId,
+        force: bool,
+    ) -> Result<(), RiftError> {
+        let Some(doc) = self.document_manager.get_document(buf) else {
+            return Ok(());
+        };
+        if doc.buffer_kind_id() == crate::document::runtime::BufferKindId::FILE {
+            let Some(path) = doc.path() else {
+                return Err(RiftError::new(
+                    ErrorType::Execution,
+                    crate::constants::errors::NO_PATH,
+                    "No file name",
+                ));
+            };
+            if !force && doc.is_dirty() {
+                return Err(RiftError {
+                    severity: ErrorSeverity::Warning,
+                    kind: ErrorType::Execution,
+                    code: crate::constants::errors::UNSAVED_CHANGES.to_string(),
+                    message: crate::constants::errors::MSG_UNSAVED_CHANGES.to_string(),
+                });
+            }
+            let job = crate::job_manager::jobs::file_operations::FileLoadJob::new_reload(
+                buf,
+                path.to_path_buf(),
+            );
+            let job_id = self.job_manager.spawn(job);
+            self.file_load_jobs.insert(job_id, buf);
+        } else {
+            let kind_id = doc.buffer_kind_id();
+            let dispatch = doc.descriptor().reload_dispatch;
+            self.with_document_target(buf, |editor| {
+                editor.reload_native_document(kind_id, dispatch)
+            })?;
+        }
         Ok(())
     }
 

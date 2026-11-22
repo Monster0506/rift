@@ -286,3 +286,67 @@ fn set_buffer_var_without_buf_targets_the_buffer_current_when_queued() {
         Some(&crate::annotations::value::Value::Str("queued".to_string()))
     );
 }
+
+#[test]
+fn saving_a_background_buffer_writes_its_file_without_switching_windows() {
+    let (_dir, mut editor, first, second) = background_file();
+    let path = doc(&editor, first).path().unwrap().to_path_buf();
+    doc_mut(&mut editor, first).insert_str("saved ").unwrap();
+    editor.update_lua_state();
+    lua_ok(&editor, &format!("rift.save({{ buf = {first} }})"));
+    sync(&mut editor);
+    drain_jobs(&mut editor);
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "saved alpha\nbeta");
+    assert_eq!(editor.active_document_id().get(), second);
+    assert_eq!(text(&editor, second), "second");
+}
+
+#[test]
+fn reloading_a_background_buffer_updates_only_its_document() {
+    let (_dir, mut editor, first, second) = background_file();
+    let path = doc(&editor, first).path().unwrap().to_path_buf();
+    std::fs::write(path, "reloaded").unwrap();
+    lua_ok(
+        &editor,
+        &format!("rift.reload_buf(true, {{ buf = {first} }})"),
+    );
+    sync(&mut editor);
+    drain_jobs(&mut editor);
+    assert_eq!(text(&editor, first), "reloaded");
+    assert_eq!(text(&editor, second), "second");
+    assert_eq!(editor.active_document_id().get(), second);
+}
+
+#[test]
+fn closing_a_background_buffer_preserves_the_focused_window_and_cursor() {
+    let (_dir, mut editor, first, second) = background_file();
+    let win = editor.split_tree.focused_window_id();
+    doc_mut(&mut editor, second).buffer.set_cursor(3).unwrap();
+    lua_ok(
+        &editor,
+        &format!("rift.close_buf(true, {{ buf = {first} }})"),
+    );
+    sync(&mut editor);
+    assert!(editor
+        .document_manager
+        .get_document(DocumentId::new(first))
+        .is_none());
+    assert_eq!(editor.split_tree.focused_window_id(), win);
+    assert_eq!(editor.active_document_id().get(), second);
+    assert_eq!(doc(&editor, second).buffer.cursor(), 3);
+    assert_eq!(text(&editor, second), "second");
+}
+
+#[test]
+fn highlight_queued_for_a_closed_buffer_logs_the_drop() {
+    let (_dir, mut editor, first, _second) = background_file();
+    lua_ok(
+        &editor,
+        &format!("rift.close_buf(true, {{ buf = {first} }}) rift.highlight.add('probe', {{1, 0, 1, 1}}, 'error', {{ buf = {first} }})"),
+    );
+    editor.apply_plugin_mutations();
+    let expected = format!("plugin highlight.add skipped: buffer {first} is closed");
+    assert!(editor.state.error_manager.notifications().message_log().iter().any(
+        |entry| matches!(entry, crate::notification::MessageEntry::Notification { message, .. } if message == &expected)
+    ));
+}

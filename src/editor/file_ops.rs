@@ -228,9 +228,12 @@ pub(super) fn native_reload_handlers<T: TerminalBackend>(
 }
 
 impl<T: TerminalBackend> Editor<T> {
-    fn dispatch_save_sync(&mut self) -> crate::document::runtime::SaveResult {
+    fn dispatch_save_sync(
+        &mut self,
+        buf: crate::document::DocumentId,
+    ) -> crate::document::runtime::SaveResult {
         let Some((doc_id, kind_id, kind_name, dispatch)) =
-            self.document_manager.active_document().map(|document| {
+            self.document_manager.get_document(buf).map(|document| {
                 (
                     document.id,
                     document.buffer_kind_id(),
@@ -266,7 +269,7 @@ impl<T: TerminalBackend> Editor<T> {
                     format!(
                         "{} buffer cannot be saved",
                         self.document_manager
-                            .active_document()
+                            .get_document(buf)
                             .map_or_default(|document| document.display_name().into_owned())
                     ),
                 ));
@@ -276,10 +279,10 @@ impl<T: TerminalBackend> Editor<T> {
             crate::document::runtime::SaveDispatch::Native(handler) => {
                 let result = if let Some(handler) = self.native_save_handlers.get(&kind_id).copied()
                 {
-                    handler(self)
+                    self.with_document_target(buf, handler)
                 } else if let Some(handle) = self
                     .document_manager
-                    .active_document()
+                    .get_document(buf)
                     .map(super::super::document::Document::handle)
                 {
                     handler(handle)
@@ -297,12 +300,22 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn save_to(&mut self, target: Option<std::path::PathBuf>) {
-        let is_plain_file = self.document_manager.active_document().is_some_and(|doc| {
+        if let Some(buf) = self.document_manager.active_document_id() {
+            self.save_document_to(buf, target);
+        }
+    }
+
+    pub(super) fn save_document_to(
+        &mut self,
+        buf: crate::document::DocumentId,
+        target: Option<std::path::PathBuf>,
+    ) {
+        let is_plain_file = self.document_manager.get_document(buf).is_some_and(|doc| {
             doc.buffer_kind_id() == crate::document::runtime::BufferKindId::FILE
         });
         if is_plain_file {
             let save_info = {
-                let document = self.document_manager.active_document_mut().unwrap();
+                let document = self.document_manager.get_document_mut(buf).unwrap();
                 document.commit_pending_ghost();
                 target
                     .or_else(|| document.path().map(std::path::Path::to_path_buf))
@@ -344,8 +357,12 @@ impl<T: TerminalBackend> Editor<T> {
             }
             self.state.clear_command_line();
         } else {
-            self.set_active_path(target);
-            self.dispatch_save_sync();
+            if let Some(path) = target {
+                if let Some(doc) = self.document_manager.get_document_mut(buf) {
+                    doc.set_path(path);
+                }
+            }
+            self.dispatch_save_sync(buf);
         }
     }
 
@@ -420,7 +437,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
 
-        let save_result = self.dispatch_save_sync();
+        let save_result = self.dispatch_save_sync(handle.doc_id());
         if save_result != crate::document::runtime::SaveResult::Saved {
             return;
         }
