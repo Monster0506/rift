@@ -849,3 +849,23 @@ fn timer_callback_reads_the_cursor_moved_after_it_was_scheduled() {
 
     lua_ok(&editor, "assert(_G.seen == 2, tostring(_G.seen))");
 }
+
+#[test]
+fn set_cursor_hold_delay_moves_the_hold_deadline() {
+    let mut editor = lua_editor("one\ntwo\n");
+    let default = editor.plugin_host.next_timer_deadline().unwrap();
+    lua_ok(
+        &editor,
+        "rift.set_cursor_hold_delay(50) \
+         rift.on('CursorHold', function() _G.held = true end)",
+    );
+    editor.apply_plugin_mutations();
+
+    let shortened = editor.plugin_host.next_timer_deadline().unwrap();
+    assert_eq!(
+        default.duration_since(shortened),
+        std::time::Duration::from_millis(350)
+    );
+    assert!(editor.plugin_host.fire_due_timers(shortened));
+    lua_ok(&editor, "assert(_G.held)");
+}

@@ -17,7 +17,7 @@ fn drawn_rows(layer: &Layer) -> Vec<usize> {
 }
 
 fn host_with(float: PluginFloat) -> PluginHost {
-    let mut host = PluginHost::new(1);
+    let mut host = PluginHost::new(std::time::Duration::from_millis(1));
     host.apply_mutation(PluginMutation::OpenFloat(float));
     host
 }

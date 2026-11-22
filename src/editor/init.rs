@@ -139,7 +139,7 @@ impl<T: TerminalBackend> Editor<T> {
             dot_repeat: DotRepeat::new(),
             panel_layout: None,
             last_notification_generation: 0,
-            plugin_host: crate::plugin::PluginHost::new(25),
+            plugin_host: crate::plugin::PluginHost::new(std::time::Duration::from_millis(400)),
             plugin_jobs: std::collections::HashMap::new(),
             clipboard_ring: crate::clipboard::ClipboardRing::new(),
             system_clipboard_cache: crate::clipboard::SystemClipboardCache::new(),

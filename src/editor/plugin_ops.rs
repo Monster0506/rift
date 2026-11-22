@@ -537,9 +537,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.plugin_host.apply_mutation(mutation);
             }
             PluginMutation::SetCursorHoldDelay(ms) => {
-                let poll_ms =
-                    u32::try_from(self.state.settings.poll_timeout_ms).unwrap_or(u32::MAX);
-                self.plugin_host.set_cursor_hold_delay_ms(ms, poll_ms);
+                self.plugin_host.set_cursor_hold_delay_ms(ms);
             }
             PluginMutation::ExecAction(action_str) => {
                 if let Ok(action) = action_str.parse::<crate::action::Action>() {

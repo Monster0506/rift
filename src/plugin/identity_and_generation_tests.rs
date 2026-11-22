@@ -33,7 +33,7 @@ fn plugin_generation_monotonic_and_distinct() {
 
 #[test]
 fn host_plugin_registration_and_lookup() {
-    let mut host = PluginHost::new(1);
+    let mut host = PluginHost::new(std::time::Duration::from_millis(1));
     let id1 = host.register_plugin("git-blame");
     let id2 = host.register_plugin("git-blame");
     let id3 = host.register_plugin("markdown");
@@ -47,7 +47,7 @@ fn host_plugin_registration_and_lookup() {
 
 #[test]
 fn host_generation_lifecycle_and_mutation_filtering() {
-    let mut host = PluginHost::new(1);
+    let mut host = PluginHost::new(std::time::Duration::from_millis(1));
     let pid = host.register_plugin("test-plugin");
     let gen = host.new_generation(pid);
 
@@ -89,7 +89,7 @@ fn host_generation_lifecycle_and_mutation_filtering() {
 
 #[test]
 fn discard_mutations_for_generation_explicitly() {
-    let mut host = PluginHost::new(1);
+    let mut host = PluginHost::new(std::time::Duration::from_millis(1));
     let pid1 = host.register_plugin("p1");
     let pid2 = host.register_plugin("p2");
     let gen1 = host.new_generation(pid1);
@@ -117,7 +117,7 @@ fn discard_mutations_for_generation_explicitly() {
 
 #[test]
 fn retiring_generation_unregisters_handlers() {
-    let mut host = PluginHost::new(1);
+    let mut host = PluginHost::new(std::time::Duration::from_millis(1));
     let pid = host.register_plugin("p");
     let gen = host.new_generation(pid);
 

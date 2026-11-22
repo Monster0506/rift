@@ -101,10 +101,6 @@ impl<T: TerminalBackend> Editor<T> {
 
             let notif_tick = self.state.error_manager.notifications().tick(timeout);
 
-            if let Some(hold_event) = self.plugin_host.tick_idle() {
-                self.call_plugins(|editor| editor.plugin_host.dispatch(&hold_event));
-            }
-
             if jobs_changed
                 || notif_changed
                 || notif_tick

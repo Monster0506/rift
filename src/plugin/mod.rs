@@ -574,45 +574,50 @@ impl PluginFloat {
 struct CursorHoldState {
     /// Last cursor position seen.
     last_pos: (DocumentId, usize, usize),
-    /// How many consecutive idle polls have passed without cursor movement.
-    idle_polls: u32,
-    /// Number of idle polls before `CursorHold` fires (configurable).
-    threshold_polls: u32,
+    last_move: crate::time::Instant,
+    delay: std::time::Duration,
     /// Whether `CursorHold` has already fired for this idle period.
     fired: bool,
 }
 
 impl CursorHoldState {
-    const fn new(threshold_polls: u32) -> Self {
+    fn new(delay: std::time::Duration) -> Self {
         Self {
             last_pos: (DocumentId::new(0), 0, 0),
-            idle_polls: 0,
-            threshold_polls,
+            last_move: crate::time::Instant::now(),
+            delay,
             fired: false,
         }
     }
 
-    /// Called every idle frame. Returns `Some((buf, row, col))` when
-    /// `CursorHold` should fire, `None` otherwise.
-    const fn tick(&mut self) -> Option<(DocumentId, usize, usize)> {
+    fn deadline(&self) -> Option<crate::time::Instant> {
         if self.fired {
-            return None;
-        }
-        self.idle_polls += 1;
-        if self.idle_polls >= self.threshold_polls {
-            self.fired = true;
-            Some(self.last_pos)
-        } else {
             None
+        } else {
+            self.last_move.checked_add(self.delay)
         }
     }
 
+    fn fire(&mut self, now: crate::time::Instant) -> Option<(DocumentId, usize, usize)> {
+        if self.deadline().is_none_or(|deadline| deadline > now) {
+            return None;
+        }
+        self.fired = true;
+        Some(self.last_pos)
+    }
+
     /// Called when the cursor moves. Resets idle tracking.
-    fn on_cursor_move(&mut self, buf: DocumentId, row: usize, col: usize) {
+    fn on_cursor_move(
+        &mut self,
+        buf: DocumentId,
+        row: usize,
+        col: usize,
+        now: crate::time::Instant,
+    ) {
         let new_pos = (buf, row, col);
         if self.last_pos != new_pos {
             self.last_pos = new_pos;
-            self.idle_polls = 0;
+            self.last_move = now;
             self.fired = false;
         }
     }
@@ -665,10 +670,8 @@ pub(crate) struct PluginHost {
 }
 
 impl PluginHost {
-    /// Create a new plugin host. `cursor_hold_polls` is the number of idle main-loop polls
-    /// before `CursorHold` fires (at the default 16ms poll rate, 25 polls = ~400ms).
     #[must_use]
-    pub(crate) fn new(cursor_hold_polls: u32) -> Self {
+    pub(crate) fn new(cursor_hold_delay: std::time::Duration) -> Self {
         Self {
             handlers: std::collections::BTreeMap::new(),
             commands: std::collections::HashMap::new(),
@@ -677,7 +680,7 @@ impl PluginHost {
             open_float: None,
             float_just_closed: false,
             mutation_queue: Vec::new(),
-            cursor_hold: CursorHoldState::new(cursor_hold_polls),
+            cursor_hold: CursorHoldState::new(cursor_hold_delay),
             lua: None,
             lua_used: std::cell::Cell::new(false),
             last_synced_buf: std::cell::Cell::new(None),
@@ -1218,7 +1221,8 @@ impl PluginHost {
     /// [`Self::apply_mutation`].
     pub(crate) fn dispatch(&mut self, event: &EditorEvent) {
         if let EditorEvent::CursorMoved { buf, row, col } = event {
-            self.cursor_hold.on_cursor_move(*buf, *row, *col);
+            self.cursor_hold
+                .on_cursor_move(*buf, *row, *col, crate::time::Instant::now());
         }
 
         let name = event.name();
@@ -1250,22 +1254,23 @@ impl PluginHost {
         }
     }
 
-    /// Called on every idle frame (no input); fires `CursorHold` if the cursor has been stationary
-    /// long enough. Returns the event to dispatch, if any, so the caller avoids a double-borrow.
-    pub(crate) fn tick_idle(&mut self) -> Option<EditorEvent> {
-        self.cursor_hold
-            .tick()
-            .map(|(buf, row, col)| EditorEvent::CursorHold { buf, row, col })
-    }
-
-    pub(crate) fn fire_due_timers(&self, now: crate::time::Instant) -> bool {
-        self.active_lua()
-            .is_some_and(|lua| lua.fire_due_timers(now))
+    pub(crate) fn fire_due_timers(&mut self, now: crate::time::Instant) -> bool {
+        let hold = self.cursor_hold.fire(now);
+        if let Some((buf, row, col)) = hold {
+            self.dispatch(&EditorEvent::CursorHold { buf, row, col });
+        }
+        let lua_fired = self
+            .active_lua()
+            .is_some_and(|lua| lua.fire_due_timers(now));
+        lua_fired || hold.is_some()
     }
 
     pub(crate) fn next_timer_deadline(&self) -> Option<crate::time::Instant> {
         self.active_lua()
             .and_then(lua_host::LuaHost::next_timer_deadline)
+            .into_iter()
+            .chain(self.cursor_hold.deadline())
+            .min()
     }
 
     fn active_lua(&self) -> Option<&lua_host::LuaHost> {
@@ -1274,11 +1279,8 @@ impl PluginHost {
             .filter(|lua| self.is_generation_active(lua.generation()))
     }
 
-    /// Update the `CursorHold` threshold from a millisecond value.
-    /// `poll_ms` is the main-loop poll interval (typically 16).
-    pub(crate) fn set_cursor_hold_delay_ms(&mut self, delay_ms: u32, poll_ms: u32) {
-        let polls = (delay_ms / poll_ms.max(1)).max(1);
-        self.cursor_hold.threshold_polls = polls;
+    pub(crate) fn set_cursor_hold_delay_ms(&mut self, delay_ms: u32) {
+        self.cursor_hold.delay = std::time::Duration::from_millis(u64::from(delay_ms));
     }
 
     #[cfg(test)]
@@ -1563,3 +1565,7 @@ mod float_tests;
 #[cfg(test)]
 #[path = "identity_and_generation_tests.rs"]
 mod identity_and_generation_tests;
+
+#[cfg(test)]
+#[path = "cursor_hold_tests.rs"]
+mod cursor_hold_tests;

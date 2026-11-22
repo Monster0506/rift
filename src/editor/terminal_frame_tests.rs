@@ -250,11 +250,21 @@ fn poll_timeout_shrinks_to_the_next_plugin_timer() {
     let mut editor = editor();
     assert!(editor
         .plugin_host
-        .lua_exec("rift.timer(500, function() end)")
+        .lua_exec("rift.timer(200, function() end)")
         .is_none());
 
     editor.tick().unwrap();
 
-    assert!(editor.term.polls[0] <= Duration::from_millis(500));
-    assert!(editor.term.polls[0] > Duration::from_millis(400));
+    assert!(editor.term.polls[0] <= Duration::from_millis(200));
+    assert!(editor.term.polls[0] > Duration::from_millis(100));
+}
+
+#[test]
+fn poll_timeout_shrinks_to_the_cursor_hold_deadline() {
+    let mut editor = editor();
+
+    editor.tick().unwrap();
+
+    assert!(editor.term.polls[0] <= Duration::from_millis(400));
+    assert!(editor.term.polls[0] > Duration::from_millis(300));
 }
