@@ -6,16 +6,28 @@ fn make_host() -> LuaHost {
     LuaHost::new().expect("LuaHost::new failed")
 }
 
-/// Build a deferred lines source from text lines, as the editor would.
-fn lines_source(lines: &[&str]) -> BufSourceUpdate {
-    let text = lines.join("\n");
-    let mut buffer = crate::buffer::TextBuffer::new(text.len().max(16)).unwrap();
-    buffer.insert_str(&text).unwrap();
-    BufSourceUpdate::Set(Box::new(BufLinesSource {
-        revision: buffer.revision,
-        line_count: buffer.get_total_lines(),
-        buffer,
-    }))
+fn text_update(lines: &[&str]) -> BufUpdate {
+    let mut buffer = crate::buffer::TextBuffer::default();
+    buffer.insert_str(&lines.join("\n")).unwrap();
+    BufUpdate {
+        text: Some(buffer),
+        ..Default::default()
+    }
+}
+
+fn buf_1(update: BufUpdate) -> Option<Vec<(u64, BufUpdate)>> {
+    Some(vec![(1, update)])
+}
+
+fn set_annotations(host: &LuaHost, views: Vec<AnnotationView>, next_id: u64) {
+    host.update_state(StateUpdate {
+        buf_id: 1,
+        bufs: buf_1(BufUpdate {
+            annotations: Some(BufAnnotations { views, next_id }),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
 }
 
 fn load_plugin(host: &LuaHost, file: &str, src: &str) {
@@ -59,11 +71,11 @@ fn test_get_option_reads_document_local_setting_via_alias() {
     };
     host.update_state(StateUpdate {
         buf_id: 1,
-        buf_kind: "file".to_string(),
-        source: BufSourceUpdate::Cleared,
+        bufs: buf_1(BufUpdate {
+            options: Some(doc_options),
+            ..Default::default()
+        }),
         mode: "normal",
-        line_ending: "lf",
-        doc_options: Some(doc_options),
         ..Default::default()
     });
     assert!(host
@@ -86,10 +98,7 @@ fn test_get_option_falls_back_to_global_setting() {
     user_settings.clipboard_ring_size = 42;
     host.update_state(StateUpdate {
         buf_id: 1,
-        buf_kind: "file".to_string(),
-        source: BufSourceUpdate::Cleared,
         mode: "normal",
-        line_ending: "lf",
         user_settings: Some(user_settings),
         ..Default::default()
     });
@@ -338,8 +347,7 @@ fn test_annotations_add_queues_mutation() {
 #[test]
 fn test_annotations_add_returns_preclaimed_id() {
     let host = make_host();
-    // Seed the next id the snapshot reports; add{} claims from there.
-    host.set_annotations(vec![], 7);
+    set_annotations(&host, vec![], 7);
     assert!(host
         .exec(
             r#"
@@ -366,7 +374,8 @@ fn test_annotations_query_reads_snapshot() {
     let host = make_host();
     let mut payload = crate::annotations::value::Value::map();
     payload.set("checked", crate::annotations::value::Value::Bool(true));
-    host.set_annotations(
+    set_annotations(
+        &host,
         vec![
             AnnotationView {
                 id: 1,
@@ -639,10 +648,8 @@ fn test_get_lines_returns_correct_lines() {
     let host = make_host();
     host.update_state(StateUpdate {
         buf_id: 1,
-        buf_kind: "file".to_string(),
-        source: lines_source(&["alpha", "beta", "gamma"]),
+        bufs: buf_1(text_update(&["alpha", "beta", "gamma"])),
         mode: "normal",
-        line_ending: "lf",
         ..Default::default()
     });
     assert!(host.exec("_lines = rift.get_lines(1, -1)").is_none());
@@ -659,10 +666,8 @@ fn get_lines_reads_a_resent_buffer_with_an_equal_revision() {
     let host = make_host();
     let update = |lines: &[&str]| StateUpdate {
         buf_id: 1,
-        buf_kind: "file".to_string(),
-        source: lines_source(lines),
+        bufs: buf_1(text_update(lines)),
         mode: "normal",
-        line_ending: "lf",
         ..Default::default()
     };
     host.update_state(update(&["old"]));
@@ -679,10 +684,8 @@ fn count_lines_returned(call: &str) -> i64 {
     let host = make_host();
     host.update_state(StateUpdate {
         buf_id: 1,
-        buf_kind: "file".to_string(),
-        source: lines_source(&["alpha", "beta", "gamma"]),
+        bufs: buf_1(text_update(&["alpha", "beta", "gamma"])),
         mode: "normal",
-        line_ending: "lf",
         ..Default::default()
     });
     assert!(host
@@ -716,10 +719,8 @@ fn test_line_count_and_find_materialize_from_deferred_source() {
     let host = make_host();
     host.update_state(StateUpdate {
         buf_id: 1,
-        buf_kind: "file".to_string(),
-        source: lines_source(&["needle here", "no match", "another needle"]),
+        bufs: buf_1(text_update(&["needle here", "no match", "another needle"])),
         mode: "normal",
-        line_ending: "lf",
         ..Default::default()
     });
     assert!(host
@@ -744,11 +745,14 @@ fn test_get_cursor_returns_1indexed_row() {
     let host = make_host();
     host.update_state(StateUpdate {
         buf_id: 1,
-        buf_kind: "file".to_string(),
-        source: BufSourceUpdate::Cleared,
-        cursor: (4, 2),
+        bufs: buf_1(BufUpdate {
+            meta: Some(BufMeta {
+                cursor: (4, 2),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
         mode: "normal",
-        line_ending: "lf",
         ..Default::default()
     });
     assert!(host
@@ -766,10 +770,7 @@ fn test_current_buf_returns_id() {
     let host = make_host();
     host.update_state(StateUpdate {
         buf_id: 42,
-        buf_kind: "file".to_string(),
-        source: BufSourceUpdate::Cleared,
         mode: "normal",
-        line_ending: "lf",
         ..Default::default()
     });
     assert!(host

@@ -44,10 +44,27 @@ pub(crate) struct AnnotationView {
     pub(crate) interactive: bool,
 }
 
-pub(crate) struct BufLinesSource {
-    pub(crate) revision: u64,
-    pub(crate) line_count: usize,
-    pub(crate) buffer: crate::buffer::TextBuffer,
+#[derive(Debug, Clone, Default)]
+pub(crate) struct BufMeta {
+    pub(crate) kind: String,
+    pub(crate) cursor: (usize, usize),
+    pub(crate) filetype: Option<String>,
+    pub(crate) file_path: Option<String>,
+    pub(crate) history: HistoryAvailability,
+    pub(crate) is_dirty: bool,
+}
+
+pub(crate) struct BufAnnotations {
+    pub(crate) views: Vec<AnnotationView>,
+    pub(crate) next_id: u64,
+}
+
+#[derive(Default)]
+pub(crate) struct BufUpdate {
+    pub(crate) text: Option<crate::buffer::TextBuffer>,
+    pub(crate) meta: Option<BufMeta>,
+    pub(crate) options: Option<crate::document::definitions::DocumentOptions>,
+    pub(crate) annotations: Option<BufAnnotations>,
 }
 
 /// A lightweight entry for the `rift.windows.list()` snapshot.
@@ -61,22 +78,9 @@ pub(crate) struct WinEntry {
     pub(crate) cols: usize,
 }
 
-/// How `update_state` treats the shared buffer snapshot this call.
-#[derive(Default)]
-pub(crate) enum BufSourceUpdate {
-    /// The buffer hasn't changed since the last sync; keep the existing snapshot.
-    #[default]
-    Unchanged,
-    /// There's no active document; drop any existing snapshot.
-    Cleared,
-    /// The buffer changed; replace the snapshot with this one.
-    Set(Box<BufLinesSource>),
-}
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct SyncKeys {
     pub(crate) user_settings: Option<u64>,
-    pub(crate) doc_options: Option<u64>,
     pub(crate) buf_list: Option<u64>,
     pub(crate) win_list: Option<u64>,
     pub(crate) lsp_diagnostics: Option<u64>,
@@ -92,17 +96,10 @@ pub(crate) type LspDiagnosticsSnapshot =
 #[derive(Default)]
 pub(crate) struct StateUpdate<'a> {
     pub(crate) buf_id: usize,
-    pub(crate) buf_kind: String,
-    pub(crate) source: BufSourceUpdate,
-    pub(crate) cursor: (usize, usize),
+    pub(crate) bufs: Option<Vec<(u64, BufUpdate)>>,
     pub(crate) mode: &'a str,
-    pub(crate) filetype: Option<String>,
-    pub(crate) file_path: Option<String>,
     pub(crate) window_size: (u16, u16),
-    pub(crate) history: HistoryAvailability,
-    pub(crate) is_dirty: bool,
     pub(crate) scroll: (usize, usize),
-    pub(crate) line_ending: &'a str,
     pub(crate) focused_win_id: u64,
     pub(crate) previous_win_id: Option<u64>,
     pub(crate) keys: SyncKeys,
@@ -115,7 +112,6 @@ pub(crate) struct StateUpdate<'a> {
             std::collections::HashMap<String, crate::annotations::value::Value>,
         >,
     >,
-    pub(crate) doc_options: Option<crate::document::definitions::DocumentOptions>,
     pub(crate) user_settings: Option<crate::state::UserSettings>,
     #[cfg(feature = "treesitter")]
     pub(crate) syntax: Option<Vec<(u64, Option<crate::syntax::snapshot::BufferSyntax>)>>,

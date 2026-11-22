@@ -1,20 +1,10 @@
 use super::Editor;
-use crate::plugin::lua_host::{BufEntry, BufSourceUpdate, HistoryAvailability, SyncKeys};
-use crate::plugin::{HighlightRange, HighlightSpec, PluginGeneration, PluginMutation};
+use crate::plugin::lua_host::{
+    BufAnnotations, BufEntry, BufMeta, BufUpdate, HistoryAvailability, SyncKeys,
+};
+use crate::plugin::{BufSyncKey, HighlightRange, HighlightSpec, PluginGeneration, PluginMutation};
 use crate::term::TerminalBackend;
 use std::hash::{Hash, Hasher};
-
-struct LuaBufState {
-    buf_id: usize,
-    buf_kind: String,
-    source: BufSourceUpdate,
-    cursor: (usize, usize),
-    filetype: Option<String>,
-    file_path: Option<String>,
-    history: HistoryAvailability,
-    is_dirty: bool,
-    line_ending: &'static str,
-}
 
 #[derive(Hash)]
 struct LuaBufView<'a> {
@@ -51,6 +41,75 @@ fn fingerprint<I: Hash>(items: impl IntoIterator<Item = I>) -> u64 {
     hasher.finish()
 }
 
+fn lua_buf_cursor(doc: &crate::document::Document) -> (usize, usize) {
+    let cursor = doc.buffer.cursor();
+    let row = doc.buffer.line_index.get_line_at(cursor);
+    let col = cursor.saturating_sub(doc.buffer.line_index.get_line_start(row));
+    (row, col)
+}
+
+fn lua_buf_sync_key(doc: &crate::document::Document) -> BufSyncKey {
+    BufSyncKey {
+        text: doc.buffer.revision,
+        meta: fingerprint([(
+            lua_buf_cursor(doc),
+            doc.kind.kind_str(),
+            doc.syntax.as_ref().map(|s| s.language_name.as_str()),
+            doc.path().map(std::path::Path::as_os_str),
+            doc.history.can_undo(),
+            doc.history.can_redo(),
+            doc.is_dirty(),
+        )]),
+        options: doc.options.revision(),
+        annotations: doc.annotations.revision(),
+    }
+}
+
+fn lua_buf_meta(doc: &crate::document::Document) -> BufMeta {
+    BufMeta {
+        kind: doc.kind.kind_str().to_string(),
+        cursor: lua_buf_cursor(doc),
+        filetype: doc.syntax.as_ref().map(|s| s.language_name.clone()),
+        file_path: doc.path().map(|p| p.to_string_lossy().into_owned()),
+        history: HistoryAvailability {
+            can_undo: doc.history.can_undo(),
+            can_redo: doc.history.can_redo(),
+        },
+        is_dirty: doc.is_dirty(),
+    }
+}
+
+fn lua_annotations(doc: &crate::document::Document) -> BufAnnotations {
+    use crate::annotations::Anchor;
+    use crate::plugin::lua_host::AnnotationView;
+    let views = doc
+        .annotations
+        .iter()
+        .map(|a| {
+            let (anchor, start, end) = match a.anchor {
+                Anchor::Point(p) => ("point", p.offset, p.offset),
+                Anchor::Range(s, e) => ("range", s.offset, e.offset),
+                Anchor::Line(l) => ("line", l, l),
+            };
+            AnnotationView {
+                id: a.id.get(),
+                kind: a.kind.as_arc(),
+                owner: a.owner.as_str(),
+                anchor,
+                start,
+                end,
+                payload: a.payload.clone(),
+                visible: a.visible,
+                interactive: a.is_interactive(),
+            }
+        })
+        .collect();
+    BufAnnotations {
+        views,
+        next_id: doc.annotations.peek_next_id().get(),
+    }
+}
+
 const PLUGIN_MUTATION_ROUNDS: usize = 16;
 
 impl<T: TerminalBackend> Editor<T> {
@@ -71,17 +130,11 @@ impl<T: TerminalBackend> Editor<T> {
         let synced = self.plugin_host.lua_synced_keys();
         let keys = self.lua_sync_keys();
         let mode = self.current_mode.as_str();
-        let LuaBufState {
-            buf_id,
-            buf_kind,
-            source,
-            cursor,
-            filetype,
-            file_path,
-            history,
-            is_dirty,
-            line_ending,
-        } = self.lua_buf_state();
+        let buf_id = self
+            .document_manager
+            .active_document_id()
+            .map_or(0, |id| usize::try_from(id.get()).unwrap_or(usize::MAX));
+        let bufs = self.lua_buf_snapshots();
 
         let window_size = (
             u16::try_from(self.render_system.compositor.rows()).unwrap_or(u16::MAX),
@@ -102,11 +155,6 @@ impl<T: TerminalBackend> Editor<T> {
         #[cfg(not(feature = "lsp"))]
         let lsp_diagnostics = None;
         let buffer_vars = (keys.buffer_vars != synced.buffer_vars).then(|| self.lua_buffer_vars());
-        let doc_options = (keys.doc_options != synced.doc_options).then(|| {
-            self.document_manager
-                .active_document()
-                .map_or_else(Default::default, |doc| doc.options.clone())
-        });
         let user_settings =
             (keys.user_settings != synced.user_settings).then(|| self.state.settings.clone());
         #[cfg(feature = "treesitter")]
@@ -115,17 +163,10 @@ impl<T: TerminalBackend> Editor<T> {
         self.plugin_host
             .lua_update_state(crate::plugin::lua_host::StateUpdate {
                 buf_id,
-                buf_kind,
-                source,
-                cursor,
+                bufs,
                 mode,
-                filetype,
-                file_path,
                 window_size,
-                history,
-                is_dirty,
                 scroll,
-                line_ending,
                 focused_win_id,
                 previous_win_id,
                 keys,
@@ -133,12 +174,10 @@ impl<T: TerminalBackend> Editor<T> {
                 win_list,
                 lsp_diagnostics,
                 buffer_vars,
-                doc_options,
                 user_settings,
                 #[cfg(feature = "treesitter")]
                 syntax,
             });
-        self.sync_lua_annotations();
     }
 
     fn lua_sync_keys(&self) -> SyncKeys {
@@ -151,11 +190,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.split_tree.hash_layout(&mut layout);
         SyncKeys {
             user_settings: Some(self.state.settings.revision()),
-            doc_options: Some(
-                self.document_manager
-                    .active_document()
-                    .map_or(0, |doc| doc.options.revision()),
-            ),
             buf_list: Some(fingerprint(self.lua_buf_views())),
             win_list: Some(layout.finish()),
             #[cfg(feature = "lsp")]
@@ -208,58 +242,37 @@ impl<T: TerminalBackend> Editor<T> {
         Some(synced)
     }
 
-    fn lua_buf_state(&self) -> LuaBufState {
-        let Some(doc) = self.document_manager.active_document() else {
-            self.plugin_host.clear_synced_buf();
-            return LuaBufState {
-                buf_id: 0,
-                buf_kind: "file".to_string(),
-                source: BufSourceUpdate::Cleared,
-                cursor: (0, 0),
-                filetype: None,
-                file_path: None,
-                history: HistoryAvailability::default(),
-                is_dirty: false,
-                line_ending: "lf",
-            };
+    pub(super) fn lua_buf_snapshots(&self) -> Option<Vec<(u64, BufUpdate)>> {
+        let keyed = || {
+            self.document_manager
+                .documents_iter()
+                .map(|doc| (doc, lua_buf_sync_key(doc)))
         };
-        let buf_id = usize::try_from(doc.id.get()).unwrap_or(usize::MAX);
-        let buf_kind = doc.kind.kind_str().to_string();
-        let source = if self
+        if self
             .plugin_host
-            .synced_buf_matches(doc.id.get(), doc.buffer.revision)
+            .bufs_unchanged(keyed().map(|(doc, key)| (doc.id.get(), key)))
         {
-            BufSourceUpdate::Unchanged
-        } else {
-            self.plugin_host
-                .set_synced_buf(doc.id.get(), doc.buffer.revision);
-            BufSourceUpdate::Set(Box::new(crate::plugin::lua_host::BufLinesSource {
-                revision: doc.buffer.revision,
-                line_count: doc.buffer.get_total_lines(),
-                buffer: doc.buffer.clone(),
-            }))
-        };
-        let (row, col) = {
-            let cursor = doc.buffer.cursor();
-            let row = doc.buffer.line_index.get_line_at(cursor);
-            let col = cursor.saturating_sub(doc.buffer.line_index.get_line_start(row));
-            (row, col)
-        };
-        let line_ending = doc.options.line_ending.name();
-        LuaBufState {
-            buf_id,
-            buf_kind,
-            source,
-            cursor: (row, col),
-            filetype: doc.syntax.as_ref().map(|s| s.language_name.clone()),
-            file_path: doc.path().map(|p| p.to_string_lossy().into_owned()),
-            history: HistoryAvailability {
-                can_undo: doc.history.can_undo(),
-                can_redo: doc.history.can_redo(),
-            },
-            is_dirty: doc.is_dirty(),
-            line_ending,
+            return None;
         }
+        let updates: Vec<(u64, BufUpdate)> = keyed()
+            .map(|(doc, key)| {
+                let id = doc.id.get();
+                let previous = self.plugin_host.sync_buf(id, key);
+                let changed = |part: fn(&BufSyncKey) -> u64| {
+                    previous.is_none_or(|previous| part(&previous) != part(&key))
+                };
+                let update = BufUpdate {
+                    text: changed(|k| k.text).then(|| doc.buffer.clone()),
+                    meta: changed(|k| k.meta).then(|| lua_buf_meta(doc)),
+                    options: changed(|k| k.options).then(|| (*doc.options).clone()),
+                    annotations: changed(|k| k.annotations).then(|| lua_annotations(doc)),
+                };
+                (id, update)
+            })
+            .collect();
+        let live: Vec<u64> = updates.iter().map(|(id, _)| *id).collect();
+        self.plugin_host.retain_synced_bufs(&live);
+        Some(updates)
     }
 
     fn lua_buf_views(&self) -> impl Iterator<Item = LuaBufView<'_>> {
@@ -338,49 +351,6 @@ impl<T: TerminalBackend> Editor<T> {
             .documents_iter()
             .map(|doc| (doc.id.get(), doc.vars.clone()))
             .collect()
-    }
-
-    fn sync_lua_annotations(&self) {
-        use crate::annotations::Anchor;
-        use crate::plugin::lua_host::AnnotationView;
-        if let Some(doc) = self.document_manager.active_document() {
-            let revision = doc.annotations.revision();
-            if self
-                .plugin_host
-                .synced_annotations_match(doc.id.get(), revision)
-            {
-                return;
-            }
-            self.plugin_host
-                .set_synced_annotations(doc.id.get(), revision);
-            let views = doc
-                .annotations
-                .iter()
-                .map(|a| {
-                    let (anchor, start, end) = match a.anchor {
-                        Anchor::Point(p) => ("point", p.offset, p.offset),
-                        Anchor::Range(s, e) => ("range", s.offset, e.offset),
-                        Anchor::Line(l) => ("line", l, l),
-                    };
-                    AnnotationView {
-                        id: a.id.get(),
-                        kind: a.kind.as_arc(),
-                        owner: a.owner.as_str(),
-                        anchor,
-                        start,
-                        end,
-                        payload: a.payload.clone(),
-                        visible: a.visible,
-                        interactive: a.is_interactive(),
-                    }
-                })
-                .collect();
-            let next_id = doc.annotations.peek_next_id();
-            self.plugin_host.lua_set_annotations(views, next_id.get());
-        } else {
-            self.plugin_host.clear_synced_annotations();
-            self.plugin_host.lua_set_annotations(Vec::new(), 1);
-        }
     }
 
     pub(super) fn apply_plugin_mutations(&mut self) {

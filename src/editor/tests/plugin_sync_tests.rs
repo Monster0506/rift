@@ -869,3 +869,89 @@ fn set_cursor_hold_delay_moves_the_hold_deadline() {
     assert!(editor.plugin_host.fire_due_timers(shortened));
     lua_ok(&editor, "assert(_G.held)");
 }
+
+fn resent_texts(editor: &Editor<MockTerminal>) -> Vec<u64> {
+    let mut ids: Vec<u64> = editor
+        .lua_buf_snapshots()
+        .into_iter()
+        .flatten()
+        .filter(|(_, update)| update.text.is_some())
+        .map(|(id, _)| id)
+        .collect();
+    ids.sort_unstable();
+    ids
+}
+
+#[test]
+fn switching_between_unchanged_buffers_resends_neither() {
+    let (mut editor, first, second) = editor_with_two_buffers();
+
+    for (target, text) in [(first, "first"), (second, "second"), (first, "first")] {
+        editor
+            .document_manager
+            .switch_to_document(crate::document::DocumentId::new(target))
+            .unwrap();
+        assert_eq!(
+            resent_texts(&editor),
+            Vec::<u64>::new(),
+            "switch to {target}"
+        );
+        editor.update_lua_state();
+        lua_ok(
+            &editor,
+            &format!(
+                "assert(rift.current_buf() == {target}) \
+                 assert(rift.get_lines(1, 1)[1] == '{text}')"
+            ),
+        );
+    }
+}
+
+#[test]
+fn editing_a_background_buffer_resends_only_that_buffer() {
+    let (mut editor, first, second) = editor_with_two_buffers();
+    editor
+        .document_manager
+        .get_document_mut(crate::document::DocumentId::new(first))
+        .unwrap()
+        .buffer
+        .insert_str("x")
+        .unwrap();
+
+    let updates = editor.lua_buf_snapshots().unwrap();
+
+    let update = |id: u64| &updates.iter().find(|(doc, _)| *doc == id).unwrap().1;
+    assert!(update(first).text.is_some());
+    let untouched = update(second);
+    assert!(untouched.text.is_none());
+    assert!(untouched.meta.is_none());
+    assert!(untouched.options.is_none());
+    assert!(untouched.annotations.is_none());
+}
+
+#[test]
+fn closed_buffer_drops_out_of_the_snapshot() {
+    let (mut editor, first, second) = editor_with_two_buffers();
+    lua_ok(&editor, "rift.close_buf(true)");
+    editor.apply_plugin_mutations();
+    assert!(editor
+        .document_manager
+        .get_document(crate::document::DocumentId::new(second))
+        .is_none());
+    editor
+        .document_manager
+        .get_document_mut(crate::document::DocumentId::new(first))
+        .unwrap()
+        .buffer
+        .insert_str("x")
+        .unwrap();
+
+    let ids: Vec<u64> = editor
+        .lua_buf_snapshots()
+        .unwrap()
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+
+    assert_eq!(ids, vec![first]);
+}

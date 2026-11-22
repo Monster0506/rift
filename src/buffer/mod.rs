@@ -44,18 +44,24 @@ impl Clone for TextBuffer {
     }
 }
 
-impl TextBuffer {
-    /// # Errors
-    /// Never returns `Err`.
-    pub fn new(_initial_capacity: usize) -> Result<Self, RiftError> {
-        Ok(Self {
+impl Default for TextBuffer {
+    fn default() -> Self {
+        Self {
             line_index: LineIndex::new(),
             cursor: 0,
             desired_col: None,
             revision: 0,
             line_cache: RefCell::new(LineCache::new()),
             char_edit_log: Vec::new(),
-        })
+        }
+    }
+}
+
+impl TextBuffer {
+    /// # Errors
+    /// Never returns `Err`.
+    pub fn new(_initial_capacity: usize) -> Result<Self, RiftError> {
+        Ok(Self::default())
     }
 
     fn log_char_edit(&mut self, pos: usize, del: usize, ins: usize) {

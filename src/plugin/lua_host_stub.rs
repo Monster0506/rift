@@ -2,7 +2,7 @@
 //! exists, so every operation is a no-op / empty result.
 
 pub(crate) use crate::plugin::lua_state::{
-    AnnotationView, BufEntry, BufLinesSource, BufSourceUpdate, HistoryAvailability,
+    AnnotationView, BufAnnotations, BufEntry, BufMeta, BufUpdate, HistoryAvailability,
     LspDiagnosticsSnapshot, StateUpdate, SyncKeys, WinEntry,
 };
 
@@ -35,7 +35,6 @@ impl LuaHost {
     }
 
     pub(super) const fn mark_retiring(&self) {}
-    pub(super) fn set_annotations(&self, _views: Vec<AnnotationView>, _next_id: u64) {}
 
     pub(super) fn update_state(&self, _update: StateUpdate<'_>) {}
 
@@ -43,8 +42,8 @@ impl LuaHost {
         SyncKeys::default()
     }
 
-    pub(super) const fn take_divergence(&self) -> (bool, bool) {
-        (false, false)
+    pub(super) const fn take_divergence(&self) -> Vec<u64> {
+        Vec::new()
     }
 
     #[must_use]

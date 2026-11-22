@@ -214,9 +214,9 @@ impl LuaUserData for LuaTree {
                 .ok_or_else(|| LuaError::RuntimeError("plugin state unavailable".into()))?;
             let s = shared.borrow();
             Ok(s.buf_id as u64 == buf
-                && s.buf_source
-                    .as_ref()
-                    .is_some_and(|src| src.revision != text.revision))
+                && s.bufs
+                    .get(&buf)
+                    .is_some_and(|snap| snap.buffer.revision != text.revision))
         });
         methods.add_meta_method(LuaMetaMethod::ToString, |_, this, ()| {
             Ok(format!("<tree {}>", this.0.lang_name))
@@ -437,7 +437,7 @@ fn target_byte(
             .text
             .byte_at(lua_index(row - 1), lua_index(col.unwrap_or(0))),
         None if buf == s.buf_id as u64 => {
-            let (row, char_col) = s.cursor;
+            let (row, char_col) = s.bufs.get(&buf).map_or((0, 0), |b| b.meta.cursor);
             snap.text.byte_at(row, snap.text.byte_col(row, char_col))
         }
         None => 0,

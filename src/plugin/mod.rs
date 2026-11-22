@@ -623,6 +623,14 @@ impl CursorHoldState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BufSyncKey {
+    pub(crate) text: u64,
+    pub(crate) meta: u64,
+    pub(crate) options: u64,
+    pub(crate) annotations: u64,
+}
+
 /// Central plugin coordinator, owned by the `Editor`: dispatches [`EditorEvent`]s to handlers,
 /// queues [`PluginMutation`]s, tracks cursor-hold idle state, and holds registered commands/actions.
 pub(crate) struct PluginHost {
@@ -647,12 +655,7 @@ pub(crate) struct PluginHost {
     /// True once any Lua plugin file or `:lua` snippet has run. Editor-state
     /// snapshots are skipped until then (nothing Lua-side can read them).
     lua_used: std::cell::Cell<bool>,
-    /// `(doc_id, buffer.revision)` last synced to Lua, so an unchanged buffer
-    /// isn't re-cloned into a fresh snapshot every sync.
-    last_synced_buf: std::cell::Cell<Option<(u64, u64)>>,
-    /// `(doc_id, annotations.revision)` last synced to Lua, so an unchanged
-    /// annotation set isn't re-snapshotted every sync.
-    last_synced_annotations: std::cell::Cell<Option<(u64, u64)>>,
+    synced_bufs: std::cell::RefCell<std::collections::HashMap<u64, BufSyncKey>>,
     #[cfg(feature = "treesitter")]
     synced_syntax: std::cell::RefCell<std::collections::HashMap<u64, (u64, usize)>>,
     /// Registered plugin names mapped to stable `PluginId`.
@@ -683,8 +686,7 @@ impl PluginHost {
             cursor_hold: CursorHoldState::new(cursor_hold_delay),
             lua: None,
             lua_used: std::cell::Cell::new(false),
-            last_synced_buf: std::cell::Cell::new(None),
-            last_synced_annotations: std::cell::Cell::new(None),
+            synced_bufs: std::cell::RefCell::new(std::collections::HashMap::new()),
             #[cfg(feature = "treesitter")]
             synced_syntax: std::cell::RefCell::new(std::collections::HashMap::new()),
             #[cfg(test)]
@@ -707,48 +709,32 @@ impl PluginHost {
         self.lua_used.set(true);
     }
 
-    /// Whether `doc_id` at `revision` is the same buffer state last synced to
-    /// Lua, so the caller can skip re-cloning it into a fresh snapshot.
-    pub(crate) fn synced_buf_matches(&self, doc_id: u64, revision: u64) -> bool {
-        self.last_synced_buf.get() == Some((doc_id, revision))
+    pub(crate) fn bufs_unchanged(&self, mut docs: impl Iterator<Item = (u64, BufSyncKey)>) -> bool {
+        let synced = self.synced_bufs.borrow();
+        let mut count = 0;
+        docs.all(|(doc_id, key)| {
+            count += 1;
+            synced.get(&doc_id) == Some(&key)
+        }) && count == synced.len()
     }
 
-    /// Record `doc_id` at `revision` as the buffer state just synced to Lua.
-    pub(crate) fn set_synced_buf(&self, doc_id: u64, revision: u64) {
-        self.last_synced_buf.set(Some((doc_id, revision)));
+    pub(crate) fn sync_buf(&self, doc_id: u64, key: BufSyncKey) -> Option<BufSyncKey> {
+        self.synced_bufs.borrow_mut().insert(doc_id, key)
     }
 
-    /// Forget the last-synced buffer, e.g. when there's no active document.
-    pub(crate) fn clear_synced_buf(&self) {
-        self.last_synced_buf.set(None);
-    }
-
-    /// Whether `doc_id` at annotation-store `revision` is the same state
-    /// last synced to Lua, so the caller can skip rebuilding the snapshot.
-    pub(crate) fn synced_annotations_match(&self, doc_id: u64, revision: u64) -> bool {
-        self.last_synced_annotations.get() == Some((doc_id, revision))
-    }
-
-    /// Record `doc_id` at annotation-store `revision` as just synced to Lua.
-    pub(crate) fn set_synced_annotations(&self, doc_id: u64, revision: u64) {
-        self.last_synced_annotations.set(Some((doc_id, revision)));
-    }
-
-    /// Forget the last-synced annotations, e.g. when there's no active document.
-    pub(crate) fn clear_synced_annotations(&self) {
-        self.last_synced_annotations.set(None);
+    pub(crate) fn retain_synced_bufs(&self, live: &[u64]) {
+        self.synced_bufs
+            .borrow_mut()
+            .retain(|doc_id, _| live.contains(doc_id));
     }
 
     pub(crate) fn resync_diverged_lua_state(&self) {
         let Some(lua) = &self.lua else {
             return;
         };
-        let (buf, annotations) = lua.take_divergence();
-        if buf {
-            self.clear_synced_buf();
-        }
-        if annotations {
-            self.clear_synced_annotations();
+        let mut synced = self.synced_bufs.borrow_mut();
+        for doc_id in lua.take_divergence() {
+            synced.remove(&doc_id);
         }
     }
 
@@ -1079,8 +1065,7 @@ impl PluginHost {
             lua.mark_retiring();
         }
         self.lua.take();
-        self.clear_synced_buf();
-        self.clear_synced_annotations();
+        self.synced_bufs.borrow_mut().clear();
         #[cfg(feature = "treesitter")]
         self.synced_syntax.borrow_mut().clear();
 
@@ -1107,17 +1092,6 @@ impl PluginHost {
         self.lua
             .as_ref()
             .map_or_else(lua_host::SyncKeys::default, lua_host::LuaHost::synced_keys)
-    }
-
-    /// Refresh the `rift.annotations` query snapshot and the next `add{}` id.
-    pub(crate) fn lua_set_annotations(
-        &self,
-        views: Vec<crate::plugin::lua_host::AnnotationView>,
-        next_id: u64,
-    ) {
-        if let Some(lua) = &self.lua {
-            lua.set_annotations(views, next_id);
-        }
     }
 
     /// Load all top-level `.lua` files in `dir`, sorted lexicographically. Returns error strings.
