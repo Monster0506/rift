@@ -134,6 +134,9 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .active_document_id()
             .map_or(0, |id| usize::try_from(id.get()).unwrap_or(usize::MAX));
+        let creation_ids = self
+            .document_manager
+            .refill_plugin_ids(self.plugin_host.lua_take_creation_ids());
         let bufs = self.lua_buf_snapshots();
 
         let window_size = (
@@ -164,6 +167,7 @@ impl<T: TerminalBackend> Editor<T> {
             .lua_update_state(crate::plugin::lua_host::StateUpdate {
                 buf_id,
                 bufs,
+                creation_ids,
                 mode,
                 window_size,
                 scroll,
@@ -366,6 +370,13 @@ impl<T: TerminalBackend> Editor<T> {
                 let origin = envelope.origin;
                 if let Some(gen) = origin {
                     if !self.plugin_host.is_generation_active(gen) {
+                        match &envelope.mutation {
+                            PluginMutation::CreateBuffer { id, .. }
+                            | PluginMutation::CreateScratchBuf { id, .. } => {
+                                self.document_manager.release_plugin_ids([id.get()]);
+                            }
+                            _ => {}
+                        }
                         continue;
                     }
                 }
@@ -749,13 +760,8 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
             }
-            PluginMutation::CreateScratchBuf { name, lines } => {
-                if let Err(e) = self.create_scratch_buffer(name, &lines) {
-                    self.state.notify(
-                        crate::notification::NotificationType::Error,
-                        format!("create_scratch_buf failed: {}", e.message),
-                    );
-                }
+            PluginMutation::CreateScratchBuf { id, name, lines } => {
+                self.create_plugin_scratch(id, name, &lines);
             }
             PluginMutation::ReloadBuffer { buf, force } => {
                 if self.document_manager.get_document(buf).is_none() {
@@ -765,12 +771,13 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             PluginMutation::CreateBuffer {
+                id,
                 kind,
                 title,
                 lines,
                 vars,
             } => {
-                self.create_buffer(&kind, title.as_deref(), &lines, vars);
+                self.create_buffer(id, &kind, title.as_deref(), &lines, vars);
             }
             PluginMutation::RegisterBufferKind {
                 name,
@@ -802,21 +809,42 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    fn create_plugin_scratch(
+        &mut self,
+        id: crate::document::DocumentId,
+        name: String,
+        lines: &[String],
+    ) {
+        let Some(reservation) = self.document_manager.claim_plugin_creation(id) else {
+            return;
+        };
+        if let Err(error) = self.create_scratch_buffer(reservation, name, lines) {
+            self.state.notify(
+                crate::notification::NotificationType::Error,
+                format!("create_scratch_buf failed: {}", error.message),
+            );
+        }
+    }
+
     fn create_buffer(
         &mut self,
+        id: crate::document::DocumentId,
         kind: &str,
         title: Option<&str>,
         lines: &[String],
         vars: Vec<(String, crate::annotations::value::Value)>,
     ) {
         let Some(descriptor) = self.buffer_kinds.get_by_name(kind) else {
+            self.document_manager.release_plugin_ids([id.get()]);
             self.state.notify(
                 crate::notification::NotificationType::Error,
                 format!("unknown buffer kind '{kind}'"),
             );
             return;
         };
-        let reservation = self.document_manager.reserve_creation();
+        let Some(reservation) = self.document_manager.claim_plugin_creation(id) else {
+            return;
+        };
         let mut document = match crate::document::Document::new(reservation.id()) {
             Ok(document) => document,
             Err(error) => {
@@ -841,6 +869,7 @@ impl<T: TerminalBackend> Editor<T> {
         if !text.is_empty() {
             let _ = document.buffer.insert_str(&text);
         }
+        let _ = document.buffer.set_cursor(0);
         let draft = match crate::document::manager::DocumentDraft::new(reservation, document) {
             Ok(draft) => draft,
             Err(error) => {

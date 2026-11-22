@@ -227,6 +227,7 @@ impl<T: TerminalBackend> Editor<T> {
         let scroll = self.render_system.viewport.get_scroll();
         self.split_tree.set_window_document(win, buf);
         let _ = self.document_manager.switch_to_document(buf);
+        self.sync_state_with_active_document();
         let result = f(self);
         if original != buf && self.document_manager.get_document(original).is_some() {
             if self
@@ -324,13 +325,15 @@ impl<T: TerminalBackend> Editor<T> {
     /// Returns `Err` when the scratch document cannot be created or switched to.
     pub(super) fn create_scratch_buffer(
         &mut self,
+        reservation: crate::document::manager::CreationReservation,
         title: String,
         lines: &[String],
     ) -> Result<crate::document::DocumentId, RiftError> {
-        let id = self.document_manager.next_id();
-        let doc = crate::document::Document::new_scratch(id, title, lines)?;
-        self.document_manager.add_document(doc);
-        self.document_manager.switch_to_document(id)?;
+        let id = reservation.id();
+        let mut doc = crate::document::Document::new_scratch(id, title, lines)?;
+        doc.set_handle(reservation.handle());
+        let draft = crate::document::manager::DocumentDraft::new(reservation, doc)?;
+        self.document_manager.commit_draft_active(draft);
         self.split_tree.set_focused_document(id);
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();

@@ -183,6 +183,7 @@ struct LuaSharedState {
     /// Mutations queued by Lua plugin calls; drained by `PluginHost`.
     mutations: Vec<PluginMutation>,
     bufs: std::collections::HashMap<u64, BufSnapshot>,
+    creation_ids: Vec<u64>,
     /// Active buffer ID.
     buf_id: usize,
     mode: String,
@@ -311,10 +312,18 @@ impl LuaSharedState {
         let (row, col) = snap.meta.cursor;
         let pos = buffer.line_index.get_line_start(row) + col;
         let _ = buffer.set_cursor(pos.min(buffer.len()));
+        let revision = buffer.revision;
         edit(buffer);
         let pos = buffer.cursor();
         let row = buffer.line_index.get_line_at(pos);
         snap.meta.cursor = (row, pos - buffer.line_index.get_line_start(row));
+        if buffer.revision != revision {
+            snap.meta.is_dirty = true;
+            snap.meta.history = HistoryAvailability {
+                can_undo: true,
+                can_redo: false,
+            };
+        }
         self.diverged.insert(buf);
     }
 
@@ -343,6 +352,54 @@ impl LuaSharedState {
         self.diverged.insert(buf);
     }
 
+    fn create_local_buf(
+        &mut self,
+        kind: &str,
+        title: Option<&str>,
+        lines: &[String],
+    ) -> LuaResult<u64> {
+        if !self.is_active {
+            return Err(LuaError::RuntimeError(
+                "cannot create buffer: plugin generation is retired".into(),
+            ));
+        }
+        let id = self.creation_ids.pop().ok_or_else(|| {
+            LuaError::RuntimeError("cannot create more than 8 buffers before the next sync".into())
+        })?;
+        let mut buffer = crate::buffer::TextBuffer::default();
+        buffer
+            .insert_str(&lines.join("\n"))
+            .map_err(LuaError::external)?;
+        buffer.set_cursor(0).map_err(LuaError::external)?;
+        self.buf_list.push(BufEntry {
+            id: usize::try_from(id).map_err(LuaError::external)?,
+            name: title.unwrap_or(kind).to_string(),
+            is_dirty: false,
+            is_current: true,
+            kind: kind.to_string(),
+            path: None,
+            line_count: buffer.get_total_lines(),
+            is_read_only: false,
+        });
+        self.bufs.insert(
+            id,
+            BufSnapshot {
+                buffer,
+                meta: BufMeta {
+                    kind: kind.to_string(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        self.buf_id = usize::try_from(id).map_err(LuaError::external)?;
+        for entry in &mut self.buf_list {
+            entry.is_current = entry.id as u64 == id;
+        }
+        self.synced.buf_list = None;
+        Ok(id)
+    }
+
     fn plugin_disabled(&self, plugin: Option<&str>) -> bool {
         plugin
             .and_then(|plugin| self.plugin_health.get(plugin))
@@ -355,6 +412,7 @@ impl LuaSharedState {
         Self {
             mutations: Vec::new(),
             bufs: std::collections::HashMap::new(),
+            creation_ids: Vec::new(),
             buf_id: 0,
             mode: "normal".to_string(),
             buf_list: Vec::new(),
@@ -1489,7 +1547,12 @@ impl LuaHost {
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(
-                move |lua, (start, end_, opts): (i64, i64, Option<LuaTable>)| {
+                move |lua, (start, end_, opts): (LuaValue, Option<i64>, Option<LuaTable>)| {
+                    let (start, end_, opts) = match start {
+                        LuaValue::Table(opts) if end_.is_none() => (1, -1, Some(opts)),
+                        LuaValue::Nil => (1, end_.unwrap_or(-1), opts),
+                        value => (i64::from_lua(value, lua)?, end_.unwrap_or(-1), opts),
+                    };
                     let buf = opts_target(&sh, opts.as_ref())?;
                     let s = sh.borrow();
                     let t = lua.create_table()?;
@@ -1899,7 +1962,6 @@ impl LuaHost {
             let sh = Rc::clone(shared);
             let f = lua.create_function(
                 move |_, (name, value, opts): (String, LuaValue, Option<LuaTable>)| {
-                    // Lua floats truncate toward zero and saturate, matching the integer option form.
                     let value_str = match &value {
                         LuaValue::Boolean(b) => b.to_string(),
                         LuaValue::Integer(n) => n.to_string(),
@@ -2094,10 +2156,14 @@ impl LuaHost {
                 for s in lines.sequence_values::<String>() {
                     v.push(s?);
                 }
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::CreateScratchBuf { name, lines: v });
-                Ok(())
+                let mut s = sh.borrow_mut();
+                let id = s.create_local_buf("scratch", Some(&name), &v)?;
+                s.mutations.push(PluginMutation::CreateScratchBuf {
+                    id: DocumentId::new(id),
+                    name,
+                    lines: v,
+                });
+                Ok(id)
             })?;
             api.set("create_scratch_buf", f)?;
         }
@@ -3036,13 +3102,12 @@ impl LuaHost {
         {
             let sh = Rc::clone(shared);
             let create =
-                lua.create_function(move |_, (kind, opts): (String, Option<LuaTable>)| {
-                    let opts = opts;
+                lua.create_function(move |lua, (kind, opts): (String, Option<LuaTable>)| {
                     let title = opts
                         .as_ref()
                         .and_then(|table| table.get::<Option<String>>("title").ok())
                         .flatten();
-                    let lines = opts
+                    let lines: Vec<String> = opts
                         .as_ref()
                         .and_then(|table| table.get::<Option<LuaTable>>("lines").ok())
                         .flatten()
@@ -3060,19 +3125,39 @@ impl LuaHost {
                             vars.push((key, value_from_lua(&value)?));
                         }
                     }
+                    let kinds: LuaTable = lua.globals().get("_rift_buffer_kinds")?;
+                    let read_only =
+                        if let Some(entry) = kinds.get::<Option<LuaTable>>(kind.as_str())? {
+                            let options: LuaTable = entry.get("opts")?;
+                            matches!(
+                                options.get::<Option<String>>("read_only")?.as_deref(),
+                                Some("readonly" | "read_only" | "fixed" | "fixed_readonly")
+                            )
+                        } else {
+                            false
+                        };
                     let mut s = sh.borrow_mut();
-                    if !s.is_active {
-                        return Err(LuaError::RuntimeError(
-                            "cannot create buffer: plugin generation is retired".to_string(),
-                        ));
+                    let id = s.create_local_buf(&kind, title.as_deref(), &lines)?;
+                    if let Some(entry) = s.buf_list.last_mut() {
+                        entry.is_read_only = read_only;
                     }
+                    let local_vars = s.buffer_vars.entry(id).or_default();
+                    local_vars.extend(vars.iter().cloned());
+                    if let Some(title) = &title {
+                        local_vars.insert(
+                            "title".to_string(),
+                            crate::annotations::value::Value::Str(title.clone()),
+                        );
+                    }
+                    s.synced.buffer_vars = None;
                     s.mutations.push(PluginMutation::CreateBuffer {
+                        id: DocumentId::new(id),
                         kind,
                         title,
                         lines,
                         vars,
                     });
-                    Ok(())
+                    Ok(id)
                 })?;
             api.set("create_buffer", create)?;
         }
@@ -3123,11 +3208,11 @@ impl LuaHost {
             let sh = Rc::clone(shared);
             let get_var =
                 lua.create_function(move |lua, (buf_id, key): (Option<u64>, String)| {
+                    let target_id = buf_or_current(&sh, buf_id)?;
                     let s = sh.borrow_mut();
                     if !s.is_active {
                         return Ok(LuaValue::Nil);
                     }
-                    let target_id = buf_id.unwrap_or(s.buf_id as u64);
                     let val = s
                         .buffer_vars
                         .get(&target_id)
@@ -3143,14 +3228,14 @@ impl LuaHost {
             let sh = Rc::clone(shared);
             let set_var = lua.create_function(
                 move |_, (buf_id, key, value): (Option<u64>, String, LuaValue)| {
+                    let target_id = buf_or_current(&sh, buf_id)?;
+                    let val = value_from_lua(&value)?;
                     let mut s = sh.borrow_mut();
                     if !s.is_active {
                         return Err(LuaError::RuntimeError(
                             "cannot set buffer var: plugin generation is retired".to_string(),
                         ));
                     }
-                    let val = value_from_lua(&value)?;
-                    let target_id = buf_id.unwrap_or(s.buf_id as u64);
                     s.buffer_vars
                         .entry(target_id)
                         .or_default()
@@ -3206,6 +3291,10 @@ impl LuaHost {
         self.shared.borrow().synced
     }
 
+    pub(super) fn take_creation_ids(&self) -> Vec<u64> {
+        std::mem::take(&mut self.shared.borrow_mut().creation_ids)
+    }
+
     pub(super) fn take_divergence(&self) -> Vec<u64> {
         self.shared.borrow_mut().diverged.drain().collect()
     }
@@ -3223,6 +3312,7 @@ impl LuaHost {
         let mut guard = self.shared.borrow_mut();
         let s = &mut *guard;
         s.buf_id = update.buf_id;
+        s.creation_ids = update.creation_ids;
         if let Some(bufs) = update.bufs {
             s.bufs
                 .retain(|id, _| bufs.iter().any(|(live, _)| live == id));

@@ -158,13 +158,13 @@ fn dropped_buffer_var_write_is_restored_on_next_sync() {
     let mut editor = lua_editor("hello\n");
     lua_ok(
         &editor,
-        "rift.set_buffer_var(9999, 'probe', 'local') \
-         assert(rift.get_buffer_var(9999, 'probe') == 'local')",
+        "rift.set_buffer_var(nil, 'probe', 'local') \
+         assert(rift.get_buffer_var(nil, 'probe') == 'local')",
     );
-    editor.apply_plugin_mutations();
+    let _ = editor.plugin_host.drain_mutation_envelopes().count();
     editor.update_lua_state();
 
-    lua_ok(&editor, "assert(rift.get_buffer_var(9999, 'probe') == nil)");
+    lua_ok(&editor, "assert(rift.get_buffer_var(nil, 'probe') == nil)");
 }
 
 #[test]

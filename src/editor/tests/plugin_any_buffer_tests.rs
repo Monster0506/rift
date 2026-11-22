@@ -140,6 +140,8 @@ fn writes_target_a_background_buffer_and_read_back_in_the_same_call() {
             rift.delete_before(1, b)
             rift.delete_forward(1, b)
             rift.set_current_line('beta', b)
+            rift.append_lines({{ '\ntrash' }}, b)
+            rift.delete_current_line(b)
             rift.center_on_line(1, b)
             rift.set_line_ending('crlf', b)
             rift.set_option('tab_width', 8, b)
@@ -151,6 +153,7 @@ fn writes_target_a_background_buffer_and_read_back_in_the_same_call() {
             rift.annotations.clear('probe.cleared', b)
 
             assert(table.concat(rift.get_lines(1, -1, b), '|') == '>alpha|beta')
+            assert(rift.is_dirty(b) and rift.can_undo(b) and not rift.can_redo(b))
             local row, col = rift.get_cursor(b)
             assert(row == 1 and col == 0, row .. ':' .. col)
             assert(rift.get_line_ending(b) == 'crlf')
@@ -349,4 +352,147 @@ fn highlight_queued_for_a_closed_buffer_logs_the_drop() {
     assert!(editor.state.error_manager.notifications().message_log().iter().any(
         |entry| matches!(entry, crate::notification::MessageEntry::Notification { message, .. } if message == &expected)
     ));
+}
+
+#[test]
+fn created_buffers_return_ids_and_support_immediate_reads_and_edits() {
+    let (_dir, mut editor, _first, _second) = background_file();
+    lua_ok(
+        &editor,
+        "rift.register_buffer_kind('created', { on_close = function() end })",
+    );
+    sync(&mut editor);
+    lua_ok(
+        &editor,
+        r"
+        _G.created = rift.create_buffer('created', {
+            title = 'created title', lines = { 'one', 'two' }, vars = { probe = 'value' }
+        })
+        assert(rift.current_buf() == _G.created)
+        assert(rift.buf_kind() == 'created')
+        assert(table.concat(rift.get_lines(1, -1), '|') == 'one|two')
+        local row, col = rift.get_cursor()
+        assert(row == 1 and col == 0)
+        assert(rift.get_buffer_var(_G.created, 'probe') == 'value')
+        _G.scratch = rift.create_scratch_buf('scratch title', { 'scratch' })
+        assert(_G.scratch ~= _G.created and rift.current_buf() == _G.scratch)
+        assert(rift.get_lines({ buf = _G.created })[2] == 'two')
+        rift.insert('>', { buf = _G.created })
+        assert(rift.get_lines(1, 1, { buf = _G.created })[1] == '>one')
+        local count = 0
+        for _, b in ipairs(rift.get_buf_list()) do
+            if b.id == _G.created then assert(not b.is_current) count = count + 1 end
+            if b.id == _G.scratch then assert(b.is_current) count = count + 1 end
+        end
+        assert(count == 2)
+    ",
+    );
+    sync(&mut editor);
+    let scratch = editor.active_document_id().get();
+    lua_ok(&editor, &format!(
+        "assert(_G.scratch == {scratch}) assert(rift.get_lines(1, 1, {{ buf = _G.created }})[1] == '>one')"
+    ));
+    assert_eq!(text(&editor, scratch), "scratch");
+    let created = editor
+        .document_manager
+        .documents_iter()
+        .find(|doc| doc.kind.kind_str() == "created")
+        .unwrap();
+    assert_eq!(created.buffer.to_string(), ">one\ntwo");
+    lua_ok(
+        &editor,
+        &format!("assert(_G.created == {})", created.id.get()),
+    );
+}
+
+#[test]
+fn nested_buf_open_cannot_steal_a_queued_creations_id() {
+    let (dir, mut editor, _first, _second) = background_file();
+    let path = dir.path().join("nested.txt");
+    std::fs::write(&path, "nested file").unwrap();
+    let path_arg = serde_json::to_string(&path.to_string_lossy()).unwrap();
+    lua_ok(
+        &editor,
+        &format!(
+            r"
+        rift.on('BufOpen', function()
+            if not _G.opened then
+                _G.opened = true
+                rift.open_file({path_arg}, true)
+            end
+        end)
+        _G.a = rift.create_scratch_buf('a', {{ 'alpha' }})
+        _G.b = rift.create_scratch_buf('b', {{ 'beta' }})
+    "
+        ),
+    );
+    sync(&mut editor);
+    drain_jobs(&mut editor);
+    let nested = editor
+        .document_manager
+        .find_open_document_id(&path)
+        .unwrap()
+        .get();
+    editor.update_lua_state();
+    lua_ok(
+        &editor,
+        &format!(
+            r"
+        assert(_G.a ~= {nested} and _G.b ~= {nested} and _G.a ~= _G.b)
+        assert(rift.get_lines(1, 1, {{ buf = _G.a }})[1] == 'alpha')
+        assert(rift.get_lines(1, 1, {{ buf = _G.b }})[1] == 'beta')
+    "
+        ),
+    );
+    assert_eq!(text(&editor, nested), "nested file");
+}
+
+#[test]
+fn ninth_buffer_creation_fails_without_losing_the_first_eight() {
+    let (_dir, mut editor, _first, _second) = background_file();
+    lua_ok(
+        &editor,
+        r"
+        _G.ids = {}
+        for i = 1, 8 do
+            _G.ids[i] = rift.create_scratch_buf('pool', { tostring(i) })
+        end
+        local current = rift.current_buf()
+        local ok, err = pcall(rift.create_scratch_buf, 'overflow', { 'bad' })
+        assert(not ok and tostring(err):find('more than 8 buffers'), tostring(err))
+        assert(rift.current_buf() == current)
+    ",
+    );
+    sync(&mut editor);
+    lua_ok(
+        &editor,
+        r"
+        for i, id in ipairs(_G.ids) do
+            assert(rift.get_lines(1, 1, { buf = id })[1] == tostring(i))
+        end
+        assert(type(rift.create_scratch_buf('refilled', { 'ok' })) == 'number')
+    ",
+    );
+    sync(&mut editor);
+    assert_eq!(editor.active_document().buffer.to_string(), "ok");
+}
+
+#[test]
+fn both_document_allocators_skip_claimed_plugin_ids_across_refills() {
+    let mut manager = crate::document::manager::DocumentManager::new();
+    let mut ids = manager.refill_plugin_ids(Vec::new());
+    let claimed = ids.pop().unwrap();
+    let next = manager.next_id();
+    assert!(!ids.contains(&next.get()) && claimed != next.get());
+    let editor_reservation = manager.reserve_creation();
+    assert_eq!(editor_reservation.id(), next);
+    let replacement_pool = manager.refill_plugin_ids(ids);
+    assert!(!replacement_pool.contains(&claimed));
+    let creation = manager
+        .claim_plugin_creation(DocumentId::new(claimed))
+        .unwrap();
+    assert_eq!(creation.id().get(), claimed);
+    assert!(manager
+        .claim_plugin_creation(DocumentId::new(claimed))
+        .is_none());
 }

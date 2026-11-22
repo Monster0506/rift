@@ -97,6 +97,7 @@ pub(crate) type LspDiagnosticsSnapshot =
 pub(crate) struct StateUpdate<'a> {
     pub(crate) buf_id: usize,
     pub(crate) bufs: Option<Vec<(u64, BufUpdate)>>,
+    pub(crate) creation_ids: Vec<u64>,
     pub(crate) mode: &'a str,
     pub(crate) window_size: (u16, u16),
     pub(crate) scroll: (usize, usize),

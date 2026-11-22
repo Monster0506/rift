@@ -42,6 +42,10 @@ impl LuaHost {
         SyncKeys::default()
     }
 
+    pub(super) fn take_creation_ids(&self) -> Vec<u64> {
+        Vec::new()
+    }
+
     pub(super) const fn take_divergence(&self) -> Vec<u64> {
         Vec::new()
     }

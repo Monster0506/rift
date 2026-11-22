@@ -129,6 +129,7 @@ pub(crate) struct DocumentManager {
     most_recent_ghost_doc: Option<DocumentId>,
     next_instance: u64,
     handles: HashMap<DocumentId, DocumentHandle>,
+    plugin_ids: std::cell::RefCell<Vec<DocumentId>>,
 }
 
 impl DocumentManager {
@@ -143,6 +144,7 @@ impl DocumentManager {
             most_recent_ghost_doc: None,
             next_instance: 1,
             handles: HashMap::new(),
+            plugin_ids: std::cell::RefCell::new(Vec::with_capacity(8)),
         }
     }
 
@@ -187,9 +189,9 @@ impl DocumentManager {
         }
     }
 
-    pub(crate) const fn reserve_creation(&mut self) -> CreationReservation {
-        let id = self.next_document_id;
-        self.next_document_id = self.next_document_id.next();
+    pub(crate) fn reserve_creation(&mut self) -> CreationReservation {
+        let id = self.next_id();
+        self.next_document_id = id.next();
         let instance = self.next_instance;
         self.next_instance += 1;
         let handle = DocumentHandle::new(id, instance);
@@ -359,8 +361,51 @@ impl DocumentManager {
     }
 
     #[must_use]
-    pub(crate) const fn next_id(&self) -> DocumentId {
-        self.next_document_id
+    pub(crate) fn next_id(&self) -> DocumentId {
+        let reserved = self.plugin_ids.borrow();
+        let mut id = self.next_document_id;
+        while reserved.contains(&id) {
+            id = id.next();
+        }
+        id
+    }
+
+    pub(crate) fn refill_plugin_ids(&self, mut ids: Vec<u64>) -> Vec<u64> {
+        self.release_plugin_ids(ids.iter().copied());
+        ids.clear();
+        let mut reserved = self.plugin_ids.borrow_mut();
+        let mut id = self.next_document_id;
+        while ids.len() < 8 {
+            if !reserved.contains(&id) {
+                reserved.push(id);
+                ids.push(id.get());
+            }
+            id = id.next();
+        }
+        ids.reverse();
+        ids
+    }
+
+    pub(crate) fn clear_plugin_ids(&self) {
+        self.plugin_ids.borrow_mut().clear();
+    }
+
+    pub(crate) fn release_plugin_ids(&self, ids: impl IntoIterator<Item = u64>) {
+        let mut reserved = self.plugin_ids.borrow_mut();
+        for id in ids {
+            if let Some(index) = reserved.iter().position(|reserved| reserved.get() == id) {
+                reserved.swap_remove(index);
+            }
+        }
+    }
+
+    pub(crate) fn claim_plugin_creation(&mut self, id: DocumentId) -> Option<CreationReservation> {
+        let mut reserved = self.plugin_ids.borrow_mut();
+        let index = reserved.iter().position(|reserved| *reserved == id)?;
+        reserved.swap_remove(index);
+        let handle = DocumentHandle::new(id, self.next_instance);
+        self.next_instance += 1;
+        Some(CreationReservation::new(id, handle))
     }
 
     /// # Errors
@@ -414,7 +459,7 @@ impl DocumentManager {
         }
 
         let replacement = if self.tab_order.len() == 1 {
-            let new_doc = Document::new(self.next_document_id).map_err(|e| {
+            let new_doc = Document::new(self.next_id()).map_err(|e| {
                 RiftError::new(
                     ErrorType::Internal,
                     crate::constants::errors::INTERNAL_ERROR,
@@ -597,11 +642,11 @@ impl DocumentManager {
                     crate::constants::errors::MSG_NOT_A_FILE,
                 ));
             }
-            match Document::try_open_undo_file(self.next_document_id, path) {
+            match Document::try_open_undo_file(self.next_id(), path) {
                 Some(result) => result?,
-                None => match Document::try_open_image(self.next_document_id, path) {
+                None => match Document::try_open_image(self.next_id(), path) {
                     Some(doc) => doc,
-                    None => Document::from_file(self.next_document_id, path_str)?,
+                    None => Document::from_file(self.next_id(), path_str)?,
                 },
             }
         } else if parent_dir_missing(path) {
@@ -611,7 +656,7 @@ impl DocumentManager {
                 crate::constants::errors::MSG_PARENT_DIR_MISSING,
             ));
         } else {
-            let mut doc = Document::new(self.next_document_id)?;
+            let mut doc = Document::new(self.next_id())?;
             doc.set_path(path_str);
             doc
         };
@@ -730,7 +775,8 @@ impl DocumentManager {
         &mut self,
         path: impl AsRef<Path>,
     ) -> Result<DocumentId, RiftError> {
-        let mut doc = Document::new(self.next_document_id).map_err(|e| {
+        let reservation = self.reserve_creation();
+        let mut doc = Document::new(reservation.id()).map_err(|e| {
             RiftError::new(
                 ErrorType::Internal,
                 crate::constants::errors::INTERNAL_ERROR,
@@ -739,7 +785,9 @@ impl DocumentManager {
         })?;
         doc.set_path(path.as_ref());
         let id = doc.id;
-        self.add_document(doc);
+        doc.set_handle(reservation.handle());
+        let draft = DocumentDraft::new(reservation, doc)?;
+        self.commit_draft_active(draft);
         Ok(id)
     }
 

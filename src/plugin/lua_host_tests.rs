@@ -3,7 +3,13 @@ use crate::notification::NotificationType;
 use crate::plugin::events::EditorEvent;
 
 fn make_host() -> LuaHost {
-    LuaHost::new().expect("LuaHost::new failed")
+    let host = LuaHost::new().expect("LuaHost::new failed");
+    host.update_state(StateUpdate {
+        creation_ids: (100..108).collect(),
+        mode: "normal",
+        ..Default::default()
+    });
+    host
 }
 
 fn text_update(lines: &[&str]) -> BufUpdate {

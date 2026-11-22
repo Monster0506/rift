@@ -350,6 +350,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn retire_lua_plugins(&mut self) {
+        self.document_manager.clear_plugin_ids();
         let active_gens = self.plugin_host.active_generations();
         for gen in active_gens {
             self.plugin_host.retire_generation(gen);

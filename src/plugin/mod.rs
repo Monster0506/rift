@@ -424,6 +424,7 @@ pub(crate) enum PluginMutation {
     },
     /// Create and activate an in-memory buffer. Fires `BufOpen` after creation.
     CreateScratchBuf {
+        id: DocumentId,
         name: String,
         lines: Vec<String>,
     },
@@ -445,6 +446,7 @@ pub(crate) enum PluginMutation {
     },
     /// Create a new buffer with the given registered kind, optional title, lines, and initial buffer vars.
     CreateBuffer {
+        id: DocumentId,
         kind: String,
         title: Option<String>,
         lines: Vec<String>,
@@ -1091,6 +1093,12 @@ impl PluginHost {
         self.lua
             .as_ref()
             .map_or_else(lua_host::SyncKeys::default, lua_host::LuaHost::synced_keys)
+    }
+
+    pub(crate) fn lua_take_creation_ids(&self) -> Vec<u64> {
+        self.lua
+            .as_ref()
+            .map_or_else(Vec::new, lua_host::LuaHost::take_creation_ids)
     }
 
     /// Load all top-level `.lua` files in `dir`, sorted lexicographically. Returns error strings.

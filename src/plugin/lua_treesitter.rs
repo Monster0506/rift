@@ -1,4 +1,4 @@
-use super::{buf_or_current, lua_index, lua_int, LuaSharedState};
+use super::{buf_or_current, lua_index, lua_int, opts_target, LuaSharedState};
 use crate::document::DocumentId;
 use crate::plugin::PluginMutation;
 use crate::syntax::loader::QueryKind;
@@ -504,7 +504,7 @@ pub(super) fn register(lua: &Lua, api: &LuaTable, shared: &Shared) -> LuaResult<
             let get = |key: &str| -> LuaResult<Option<LuaValue>> {
                 opts.as_ref().map(|o| o.get(key)).transpose()
             };
-            let buf = buf_or_current(&sh, get("buf")?.and_then(|v| v.as_u64()))?;
+            let buf = opts_target(&sh, opts.as_ref())?;
             let row = get("row")?.and_then(|v| v.as_i64());
             let col = get("col")?.and_then(|v| v.as_i64());
             let named = get("named")?.and_then(|v| v.as_boolean()).unwrap_or(true);

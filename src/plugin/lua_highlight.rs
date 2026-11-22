@@ -1,4 +1,4 @@
-use super::{buf_or_current, lua_index, parse_style, LuaSharedState};
+use super::{buf_or_current, lua_index, opts_buf, parse_style, LuaSharedState};
 use crate::document::DocumentId;
 use crate::layer::CellStyle;
 use crate::plugin::{HighlightRange, HighlightSpec, PluginMutation};
@@ -104,9 +104,7 @@ fn register_namespaces(lua: &Lua, hl: &LuaTable, shared: &Shared) -> LuaResult<(
                         )))
                     }
                 };
-                let opt_buf: Option<u64> =
-                    opts.as_ref().map(|o| o.get("buf")).transpose()?.flatten();
-                let buf = buf_or_current(&sh, opt_buf.or(node_buf))?;
+                let buf = buf_or_current(&sh, opts_buf(opts.as_ref())?.or(node_buf))?;
                 let priority: i32 = opts
                     .as_ref()
                     .map(|o| o.get::<Option<i32>>("priority"))

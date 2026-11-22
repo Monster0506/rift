@@ -382,6 +382,8 @@ fn background_tree_is_stale_after_a_local_edit() {
         &format!(
             r#"
             assert(rift.current_buf() ~= {first})
+            assert(rift.get_filetype({{ buf = {first} }}) == 'rust')
+            assert(rift.get_filetype() == nil)
             local tree = rift.treesitter.get_tree({first})
             assert(not tree:is_stale())
             rift.insert("// note\n", {{ buf = {first} }})
