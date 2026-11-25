@@ -1,4 +1,5 @@
 //! Tests for command executor
+use crate::document::ops::{Edit, EditSource};
 
 use crate::action::Motion;
 use crate::command::Command;
@@ -326,7 +327,7 @@ fn test_execute_undo_command() {
     let mut doc = create_doc();
 
     // Insert something
-    doc.insert_char('x').unwrap();
+    doc.edit(Edit::type_text('x'), EditSource::User).unwrap();
     assert_eq!(doc.buffer.to_string(), "x");
 
     // Execute undo command
@@ -339,7 +340,7 @@ fn test_execute_redo_command() {
     let mut doc = create_doc();
 
     // Insert and undo
-    doc.insert_char('y').unwrap();
+    doc.edit(Edit::type_text('y'), EditSource::User).unwrap();
     doc.undo();
     assert_eq!(doc.buffer.to_string(), "");
 
@@ -408,9 +409,9 @@ fn test_insert_mode_transaction_simulation() {
     doc.begin_transaction("Insert");
 
     // Type multiple characters (simulating insert mode typing)
-    doc.insert_char('a').unwrap();
-    doc.insert_char('b').unwrap();
-    doc.insert_char('c').unwrap();
+    doc.edit(Edit::type_text('a'), EditSource::User).unwrap();
+    doc.edit(Edit::type_text('b'), EditSource::User).unwrap();
+    doc.edit(Edit::type_text('c'), EditSource::User).unwrap();
 
     // Simulate exiting insert mode
     doc.commit_transaction();
@@ -432,13 +433,13 @@ fn test_multiple_insert_sessions() {
 
     // First insert mode session
     doc.begin_transaction("Insert 1");
-    doc.insert_char('X').unwrap();
-    doc.insert_char('Y').unwrap();
+    doc.edit(Edit::type_text('X'), EditSource::User).unwrap();
+    doc.edit(Edit::type_text('Y'), EditSource::User).unwrap();
     doc.commit_transaction();
 
     // Second insert mode session
     doc.begin_transaction("Insert 2");
-    doc.insert_char('Z').unwrap();
+    doc.edit(Edit::type_text('Z'), EditSource::User).unwrap();
     doc.commit_transaction();
 
     assert_eq!(doc.buffer.to_string(), "XYZ");
@@ -458,12 +459,12 @@ fn test_undo_then_new_insert_creates_branch() {
 
     // First insert
     doc.begin_transaction("Insert A");
-    doc.insert_char('A').unwrap();
+    doc.edit(Edit::type_text('A'), EditSource::User).unwrap();
     doc.commit_transaction();
 
     // Second insert
     doc.begin_transaction("Insert B");
-    doc.insert_char('B').unwrap();
+    doc.edit(Edit::type_text('B'), EditSource::User).unwrap();
     doc.commit_transaction();
 
     assert_eq!(doc.buffer.to_string(), "AB");
@@ -474,7 +475,7 @@ fn test_undo_then_new_insert_creates_branch() {
 
     // New insert (creates branch)
     doc.begin_transaction("Insert C");
-    doc.insert_char('C').unwrap();
+    doc.edit(Edit::type_text('C'), EditSource::User).unwrap();
     doc.commit_transaction();
 
     assert_eq!(doc.buffer.to_string(), "AC");

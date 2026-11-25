@@ -1,4 +1,5 @@
 use super::Editor;
+use crate::document::ops::{Edit, EditSource};
 use crate::plugin::lua_host::{
     BufAnnotations, BufEntry, BufMeta, BufUpdate, HistoryAvailability, SyncKeys,
 };
@@ -570,22 +571,19 @@ impl<T: TerminalBackend> Editor<T> {
         match mutation {
             PluginMutation::AppendLines { lines, .. } => {
                 let end = doc.buffer.len();
-                let _ = doc.buffer.set_cursor(end);
-                let _ = doc.insert_str(&lines.join("\n"));
+                let _ = doc.edit(Edit::insert(end, lines.join("\n")), EditSource::Plugin);
             }
             PluginMutation::InsertAtCursor { text, .. } => {
-                if !doc.is_read_only() {
-                    let _ = doc.insert_str(&text);
-                }
+                let _ = doc.edit(Edit::type_text(&text), EditSource::Plugin);
             }
             PluginMutation::DeleteBefore { count, .. } => {
                 for _ in 0..count {
-                    doc.delete_backward();
+                    let _ = doc.edit(Edit::DeleteBackward, EditSource::Plugin);
                 }
             }
             PluginMutation::DeleteForward { count, .. } => {
                 for _ in 0..count {
-                    doc.delete_forward();
+                    let _ = doc.edit(Edit::DeleteForward, EditSource::Plugin);
                 }
             }
             PluginMutation::ReplaceLines {
@@ -596,12 +594,15 @@ impl<T: TerminalBackend> Editor<T> {
                     end.saturating_sub(1),
                     &lines,
                 ) {
-                    let _ = doc.delete_range(edit.start, edit.end);
-                    let _ = doc.buffer.set_cursor(edit.start);
-                    if !edit.text.is_empty() {
-                        let _ = doc.insert_str(&edit.text);
+                    let deleted = doc
+                        .edit(Edit::delete(edit.start..edit.end), EditSource::Plugin)
+                        .unwrap_or(false);
+                    let inserted = doc
+                        .edit(Edit::insert(edit.start, &edit.text), EditSource::Plugin)
+                        .unwrap_or(false);
+                    if deleted || inserted {
+                        let _ = doc.buffer.set_cursor(edit.cursor.min(doc.buffer.len()));
                     }
-                    let _ = doc.buffer.set_cursor(edit.cursor.min(doc.buffer.len()));
                 }
             }
             _ => {}

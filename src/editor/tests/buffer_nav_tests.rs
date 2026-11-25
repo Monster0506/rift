@@ -1,5 +1,6 @@
 use super::common::*;
 use super::*;
+use crate::document::ops::{Edit, EditSource};
 use crate::error::ErrorSeverity;
 
 #[test]
@@ -61,7 +62,10 @@ fn test_editor_remove_last_tab() {
 #[test]
 fn test_editor_remove_dirty_tab() {
     let mut editor = create_editor();
-    editor.active_document().insert_char('x').unwrap();
+    editor
+        .active_document()
+        .edit(Edit::type_text('x'), EditSource::User)
+        .unwrap();
     let doc_id = editor.document_manager.get_document_id_at(0).unwrap();
 
     let result = editor.remove_document(doc_id);
@@ -90,7 +94,10 @@ fn rejected_close_has_no_cleanup_side_effects() {
     descriptor.on_close = crate::document::runtime::CloseHandler::Native(count_close);
     editor.active_document().kind =
         crate::document::kind::BufferKind::new(std::sync::Arc::new(descriptor));
-    editor.active_document().insert_char('x').unwrap();
+    editor
+        .active_document()
+        .edit(Edit::type_text('x'), EditSource::User)
+        .unwrap();
 
     assert!(editor.remove_document(doc_id).is_err());
     assert_eq!(CLOSE_COUNT.load(Ordering::SeqCst), 0);
@@ -136,7 +143,10 @@ fn test_quit_last_buffer_quits_editor() {
 fn test_quit_dirty_last_buffer_refuses() {
     let mut editor = create_editor();
     let original_id = editor.document_manager.active_document_id().unwrap();
-    editor.active_document().insert_char('x').unwrap();
+    editor
+        .active_document()
+        .edit(Edit::type_text('x'), EditSource::User)
+        .unwrap();
     assert!(editor.active_document().is_dirty());
 
     editor.do_quit(false);
@@ -161,7 +171,10 @@ fn test_quit_dirty_last_buffer_refuses() {
 fn q_key_refuses_dirty_buffer_when_quitonq_off() {
     let mut editor = create_editor();
     editor.execute_command_line("set noquitonq");
-    editor.active_document().insert_char('x').unwrap();
+    editor
+        .active_document()
+        .edit(Edit::type_text('x'), EditSource::User)
+        .unwrap();
     assert!(editor.active_document().is_dirty());
 
     feed_keys(&mut editor, "q");
@@ -172,7 +185,10 @@ fn q_key_refuses_dirty_buffer_when_quitonq_off() {
 #[test]
 fn q_key_quits_dirty_buffer_by_default() {
     let mut editor = create_editor();
-    editor.active_document().insert_char('x').unwrap();
+    editor
+        .active_document()
+        .edit(Edit::type_text('x'), EditSource::User)
+        .unwrap();
     assert!(editor.active_document().is_dirty());
 
     feed_keys(&mut editor, "q");
@@ -197,7 +213,10 @@ fn q_key_closes_split_when_quitonq_off() {
 fn test_handle_execution_result_quit_only_checks_current_buffer() {
     let mut editor = create_editor();
 
-    editor.active_document().insert_char('x').unwrap();
+    editor
+        .active_document()
+        .edit(Edit::type_text('x'), EditSource::User)
+        .unwrap();
     editor
         .open_file(Some("test2.txt".to_string()), false)
         .unwrap();
@@ -331,7 +350,10 @@ fn test_bd_by_index_deletes_a_non_current_buffer() {
 #[test]
 fn test_bdelete_refuses_dirty_buffer_without_bang() {
     let mut editor = create_editor();
-    editor.active_document().insert_char('x').unwrap();
+    editor
+        .active_document()
+        .edit(Edit::type_text('x'), EditSource::User)
+        .unwrap();
     assert_eq!(editor.document_manager.tab_count(), 1);
 
     editor.execute_command_line("bdelete");
@@ -354,7 +376,10 @@ fn test_open_buffer_list_panel_shows_status_and_enter_switches() {
     editor
         .open_file(Some("doc2.txt".to_string()), false)
         .unwrap();
-    editor.active_document().insert_char('x').unwrap();
+    editor
+        .active_document()
+        .edit(Edit::type_text('x'), EditSource::User)
+        .unwrap();
     let doc1_id = editor.document_manager.get_document_id_at(1).unwrap();
 
     editor.execute_command_line("buffer");
@@ -418,7 +443,10 @@ fn test_buffer_list_j_snaps_between_entries_and_updates_preview() {
         .unwrap()
         .buffer
         .to_string();
-    editor.active_document().insert_char('z').unwrap();
+    editor
+        .active_document()
+        .edit(Edit::type_text('z'), EditSource::User)
+        .unwrap();
     let after = editor
         .document_manager
         .get_document(layout.dir_doc_id)

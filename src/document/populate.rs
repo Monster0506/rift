@@ -1147,13 +1147,14 @@ impl Document {
         let restore_line = cursor_sha.and_then(|sha| head_line_for_sha.get(&sha).copied());
 
         self.begin_transaction(description);
-        let old_len = self.buffer.len();
-        if old_len > 0 {
-            let _ = self.delete_range(0, old_len);
-        }
-        if !text.is_empty() {
-            let _ = self.insert_str(&text);
-        }
+        let _ = self.apply_resolved(
+            super::ops::Resolved {
+                start: 0,
+                end: self.buffer.len(),
+                text: text.chars().map(Character::from).collect(),
+            },
+            super::ops::Origin::Source(super::ops::EditSource::User),
+        );
         self.commit_transaction();
 
         self.annotations.clear();

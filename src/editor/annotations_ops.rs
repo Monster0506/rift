@@ -173,7 +173,12 @@ impl<T: TerminalBackend> Editor<T> {
             _ => return None,
         };
         let new_ch = if checked { ' ' } else { 'x' };
-        doc.replace_repeat(c0 + 1, 1, new_ch).ok()?;
+        doc.edit(
+            crate::document::ops::Edit::replace(c0 + 1..c0 + 2, new_ch),
+            crate::document::ops::EditSource::User,
+        )
+        .ok()
+        .filter(|applied| *applied)?;
         Some(!checked)
     }
 

@@ -1,11 +1,11 @@
 pub(crate) mod clipboard;
 pub(crate) mod definitions;
-mod edit;
 pub(crate) mod factories;
 mod ghost;
 mod history;
 pub(crate) mod kind;
 pub(crate) mod manager;
+pub(crate) mod ops;
 mod persistence;
 mod populate;
 pub(crate) mod runtime;
@@ -215,7 +215,6 @@ pub(crate) struct Document {
     lsp_full_sync_needed: bool,
     pub(crate) pending_ghost: Vec<GhostCut>,
     ghost_clip: Option<crate::clipboard::Clip>,
-    ghost_paint_active: bool,
     ghost_paint_cursor: Option<usize>,
 }
 

@@ -1,6 +1,7 @@
 use super::common::*;
 #[cfg(feature = "treesitter")]
 use super::*;
+use crate::document::ops::{Edit, EditSource};
 #[cfg(feature = "treesitter")]
 use crate::test_utils::MockTerminal;
 
@@ -409,7 +410,7 @@ fn append_invalidates_rendered_eof() {
     let doc = editor.active_document();
     let generation = doc.syntax.as_ref().unwrap().highlights_generation();
     doc.buffer.move_to_end();
-    doc.insert_char(' ').unwrap();
+    doc.edit(Edit::type_text(' '), EditSource::User).unwrap();
     assert_ne!(
         generation,
         doc.syntax.as_ref().unwrap().highlights_generation(),

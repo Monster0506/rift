@@ -2,6 +2,7 @@ use super::common::*;
 use super::*;
 use crate::annotations::kind::well_known;
 use crate::annotations::Anchor;
+use crate::document::ops::{Edit, EditSource};
 use crate::plugin::{HighlightRange, HighlightSpec, PluginMutation};
 use crate::test_utils::MockTerminal;
 
@@ -55,7 +56,10 @@ fn plugin_highlight_shifts_with_a_real_edit_before_it() {
     assert_eq!(highlight_ranges(&mut editor), vec![(6, 11)]);
 
     editor.active_document().buffer.set_cursor(0).unwrap();
-    editor.active_document().insert_str("XX").unwrap();
+    editor
+        .active_document()
+        .edit(Edit::type_text("XX"), EditSource::User)
+        .unwrap();
 
     assert_eq!(
         highlight_ranges(&mut editor),

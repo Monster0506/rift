@@ -1,3 +1,4 @@
+use super::ops::{Edit, EditSource};
 use super::runtime::CLIPBOARD_STATE_KEY;
 use super::Document;
 use crate::annotations::kind::Kind;
@@ -167,11 +168,11 @@ impl Document {
         })
     }
 
-    fn insert_clipboard_text(&mut self, text: &str) {
+    fn insert_clipboard_text(&mut self, at: usize, text: &str) {
         if let Some(state) = self.state.try_get_mut(CLIPBOARD_STATE_KEY) {
             state.edit = ClipboardEdit::Rows;
         }
-        let _ = self.insert_str(text);
+        let _ = self.edit(Edit::insert(at, text), EditSource::User);
         if let Some(state) = self.state.try_get_mut(CLIPBOARD_STATE_KEY) {
             state.edit = ClipboardEdit::Number;
         }
@@ -212,7 +213,7 @@ impl Document {
             start -= 1;
         }
         self.begin_transaction("Delete clipboard rows");
-        let _ = self.delete_range(start, end);
+        let _ = self.edit(Edit::delete(start..end), EditSource::User);
         self.commit_transaction();
     }
 
@@ -275,10 +276,9 @@ impl Document {
 
         self.begin_transaction("Put clipboard rows");
         if empty && !self.buffer.is_empty() {
-            let _ = self.delete_range(0, self.buffer.len());
+            let _ = self.edit(Edit::delete(0..self.buffer.len()), EditSource::User);
         }
-        let _ = self.buffer.set_cursor(start.min(self.buffer.len()));
-        self.insert_clipboard_text(&text);
+        self.insert_clipboard_text(start.min(self.buffer.len()), &text);
         for (closing, source, position) in closings {
             self.track_clipboard_row(closing, source, position);
         }

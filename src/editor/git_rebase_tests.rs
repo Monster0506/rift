@@ -1,4 +1,5 @@
 //! End-to-end tests of the plumbing rebase engine (Phase 6) against real, disposable temp repositories: pick/reorder/drop/fixup/squash/reword/edit, conflict pause+resume, and abort.
+use crate::document::ops::{Edit, EditSource};
 
 use super::Editor;
 use crate::test_utils::MockTerminal;
@@ -963,7 +964,8 @@ fn reword_via_a_real_edit_closes_the_message_buffer() {
         let doc = editor.document_manager.active_document_mut().unwrap();
         let len = doc.buffer.len();
         doc.buffer.set_cursor(len).unwrap();
-        doc.insert_str(" reworded").unwrap();
+        doc.edit(Edit::type_text(" reworded"), EditSource::User)
+            .unwrap();
     }
     editor.apply_git_commit_message();
 

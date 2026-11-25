@@ -1,3 +1,4 @@
+use super::ops::{Origin, Resolved};
 use super::{Document, GhostCut};
 use crate::annotations::kind::Kind;
 use crate::annotations::presentation::{Presentation, StyleOverride};
@@ -25,7 +26,10 @@ impl Document {
         let mut ghosts = Vec::with_capacity(ranges.len());
         for &(start, end) in &ranges {
             let text: Vec<Character> = self.buffer.chars(start..end).collect();
-            let _ = self.delete_range(start, end);
+            let _ = self.edit(
+                super::ops::Edit::delete(start..end),
+                super::ops::EditSource::User,
+            );
             ghosts.push(GhostCut {
                 at: start,
                 text,
@@ -87,10 +91,14 @@ impl Document {
                 cursor_shift += len;
             }
 
-            let _ = self.buffer.set_cursor(insert_at);
-            self.ghost_paint_active = true;
-            self.insert_characters(&text);
-            self.ghost_paint_active = false;
+            let _ = self.apply_resolved(
+                Resolved {
+                    start: insert_at,
+                    end: insert_at,
+                    text,
+                },
+                Origin::GhostPaint,
+            );
 
             let byte_start = self.buffer.char_to_byte(insert_at);
             let byte_end = self.buffer.char_to_byte(insert_at + len);
@@ -130,9 +138,14 @@ impl Document {
             };
             let len = self.pending_ghost[i].text.len();
             self.annotations.remove(annotation_id);
-            self.ghost_paint_active = true;
-            let _ = self.delete_range(offset, offset + len);
-            self.ghost_paint_active = false;
+            let _ = self.apply_resolved(
+                Resolved {
+                    start: offset,
+                    end: offset + len,
+                    text: Vec::new(),
+                },
+                Origin::GhostPaint,
+            );
         }
 
         let _ = self.buffer.set_cursor(real_cursor.min(self.buffer.len()));

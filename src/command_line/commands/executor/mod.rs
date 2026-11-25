@@ -499,12 +499,11 @@ fn execute_substitute(
 
             let mut changes_made = 0;
             for m in valid_matches {
-                if let Err(e) = document.replace_range(m.range.start, m.range.end, replacement) {
-                    state.handle_error(e);
-                    continue;
+                match replace_match(document, m.range.start..m.range.end, replacement) {
+                    Ok(true) => changes_made += 1,
+                    Ok(false) => {}
+                    Err(e) => state.handle_error(e),
                 }
-
-                changes_made += 1;
             }
 
             document.commit_transaction();
@@ -532,6 +531,18 @@ fn execute_substitute(
             ExecutionResult::Failure
         }
     }
+}
+
+fn replace_match(
+    document: &mut Document,
+    range: std::ops::Range<usize>,
+    replacement: &str,
+) -> Result<bool, crate::error::RiftError> {
+    use crate::document::ops::{Edit, EditSource};
+    let start = range.start;
+    let deleted = document.edit(Edit::delete(range), EditSource::User)?;
+    let inserted = document.edit(Edit::insert(start, replacement), EditSource::User)?;
+    Ok(deleted || inserted)
 }
 
 mod local;

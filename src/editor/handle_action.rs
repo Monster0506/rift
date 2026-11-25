@@ -4,6 +4,7 @@ use crate::action::{Action, EditorAction};
 use crate::buffer::api::BufferView;
 use crate::clipboard::Clip;
 use crate::command::Command;
+use crate::document::ops::{Edit, EditSource};
 use crate::document::runtime::{ActionDispatch, BufferKindId, NavigationPolicy};
 use crate::mode::Mode;
 use crate::search::SearchDirection;
@@ -1053,17 +1054,17 @@ impl<T: TerminalBackend> Editor<T> {
 
         let _ = doc.buffer.set_cursor(start);
         doc.begin_transaction("Put");
-        let _ = doc.delete_range(start, end);
+        let _ = doc.edit(Edit::delete(start..end), EditSource::User);
         if source_linewise && !target_linewise {
-            doc.insert_characters(&[Character::Newline]);
+            let _ = doc.edit(Edit::type_text(Character::Newline), EditSource::User);
         }
         let inserted_start = doc.buffer.cursor();
         for _ in 1..count {
-            doc.insert_characters(clip.text());
+            let _ = doc.edit(Edit::type_text(clip.text()), EditSource::User);
         }
-        doc.insert_characters(text);
+        let _ = doc.edit(Edit::type_text(text), EditSource::User);
         if target_linewise && !source_linewise && has_following_line {
-            doc.insert_characters(&[Character::Newline]);
+            let _ = doc.edit(Edit::type_text(Character::Newline), EditSource::User);
         }
         let inserted_cursor = if target_linewise || source_linewise {
             let first_line_end = text
@@ -1565,7 +1566,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let _ = doc.buffer.set_cursor(pos);
         doc.begin_transaction("Put");
-        doc.insert_characters(text);
+        let _ = doc.edit(Edit::type_text(text), EditSource::User);
         doc.commit_transaction();
         let _ = doc.buffer.set_cursor(pos);
         self.do_incremental_syntax_parse();
@@ -1616,13 +1617,16 @@ impl<T: TerminalBackend> Editor<T> {
 
         doc.begin_transaction("Put");
         if needs_leading_newline {
-            doc.insert_characters(&[crate::character::Character::Newline]);
+            let _ = doc.edit(
+                Edit::type_text(crate::character::Character::Newline),
+                EditSource::User,
+            );
             let trimmed = text
                 .strip_suffix(&[crate::character::Character::Newline])
                 .unwrap_or(text);
-            doc.insert_characters(trimmed);
+            let _ = doc.edit(Edit::type_text(trimmed), EditSource::User);
         } else {
-            doc.insert_characters(text);
+            let _ = doc.edit(Edit::type_text(text), EditSource::User);
         }
         doc.commit_transaction();
 
@@ -1645,7 +1649,7 @@ impl<T: TerminalBackend> Editor<T> {
             return false;
         }
         doc.begin_transaction("Paste");
-        let _ = doc.insert_str(text);
+        let _ = doc.edit(Edit::type_text(text), EditSource::User);
         doc.commit_transaction();
         self.do_incremental_syntax_parse();
         true

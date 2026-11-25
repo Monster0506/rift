@@ -3,6 +3,7 @@ use super::*;
 use crate::annotations::kind::well_known;
 use crate::annotations::Anchor;
 use crate::color::Color;
+use crate::document::ops::{Edit, EditSource};
 use crate::test_utils::MockTerminal;
 
 const RUST: &str = "fn main() {\n    let answer = 42;\n    let b = answer;\n}\n";
@@ -324,7 +325,7 @@ fn syntax_updated_hands_handlers_the_reparsed_tree() {
     editor.active_document().buffer.move_to_end();
     editor
         .active_document()
-        .insert_str("fn extra() {}\n")
+        .edit(Edit::type_text("fn extra() {}\n"), EditSource::User)
         .unwrap();
     editor.do_incremental_syntax_parse();
     editor.update_and_render().unwrap();

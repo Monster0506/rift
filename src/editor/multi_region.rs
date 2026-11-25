@@ -1,6 +1,7 @@
 use super::Editor;
 use crate::character::Character;
 use crate::clipboard::Clip;
+use crate::document::ops::{Edit, EditSource};
 use crate::document::Document;
 use crate::selection::Region;
 use crate::term::TerminalBackend;
@@ -54,13 +55,13 @@ fn put_lines(doc: &mut Document, offset: usize, before: bool, text: &[Character]
     };
     let _ = doc.buffer.set_cursor(pos);
     if !needs_newline {
-        doc.insert_characters(text);
+        let _ = doc.edit(Edit::type_text(text), EditSource::User);
         return;
     }
 
     let trimmed = text.strip_suffix(&[Character::Newline]).unwrap_or(text);
-    doc.insert_characters(&[Character::Newline]);
-    doc.insert_characters(trimmed);
+    let _ = doc.edit(Edit::type_text(Character::Newline), EditSource::User);
+    let _ = doc.edit(Edit::type_text(trimmed), EditSource::User);
 }
 
 fn region_clip(buf: &crate::buffer::TextBuffer, region: &Region) -> Clip {
@@ -324,16 +325,14 @@ impl<T: TerminalBackend> Editor<T> {
                 let (_, end) = region.buffer_span(&doc.buffer);
                 let row = doc.buffer.line_index.get_line_at(end.saturating_sub(1));
                 let target = line_end_offset(&doc.buffer, row);
-                let _ = doc.buffer.set_cursor(target);
-                let _ = doc.insert_char('\n');
+                let _ = doc.edit(Edit::insert(target, '\n'), EditSource::User);
                 doc.buffer.cursor()
             }),
             Command::OpenLineAbove => self.enter_multi_insert(entry, |doc, region| {
                 let (start, _) = region.buffer_span(&doc.buffer);
                 let row = doc.buffer.line_index.get_line_at(start);
                 let target = line_start_offset(&doc.buffer, row);
-                let _ = doc.buffer.set_cursor(target);
-                let _ = doc.insert_char('\n');
+                let _ = doc.edit(Edit::insert(target, '\n'), EditSource::User);
                 target
             }),
             _ => false,
@@ -387,7 +386,7 @@ impl<T: TerminalBackend> Editor<T> {
                         }
                     }
                     if start < end {
-                        let _ = doc.delete_range(start, end);
+                        let _ = doc.edit(Edit::delete(start..end), EditSource::User);
                     }
                     start
                 });
@@ -470,7 +469,7 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some(doc) = self.document_manager.active_document_mut() {
                 doc.begin_transaction("MultiRegion");
                 for &(start, end) in &ranges {
-                    let _ = doc.delete_range(start, end);
+                    let _ = doc.edit(Edit::delete(start..end), EditSource::User);
                 }
                 doc.commit_transaction();
             }
@@ -493,7 +492,12 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let mut any = false;
             for (pos, len) in fill_runs(&doc.buffer, &region) {
-                any |= doc.replace_repeat(pos, len, ch).is_ok();
+                any |= doc
+                    .edit(
+                        Edit::replace(pos..pos + len, vec![Character::from(ch); len]),
+                        EditSource::User,
+                    )
+                    .is_ok();
             }
             any
         })
@@ -591,10 +595,8 @@ impl<T: TerminalBackend> Editor<T> {
                 return false;
             };
             let (start, end) = region.buffer_span(&doc.buffer);
-            let _ = doc.buffer.set_cursor(end);
-            let _ = doc.insert_str(&close);
-            let _ = doc.buffer.set_cursor(start);
-            let _ = doc.insert_str(&open);
+            let _ = doc.edit(Edit::insert(end, &close), EditSource::User);
+            let _ = doc.edit(Edit::insert(start, &open), EditSource::User);
             true
         })
     }
@@ -620,8 +622,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return true;
             }
             let pos = if before { start } else { end };
-            let _ = doc.buffer.set_cursor(pos);
-            doc.insert_characters(&text);
+            let _ = doc.edit(Edit::insert(pos, &text), EditSource::User);
             true
         })
     }

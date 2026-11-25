@@ -1,5 +1,6 @@
 use super::common::*;
 use super::*;
+use crate::document::ops::{Edit, EditSource};
 use crate::test_utils::MockTerminal;
 
 #[test]
@@ -59,7 +60,7 @@ fn apply_to_each_region_deletes_are_one_undo_step() {
         editor
             .document_manager
             .active_document_mut()
-            .is_some_and(|doc| doc.delete_range(start, end).is_ok())
+            .is_some_and(|doc| doc.edit(Edit::delete(start..end), EditSource::User).is_ok())
     });
     assert_eq!(editor.active_document().buffer.to_string(), "234789");
 
@@ -942,7 +943,10 @@ fn undo_of_unrelated_edit_clears_a_banked_set() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.active_document().insert_char('!').unwrap();
+    editor
+        .active_document()
+        .edit(Edit::type_text('!'), EditSource::User)
+        .unwrap();
     editor
         .active_document()
         .bank_region(Region::new(0, 1, RangeKind::Charwise));

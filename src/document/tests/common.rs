@@ -1,5 +1,6 @@
 use super::*;
 use crate::document::manager::DocumentManager;
+use crate::document::ops::{Edit, EditSource};
 
 pub(super) fn create_manager() -> DocumentManager {
     DocumentManager::new()
@@ -27,8 +28,8 @@ pub(super) fn make_populated_directory_doc(dir: &str, names: &[(&str, bool)]) ->
 fn set_buffer_text(doc: &mut Document, text: &str) {
     let old_len = doc.buffer.len();
     let _ = doc.buffer.set_cursor(0);
-    let _ = doc.delete_range(0, old_len);
-    let _ = doc.insert_str(text);
+    let _ = doc.edit(Edit::delete(0..old_len), EditSource::User);
+    let _ = doc.edit(Edit::type_text(text), EditSource::User);
 }
 
 pub(super) fn set_annotated_buffer(doc: &mut Document, text: &str) {

@@ -52,6 +52,28 @@ fn replace_lines_with_an_empty_list_deletes_whole_lines() {
 }
 
 #[test]
+fn plugin_line_writes_leave_read_only_buffers_unchanged() {
+    for mutation in [
+        Box::new(|buf| PluginMutation::AppendLines {
+            buf,
+            lines: vec!["four".to_string()],
+        }) as Box<dyn FnOnce(DocumentId) -> PluginMutation>,
+        Box::new(replace_lines(2, 2, &["TWO"])),
+    ] {
+        let mut editor = create_editor();
+        load_text(&mut editor, "one\ntwo\nthree");
+        editor.active_document().set_read_only(true);
+        let buf = editor.active_document().id;
+        editor.plugin_host.queue_mutation(mutation(buf));
+        editor.apply_plugin_mutations();
+        assert_eq!(
+            editor.active_document().buffer.to_string(),
+            "one\ntwo\nthree"
+        );
+    }
+}
+
+#[test]
 fn set_cursor_clamps_the_column_to_its_line() {
     let (_, cursor) = apply("one\ntwo\nthree", |buf| PluginMutation::SetCursor {
         buf,

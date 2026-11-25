@@ -3,6 +3,7 @@ use crate::annotations::action::Action;
 use crate::annotations::kind::Kind;
 use crate::annotations::value::Value;
 use crate::annotations::{Anchor, Annotation, AnnotationOwner};
+use crate::document::ops::{Edit, EditSource};
 use crate::test_utils::MockTerminal;
 
 impl<T: TerminalBackend> Editor<T> {
@@ -16,7 +17,9 @@ impl<T: TerminalBackend> Editor<T> {
 
 fn editor_with_text(text: &str) -> Editor<MockTerminal> {
     let mut e = Editor::new(MockTerminal::new(24, 80)).unwrap();
-    e.active_document().insert_str(text).unwrap();
+    e.active_document()
+        .edit(Edit::type_text(text), EditSource::User)
+        .unwrap();
     e
 }
 

@@ -1,5 +1,6 @@
 use super::common::*;
 use super::*;
+use crate::document::ops::{Edit, EditSource};
 use crate::test_utils::MockTerminal;
 
 fn lua_editor(text: &str) -> Editor<MockTerminal> {
@@ -64,7 +65,10 @@ fn buffer_list_tracks_line_count_and_new_buffers() {
          assert(#list == 1 and list[1].line_count == 2, rift.inspect(list))",
     );
 
-    editor.active_document().insert_str("two\nthree\n").unwrap();
+    editor
+        .active_document()
+        .edit(Edit::type_text("two\nthree\n"), EditSource::User)
+        .unwrap();
     editor.update_lua_state();
     lua_ok(
         &editor,

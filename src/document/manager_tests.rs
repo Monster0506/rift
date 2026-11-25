@@ -1,4 +1,5 @@
 use super::*;
+use crate::document::ops::{Edit, EditSource};
 
 #[test]
 fn open_file_creates_empty_document_for_nonexistent_path_in_existing_dir() {
@@ -43,7 +44,8 @@ fn open_file_rejects_existing_directory() {
 fn prepare_removal_normal_rejects_dirty_without_side_effects() {
     let mut mgr = DocumentManager::new();
     let mut doc = Document::new(mgr.next_id()).unwrap();
-    doc.insert_str("unsaved changes").unwrap();
+    doc.edit(Edit::type_text("unsaved changes"), EditSource::User)
+        .unwrap();
     let id = doc.id;
     mgr.add_document(doc);
 

@@ -1,4 +1,5 @@
 use super::*;
+use crate::document::ops::{Edit, EditSource};
 use crate::test_utils::MockTerminal;
 
 pub(super) fn create_editor() -> Editor<MockTerminal> {
@@ -103,7 +104,10 @@ pub(super) fn open_and_load(editor: &mut Editor<MockTerminal>, path: &std::path:
 
 pub(super) fn type_text(editor: &mut Editor<MockTerminal>, text: &str) {
     for c in text.chars() {
-        editor.active_document().insert_char(c).unwrap();
+        editor
+            .active_document()
+            .edit(Edit::type_text(c), EditSource::User)
+            .unwrap();
     }
 }
 

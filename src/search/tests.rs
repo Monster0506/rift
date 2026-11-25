@@ -2,6 +2,7 @@ use super::haystack::BufferHaystackContext;
 use super::*;
 use crate::buffer::api::BufferView;
 use crate::character::Character;
+use crate::document::ops::{Edit, EditSource};
 use crate::search::find_iter;
 
 // --- Mock Buffer Implementation ---
@@ -383,7 +384,7 @@ fn test_complex_find_all_within_time_budget() {
     for _ in 0..20_000 {
         text.push_str(line);
     }
-    doc.insert_str(&text).unwrap();
+    doc.edit(Edit::type_text(&text), EditSource::User).unwrap();
 
     let queries: &[(&str, &str)] = &[
         ("regex digit class", r"nonexistent_\d+"),
@@ -484,7 +485,7 @@ fn test_smartcase_uppercase_no_hang_with_document() {
 
     let handle = std::thread::spawn(move || {
         let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-        doc.insert_str("a").unwrap();
+        doc.edit(Edit::type_text("a"), EditSource::User).unwrap();
 
         let result = doc.perform_search("A", SearchDirection::Forward, false);
         tx.send(result).unwrap();
@@ -516,7 +517,11 @@ fn test_smartcase_coding_no_hang_with_document() {
 
     let handle = std::thread::spawn(move || {
         let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-        doc.insert_str("some text content here\n").unwrap();
+        doc.edit(
+            Edit::type_text("some text content here\n"),
+            EditSource::User,
+        )
+        .unwrap();
 
         let result = doc.perform_search("Coding", SearchDirection::Forward, false);
         tx.send(result).unwrap();

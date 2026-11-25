@@ -2,6 +2,7 @@ use super::common::*;
 use super::*;
 use crate::annotations::kind::Kind;
 use crate::annotations::{Anchor, Annotation, AnnotationOwner};
+use crate::document::ops::{Edit, EditSource};
 use crate::document::DocumentId;
 use crate::test_utils::MockTerminal;
 
@@ -62,7 +63,9 @@ fn reads_target_a_background_buffer() {
     let (_dir, mut editor, first, second) = background_file();
     let first_doc = doc_mut(&mut editor, first);
     first_doc.buffer.set_cursor(0).unwrap();
-    first_doc.insert_str(">").unwrap();
+    first_doc
+        .edit(Edit::type_text(">"), EditSource::User)
+        .unwrap();
     first_doc.buffer.set_cursor(9).unwrap();
     first_doc.options.tab_width = 8;
     first_doc.options.line_ending = crate::document::LineEnding::Crlf;
@@ -294,7 +297,9 @@ fn set_buffer_var_without_buf_targets_the_buffer_current_when_queued() {
 fn saving_a_background_buffer_writes_its_file_without_switching_windows() {
     let (_dir, mut editor, first, second) = background_file();
     let path = doc(&editor, first).path().unwrap().to_path_buf();
-    doc_mut(&mut editor, first).insert_str("saved ").unwrap();
+    doc_mut(&mut editor, first)
+        .edit(Edit::type_text("saved "), EditSource::User)
+        .unwrap();
     editor.update_lua_state();
     lua_ok(&editor, &format!("rift.save({{ buf = {first} }})"));
     sync(&mut editor);

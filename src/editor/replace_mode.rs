@@ -42,7 +42,13 @@ impl<T: TerminalBackend> Editor<T> {
         for ch in text.chars() {
             let pos = doc.buffer.cursor();
             let (original, result) = if ch == '\n' {
-                (None, doc.insert_char(ch))
+                (
+                    None,
+                    doc.edit(
+                        crate::document::ops::Edit::type_text(ch),
+                        crate::document::ops::EditSource::User,
+                    ),
+                )
             } else {
                 (doc.char_to_overwrite(), doc.overwrite_char(ch))
             };

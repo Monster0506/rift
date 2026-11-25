@@ -4,6 +4,7 @@
 use crate::action::Motion;
 use crate::buffer::TextBuffer;
 use crate::command::Command;
+use crate::document::ops::{Edit, EditSource};
 use crate::document::Document;
 use crate::error::RiftError;
 use crate::wrap::DisplayMap;
@@ -250,10 +251,10 @@ pub(crate) fn execute_command(
             change_motion_cmd(doc, motion, count, viewport_height, last_search_query);
         }
         Command::DeleteForward => {
-            doc.delete_forward();
+            let _ = doc.edit(Edit::DeleteForward, EditSource::User);
         }
         Command::DeleteBackward => {
-            doc.delete_backward();
+            let _ = doc.edit(Edit::DeleteBackward, EditSource::User);
         }
         Command::DeleteLine(count) => {
             delete_line_cmd(doc, count);
@@ -365,7 +366,7 @@ fn delete_motion_cmd(
     let (delete_start, delete_end) = range_to_offsets(&range, doc, true);
     if delete_end > delete_start {
         doc.begin_transaction("Delete");
-        let _ = doc.delete_range(delete_start, delete_end);
+        let _ = doc.edit(Edit::delete(delete_start..delete_end), EditSource::User);
         doc.commit_transaction();
     }
 }
@@ -384,7 +385,7 @@ fn change_motion_cmd(
     };
     let (delete_start, delete_end) = range_to_offsets(&range, doc, false);
     if delete_end > delete_start {
-        let _ = doc.delete_range(delete_start, delete_end);
+        let _ = doc.edit(Edit::delete(delete_start..delete_end), EditSource::User);
     }
 }
 
@@ -408,15 +409,15 @@ fn delete_line_cmd(doc: &mut Document, count: usize) {
         doc.buffer.move_to_line_end();
         let end = doc.buffer.cursor();
         if end > start {
-            let _ = doc.delete_range(start, end);
+            let _ = doc.edit(Edit::delete(start..end), EditSource::User);
         }
         if start > 0 {
-            doc.delete_backward();
+            let _ = doc.edit(Edit::DeleteBackward, EditSource::User);
             doc.buffer.move_to_line_start();
         }
     } else {
         let end = doc.buffer.cursor();
-        let _ = doc.delete_range(start, end);
+        let _ = doc.edit(Edit::delete(start..end), EditSource::User);
     }
     doc.commit_transaction();
 }
@@ -434,7 +435,7 @@ fn change_line_cmd(doc: &mut Document, count: usize) {
     doc.buffer.move_to_line_end();
     let end = doc.buffer.cursor();
     if end > start {
-        let _ = doc.delete_range(start, end);
+        let _ = doc.edit(Edit::delete(start..end), EditSource::User);
     }
 }
 
@@ -447,11 +448,11 @@ fn insert_char_cmd(
 ) -> Result<(), RiftError> {
     if ch == '\t' && expand_tabs {
         for _ in 0..tab_fill_width(&doc.buffer, tab_width) {
-            doc.insert_char(' ')?;
+            doc.edit(Edit::type_text(' '), EditSource::User)?;
         }
         return Ok(());
     }
-    doc.insert_char(ch)
+    doc.edit(Edit::type_text(ch), EditSource::User).map(|_| ())
 }
 
 /// Replace `count` characters under the cursor (`ReplaceChar`).
@@ -461,7 +462,13 @@ fn replace_char_cmd(doc: &mut Document, ch: char, count: usize) -> Result<(), Ri
     let replace_count = count.min(avail);
     if replace_count > 0 {
         doc.begin_transaction("Replace");
-        doc.replace_repeat(pos, replace_count, ch)?;
+        doc.edit(
+            Edit::replace(
+                pos..pos + replace_count,
+                vec![crate::character::Character::from(ch); replace_count],
+            ),
+            EditSource::User,
+        )?;
         doc.commit_transaction();
     }
     Ok(())
@@ -472,14 +479,14 @@ fn replace_backspace_cmd(
     restore: Option<crate::character::Character>,
 ) -> Result<(), RiftError> {
     let Some(original) = restore else {
-        doc.delete_backward();
+        let _ = doc.edit(Edit::DeleteBackward, EditSource::User);
         return Ok(());
     };
     let Some(pos) = doc.buffer.cursor().checked_sub(1) else {
         return Ok(());
     };
 
-    doc.replace_chars(pos, 1, &[original])?;
+    doc.edit(Edit::replace(pos..pos + 1, original), EditSource::User)?;
     doc.buffer.set_cursor(pos)
 }
 
@@ -488,8 +495,8 @@ fn delete_surround_cmd(doc: &mut Document, ch: char, count: usize) {
         crate::text_objects::resolve_surround_pair(ch, &doc.buffer, count)
     {
         doc.begin_transaction("DeleteSurround");
-        let _ = doc.delete_range(close_range.start, close_range.end);
-        let _ = doc.delete_range(open_range.start, open_range.end);
+        let _ = doc.edit(Edit::delete(close_range), EditSource::User);
+        let _ = doc.edit(Edit::delete(open_range), EditSource::User);
         doc.commit_transaction();
     }
 }
@@ -500,12 +507,13 @@ fn change_surround_cmd(doc: &mut Document, from: char, to: char, count: usize) {
         crate::text_objects::surround_strings(to, count),
     ) {
         doc.begin_transaction("ChangeSurround");
-        let _ = doc.delete_range(close_range.start, close_range.end);
-        let _ = doc.buffer.set_cursor(close_range.start);
-        let _ = doc.insert_str(&new_close);
-        let _ = doc.delete_range(open_range.start, open_range.end);
-        let _ = doc.buffer.set_cursor(open_range.start);
-        let _ = doc.insert_str(&new_open);
+        let _ = doc.edit(Edit::delete(close_range.clone()), EditSource::User);
+        let _ = doc.edit(
+            Edit::insert(close_range.start, &new_close),
+            EditSource::User,
+        );
+        let _ = doc.edit(Edit::delete(open_range.clone()), EditSource::User);
+        let _ = doc.edit(Edit::insert(open_range.start, &new_open), EditSource::User);
         doc.commit_transaction();
     }
 }
@@ -533,10 +541,8 @@ fn add_surround_cmd(
     };
     let (start, end) = range_to_offsets(&range, doc, false);
     doc.begin_transaction("AddSurround");
-    let _ = doc.buffer.set_cursor(end);
-    let _ = doc.insert_str(&close);
-    let _ = doc.buffer.set_cursor(start);
-    let _ = doc.insert_str(&open);
+    let _ = doc.edit(Edit::insert(end, &close), EditSource::User);
+    let _ = doc.edit(Edit::insert(start, &open), EditSource::User);
     doc.commit_transaction();
 }
 

@@ -141,7 +141,6 @@ impl Document {
             lsp_full_sync_needed: false,
             pending_ghost: Vec::new(),
             ghost_clip: None,
-            ghost_paint_active: false,
             ghost_paint_cursor: None,
         }
     }

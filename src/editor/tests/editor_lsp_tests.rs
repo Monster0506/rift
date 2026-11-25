@@ -1,5 +1,6 @@
 #[cfg(feature = "lsp")]
 use super::common::*;
+use crate::document::ops::{Edit, EditSource};
 
 #[cfg(feature = "lsp")]
 #[test]
@@ -202,7 +203,7 @@ fn undo_forces_a_full_lsp_resync_instead_of_a_bogus_incremental_delta() {
     use crate::lsp::protocol::PositionEncoding;
     let mut editor = create_editor();
     let doc = editor.active_document();
-    doc.insert_str("abc").unwrap();
+    doc.edit(Edit::type_text("abc"), EditSource::User).unwrap();
     assert!(doc
         .take_incremental_lsp_changes(PositionEncoding::Utf16)
         .is_some());
@@ -326,7 +327,7 @@ fn published_diagnostic_underlines_exactly_its_range_and_keeps_the_eol_message()
 
     let doc = editor.active_document();
     doc.buffer.set_cursor(0).ok();
-    doc.insert_str("  ").unwrap();
+    doc.edit(Edit::type_text("  "), EditSource::User).unwrap();
     editor.update_and_render().unwrap();
     let cells = editor.render_system.compositor.get_composited_slice();
     let underlined: Vec<usize> = (0..cols)

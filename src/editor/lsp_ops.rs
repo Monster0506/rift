@@ -768,12 +768,17 @@ impl<T: TerminalBackend> Editor<T> {
             // Use Document-level API so edits are recorded in the transaction
             // (for undo) and tree-sitter is updated incrementally (for syntax).
             if end_offset > start_offset {
-                let _ = doc.delete_range(start_offset, end_offset);
+                let _ = doc.edit(
+                    crate::document::ops::Edit::delete(start_offset..end_offset),
+                    crate::document::ops::EditSource::Lsp,
+                );
             }
 
             if !edit.new_text.is_empty() {
-                let _ = doc.buffer.set_cursor(start_offset);
-                let _ = doc.insert_str(&edit.new_text);
+                let _ = doc.edit(
+                    crate::document::ops::Edit::insert(start_offset, &edit.new_text),
+                    crate::document::ops::EditSource::Lsp,
+                );
             }
         }
 

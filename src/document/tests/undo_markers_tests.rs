@@ -1,5 +1,6 @@
 use super::common::*;
 use super::*;
+use crate::document::ops::{Edit, EditSource};
 
 #[test]
 fn test_undo_binary_data() {
@@ -10,7 +11,7 @@ fn test_undo_binary_data() {
     assert_eq!(doc.buffer.len(), 1);
     assert_eq!(doc.buffer.char_at(0), Some(binary_char));
 
-    doc.delete_range(0, 1).unwrap();
+    doc.edit(Edit::delete(0..1), EditSource::User).unwrap();
     assert_eq!(doc.buffer.len(), 0);
 
     doc.undo();
@@ -25,7 +26,8 @@ fn test_undo_with_stale_position_panics_in_debug_instead_of_silently_corrupting(
     use crate::history::{EditOperation, EditTransaction, Position, Range};
 
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    doc.insert_str("hello").unwrap();
+    doc.edit(Edit::type_text("hello"), EditSource::User)
+        .unwrap();
 
     let mut tx = EditTransaction::new("bogus");
     tx.record(EditOperation::Delete {
@@ -40,10 +42,11 @@ fn test_undo_with_stale_position_panics_in_debug_instead_of_silently_corrupting(
 #[test]
 fn test_undo_of_non_transactional_delete_restores_cursor_onto_deleted_char() {
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    doc.insert_str("hello world").unwrap();
+    doc.edit(Edit::type_text("hello world"), EditSource::User)
+        .unwrap();
     doc.buffer.set_cursor(0).unwrap();
 
-    assert!(doc.delete_forward());
+    assert!(doc.edit(Edit::DeleteForward, EditSource::User).unwrap());
     assert_eq!(doc.buffer.to_string(), "ello world");
 
     doc.undo();
@@ -58,9 +61,10 @@ fn test_undo_of_non_transactional_delete_restores_cursor_onto_deleted_char() {
 #[test]
 fn test_redo_of_non_transactional_insert_restores_cursor_after_inserted_text() {
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    doc.insert_str("hello").unwrap();
+    doc.edit(Edit::type_text("hello"), EditSource::User)
+        .unwrap();
     doc.buffer.set_cursor(0).unwrap();
-    doc.insert_str("XY").unwrap();
+    doc.edit(Edit::type_text("XY"), EditSource::User).unwrap();
     assert_eq!(doc.buffer.to_string(), "XYhello");
     assert_eq!(doc.buffer.cursor(), 2);
 
@@ -82,20 +86,23 @@ fn test_get_changed_line_for_seq() {
 
     assert_eq!(doc.get_changed_line_for_seq(0), None);
 
-    doc.insert_str("hello\n").unwrap();
+    doc.edit(Edit::type_text("hello\n"), EditSource::User)
+        .unwrap();
     let seq1 = doc.history.current_seq();
     assert_eq!(doc.get_changed_line_for_seq(seq1), Some(0));
 
-    doc.insert_str("world\n").unwrap();
+    doc.edit(Edit::type_text("world\n"), EditSource::User)
+        .unwrap();
     let seq2 = doc.history.current_seq();
     assert_eq!(doc.get_changed_line_for_seq(seq2), Some(1));
 
-    doc.insert_str("line3").unwrap();
+    doc.edit(Edit::type_text("line3"), EditSource::User)
+        .unwrap();
     let seq3 = doc.history.current_seq();
     assert_eq!(doc.get_changed_line_for_seq(seq3), Some(2));
 
     doc.buffer.set_cursor(0).unwrap(); // Go to start
-    doc.delete_forward(); // Delete 'h'
+    doc.edit(Edit::DeleteForward, EditSource::User).unwrap(); // Delete 'h'
     let seq4 = doc.history.current_seq();
     assert_eq!(doc.get_changed_line_for_seq(seq4), Some(0));
 
@@ -107,7 +114,8 @@ fn test_undo_redo_restores_annotation_marker_positions() {
     use crate::annotations::kind::Kind;
     use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    doc.insert_str("hello world").unwrap();
+    doc.edit(Edit::type_text("hello world"), EditSource::User)
+        .unwrap();
     let id = doc.annotations.add(Annotation::new(
         Kind::new("ui.link"),
         Anchor::range(6, 11),
@@ -119,7 +127,7 @@ fn test_undo_redo_restores_annotation_marker_positions() {
     };
 
     doc.buffer.set_cursor(0).ok();
-    doc.insert_str("XY").unwrap();
+    doc.edit(Edit::type_text("XY"), EditSource::User).unwrap();
     assert_eq!(span(&doc), (8, 13));
 
     doc.undo();
@@ -134,7 +142,8 @@ fn test_goto_seq_restores_correctly_via_checkpoint_snapshot() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner};
 
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    doc.insert_str("hello world").unwrap();
+    doc.edit(Edit::type_text("hello world"), EditSource::User)
+        .unwrap();
     doc.annotations.add(Annotation::new(
         Kind::new("ui.link"),
         Anchor::range(6, 11),
@@ -144,7 +153,7 @@ fn test_goto_seq_restores_correctly_via_checkpoint_snapshot() {
     let checkpoint_seq = doc.history.current_seq();
 
     for _ in 0..20 {
-        doc.insert_str("!").unwrap();
+        doc.edit(Edit::type_text("!"), EditSource::User).unwrap();
     }
     assert_eq!(doc.buffer.to_string(), "hello world!!!!!!!!!!!!!!!!!!!!");
 
@@ -163,7 +172,8 @@ fn test_goto_seq_keeps_annotation_stacks_in_sync() {
     use crate::annotations::kind::Kind;
     use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    doc.insert_str("hello world").unwrap();
+    doc.edit(Edit::type_text("hello world"), EditSource::User)
+        .unwrap();
     let seq_after_first_edit = doc.history.current_seq();
 
     let id = doc.annotations.add(Annotation::new(
@@ -177,7 +187,7 @@ fn test_goto_seq_keeps_annotation_stacks_in_sync() {
     };
 
     doc.buffer.set_cursor(0).ok();
-    doc.insert_str("XY").unwrap();
+    doc.edit(Edit::type_text("XY"), EditSource::User).unwrap();
     assert_eq!(span(&doc), (8, 13));
 
     doc.goto_seq(seq_after_first_edit).unwrap();
@@ -201,7 +211,11 @@ fn test_diff_undo_matches_snapshot_for_insertions() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner, Stickiness};
 
     fn seed(doc: &mut Document) {
-        doc.insert_str("line0\nline1\nline2\nline3").unwrap();
+        doc.edit(
+            Edit::type_text("line0\nline1\nline2\nline3"),
+            EditSource::User,
+        )
+        .unwrap();
         doc.annotations.add(Annotation::new(
             Kind::new("ui.point"),
             Anchor::point(3),
@@ -228,19 +242,20 @@ fn test_diff_undo_matches_snapshot_for_insertions() {
     let cases: Vec<EditFn> = vec![
         |d| {
             d.buffer.set_cursor(1).ok();
-            d.insert_char('X').unwrap();
+            d.edit(Edit::type_text('X'), EditSource::User).unwrap();
         },
         |d| {
             d.buffer.set_cursor(0).ok();
-            d.insert_char('\n').unwrap();
+            d.edit(Edit::type_text('\n'), EditSource::User).unwrap();
         },
         |d| {
             d.buffer.set_cursor(9).ok();
-            d.insert_str("a\nb\nc").unwrap();
+            d.edit(Edit::type_text("a\nb\nc"), EditSource::User)
+                .unwrap();
         },
         |d| {
             d.buffer.set_cursor(7).ok();
-            d.insert_char('Z').unwrap();
+            d.edit(Edit::type_text('Z'), EditSource::User).unwrap();
         },
     ];
 
@@ -274,7 +289,8 @@ fn test_diff_undo_interleaves_with_delete_snapshot_path() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner};
 
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    doc.insert_str("hello world").unwrap();
+    doc.edit(Edit::type_text("hello world"), EditSource::User)
+        .unwrap();
     let id = doc.annotations.add(Annotation::new(
         Kind::new("ui.range"),
         Anchor::range(6, 11),
@@ -287,12 +303,12 @@ fn test_diff_undo_interleaves_with_delete_snapshot_path() {
     assert_eq!(span(&doc), Some((6, 11)));
 
     doc.buffer.set_cursor(0).ok();
-    doc.insert_str("XY").unwrap();
+    doc.edit(Edit::type_text("XY"), EditSource::User).unwrap();
     assert_eq!(span(&doc), Some((8, 13)));
 
     doc.buffer.set_cursor(0).ok();
-    doc.delete_forward();
-    doc.delete_forward();
+    doc.edit(Edit::DeleteForward, EditSource::User).unwrap();
+    doc.edit(Edit::DeleteForward, EditSource::User).unwrap();
     assert_eq!(span(&doc), Some((6, 11)));
 
     doc.undo();
@@ -312,18 +328,19 @@ fn test_diff_undo_interleaves_with_delete_snapshot_path() {
 fn test_line_anchor_tracks_newline_edits_in_normal_buffer() {
     use crate::annotations::Anchor;
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    doc.insert_str("line0\nline1\nline2").unwrap();
+    doc.edit(Edit::type_text("line0\nline1\nline2"), EditSource::User)
+        .unwrap();
     doc.annotations.create_diagnostic(2, 1, "err");
 
     doc.buffer.set_cursor(0).ok();
-    doc.insert_char('\n').unwrap();
+    doc.edit(Edit::type_text('\n'), EditSource::User).unwrap();
     assert_eq!(
         doc.annotations.lsp_diagnostics().next().unwrap().anchor,
         Anchor::Line(3)
     );
 
     doc.buffer.set_cursor(1).ok();
-    doc.delete_backward();
+    doc.edit(Edit::DeleteBackward, EditSource::User).unwrap();
     assert_eq!(
         doc.annotations.lsp_diagnostics().next().unwrap().anchor,
         Anchor::Line(2)
@@ -335,7 +352,8 @@ fn test_range_anchor_markers_track_edits() {
     use crate::annotations::kind::Kind;
     use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    doc.insert_str("hello world here").unwrap();
+    doc.edit(Edit::type_text("hello world here"), EditSource::User)
+        .unwrap();
     let id = doc.annotations.add(Annotation::new(
         Kind::new("ui.link"),
         Anchor::range(6, 11),
@@ -343,7 +361,7 @@ fn test_range_anchor_markers_track_edits() {
     ));
 
     doc.buffer.set_cursor(0).ok();
-    doc.insert_str("XY").unwrap();
+    doc.edit(Edit::type_text("XY"), EditSource::User).unwrap();
     match doc.annotations.get(id).unwrap().anchor {
         Anchor::Range(s, e) => {
             assert_eq!(s.offset, 8);
@@ -353,7 +371,7 @@ fn test_range_anchor_markers_track_edits() {
     }
 
     doc.buffer.set_cursor(10).ok();
-    doc.insert_str("Z").unwrap();
+    doc.edit(Edit::type_text("Z"), EditSource::User).unwrap();
     match doc.annotations.get(id).unwrap().anchor {
         Anchor::Range(s, e) => {
             assert_eq!(s.offset, 8);
@@ -368,13 +386,14 @@ fn test_range_anchor_delete_stickiness_removes_annotation() {
     use crate::annotations::kind::Kind;
     use crate::annotations::{Anchor, Annotation, AnnotationOwner};
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    doc.insert_str("abcdefgh").unwrap();
+    doc.edit(Edit::type_text("abcdefgh"), EditSource::User)
+        .unwrap();
     let id = doc.annotations.add(Annotation::new(
         Kind::new("ui.link"),
         Anchor::range(2, 5),
         AnnotationOwner::User,
     ));
-    doc.delete_range(1, 6).unwrap();
+    doc.edit(Edit::delete(1..6), EditSource::User).unwrap();
     assert!(doc.annotations.get(id).is_none());
 }
 
@@ -382,10 +401,10 @@ fn test_range_anchor_delete_stickiness_removes_annotation() {
 fn test_document_version_increments_per_edit() {
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     assert_eq!(doc.version(), 0);
-    doc.insert_str("a").unwrap();
+    doc.edit(Edit::type_text("a"), EditSource::User).unwrap();
     let v1 = doc.version();
     assert!(v1 > 0);
-    doc.insert_str("b").unwrap();
+    doc.edit(Edit::type_text("b"), EditSource::User).unwrap();
     assert!(doc.version() > v1);
 }
 
@@ -394,7 +413,8 @@ fn test_delete_range_mid_line_merges_line_anchors_into_start_line() {
     use crate::annotations::kind::Kind;
     use crate::annotations::{Anchor, Annotation, AnnotationOwner, Stickiness};
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    doc.insert_str("aaa\nbbb\nccc\nddd").unwrap();
+    doc.edit(Edit::type_text("aaa\nbbb\nccc\nddd"), EditSource::User)
+        .unwrap();
     let persist = |line| {
         Annotation::new(
             Kind::new("a.persist"),
@@ -406,7 +426,7 @@ fn test_delete_range_mid_line_merges_line_anchors_into_start_line() {
     let on_2 = doc.annotations.add(persist(2));
     let on_3 = doc.annotations.add(persist(3));
 
-    doc.delete_range(5, 9).unwrap();
+    doc.edit(Edit::delete(5..9), EditSource::User).unwrap();
     assert_eq!(doc.buffer.to_string(), "aaa\nbcc\nddd");
     assert_eq!(line_anchor(&doc, on_2), Some(1));
     assert_eq!(line_anchor(&doc, on_3), Some(2));
@@ -417,7 +437,8 @@ fn test_delete_range_at_column_zero_removes_whole_line() {
     use crate::annotations::kind::Kind;
     use crate::annotations::{Anchor, Annotation, AnnotationOwner, Stickiness};
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    doc.insert_str("aaa\nbbb\nccc").unwrap();
+    doc.edit(Edit::type_text("aaa\nbbb\nccc"), EditSource::User)
+        .unwrap();
     let gone = doc.annotations.add(
         Annotation::new(Kind::new("a.del"), Anchor::Line(1), AnnotationOwner::User)
             .with_stickiness(Stickiness::Delete),
@@ -427,7 +448,7 @@ fn test_delete_range_at_column_zero_removes_whole_line() {
             .with_stickiness(Stickiness::Persist),
     );
 
-    doc.delete_range(4, 8).unwrap();
+    doc.edit(Edit::delete(4..8), EditSource::User).unwrap();
     assert_eq!(doc.buffer.to_string(), "aaa\nccc");
     assert!(doc.annotations.get(gone).is_none());
     assert_eq!(line_anchor(&doc, kept), Some(1));
@@ -497,7 +518,8 @@ fn test_insert_char_after_multibyte_prefix_shifts_annotation_by_bytes() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner};
 
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    doc.insert_str("e\u{301}llo world").unwrap();
+    doc.edit(Edit::type_text("e\u{301}llo world"), EditSource::User)
+        .unwrap();
 
     let id = doc.annotations.add(Annotation::new(
         Kind::new("test.marker"),
@@ -506,7 +528,7 @@ fn test_insert_char_after_multibyte_prefix_shifts_annotation_by_bytes() {
     ));
 
     doc.buffer.set_cursor(6).ok();
-    doc.insert_char('X').unwrap();
+    doc.edit(Edit::type_text('X'), EditSource::User).unwrap();
 
     let shifted = doc
         .annotations
@@ -525,7 +547,8 @@ fn test_delete_backward_after_multibyte_prefix_shifts_annotation_by_bytes() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner};
 
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    doc.insert_str("e\u{301}llo world").unwrap();
+    doc.edit(Edit::type_text("e\u{301}llo world"), EditSource::User)
+        .unwrap();
 
     let world_byte_start = doc.buffer.char_to_byte(6);
     let id = doc.annotations.add(Annotation::new(
@@ -535,7 +558,7 @@ fn test_delete_backward_after_multibyte_prefix_shifts_annotation_by_bytes() {
     ));
 
     doc.buffer.set_cursor(6).ok();
-    doc.delete_backward();
+    doc.edit(Edit::DeleteBackward, EditSource::User).unwrap();
 
     let shifted = doc
         .annotations
@@ -554,7 +577,8 @@ fn test_delete_forward_after_multibyte_prefix_shifts_annotation_by_bytes() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner};
 
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    doc.insert_str("e\u{301}llo world").unwrap();
+    doc.edit(Edit::type_text("e\u{301}llo world"), EditSource::User)
+        .unwrap();
 
     let world_byte_start = doc.buffer.char_to_byte(6);
     let id = doc.annotations.add(Annotation::new(
@@ -564,7 +588,7 @@ fn test_delete_forward_after_multibyte_prefix_shifts_annotation_by_bytes() {
     ));
 
     doc.buffer.set_cursor(5).ok();
-    doc.delete_forward();
+    doc.edit(Edit::DeleteForward, EditSource::User).unwrap();
 
     let shifted = doc
         .annotations
@@ -584,8 +608,11 @@ fn test_line_adornment_resolves_correct_line_past_multibyte_prefix() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner};
 
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    doc.insert_str("ab\u{2014}\nab\u{2014}\nab\u{2014}\n---\nzzzzz\n")
-        .unwrap();
+    doc.edit(
+        Edit::type_text("ab\u{2014}\nab\u{2014}\nab\u{2014}\n---\nzzzzz\n"),
+        EditSource::User,
+    )
+    .unwrap();
 
     let rule_line = 3;
     let rule_char_start = doc.buffer.line_index.get_start(rule_line).unwrap();
@@ -628,7 +655,7 @@ fn undo_clears_selection_set() {
     doc.bank_region(Region::new(0, 4, RangeKind::Charwise));
     assert!(!doc.selection_set.is_empty());
 
-    doc.insert_char('!').unwrap();
+    doc.edit(Edit::type_text('!'), EditSource::User).unwrap();
     doc.undo();
 
     assert!(
@@ -643,7 +670,8 @@ fn redo_clears_selection_set() {
     use crate::wrap::RangeKind;
 
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    doc.insert_str("hello world").unwrap();
+    doc.edit(Edit::type_text("hello world"), EditSource::User)
+        .unwrap();
     assert!(doc.undo());
     doc.bank_region(Region::new(0, 4, RangeKind::Charwise));
     assert!(!doc.selection_set.is_empty());
