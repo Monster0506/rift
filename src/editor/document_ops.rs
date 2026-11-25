@@ -101,12 +101,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.git_status_refresh_jobs.remove(&id);
         self.pending_git_log_expand_head.remove(&id);
         self.display_map_cache.retain(|entry| entry.doc_id != id);
-        if self.pending_text_changed == Some(id) {
-            self.pending_text_changed = None;
-        }
-        if self.pending_cursor_moved.is_some_and(|(d, ..)| d == id) {
-            self.pending_cursor_moved = None;
-        }
         if self
             .search_highlights_synced
             .as_ref()

@@ -132,8 +132,6 @@ impl<T: TerminalBackend> Editor<T> {
             region_build_recording: Vec::new(),
             expand_history: Vec::new(),
             display_map_cache: Vec::new(),
-            pending_text_changed: None,
-            pending_cursor_moved: None,
             pending_syntax_updated: std::collections::BTreeSet::new(),
             dot_repeat: DotRepeat::new(),
             panel_layout: None,

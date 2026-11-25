@@ -19,13 +19,19 @@ pub(crate) enum EditorEvent {
     },
 
     /// A buffer was closed / removed from the tab list.
-    BufClose { buf: DocumentId },
+    BufClose {
+        buf: DocumentId,
+    },
 
     /// The focused buffer changed (tab switch, split focus, file open).
-    BufEnter { buf: DocumentId },
+    BufEnter {
+        buf: DocumentId,
+    },
 
     /// The focused buffer is about to lose focus.
-    BufLeave { buf: DocumentId },
+    BufLeave {
+        buf: DocumentId,
+    },
 
     /// A buffer is about to be written to disk.
     BufSavePre {
@@ -40,11 +46,19 @@ pub(crate) enum EditorEvent {
     },
 
     /// A buffer was reloaded from disk (e.g. after an external change).
-    BufReload { buf: DocumentId },
+    BufReload {
+        buf: DocumentId,
+    },
 
     /// Coarse change notification for a modified buffer.
     /// Cheap to fire for tools that only need change awareness.
-    TextChangedCoarse { buf: DocumentId },
+    TextChangedCoarse {
+        buf: DocumentId,
+    },
+
+    SelectionChanged {
+        buf: DocumentId,
+    },
 
     SyntaxUpdated {
         buf: DocumentId,
@@ -66,7 +80,10 @@ pub(crate) enum EditorEvent {
     },
 
     /// The editor mode changed.
-    ModeChanged { from: Mode, to: Mode },
+    ModeChanged {
+        from: Mode,
+        to: Mode,
+    },
 
     /// Fired once, after all plugins are loaded and the first render is done.
     EditorStart,
@@ -75,7 +92,10 @@ pub(crate) enum EditorEvent {
     EditorQuit,
 
     /// The terminal was resized.
-    WindowResized { rows: u16, cols: u16 },
+    WindowResized {
+        rows: u16,
+        cols: u16,
+    },
 
     /// An LSP server process spawned and connected (before it finishes indexing).
     LspServerConnected {
@@ -118,10 +138,15 @@ pub(crate) enum EditorEvent {
     },
 
     /// A window was repositioned via ^WH/J/K/L move.
-    WinMoved { win: u64 },
+    WinMoved {
+        win: u64,
+    },
 
     /// Two windows had their contents swapped via exchange.
-    WinSwapped { win1: u64, win2: u64 },
+    WinSwapped {
+        win1: u64,
+        win2: u64,
+    },
 }
 
 impl EditorEvent {
@@ -156,7 +181,8 @@ impl EditorEvent {
             | Self::BufEnter { buf }
             | Self::BufLeave { buf }
             | Self::BufReload { buf }
-            | Self::TextChangedCoarse { buf } => {
+            | Self::TextChangedCoarse { buf }
+            | Self::SelectionChanged { buf } => {
                 t.set("buf", lua_int(buf.get()))?;
             }
             Self::BufSavePre { buf, path } | Self::BufSavePost { buf, path } => {
@@ -233,6 +259,7 @@ impl EditorEvent {
             Self::BufSavePost { .. } => "BufSavePost",
             Self::BufReload { .. } => "BufReload",
             Self::TextChangedCoarse { .. } => "TextChangedCoarse",
+            Self::SelectionChanged { .. } => "SelectionChanged",
             Self::SyntaxUpdated { .. } => "SyntaxUpdated",
             Self::CursorMoved { .. } => "CursorMoved",
             Self::CursorHold { .. } => "CursorHold",

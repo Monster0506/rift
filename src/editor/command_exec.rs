@@ -97,41 +97,42 @@ impl<T: TerminalBackend> Editor<T> {
             self.resolve_display_map_cached(doc_id, content_width, cursor_after, viewport_height);
     }
 
-    pub(super) fn drain_document_changes(&mut self) {
-        for (buf, changes) in self.document_manager.drain_changes() {
+    pub(super) fn deliver_document_changes(&mut self) {
+        use crate::plugin::events::EditorEvent;
+
+        let drained = self.document_manager.drain_changes();
+        if drained.is_empty() {
+            return;
+        }
+        #[cfg(feature = "lsp")]
+        for (buf, changes) in &drained {
             if changes.text {
-                self.pending_text_changed = Some(buf);
-                #[cfg(feature = "lsp")]
-                self.lsp_notify_change(buf);
-            }
-            if let Some((row, col)) = changes.cursor {
-                self.pending_cursor_moved = Some((buf, row, col));
+                self.lsp_notify_change(*buf);
             }
         }
-    }
-
-    pub(super) fn flush_pending_text_changed(&mut self) {
-        if let Some(buf) = self.pending_text_changed.take() {
-            self.call_plugins(|editor| {
-                crate::perf_span!(
-                    "plugin_dispatch_text_changed",
-                    crate::perf::PerfFields::default()
-                );
-                editor
-                    .plugin_host
-                    .dispatch(&crate::plugin::events::EditorEvent::TextChangedCoarse { buf });
-            });
-        }
-    }
-
-    pub(super) fn flush_pending_cursor_moved(&mut self) {
-        if let Some((buf, row, col)) = self.pending_cursor_moved.take() {
-            self.call_plugins(|editor| {
-                editor
-                    .plugin_host
-                    .dispatch(&crate::plugin::events::EditorEvent::CursorMoved { buf, row, col });
-            });
-        }
+        self.call_plugins(|editor| {
+            crate::perf_span!(
+                "plugin_dispatch_buffer_changes",
+                crate::perf::PerfFields::default()
+            );
+            for &(buf, changes) in &drained {
+                if changes.text {
+                    editor
+                        .plugin_host
+                        .dispatch(&EditorEvent::TextChangedCoarse { buf });
+                }
+                if let Some((row, col)) = changes.cursor {
+                    editor
+                        .plugin_host
+                        .dispatch(&EditorEvent::CursorMoved { buf, row, col });
+                }
+                if changes.selection {
+                    editor
+                        .plugin_host
+                        .dispatch(&EditorEvent::SelectionChanged { buf });
+                }
+            }
+        });
     }
 
     pub(super) fn flush_pending_syntax_updated(&mut self) {

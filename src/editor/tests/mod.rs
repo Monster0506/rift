@@ -5,6 +5,8 @@ mod common;
 #[cfg(feature = "treesitter")]
 mod bench_harness;
 mod buffer_nav_tests;
+#[cfg(feature = "plugins")]
+mod change_event_tests;
 mod clipboard_panel_tests;
 mod clipboard_preview_tests;
 mod directory_target_tests;
