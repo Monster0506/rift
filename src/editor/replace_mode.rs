@@ -76,7 +76,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let Some(entry) = self.replace_pop(cursor) else {
             if let Some(doc) = self.document_manager.active_document_mut() {
-                doc.buffer_mut().move_left();
+                doc.move_cursor(crate::action::Motion::Left);
             }
             return;
         };

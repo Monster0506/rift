@@ -312,7 +312,7 @@ impl LuaSharedState {
         let buffer = &mut snap.buffer;
         let (row, col) = snap.meta.cursor;
         let pos = buffer.line_index.get_line_start(row) + col;
-        let _ = buffer.set_cursor(pos.min(buffer.len()));
+        let _ = crate::document::ops::standalone::place_cursor(buffer, pos.min(buffer.len()));
         let revision = buffer.revision();
         edit(buffer);
         let pos = buffer.cursor();
@@ -1917,7 +1917,10 @@ impl LuaHost {
                                 {
                                     Edit::delete(edit.start..edit.end).apply_to(buffer);
                                     Edit::insert(edit.start, &edit.text).apply_to(buffer);
-                                    let _ = buffer.set_cursor(edit.cursor.min(buffer.len()));
+                                    let cursor = edit.cursor.min(buffer.len());
+                                    let _ = crate::document::ops::standalone::place_cursor(
+                                        buffer, cursor,
+                                    );
                                 }
                             });
                         }

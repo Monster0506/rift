@@ -288,7 +288,7 @@ pub(super) fn editor_with_text(text: &str) -> Editor<KeyQueue> {
     let mut editor = Editor::new(term).unwrap();
     let doc = editor.active_document();
     doc.replace_content(text, crate::document::ops::ContentKind::Render);
-    doc.buffer_mut().move_to_start();
+    doc.move_cursor(crate::action::Motion::StartOfFile);
     editor
 }
 

@@ -8,7 +8,9 @@ fn run(text: &str, keys: &str) -> (String, Mode, usize) {
     editor
         .active_document()
         .replace_content(text, crate::document::ops::ContentKind::Render);
-    editor.active_document().buffer_mut().move_to_start();
+    editor
+        .active_document()
+        .move_cursor(crate::action::Motion::StartOfFile);
     editor
         .term
         .push_keys(crate::key::notation::parse_key_sequence(keys).unwrap());

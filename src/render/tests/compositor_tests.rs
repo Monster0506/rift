@@ -236,7 +236,7 @@ fn test_render_file_loaded_at_start() {
 
     crate::document::ops::Edit::type_text(crate::buffer::decode_bytes(b"line1\nline2\nline3\n"))
         .apply_to(&mut buf);
-    buf.move_to_start();
+    crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::StartOfFile);
 
     let state = State::new();
     let mut system = RenderSystem::new(10, 80);
@@ -297,7 +297,7 @@ fn test_render_viewport_scrolling() {
         crate::document::ops::Edit::type_text(format!("line{i}\n")).apply_to(&mut buf);
     }
     for _ in 0..8 {
-        buf.move_up();
+        crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::Up);
     }
     let state = State::new();
     let mut system = RenderSystem::new(5, 80);
@@ -446,7 +446,7 @@ fn test_render_cursor_at_viewport_boundaries() {
     let mut system = RenderSystem::new(5, 80);
 
     for _ in 0..20 {
-        buf.move_up();
+        crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::Up);
     }
     system
         .render(
@@ -490,7 +490,7 @@ fn test_render_cursor_at_viewport_boundaries() {
     term.writes.clear();
 
     for _ in 0..20 {
-        buf.move_down();
+        crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::Down);
     }
     system
         .viewport

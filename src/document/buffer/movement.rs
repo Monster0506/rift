@@ -1,8 +1,8 @@
 //! Buffer-based movement using Character iterator for insert mode navigation.
 
-use super::classify::{classify_character, is_sentence_end, is_word_char, CharClass};
-use crate::buffer::TextBuffer;
+use super::TextBuffer;
 use crate::character::Character;
+use crate::movement::classify::{classify_character, is_sentence_end, is_word_char, CharClass};
 
 /// Chars fetched per rope lookup when scanning backward.
 const REV_BLOCK: usize = 512;

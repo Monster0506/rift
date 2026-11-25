@@ -51,7 +51,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             Command::EnterInsertModeAfter => {
                 let doc = self.document_manager.active_document_mut().unwrap();
-                doc.buffer_mut().move_right();
+                doc.move_cursor(crate::action::Motion::Right);
                 doc.begin_transaction(history::INSERT_LABEL);
                 if !self.dot_repeat.is_replaying() {
                     self.dot_repeat.start_insert_recording(command);
@@ -60,7 +60,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             Command::EnterInsertModeAtLineStart => {
                 let doc = self.document_manager.active_document_mut().unwrap();
-                doc.buffer_mut().move_to_line_start();
+                doc.move_cursor(crate::action::Motion::StartOfLine);
                 doc.begin_transaction(history::INSERT_LABEL);
                 if !self.dot_repeat.is_replaying() {
                     self.dot_repeat.start_insert_recording(command);
@@ -69,7 +69,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             Command::EnterInsertModeAtLineEnd => {
                 let doc = self.document_manager.active_document_mut().unwrap();
-                doc.buffer_mut().move_to_line_end();
+                doc.move_cursor(crate::action::Motion::EndOfLine);
                 doc.begin_transaction(history::INSERT_LABEL);
                 if !self.dot_repeat.is_replaying() {
                     self.dot_repeat.start_insert_recording(command);
@@ -79,7 +79,7 @@ impl<T: TerminalBackend> Editor<T> {
             Command::OpenLineBelow => {
                 let doc = self.document_manager.active_document_mut().unwrap();
                 doc.begin_transaction(history::INSERT_LABEL);
-                doc.buffer_mut().move_to_line_end();
+                doc.move_cursor(crate::action::Motion::EndOfLine);
                 let _ = doc.edit(
                     crate::document::ops::Edit::type_text('\n'),
                     crate::document::ops::EditSource::User,
@@ -92,12 +92,12 @@ impl<T: TerminalBackend> Editor<T> {
             Command::OpenLineAbove => {
                 let doc = self.document_manager.active_document_mut().unwrap();
                 doc.begin_transaction(history::INSERT_LABEL);
-                doc.buffer_mut().move_to_line_start();
+                doc.move_cursor(crate::action::Motion::StartOfLine);
                 let _ = doc.edit(
                     crate::document::ops::Edit::type_text('\n'),
                     crate::document::ops::EditSource::User,
                 );
-                doc.buffer_mut().move_up();
+                doc.move_cursor(crate::action::Motion::Up);
                 if !self.dot_repeat.is_replaying() {
                     self.dot_repeat.start_insert_recording(command);
                 }

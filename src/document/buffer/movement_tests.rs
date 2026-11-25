@@ -11,12 +11,12 @@ fn create_buffer(text: &str) -> TextBuffer {
 }
 
 fn apply_motion(motion: Motion, buf: &mut TextBuffer) {
-    motion.apply(buf, None, OperatorContext::Move, 20, None);
+    crate::document::ops::move_buffer(buf, motion, None, OperatorContext::Move, 20, None);
 }
 
 fn apply_motion_wrap(motion: Motion, buf: &mut TextBuffer, wrap_width: usize) {
     let mut dm = DisplayMap::build(buf, wrap_width, 4);
-    motion.apply(buf, Some(&mut dm), OperatorContext::Move, 20, None);
+    crate::document::ops::move_buffer(buf, motion, Some(&mut dm), OperatorContext::Move, 20, None);
 }
 
 #[test]

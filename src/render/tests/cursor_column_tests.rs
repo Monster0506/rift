@@ -12,16 +12,16 @@ fn test_calculate_cursor_column_multiline() {
     let mut buf = TextBuffer::new(100).unwrap();
     crate::document::ops::Edit::type_text("line1\nline2\nline3").apply_to(&mut buf);
     for _ in 0..18 {
-        buf.move_left();
+        crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::Left);
     }
     assert_eq!(calculate_cursor_column(&buf, 0, 8), 0);
 
-    buf.move_down();
+    crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::Down);
     assert_eq!(calculate_cursor_column(&buf, 1, 8), 0);
 
-    buf.move_right();
-    buf.move_right();
-    buf.move_right();
+    crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::Right);
+    crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::Right);
+    crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::Right);
     assert_eq!(calculate_cursor_column(&buf, 1, 8), 3);
 }
 
@@ -36,7 +36,7 @@ fn test_calculate_cursor_column_at_gap() {
     let mut buf = TextBuffer::new(100).unwrap();
     crate::document::ops::Edit::type_text("hello").apply_to(&mut buf);
     for _ in 0..3 {
-        buf.move_left();
+        crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::Left);
     }
     assert_eq!(calculate_cursor_column(&buf, 0, 8), 2);
 }
@@ -47,20 +47,20 @@ fn test_calculate_cursor_column_multiline_complex() {
     crate::document::ops::Edit::type_text("hello\nworld\ntest").apply_to(&mut buf);
 
     for _ in 0..17 {
-        buf.move_left();
+        crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::Left);
     }
     assert_eq!(calculate_cursor_column(&buf, 0, 8), 0);
 
     for _ in 0..5 {
-        buf.move_right();
+        crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::Right);
     }
     assert_eq!(calculate_cursor_column(&buf, 0, 8), 5);
 
-    buf.move_right(); // Move past newline
+    crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::Right); // Move past newline
     assert_eq!(calculate_cursor_column(&buf, 1, 8), 0);
 
     for _ in 0..3 {
-        buf.move_right();
+        crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::Right);
     }
     assert_eq!(calculate_cursor_column(&buf, 1, 8), 3);
 }
@@ -71,11 +71,11 @@ fn test_cursor_column_wide_chars() {
     crate::document::ops::Edit::type_text("a中b").apply_to(&mut buf);
 
     assert_eq!(calculate_cursor_column(&buf, 0, 4), 4);
-    buf.move_left();
+    crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::Left);
     assert_eq!(calculate_cursor_column(&buf, 0, 4), 3);
-    buf.move_left();
+    crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::Left);
     assert_eq!(calculate_cursor_column(&buf, 0, 4), 1);
-    buf.move_left();
+    crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::Left);
     assert_eq!(calculate_cursor_column(&buf, 0, 4), 0);
 }
 
@@ -84,9 +84,9 @@ fn test_cursor_column_combining_chars() {
     let mut buf = TextBuffer::new(100).unwrap();
     crate::document::ops::Edit::type_text("e\u{0301}").apply_to(&mut buf);
 
-    buf.move_left();
+    crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::Left);
     assert_eq!(calculate_cursor_column(&buf, 0, 4), 1);
-    buf.move_left();
+    crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::Left);
     assert_eq!(calculate_cursor_column(&buf, 0, 4), 0);
 }
 
@@ -134,7 +134,7 @@ fn test_cursor_column_at_matches_plain() {
 fn test_cursor_column_at_mid_text() {
     let mut buf = TextBuffer::new(64).unwrap();
     crate::document::ops::Edit::type_text("abcde").apply_to(&mut buf);
-    let _ = buf.set_cursor(3);
+    let _ = crate::document::ops::standalone::place_cursor(&mut buf, 3);
 
     assert_eq!(calculate_cursor_column_at(&buf, 0, 4, buf.cursor()), 3,);
 }

@@ -9,7 +9,10 @@ pub(crate) mod api;
 mod line_cache;
 mod line_edit;
 pub(crate) mod line_index;
+mod movement;
 pub(crate) mod rope;
+#[cfg(test)]
+mod word_motion_tests;
 use line_cache::LineCache;
 use line_index::LineIndex;
 
@@ -120,7 +123,7 @@ impl TextBuffer {
         }
     }
 
-    pub(crate) fn take_char_edits(&mut self) -> Vec<CharEdit> {
+    pub(in crate::document) fn take_char_edits(&mut self) -> Vec<CharEdit> {
         std::mem::take(&mut self.char_edit_log)
     }
 
@@ -134,9 +137,7 @@ impl TextBuffer {
         self.revision
     }
 
-    /// # Errors
-    /// Returns `Err` if `pos` is past the end of the buffer.
-    pub fn set_cursor(&mut self, pos: usize) -> Result<(), RiftError> {
+    pub(in crate::document) fn set_cursor(&mut self, pos: usize) -> Result<(), RiftError> {
         let len = self.len();
         if pos > len {
             return Err(RiftError::new(
@@ -186,11 +187,11 @@ impl TextBuffer {
         self.desired_col
     }
 
-    pub(crate) fn latch_desired_col(&mut self, col: usize) -> usize {
+    pub(in crate::document) fn latch_desired_col(&mut self, col: usize) -> usize {
         *self.desired_col.get_or_insert(col)
     }
 
-    pub(crate) const fn clear_desired_col(&mut self) {
+    pub(in crate::document) const fn clear_desired_col(&mut self) {
         self.desired_col = None;
     }
 
@@ -205,7 +206,7 @@ impl TextBuffer {
         line_start + clamped
     }
 
-    pub(crate) const fn move_left(&mut self) -> bool {
+    pub(in crate::document) const fn move_left(&mut self) -> bool {
         self.desired_col = None;
         if self.cursor > 0 {
             self.cursor -= 1;
@@ -215,7 +216,7 @@ impl TextBuffer {
         }
     }
 
-    pub(crate) fn move_right(&mut self) -> bool {
+    pub(in crate::document) fn move_right(&mut self) -> bool {
         self.desired_col = None;
         let len = self.len();
         if self.cursor < len {
@@ -474,7 +475,7 @@ impl TextBuffer {
         out
     }
 
-    pub(crate) fn move_up(&mut self) -> bool {
+    pub(in crate::document) fn move_up(&mut self) -> bool {
         let current_line = self.get_line();
         if current_line == 0 {
             return false;
@@ -484,7 +485,7 @@ impl TextBuffer {
         true
     }
 
-    pub fn move_down(&mut self) -> bool {
+    pub(in crate::document) fn move_down(&mut self) -> bool {
         let current_line = self.get_line();
         let total_lines = self.get_total_lines();
         if current_line + 1 >= total_lines {
@@ -495,17 +496,17 @@ impl TextBuffer {
         true
     }
 
-    pub(crate) const fn move_to_start(&mut self) {
+    pub(in crate::document) const fn move_to_start(&mut self) {
         self.desired_col = None;
         self.cursor = 0;
     }
 
-    pub(crate) fn move_to_end(&mut self) {
+    pub(in crate::document) fn move_to_end(&mut self) {
         self.desired_col = None;
         self.cursor = self.len();
     }
 
-    pub(crate) fn move_to_line_start(&mut self) {
+    pub(in crate::document) fn move_to_line_start(&mut self) {
         self.desired_col = None;
         let line = self.get_line();
         if let Some(start) = self.line_index.get_start(line) {
@@ -513,7 +514,7 @@ impl TextBuffer {
         }
     }
 
-    pub(crate) fn move_to_line_end(&mut self) {
+    pub(in crate::document) fn move_to_line_end(&mut self) {
         self.desired_col = Some(usize::MAX);
         let line = self.get_line();
         if let Some(end) = self.line_index.get_end(line, self.len()) {
@@ -521,49 +522,49 @@ impl TextBuffer {
         }
     }
 
-    pub fn move_word_right(&mut self) -> bool {
+    pub(in crate::document) fn move_word_right(&mut self) -> bool {
         self.desired_col = None;
-        crate::movement::buffer::move_word_right(self)
+        movement::move_word_right(self)
     }
 
-    pub(crate) fn move_word_end(&mut self) -> bool {
+    pub(in crate::document) fn move_word_end(&mut self) -> bool {
         self.desired_col = None;
-        crate::movement::buffer::move_word_end(self)
+        movement::move_word_end(self)
     }
 
-    pub(crate) fn move_word_left(&mut self) -> bool {
+    pub(in crate::document) fn move_word_left(&mut self) -> bool {
         self.desired_col = None;
-        crate::movement::buffer::move_word_left(self)
+        movement::move_word_left(self)
     }
 
-    pub(crate) fn move_big_word_right(&mut self) -> bool {
+    pub(in crate::document) fn move_big_word_right(&mut self) -> bool {
         self.desired_col = None;
-        crate::movement::buffer::move_big_word_right(self)
+        movement::move_big_word_right(self)
     }
 
-    pub(crate) fn move_big_word_left(&mut self) -> bool {
+    pub(in crate::document) fn move_big_word_left(&mut self) -> bool {
         self.desired_col = None;
-        crate::movement::buffer::move_big_word_left(self)
+        movement::move_big_word_left(self)
     }
 
-    pub fn move_paragraph_forward(&mut self) -> bool {
+    pub(in crate::document) fn move_paragraph_forward(&mut self) -> bool {
         self.desired_col = None;
-        crate::movement::buffer::move_paragraph_forward(self)
+        movement::move_paragraph_forward(self)
     }
 
-    pub(crate) fn move_paragraph_backward(&mut self) -> bool {
+    pub(in crate::document) fn move_paragraph_backward(&mut self) -> bool {
         self.desired_col = None;
-        crate::movement::buffer::move_paragraph_backward(self)
+        movement::move_paragraph_backward(self)
     }
 
-    pub(crate) fn move_sentence_forward(&mut self) -> bool {
+    pub(in crate::document) fn move_sentence_forward(&mut self) -> bool {
         self.desired_col = None;
-        crate::movement::buffer::move_sentence_forward(self)
+        movement::move_sentence_forward(self)
     }
 
-    pub(crate) fn move_sentence_backward(&mut self) -> bool {
+    pub(in crate::document) fn move_sentence_backward(&mut self) -> bool {
         self.desired_col = None;
-        crate::movement::buffer::move_sentence_backward(self)
+        movement::move_sentence_backward(self)
     }
 }
 

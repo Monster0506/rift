@@ -38,7 +38,9 @@ fn res_count(
     count: usize,
 ) -> Option<(usize, usize, bool)> {
     let mut buf = buf_from(s);
-    buf.set_cursor(cursor).unwrap();
+    assert!(crate::document::ops::standalone::place_cursor(
+        &mut buf, cursor
+    ));
     resolve(spec, &buf, count, None).map(|r| (r.anchor, r.new_cursor, r.inclusive))
 }
 
@@ -362,7 +364,9 @@ mod treesitter_tests {
         cursor: usize,
     ) -> Option<(usize, usize, bool)> {
         let mut buf = buf_from(src);
-        buf.set_cursor(cursor).unwrap();
+        assert!(crate::document::ops::standalone::place_cursor(
+            &mut buf, cursor
+        ));
         let ctx = SyntaxContext {
             tree,
             source: src.as_bytes(),

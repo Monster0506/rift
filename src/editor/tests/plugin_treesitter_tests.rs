@@ -321,7 +321,9 @@ fn syntax_updated_hands_handlers_the_reparsed_tree() {
         end)
         "#,
     );
-    editor.active_document().buffer_mut().move_to_end();
+    editor
+        .active_document()
+        .move_cursor(crate::action::Motion::EndOfFile);
     editor
         .active_document()
         .edit(Edit::type_text("fn extra() {}\n"), EditSource::User)

@@ -2,7 +2,6 @@
 //! modes. Categorizes chars as whitespace/alphanumeric(+`_`)/symbol, so `foo->bar` is 3 words.
 
 pub(crate) mod boundaries;
-pub(crate) mod buffer;
 pub(crate) mod classify;
 
 // Re-export commonly used types

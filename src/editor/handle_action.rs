@@ -310,10 +310,13 @@ impl<T: TerminalBackend> Editor<T> {
                         doc.commit_transaction();
                     }
                     if let Some(doc) = self.document_manager.active_document_mut() {
-                        if doc.buffer().get_col() > 0 {
-                            doc.buffer_mut().move_left();
-                        }
-                        doc.buffer_mut().clear_desired_col();
+                        let cursor = doc.buffer().cursor();
+                        let target = if doc.buffer().get_col() > 0 {
+                            cursor - 1
+                        } else {
+                            cursor
+                        };
+                        let _ = doc.set_cursor(target, crate::document::ops::CursorCause::Jump);
                     }
                 }
                 self.state.command_history.reset_navigation();
@@ -1339,10 +1342,10 @@ impl<T: TerminalBackend> Editor<T> {
                 if let Some(doc) = self.document_manager.active_document_mut() {
                     match editor_action {
                         EditorAction::RegionsListDown => {
-                            doc.buffer_mut().move_down();
+                            doc.move_cursor(crate::action::Motion::Down);
                         }
                         EditorAction::RegionsListUp => {
-                            doc.buffer_mut().move_up();
+                            doc.move_cursor(crate::action::Motion::Up);
                         }
                         _ => {}
                     }

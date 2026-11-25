@@ -402,14 +402,14 @@ fn cursor_snaps_instead_of_animating_across_a_viewport_jump() {
     let mut system = RenderSystem::new(41, 30);
     let mut term = MockTerminal::new(41, 30);
 
-    let _ = buf.set_cursor(0);
+    let _ = crate::document::ops::standalone::place_cursor(&mut buf, 0);
     system.viewport.update(0, 0, 3000, 0);
     render_once(&mut system, &mut term, &buf, true);
     assert_eq!(system.last_soft_cursor(), Some((0, 0)));
 
     let target_line = 1991;
     let target_offset = buf.line_index.get_start(target_line).unwrap();
-    let _ = buf.set_cursor(target_offset);
+    let _ = crate::document::ops::standalone::place_cursor(&mut buf, target_offset);
     system.viewport.update(target_line, 0, 3000, 0);
     let expected_row = target_line - system.viewport.top_line();
     render_once(&mut system, &mut term, &buf, false);

@@ -35,7 +35,7 @@ fn test_execute_move_right() {
     let mut doc = create_doc();
     doc.replace_content("hello", crate::document::ops::ContentKind::Render);
     for _ in 0..5 {
-        doc.buffer_mut().move_left();
+        doc.move_cursor(crate::action::Motion::Left);
     }
     assert_eq!(doc.buffer().cursor(), 0);
 
@@ -202,7 +202,7 @@ fn test_execute_delete_forward() {
     let mut doc = create_doc();
     doc.replace_content("hello", crate::document::ops::ContentKind::Render);
     for _ in 0..5 {
-        doc.buffer_mut().move_left();
+        doc.move_cursor(crate::action::Motion::Left);
     }
     execute_command(Command::DeleteForward, &mut doc, false, 8, 24, None, None).unwrap();
     assert_eq!(doc.buffer().to_string(), "ello");
@@ -233,7 +233,7 @@ fn test_execute_move_to_buffer_end() {
     let mut doc = create_doc();
     doc.replace_content("hello", crate::document::ops::ContentKind::Render);
     for _ in 0..5 {
-        doc.buffer_mut().move_left();
+        doc.move_cursor(crate::action::Motion::Left);
     }
     assert_eq!(doc.buffer().cursor(), 0);
 
@@ -364,7 +364,7 @@ fn test_execute_delete_line_single_undo() {
 
     // Add a line
     doc.replace_content("hello world\n", crate::document::ops::ContentKind::Render);
-    doc.buffer_mut().move_to_start();
+    doc.move_cursor(crate::action::Motion::StartOfFile);
     assert_eq!(doc.buffer().to_string(), "hello world\n");
 
     // Wrap delete line in transaction (simulating normal mode behavior)
@@ -385,7 +385,7 @@ fn test_execute_delete_motion_single_undo() {
 
     // Add text
     doc.replace_content("one two three", crate::document::ops::ContentKind::Render);
-    doc.buffer_mut().move_to_start();
+    doc.move_cursor(crate::action::Motion::StartOfFile);
     assert_eq!(doc.buffer().cursor(), 0);
 
     // Wrap delete word in transaction (simulating d2w)
@@ -505,7 +505,7 @@ fn test_execute_delete_16_lines_down() {
     // Create 20 lines
     let text: String = (0..20).map(|i| format!("line {i}\n")).collect();
     doc.replace_content(&text, crate::document::ops::ContentKind::Render);
-    doc.buffer_mut().move_to_start();
+    doc.move_cursor(crate::action::Motion::StartOfFile);
 
     // Verify we have 20 lines (plus potential trailing content)
     let initial_text = doc.buffer().to_string();
@@ -554,9 +554,9 @@ fn test_execute_delete_5_lines_up() {
     doc.replace_content(&text, crate::document::ops::ContentKind::Render);
 
     // Position cursor on line 7
-    doc.buffer_mut().move_to_start();
+    doc.move_cursor(crate::action::Motion::StartOfFile);
     for _ in 0..7 {
-        doc.buffer_mut().move_down();
+        doc.move_cursor(crate::action::Motion::Down);
     }
 
     let current_line = doc.buffer().line_index.get_line_at(doc.buffer().cursor());
@@ -603,13 +603,13 @@ fn test_execute_delete_5_lines_up_cursor_mid_line() {
     doc.replace_content(&text, crate::document::ops::ContentKind::Render);
 
     // Position cursor on line 7, column 10 (middle of line)
-    doc.buffer_mut().move_to_start();
+    doc.move_cursor(crate::action::Motion::StartOfFile);
     for _ in 0..7 {
-        doc.buffer_mut().move_down();
+        doc.move_cursor(crate::action::Motion::Down);
     }
     // Move right to column 10
     for _ in 0..10 {
-        doc.buffer_mut().move_right();
+        doc.move_cursor(crate::action::Motion::Right);
     }
 
     let current_line = doc.buffer().line_index.get_line_at(doc.buffer().cursor());

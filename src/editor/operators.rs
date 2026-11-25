@@ -238,18 +238,18 @@ impl<T: TerminalBackend> Editor<T> {
                     let mut ghosted_doc = None;
                     if let Some((doc, clip)) = self.document_manager.active_document_mut().zip(cut)
                     {
-                        doc.buffer_mut().move_to_line_start();
+                        doc.move_cursor(crate::action::Motion::StartOfLine);
                         let start = doc.buffer().cursor();
                         let mut reached_last_line = false;
                         for _ in 0..count.max(1) {
-                            if !doc.buffer_mut().move_down() {
+                            if !doc.move_cursor(crate::action::Motion::Down) {
                                 reached_last_line =
                                     doc.buffer().get_line() <= doc.buffer().last_real_line();
                                 break;
                             }
                         }
                         let (ghost_start, ghost_end) = if reached_last_line {
-                            doc.buffer_mut().move_to_line_end();
+                            doc.move_cursor(crate::action::Motion::EndOfLine);
                             let end = doc.buffer().cursor();
                             if start > 0 {
                                 (start - 1, end)

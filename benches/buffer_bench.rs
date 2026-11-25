@@ -150,7 +150,7 @@ fn buffer_edit_latency(c: &mut Criterion) {
         b.iter_batched(
             make,
             |mut buf| {
-                buf.set_cursor(mid).ok();
+                monster_rift::bench_api::buffer::place_cursor(&mut buf, mid);
                 for _ in 0..50 {
                     monster_rift::bench_api::buffer::Edit::type_text(black_box('z'))
                         .apply_to(&mut buf);
@@ -165,7 +165,7 @@ fn buffer_edit_latency(c: &mut Criterion) {
         b.iter_batched(
             make,
             |mut buf| {
-                buf.set_cursor(mid).ok();
+                monster_rift::bench_api::buffer::place_cursor(&mut buf, mid);
                 for _ in 0..50 {
                     monster_rift::bench_api::buffer::Edit::type_text(black_box('\n'))
                         .apply_to(&mut buf);

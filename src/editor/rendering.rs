@@ -427,7 +427,7 @@ impl<T: TerminalBackend> Editor<T> {
         let buf_len = doc.buffer().len();
         let annotations_revision = doc.annotations.revision();
         let params = super::resolve_wrap_params(doc, content_width, soft_wrap, wrap_width);
-        let edits = doc.buffer_mut().take_char_edits();
+        let edits = doc.take_char_edits();
 
         let eol_rows = |doc: &crate::document::Document| {
             doc.annotations.trailing_adornment_lines(include_lsp, |b| {

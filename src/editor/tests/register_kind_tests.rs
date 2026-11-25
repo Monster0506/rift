@@ -14,7 +14,7 @@ fn run(text: &str, keys: &str, ghost_cut: GhostCut) -> (String, (usize, usize)) 
 
     let doc = editor.active_document();
     doc.replace_content(text, crate::document::ops::ContentKind::Render);
-    doc.buffer_mut().move_to_start();
+    doc.move_cursor(crate::action::Motion::StartOfFile);
 
     let keys = crate::key::notation::parse_key_sequence(keys).expect("valid key sequence");
     editor.term.push_keys(keys);
@@ -116,7 +116,9 @@ fn vp_editor(text: &str) -> Editor<crate::replay::backend::ReplayBackend<std::io
     editor
         .active_document()
         .replace_content(text, crate::document::ops::ContentKind::Render);
-    editor.active_document().buffer_mut().move_to_start();
+    editor
+        .active_document()
+        .move_cursor(crate::action::Motion::StartOfFile);
     editor
 }
 

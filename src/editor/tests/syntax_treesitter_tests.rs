@@ -422,7 +422,7 @@ fn append_invalidates_rendered_eof() {
     document_highlights(&mut editor);
     let doc = editor.active_document();
     let generation = doc.syntax.as_ref().unwrap().highlights_generation();
-    doc.buffer_mut().move_to_end();
+    doc.move_cursor(crate::action::Motion::EndOfFile);
     doc.edit(Edit::type_text(' '), EditSource::User).unwrap();
     assert_ne!(
         generation,

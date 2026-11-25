@@ -194,7 +194,7 @@ fn test_render_cursor_position_with_line_numbers() {
     let mut term = MockTerminal::new(10, 80);
     let mut buf = TextBuffer::new(100).unwrap();
     crate::document::ops::Edit::type_text("test").apply_to(&mut buf);
-    buf.move_to_start();
+    crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::StartOfFile);
     let mut state = State::new();
     state.settings.show_line_numbers = true;
     state.update_buffer_stats(10, 4, crate::document::LineEnding::LF); // 2 digits -> gutter 4

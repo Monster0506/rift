@@ -1,6 +1,9 @@
 mod cursor;
+#[cfg(test)]
+pub(in crate::document) use cursor::move_buffer;
 mod history;
 mod put;
+pub(crate) mod standalone;
 mod text;
 
 pub(crate) use cursor::CursorCause;

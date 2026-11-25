@@ -15,7 +15,10 @@ fn fragmented(parts: &[&[u8]]) -> TextBuffer {
     let mut buffer = TextBuffer::new(256).unwrap();
     // Prepending keeps successive additions in separate pieces.
     for part in parts.iter().rev() {
-        buffer.set_cursor(0).unwrap();
+        assert!(crate::document::ops::standalone::place_cursor(
+            &mut buffer,
+            0
+        ));
         crate::document::ops::Edit::type_text(crate::buffer::decode_bytes(part))
             .apply_to(&mut buffer);
     }
@@ -197,7 +200,9 @@ fn edit_and_reparse(
                 .apply_to(buffer)
         );
     }
-    buffer.set_cursor(start_char).unwrap();
+    assert!(crate::document::ops::standalone::place_cursor(
+        buffer, start_char
+    ));
     crate::document::ops::Edit::type_text(crate::buffer::decode_bytes(replacement))
         .apply_to(buffer);
     let after = buffer.to_logical_bytes();

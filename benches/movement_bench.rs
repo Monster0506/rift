@@ -26,7 +26,10 @@ fn movement_semantic(c: &mut Criterion) {
             |mut buf| {
                 // Move 1000 words
                 for _ in 0..1000 {
-                    black_box(buf.move_word_right());
+                    black_box(monster_rift::bench_api::buffer::move_cursor(
+                        &mut buf,
+                        monster_rift::bench_api::action::Motion::NextWord,
+                    ));
                 }
             },
             criterion::BatchSize::SmallInput,
@@ -39,7 +42,10 @@ fn movement_semantic(c: &mut Criterion) {
             |mut buf| {
                 // Move 100 paragraphs
                 for _ in 0..100 {
-                    black_box(buf.move_paragraph_forward());
+                    black_box(monster_rift::bench_api::buffer::move_cursor(
+                        &mut buf,
+                        monster_rift::bench_api::action::Motion::NextParagraph,
+                    ));
                 }
             },
             criterion::BatchSize::SmallInput,
@@ -69,9 +75,12 @@ fn movement_vertical(c: &mut Criterion) {
             |mut buf| {
                 // Move down 1000 lines
                 // We set cursor to col 40 (middle) to force column matching logic
-                buf.set_cursor(40).unwrap_or(());
+                monster_rift::bench_api::buffer::place_cursor(&mut buf, 40);
                 for _ in 0..1000 {
-                    black_box(buf.move_down());
+                    black_box(monster_rift::bench_api::buffer::move_cursor(
+                        &mut buf,
+                        monster_rift::bench_api::action::Motion::Down,
+                    ));
                 }
             },
             criterion::BatchSize::SmallInput,

@@ -250,10 +250,6 @@ impl Document {
         &self.buffer
     }
 
-    pub(crate) const fn buffer_mut(&mut self) -> &mut TextBuffer {
-        &mut self.buffer
-    }
-
     pub(crate) fn with_syntax<R>(
         &mut self,
         f: impl FnOnce(&mut Syntax, &TextBuffer) -> R,

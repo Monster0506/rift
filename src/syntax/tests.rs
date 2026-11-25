@@ -47,7 +47,9 @@ fn edit(
             crate::document::ops::Edit::delete(start_char..start_char + old_chars).apply_to(buffer)
         );
     }
-    buffer.set_cursor(start_char).unwrap();
+    assert!(crate::document::ops::standalone::place_cursor(
+        buffer, start_char
+    ));
     crate::document::ops::Edit::type_text(replacement).apply_to(buffer);
     text.replace_range(range.clone(), replacement);
     let new_end = range.start + replacement.len();

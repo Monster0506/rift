@@ -7,7 +7,7 @@ fn buf_from(s: &str) -> TextBuffer {
 }
 
 fn insert_at(buf: &mut TextBuffer, pos: usize, s: &str) -> (usize, usize, usize) {
-    buf.set_cursor(pos).unwrap();
+    assert!(crate::document::ops::standalone::place_cursor(buf, pos));
     crate::document::ops::Edit::type_text(s).apply_to(buf);
     (pos, 0, s.chars().count())
 }

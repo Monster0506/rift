@@ -7,7 +7,9 @@ fn replay_editor(text: &str) -> Editor<ReplayBackend<std::io::Sink>> {
     editor
         .active_document()
         .replace_content(text, crate::document::ops::ContentKind::Render);
-    editor.active_document().buffer_mut().move_to_start();
+    editor
+        .active_document()
+        .move_cursor(crate::action::Motion::StartOfFile);
 
     editor
 }

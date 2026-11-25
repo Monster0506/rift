@@ -85,7 +85,7 @@ fn point_at(source: &[u8], byte: usize) -> (usize, usize) {
 fn insert(syntax: &mut Syntax, buffer: &mut TextBuffer, pos: usize, text: &str) {
     let old_source = buffer.to_logical_bytes();
     let start_byte = buffer.char_to_byte(pos);
-    buffer.set_cursor(pos).unwrap();
+    assert!(crate::document::ops::standalone::place_cursor(buffer, pos));
     crate::document::ops::Edit::type_text(text).apply_to(buffer);
     let new_end_byte = start_byte + text.len();
     let new_source = buffer.to_logical_bytes();

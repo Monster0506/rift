@@ -85,8 +85,8 @@ pub(crate) fn compute_motion_range(
     for i in 0..count {
         let iter_start = doc.buffer().cursor();
 
-        motion.apply(
-            doc.buffer_mut(),
+        doc.apply_motion(
+            motion,
             None,
             OperatorContext::Operator,
             viewport_height,
@@ -94,7 +94,7 @@ pub(crate) fn compute_motion_range(
         );
 
         if i + 1 == count && matches!(motion, Motion::NextWord | Motion::NextBigWord) {
-            clamp_to_line_end(doc.buffer_mut(), iter_start);
+            clamp_to_line_end(doc, iter_start);
         }
     }
 
@@ -160,7 +160,8 @@ fn on_word_end(buf: &TextBuffer) -> bool {
     buf.char_at(cursor + 1).map(classify_character) != Some(classify_character(cur))
 }
 
-fn clamp_to_line_end(buf: &mut crate::buffer::TextBuffer, from: usize) {
+fn clamp_to_line_end(doc: &mut Document, from: usize) {
+    let buf = doc.buffer();
     let start_line = buf.line_index.get_line_at(from);
     if buf.line_index.get_line_at(buf.cursor()) <= start_line {
         return;
@@ -170,7 +171,7 @@ fn clamp_to_line_end(buf: &mut crate::buffer::TextBuffer, from: usize) {
         return;
     };
     if from < end {
-        let _ = buf.set_cursor(end);
+        let _ = doc.set_cursor(end, crate::document::ops::CursorCause::User);
     }
 }
 
@@ -335,20 +336,16 @@ fn move_cmd(
     viewport_height: usize,
     last_search_query: Option<&str>,
 ) {
-    let buf = doc.buffer_mut();
-    let count = count.min(buf.len().max(1));
+    let count = count.min(doc.buffer().len().max(1));
 
     for _ in 0..count {
-        let before = buf.cursor();
-        motion.apply(
-            buf,
+        if !doc.apply_motion(
+            motion,
             display_map.as_deref_mut(),
             crate::wrap::OperatorContext::Move,
             viewport_height,
             last_search_query,
-        );
-
-        if buf.cursor() == before {
+        ) {
             break;
         }
     }
@@ -399,24 +396,24 @@ fn delete_line_cmd(doc: &mut Document, count: usize) {
         return;
     }
     doc.begin_transaction("DeleteLine");
-    doc.buffer_mut().move_to_line_start();
+    doc.move_cursor(crate::action::Motion::StartOfLine);
     let start = doc.buffer().cursor();
     let mut reached_last_line = false;
     for _ in 0..count.max(1) {
-        if !doc.buffer_mut().move_down() {
+        if !doc.move_cursor(crate::action::Motion::Down) {
             reached_last_line = doc.buffer().get_line() <= doc.buffer().last_real_line();
             break;
         }
     }
     if reached_last_line {
-        doc.buffer_mut().move_to_line_end();
+        doc.move_cursor(crate::action::Motion::EndOfLine);
         let end = doc.buffer().cursor();
         if end > start {
             let _ = doc.edit(Edit::delete(start..end), EditSource::User);
         }
         if start > 0 {
             let _ = doc.edit(Edit::DeleteBackward, EditSource::User);
-            doc.buffer_mut().move_to_line_start();
+            doc.move_cursor(crate::action::Motion::StartOfLine);
         }
     } else {
         let end = doc.buffer().cursor();
@@ -427,15 +424,15 @@ fn delete_line_cmd(doc: &mut Document, count: usize) {
 
 /// Change `count` lines up to their end (`ChangeLine`).
 fn change_line_cmd(doc: &mut Document, count: usize) {
-    doc.buffer_mut().move_to_line_start();
+    doc.move_cursor(crate::action::Motion::StartOfLine);
     let start = doc.buffer().cursor();
     for _ in 0..count.max(1).saturating_sub(1) {
         if doc.buffer().get_line() >= doc.buffer().last_real_line() {
             break;
         }
-        doc.buffer_mut().move_down();
+        doc.move_cursor(crate::action::Motion::Down);
     }
-    doc.buffer_mut().move_to_line_end();
+    doc.move_cursor(crate::action::Motion::EndOfLine);
     let end = doc.buffer().cursor();
     if end > start {
         let _ = doc.edit(Edit::delete(start..end), EditSource::User);
