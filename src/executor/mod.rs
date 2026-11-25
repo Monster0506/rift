@@ -99,7 +99,7 @@ pub(crate) fn compute_motion_range(
     }
 
     let new_cursor = doc.buffer().cursor();
-    let _ = doc.buffer_mut().set_cursor(anchor);
+    let _ = doc.set_cursor(anchor, crate::document::ops::CursorCause::User);
 
     if anchor == new_cursor && !is_jump {
         return None;
@@ -490,7 +490,7 @@ fn replace_backspace_cmd(
     };
 
     doc.edit(Edit::replace(pos..pos + 1, original), EditSource::User)?;
-    doc.buffer_mut().set_cursor(pos)
+    doc.set_cursor(pos, crate::document::ops::CursorCause::User)
 }
 
 fn delete_surround_cmd(doc: &mut Document, ch: char, count: usize) {

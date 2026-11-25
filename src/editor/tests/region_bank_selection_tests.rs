@@ -8,7 +8,10 @@ fn visual_char_enters_mode_and_anchors_at_cursor() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
-    editor.active_document().buffer_mut().set_cursor(3).unwrap();
+    editor
+        .active_document()
+        .set_cursor(3, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
@@ -28,7 +31,10 @@ fn visual_resumes_a_banked_region_under_the_cursor() {
         .active_document()
         .bank_region(Region::new(4, 0, RangeKind::Charwise));
 
-    editor.active_document().buffer_mut().set_cursor(2).unwrap();
+    editor
+        .active_document()
+        .set_cursor(2, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
     assert_eq!(editor.current_mode, Mode::Visual);
@@ -54,7 +60,10 @@ fn visual_motion_extends_through_normal_fallthrough() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
@@ -79,7 +88,10 @@ fn visual_swap_ends_exchanges_anchor_and_cursor() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(
         crate::action::Motion::Right,
@@ -108,8 +120,7 @@ fn expand_region_grows_word_then_quotes_in_verified_order() {
         .unwrap();
     editor
         .active_document()
-        .buffer_mut()
-        .set_cursor(pos)
+        .set_cursor(pos, crate::document::ops::CursorCause::User)
         .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
@@ -138,7 +149,10 @@ fn expand_region_noop_when_already_at_buffer_extent() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "x");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
     editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
@@ -172,8 +186,7 @@ fn shrink_region_pops_the_last_expand_step() {
         .unwrap();
     editor
         .active_document()
-        .buffer_mut()
-        .set_cursor(pos)
+        .set_cursor(pos, crate::document::ops::CursorCause::User)
         .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
@@ -209,7 +222,10 @@ fn shrink_region_with_empty_history_is_a_noop() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
     let handled = editor.handle_action(&Action::Editor(EditorAction::ShrinkRegion));
@@ -223,7 +239,10 @@ fn escape_in_visual_commits_active_region() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(
         crate::action::Motion::Right,
@@ -290,7 +309,10 @@ fn issue_worked_example_bank_two_regions_no_delete_yet() {
     let mut editor = create_editor();
     load_text(&mut editor, "Hello\nworld\nfoo\n");
 
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
@@ -304,8 +326,7 @@ fn issue_worked_example_bank_two_regions_no_delete_yet() {
     let line3_start = editor.active_document().buffer().line_start(2);
     let _ = editor
         .active_document()
-        .buffer_mut()
-        .set_cursor(line3_start);
+        .set_cursor(line3_start, crate::document::ops::CursorCause::User);
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
@@ -339,7 +360,10 @@ fn n_cycles_banked_regions_when_set_is_nonempty() {
     editor
         .active_document()
         .bank_region(Region::new(10, 11, RangeKind::Charwise));
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::RepeatFindForward,
@@ -372,8 +396,7 @@ fn shift_n_cycles_backward_when_set_is_nonempty() {
         .bank_region(Region::new(10, 11, RangeKind::Charwise));
     editor
         .active_document()
-        .buffer_mut()
-        .set_cursor(15)
+        .set_cursor(15, crate::document::ops::CursorCause::User)
         .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
@@ -388,7 +411,10 @@ fn n_keeps_repeat_find_behavior_when_set_is_empty() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo bar foo baz");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.state.last_find_char = Some(('o', true, false));
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
@@ -599,7 +625,10 @@ fn visual_block_renders_and_edits_identically_to_charwise() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualBlock));
     editor.handle_action(&Action::Editor(EditorAction::Move(
         crate::action::Motion::Right,
@@ -624,7 +653,10 @@ fn real_keymap_v_then_l_renders_a_visible_highlight_in_the_composited_cells() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     let feed_key = |editor: &mut Editor<MockTerminal>, key: Key| {
         let context = if editor.current_mode.is_visual() {
@@ -667,7 +699,10 @@ fn visual_highlight_redraws_on_a_frame_after_the_initial_one() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     editor.update_and_render().unwrap();
 

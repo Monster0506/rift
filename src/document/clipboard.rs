@@ -283,7 +283,10 @@ impl Document {
             self.track_clipboard_row(closing, source, position);
         }
         self.commit_transaction();
-        let _ = self.buffer.set_cursor(start + usize::from(at_end) + 1);
+        let _ = self.set_cursor(
+            start + usize::from(at_end) + 1,
+            crate::document::ops::CursorCause::User,
+        );
         true
     }
 }

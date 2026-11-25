@@ -229,7 +229,10 @@ fn visual_d_commits_active_region_then_runs_the_batch() {
     editor
         .active_document()
         .bank_region(Region::new(5, 6, RangeKind::Charwise));
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(
         crate::action::Motion::Right,
@@ -254,7 +257,10 @@ fn plain_d_with_empty_set_is_unaffected() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
@@ -309,7 +315,10 @@ fn single_region_change_unaffected_by_the_new_batching_branch() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo bar");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Change,
@@ -484,7 +493,10 @@ fn plain_i_with_empty_set_is_unaffected() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello");
-    editor.active_document().buffer_mut().set_cursor(2).unwrap();
+    editor
+        .active_document()
+        .set_cursor(2, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
 
@@ -702,7 +714,10 @@ fn region_build_actions_accumulate_while_visual_and_during_bank_occurrence() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo bar foo");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(
@@ -732,7 +747,10 @@ fn region_build_recording_does_not_capture_plain_normal_mode_navigation() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "line one\nline two\nline three");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
@@ -781,7 +799,10 @@ fn dot_repeat_destructive_group_reselects_without_reexecuting() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "(a) (b)");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
@@ -795,7 +816,10 @@ fn dot_repeat_destructive_group_reselects_without_reexecuting() {
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(editor.active_document().buffer().to_string(), " (b)");
 
-    editor.active_document().buffer_mut().set_cursor(1).unwrap();
+    editor
+        .active_document()
+        .set_cursor(1, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.execute_dot_repeat();
 
     assert_eq!(
@@ -817,7 +841,10 @@ fn dot_repeat_leading_count_overrides_embedded_command_count() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "one two three four five six seven");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     let d2w = Command::Delete(Motion::NextWord, 2);
     editor.execute_buffer_command(d2w);
@@ -843,7 +870,10 @@ fn dot_repeat_non_destructive_group_rebuilds_and_reexecutes() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "aaa\nbbb");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
@@ -860,8 +890,7 @@ fn dot_repeat_non_destructive_group_rebuilds_and_reexecutes() {
         .unwrap();
     editor
         .active_document()
-        .buffer_mut()
-        .set_cursor(bbb_offset)
+        .set_cursor(bbb_offset, crate::document::ops::CursorCause::User)
         .unwrap();
     editor.execute_dot_repeat();
 
@@ -878,7 +907,10 @@ fn dot_repeat_sg_fully_replays_using_addsurroundtoset() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo\nbar");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
@@ -909,8 +941,7 @@ fn dot_repeat_sg_fully_replays_using_addsurroundtoset() {
         .unwrap();
     editor
         .active_document()
-        .buffer_mut()
-        .set_cursor(bar_offset)
+        .set_cursor(bar_offset, crate::document::ops::CursorCause::User)
         .unwrap();
     editor.execute_dot_repeat();
 
@@ -929,7 +960,10 @@ fn issue_worked_example_full_sequence_including_delete() {
     let mut editor = create_editor();
     load_text(&mut editor, "Hello\nworld\nfoo\n");
 
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
@@ -937,8 +971,7 @@ fn issue_worked_example_full_sequence_including_delete() {
     let line3_start = editor.active_document().buffer().line_start(2);
     let _ = editor
         .active_document()
-        .buffer_mut()
-        .set_cursor(line3_start);
+        .set_cursor(line3_start, crate::document::ops::CursorCause::User);
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
@@ -1049,7 +1082,10 @@ fn dot_repeat_yank_reselects_without_reexecuting() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "(a) (b)");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
@@ -1057,7 +1093,10 @@ fn dot_repeat_yank_reselects_without_reexecuting() {
     let buffer_before = editor.active_document().buffer().to_string();
     assert!(editor.active_document().selection_set.is_empty());
 
-    editor.active_document().buffer_mut().set_cursor(5).unwrap();
+    editor
+        .active_document()
+        .set_cursor(5, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.execute_dot_repeat();
 
     assert_eq!(
@@ -1078,7 +1117,10 @@ fn dot_repeat_paste_genuinely_differs_from_bare_repeat() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo bar foo baz foo");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
@@ -1090,9 +1132,13 @@ fn dot_repeat_paste_genuinely_differs_from_bare_repeat() {
         .push_str("X", crate::wrap::RangeKind::Charwise);
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
 
-    let _ = editor.active_document().buffer_mut().set_cursor(0);
+    let _ = editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User);
     editor.execute_dot_repeat();
-    let _ = editor.active_document().buffer_mut().set_cursor(0);
+    let _ = editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User);
     editor.execute_dot_repeat();
 
     let count_of_x = editor

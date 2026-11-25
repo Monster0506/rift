@@ -81,9 +81,10 @@ impl<T: TerminalBackend> Editor<T> {
             let cursor = doc.buffer().cursor();
             doc.populate_clipboard_buffer(&entries);
             let len = doc.buffer().len();
-            let _ = doc
-                .buffer_mut()
-                .set_cursor(cursor.min(len.saturating_sub(1)));
+            let _ = doc.set_cursor(
+                cursor.min(len.saturating_sub(1)),
+                crate::document::ops::CursorCause::User,
+            );
         }
         if self.active_document_id() == layout.dir_doc_id {
             let _ = self.update_and_render();
@@ -263,9 +264,10 @@ impl<T: TerminalBackend> Editor<T> {
             let cursor = index_doc.buffer().cursor();
             index_doc.populate_clipboard_buffer(ring.entries());
             let len = index_doc.buffer().len();
-            let _ = index_doc
-                .buffer_mut()
-                .set_cursor(cursor.min(len.saturating_sub(1)));
+            let _ = index_doc.set_cursor(
+                cursor.min(len.saturating_sub(1)),
+                crate::document::ops::CursorCause::User,
+            );
         }
         self.clipboard_ring = ring;
         if let Some(doc) = self.document_manager.active_document_mut() {
@@ -296,9 +298,10 @@ impl<T: TerminalBackend> Editor<T> {
             doc.populate_messages_buffer(&log);
             // Preserve cursor position on background refresh
             let len = doc.buffer().len();
-            let _ = doc
-                .buffer_mut()
-                .set_cursor(cursor.min(len.saturating_sub(1)));
+            let _ = doc.set_cursor(
+                cursor.min(len.saturating_sub(1)),
+                crate::document::ops::CursorCause::User,
+            );
         }
 
         // Only re-render if the messages buffer is currently visible

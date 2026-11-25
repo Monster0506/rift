@@ -58,7 +58,10 @@ impl Document {
         }
 
         if let Some(offset) = cursor_before {
-            let _ = self.buffer.set_cursor(offset.min(self.buffer.len()));
+            let _ = self.set_cursor(
+                offset.min(self.buffer.len()),
+                crate::document::ops::CursorCause::User,
+            );
         }
 
         self.history.undo();
@@ -94,7 +97,10 @@ impl Document {
         }
 
         if let Some(offset) = cursor_after {
-            let _ = self.buffer.set_cursor(offset.min(self.buffer.len()));
+            let _ = self.set_cursor(
+                offset.min(self.buffer.len()),
+                crate::document::ops::CursorCause::User,
+            );
         }
 
         if let Some(entry) = self.annotation_redo_stack.pop() {

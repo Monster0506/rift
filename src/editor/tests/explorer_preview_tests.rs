@@ -116,7 +116,8 @@ fn test_explorer_split_select_does_not_follow_swapped_symlink() {
             .get_document_mut(layout.dir_doc_id)
             .unwrap();
         let line_start = doc.buffer().line_index.get_start(1).unwrap();
-        doc.buffer_mut().set_cursor(line_start).unwrap();
+        doc.set_cursor(line_start, crate::document::ops::CursorCause::User)
+            .unwrap();
     }
     editor.handle_explorer_split_select();
 
@@ -143,7 +144,7 @@ fn move_explorer_cursor_to_line(
         .get_document_mut(dir_doc_id)
         .unwrap();
     let pos = doc.buffer().line_index.get_start(line).unwrap_or(0);
-    let _ = doc.buffer_mut().set_cursor(pos);
+    let _ = doc.set_cursor(pos, crate::document::ops::CursorCause::User);
 }
 
 #[test]

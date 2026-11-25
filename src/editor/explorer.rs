@@ -279,7 +279,10 @@ impl<T: TerminalBackend> Editor<T> {
         let log = self.state.error_manager.notifications().message_log();
         doc.populate_messages_buffer(&log);
         let len = doc.buffer().len();
-        let _ = doc.buffer_mut().set_cursor(len.saturating_sub(1));
+        let _ = doc.set_cursor(
+            len.saturating_sub(1),
+            crate::document::ops::CursorCause::User,
+        );
 
         self.document_manager.add_document(doc);
         if let Err(e) = self.document_manager.switch_to_document(id) {
@@ -441,7 +444,7 @@ impl<T: TerminalBackend> Editor<T> {
             doc.populate_buffer_list_buffer(&infos);
             let target_line = cursor_line.min(infos.len().saturating_sub(1));
             if let Some(start) = doc.buffer().line_index.get_start(target_line) {
-                let _ = doc.buffer_mut().set_cursor(start);
+                let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
             }
         }
     }
@@ -601,7 +604,7 @@ impl<T: TerminalBackend> Editor<T> {
             doc.populate_clipboard_buffer(self.clipboard_ring.entries());
             let line = cursor_line.min(doc.buffer().get_total_lines().saturating_sub(1));
             let cursor = doc.buffer().line_index.get_start(line).unwrap_or(0);
-            let _ = doc.buffer_mut().set_cursor(cursor);
+            let _ = doc.set_cursor(cursor, crate::document::ops::CursorCause::User);
         }
 
         self.state.notify(
@@ -801,7 +804,7 @@ impl<T: TerminalBackend> Editor<T> {
             .get_document_mut(layout.preview_doc_id)
         {
             let _ = linked_doc.goto_seq(seq);
-            let _ = linked_doc.buffer_mut().set_cursor(0);
+            let _ = linked_doc.set_cursor(0, crate::document::ops::CursorCause::User);
         }
         if let Some(w) = self.split_tree.get_window_mut(layout.preview_win_id) {
             w.cursor_position = 0;
@@ -957,7 +960,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             let pos = doc.buffer().line_index.get_line_start(target_line);
-            let _ = doc.buffer_mut().set_cursor(pos);
+            let _ = doc.set_cursor(pos, crate::document::ops::CursorCause::User);
         }
         self.update_undotree_preview();
     }

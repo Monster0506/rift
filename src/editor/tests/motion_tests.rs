@@ -113,8 +113,7 @@ fn test_f_find_char_backward_moves_to_char() {
     load_text(&mut editor, "hello world\n");
     editor
         .active_document()
-        .buffer_mut()
-        .set_cursor(10)
+        .set_cursor(10, crate::document::ops::CursorCause::User)
         .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::FindCharBackward('h'),
@@ -237,8 +236,7 @@ fn test_till_backward_stops_one_after_target() {
     load_text(&mut editor, "hello world\n");
     editor
         .active_document()
-        .buffer_mut()
-        .set_cursor(10)
+        .set_cursor(10, crate::document::ops::CursorCause::User)
         .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
@@ -485,7 +483,10 @@ fn test_n_repeats_last_backward_find_in_same_direction() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "ababa\n");
-    editor.active_document().buffer_mut().set_cursor(4).unwrap();
+    editor
+        .active_document()
+        .set_cursor(4, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::FindCharBackward('b'),
@@ -583,8 +584,7 @@ fn test_shift_n_falls_back_to_prev_search_when_no_find_char() {
     load_text(&mut editor, "hello world hello\n");
     editor
         .active_document()
-        .buffer_mut()
-        .set_cursor(12)
+        .set_cursor(12, crate::document::ops::CursorCause::User)
         .unwrap();
     editor.state.last_search_query = Some("hello".to_string());
     editor.state.last_find_char = None;
@@ -670,7 +670,10 @@ fn leading_count_composes_with_nest_count_through_full_key_path() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "((((ab))))");
-    editor.active_document().buffer_mut().set_cursor(4).unwrap();
+    editor
+        .active_document()
+        .set_cursor(4, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     editor.pending_count = 2;
     editor.handle_action(&Action::Editor(EditorAction::Operator(
@@ -749,7 +752,10 @@ fn x_with_leading_count_deletes_n_chars() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     editor.pending_count = 3;
     editor.handle_action(&Action::Editor(EditorAction::Delete(Motion::Right)));
@@ -763,7 +769,10 @@ fn operator_count_and_motion_count_multiply_not_concatenate() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "one two three four five six seven eight");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     editor.pending_count = 2;
     editor.handle_action(&Action::Editor(EditorAction::Operator(

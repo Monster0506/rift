@@ -602,7 +602,7 @@ impl<T: TerminalBackend> Editor<T> {
                         .unwrap_or(false);
                     if deleted || inserted {
                         let cursor = edit.cursor.min(doc.buffer().len());
-                        let _ = doc.buffer_mut().set_cursor(cursor);
+                        let _ = doc.set_cursor(cursor, crate::document::ops::CursorCause::Plugin);
                     }
                 }
             }
@@ -618,7 +618,7 @@ impl<T: TerminalBackend> Editor<T> {
                     return;
                 };
                 let pos = doc.buffer().line_col_position(row.saturating_sub(1), col);
-                let _ = doc.buffer_mut().set_cursor(pos);
+                let _ = doc.set_cursor(pos, crate::document::ops::CursorCause::Plugin);
             }
             PluginMutation::CenterOnLine { buf, row } => {
                 let active = self.document_manager.active_document_id() == Some(buf);
@@ -629,7 +629,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let total = doc.buffer().get_total_lines();
                 let row0 = row.saturating_sub(1).min(total.saturating_sub(1));
                 let target = doc.buffer().line_col_position(row0, 0);
-                let _ = doc.buffer_mut().set_cursor(target);
+                let _ = doc.set_cursor(target, crate::document::ops::CursorCause::Plugin);
                 if active {
                     self.render_system.viewport.center_on(row0, total);
                 }
@@ -685,7 +685,8 @@ impl<T: TerminalBackend> Editor<T> {
                         let new_cursor = self.split_tree.focused_window().cursor_position;
                         let _ = self.document_manager.switch_to_document(new_doc);
                         if let Some(doc) = self.document_manager.get_document_mut(new_doc) {
-                            let _ = doc.buffer_mut().set_cursor(new_cursor);
+                            let _ = doc
+                                .set_cursor(new_cursor, crate::document::ops::CursorCause::Plugin);
                         }
                         self.sync_state_with_active_document();
                         self.render_system.viewport.mark_needs_full_redraw();

@@ -62,11 +62,15 @@ fn lua_bool(value: bool) -> &'static str {
 fn reads_target_a_background_buffer() {
     let (_dir, mut editor, first, second) = background_file();
     let first_doc = doc_mut(&mut editor, first);
-    first_doc.buffer_mut().set_cursor(0).unwrap();
+    first_doc
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     first_doc
         .edit(Edit::type_text(">"), EditSource::User)
         .unwrap();
-    first_doc.buffer_mut().set_cursor(9).unwrap();
+    first_doc
+        .set_cursor(9, crate::document::ops::CursorCause::User)
+        .unwrap();
     first_doc.options.tab_width = 8;
     first_doc.options.line_ending = crate::document::LineEnding::Crlf;
     let mark = first_doc
@@ -330,8 +334,7 @@ fn closing_a_background_buffer_preserves_the_focused_window_and_cursor() {
     let (_dir, mut editor, first, second) = background_file();
     let win = editor.split_tree.focused_window_id();
     doc_mut(&mut editor, second)
-        .buffer_mut()
-        .set_cursor(3)
+        .set_cursor(3, crate::document::ops::CursorCause::User)
         .unwrap();
     lua_ok(
         &editor,

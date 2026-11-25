@@ -40,8 +40,7 @@ fn set_cursor(editor: &mut Editor<MockTerminal>, needle: &str) {
     let char_idx = text[..text.find(needle).unwrap()].chars().count();
     editor
         .active_document()
-        .buffer_mut()
-        .set_cursor(char_idx)
+        .set_cursor(char_idx, crate::document::ops::CursorCause::User)
         .unwrap();
 }
 

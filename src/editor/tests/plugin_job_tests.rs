@@ -339,7 +339,10 @@ fn job_callback_reads_state_changed_after_the_start() {
         &mut editor,
         "rift.job.shell('exit 0', { on_exit = function() _G.seen = rift.get_cursor() end })",
     );
-    editor.active_document().buffer_mut().set_cursor(4).unwrap();
+    editor
+        .active_document()
+        .set_cursor(4, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     tick_until(&mut editor, "_G.seen ~= nil");
     assert!(lua_holds(&editor, "_G.seen == 2"));

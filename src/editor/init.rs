@@ -284,7 +284,7 @@ impl<T: TerminalBackend> Editor<T> {
         let new_cursor = self.split_tree.focused_window().cursor_position;
         let _ = self.document_manager.switch_to_document(new_doc_id);
         if let Some(doc) = self.document_manager.get_document_mut(new_doc_id) {
-            let _ = doc.buffer_mut().set_cursor(new_cursor);
+            let _ = doc.set_cursor(new_cursor, crate::document::ops::CursorCause::User);
         }
 
         self.sync_state_with_active_document();

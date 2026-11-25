@@ -55,7 +55,10 @@ fn plugin_highlight_shifts_with_a_real_edit_before_it() {
     editor.apply_plugin_mutations();
     assert_eq!(highlight_ranges(&mut editor), vec![(6, 11)]);
 
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor
         .active_document()
         .edit(Edit::type_text("XX"), EditSource::User)
@@ -78,7 +81,10 @@ fn plugin_highlight_survives_a_ghost_cut_paint_cycle() {
     highlight_row0(&mut editor, "test", 8..11);
     editor.apply_plugin_mutations();
 
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));

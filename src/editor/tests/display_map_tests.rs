@@ -233,7 +233,10 @@ fn test_display_map_stays_partial_for_large_document_small_viewport() {
     let mut editor = create_editor_sized(10, 30);
     let text = "the quick brown fox jumps over the lazy dog\n".repeat(2000);
     set_content(&mut editor, &text);
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.update_and_render().unwrap();
 
     let doc_id = editor.document_manager.active_document_id().unwrap();
@@ -268,8 +271,7 @@ fn test_lazy_display_map_extends_correctly_for_far_cursor_jump() {
     };
     editor
         .active_document()
-        .buffer_mut()
-        .set_cursor(far_char)
+        .set_cursor(far_char, crate::document::ops::CursorCause::User)
         .unwrap();
     editor.update_and_render().unwrap();
 
@@ -299,7 +301,10 @@ fn test_edit_on_partial_display_map_stays_correct() {
     editor.state.settings.show_line_numbers = false;
     let text = "the quick brown fox jumps over the lazy dog\n".repeat(800);
     set_content(&mut editor, &text);
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.update_and_render().unwrap();
 
     let doc_id = editor.document_manager.active_document_id().unwrap();
@@ -342,7 +347,10 @@ fn test_large_count_down_motion_matches_full_build_reference() {
     editor.state.settings.show_line_numbers = false;
     let text = "the quick brown fox jumps over the lazy dog\n".repeat(500);
     set_content(&mut editor, &text);
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.current_mode = Mode::Normal;
     editor.update_and_render().unwrap();
 

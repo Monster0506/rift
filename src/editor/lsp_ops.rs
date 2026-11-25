@@ -394,9 +394,8 @@ impl<T: TerminalBackend> Editor<T> {
             let line = line.min(doc.buffer().last_real_line());
             let target_col = doc.lsp_char_offset_in_line(line, col_units, encoding);
             let target = doc.buffer().line_start(line) + target_col;
-            doc.buffer_mut().clear_desired_col();
             let target = target.min(doc.buffer().len());
-            let _ = doc.buffer_mut().set_cursor(target);
+            let _ = doc.set_cursor(target, crate::document::ops::CursorCause::Lsp);
         }
         let _ = self.force_full_redraw();
     }
@@ -793,10 +792,10 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             doc.buffer().len()
         };
-        doc.buffer_mut().clear_desired_col();
-        let _ = doc
-            .buffer_mut()
-            .set_cursor((line_start + cursor_col).min(line_end));
+        let _ = doc.set_cursor(
+            (line_start + cursor_col).min(line_end),
+            crate::document::ops::CursorCause::Lsp,
+        );
 
         if was_open.is_none() {
             self.lsp_notify_open(doc_id);
@@ -889,8 +888,7 @@ impl<T: TerminalBackend> Editor<T> {
             let line = diag.range.start.line as usize;
             let col = doc.lsp_char_offset_in_line(line, diag.range.start.character, encoding);
             let offset = (doc.buffer().line_start(line) + col).min(doc.buffer().len());
-            doc.buffer_mut().clear_desired_col();
-            let _ = doc.buffer_mut().set_cursor(offset);
+            let _ = doc.set_cursor(offset, crate::document::ops::CursorCause::Lsp);
         }
 
         let (notif_type, prefix) = match diag.severity {
@@ -1088,7 +1086,7 @@ impl<T: TerminalBackend> Editor<T> {
             .collect::<Vec<_>>()
             .join("\n");
         doc.replace_content(&content, crate::document::ops::ContentKind::Load);
-        let _ = doc.buffer_mut().set_cursor(0);
+        let _ = doc.set_cursor(0, crate::document::ops::CursorCause::Lsp);
         doc.set_location_list(entries);
         self.document_manager.add_private_document(doc);
 

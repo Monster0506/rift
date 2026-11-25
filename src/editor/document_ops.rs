@@ -421,8 +421,7 @@ impl<T: TerminalBackend> Editor<T> {
             .expect("No active document");
         match doc.perform_search(query, direction, skip_current) {
             Ok((Some(m), _stats)) => {
-                doc.buffer_mut().clear_desired_col();
-                let _ = doc.buffer_mut().set_cursor(m.range.start);
+                let _ = doc.set_cursor(m.range.start, crate::document::ops::CursorCause::Jump);
                 true
             }
             Ok((None, _stats)) => false,

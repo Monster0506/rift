@@ -183,7 +183,10 @@ fn ddp_with_no_intervening_motion_does_not_move_the_cursor() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "A\nB\nC\n");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
@@ -211,7 +214,10 @@ fn dd_paste_before_with_no_intervening_motion_does_not_move_the_cursor() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "A\nB\nC\n");
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,

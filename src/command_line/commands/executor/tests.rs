@@ -875,7 +875,9 @@ fn test_substitute_current_line() {
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.replace_content("foo bar foo", crate::document::ops::ContentKind::Render);
     // Cursor at 0
-    document.buffer_mut().set_cursor(0).unwrap();
+    document
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     let command = ParsedCommand::Substitute {
         pattern: "foo".to_string(),
@@ -904,7 +906,9 @@ fn test_substitute_global_line() {
     let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.replace_content("foo bar foo", crate::document::ops::ContentKind::Render);
-    document.buffer_mut().set_cursor(0).unwrap();
+    document
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     let command = ParsedCommand::Substitute {
         pattern: "foo".to_string(),
@@ -933,7 +937,9 @@ fn test_substitute_whole_file() {
     let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.replace_content("foo\nbar\nfoo", crate::document::ops::ContentKind::Render);
-    document.buffer_mut().set_cursor(0).unwrap();
+    document
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     // :s%/foo/baz/g
     let command = ParsedCommand::Substitute {
@@ -963,7 +969,9 @@ fn test_substitute_case_insensitive() {
     let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.replace_content("Foo bar foo", crate::document::ops::ContentKind::Render);
-    document.buffer_mut().set_cursor(0).unwrap();
+    document
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     // Smart case: lowercase pattern "foo" matches both "Foo" and "foo" (case-insensitive)
     let command = ParsedCommand::Substitute {
@@ -1119,7 +1127,9 @@ fn test_substitute_undo_redo() {
 
     // Initial content
     document.replace_content("foo bar foo", crate::document::ops::ContentKind::Render);
-    document.buffer_mut().set_cursor(0).unwrap();
+    document
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     let original_text = document.buffer().to_string();
 
     // Perform substitute (global on line)
@@ -1167,7 +1177,9 @@ fn test_substitute_whole_file_undo() {
         "foo\nbar\nfoo\nbaz\nfoo",
         crate::document::ops::ContentKind::Render,
     );
-    document.buffer_mut().set_cursor(0).unwrap();
+    document
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     let original_text = document.buffer().to_string();
 
     // Perform whole-file substitute
@@ -1247,7 +1259,9 @@ fn substitute_at_cursor(text: &str, cursor: usize, pattern: &str, replacement: &
     let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.replace_content(text, crate::document::ops::ContentKind::Render);
-    document.buffer_mut().set_cursor(cursor).unwrap();
+    document
+        .set_cursor(cursor, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     let command = ParsedCommand::Substitute {
         pattern: pattern.to_string(),

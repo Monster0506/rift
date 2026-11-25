@@ -106,7 +106,9 @@ fn workspace_edit_keeps_same_position_insert_order_and_restores_cursor() {
         .open_file(Some(path.display().to_string()), false)
         .unwrap();
     drain_jobs(&mut editor);
-    let _ = editor.active_document().buffer_mut().set_cursor(6);
+    let _ = editor
+        .active_document()
+        .set_cursor(6, crate::document::ops::CursorCause::User);
 
     let uri = crate::lsp::protocol::path_to_uri(&path);
     let edit = serde_json::json!({ "changes": { uri: [
@@ -327,7 +329,8 @@ fn published_diagnostic_underlines_exactly_its_range_and_keeps_the_eol_message()
     assert_eq!(row[11..16].iter().collect::<String>(), "; bad");
 
     let doc = editor.active_document();
-    doc.buffer_mut().set_cursor(0).ok();
+    doc.set_cursor(0, crate::document::ops::CursorCause::User)
+        .ok();
     doc.edit(Edit::type_text("  "), EditSource::User).unwrap();
     editor.update_and_render().unwrap();
     let cells = editor.render_system.compositor.get_composited_slice();

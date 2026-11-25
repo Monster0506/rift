@@ -276,7 +276,7 @@ impl<T: TerminalBackend> Editor<T> {
             return false;
         };
         if let Some(off) = doc.buffer().line_index.get_start(line) {
-            let _ = doc.buffer_mut().set_cursor(off);
+            let _ = doc.set_cursor(off, crate::document::ops::CursorCause::User);
             let _ = self.update_and_render();
             true
         } else {
@@ -304,7 +304,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         if let Some(offset) = target {
             if let Some(doc) = self.document_manager.active_document_mut() {
-                let _ = doc.buffer_mut().set_cursor(offset);
+                let _ = doc.set_cursor(offset, crate::document::ops::CursorCause::User);
             }
             let _ = self.update_and_render();
             true

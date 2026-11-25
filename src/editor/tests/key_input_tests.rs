@@ -82,8 +82,7 @@ fn shift_space_in_visual_mode_still_shrinks_the_region() {
     let pos = buffer_text(&mut editor).find("hello").unwrap();
     editor
         .active_document()
-        .buffer_mut()
-        .set_cursor(pos)
+        .set_cursor(pos, crate::document::ops::CursorCause::User)
         .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     let start = (

@@ -84,7 +84,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let last = doc.buffer().line_last_char();
         if doc.buffer().cursor() > last {
-            let _ = doc.buffer_mut().set_cursor(last);
+            let _ = doc.set_cursor(last, crate::document::ops::CursorCause::User);
         }
     }
 
@@ -688,8 +688,7 @@ impl<T: TerminalBackend> Editor<T> {
                 target_n - 1
             };
             let offset = doc.buffer().line_start(idx);
-            doc.buffer_mut().clear_desired_col();
-            let _ = doc.buffer_mut().set_cursor(offset);
+            let _ = doc.set_cursor(offset, crate::document::ops::CursorCause::Jump);
         }
         true
     }
@@ -729,7 +728,7 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some(start) = visual_yank_start {
                 if let Some(doc) = self.document_manager.active_document_mut() {
                     let start = start.min(doc.buffer().len());
-                    let _ = doc.buffer_mut().set_cursor(start);
+                    let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
                 }
             }
             if visual_line_delete {
@@ -748,7 +747,7 @@ impl<T: TerminalBackend> Editor<T> {
                             )
                         })
                         .unwrap_or(0);
-                    let _ = doc.buffer_mut().set_cursor(start + column);
+                    let _ = doc.set_cursor(start + column, crate::document::ops::CursorCause::User);
                 }
             }
             let follow_up = (op == crate::action::OperatorType::Change).then(|| action.clone());
@@ -896,7 +895,10 @@ impl<T: TerminalBackend> Editor<T> {
                 };
                 if let Some(doc) = self.document_manager.active_document_mut() {
                     doc.undo();
-                    let _ = doc.buffer_mut().set_cursor(state.original_cursor);
+                    let _ = doc.set_cursor(
+                        state.original_cursor,
+                        crate::document::ops::CursorCause::User,
+                    );
                 }
                 let result = self.put_into_active(
                     &clip,
@@ -1359,7 +1361,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .get_document_mut(layout.preview_doc_id)
                 {
                     let (start, _) = region.buffer_span(source.buffer());
-                    let _ = source.buffer_mut().set_cursor(start);
+                    let _ = source.set_cursor(start, crate::document::ops::CursorCause::User);
                 }
                 if matches!(editor_action, EditorAction::RegionsListSelect) {
                     self.close_split_panel();
@@ -1375,7 +1377,7 @@ impl<T: TerminalBackend> Editor<T> {
                 };
                 let cursor = doc.buffer().cursor();
                 self.visual_anchor = Some(cursor);
-                let _ = doc.buffer_mut().set_cursor(anchor);
+                let _ = doc.set_cursor(anchor, crate::document::ops::CursorCause::User);
                 true
             }
             _ => self.handle_bank_action(editor_action),
@@ -1401,7 +1403,7 @@ impl<T: TerminalBackend> Editor<T> {
                     doc.selection_set.bank_occurrence(&buf_snapshot, forward)
                 {
                     let (start, _) = region.span();
-                    let _ = doc.buffer_mut().set_cursor(start);
+                    let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
                     self.state.notify(
                         crate::notification::NotificationType::Info,
                         format!("Banked occurrence of \"{needle}\""),
@@ -1488,7 +1490,7 @@ impl<T: TerminalBackend> Editor<T> {
             let region = doc.selection_set.regions.remove(idx);
             if region.kind == kind {
                 self.visual_anchor = Some(region.anchor);
-                let _ = doc.buffer_mut().set_cursor(region.cursor);
+                let _ = doc.set_cursor(region.cursor, crate::document::ops::CursorCause::User);
                 self.expand_history.clear();
                 self.set_mode(mode);
                 return true;

@@ -249,7 +249,10 @@ fn plugin_command_reads_the_cursor_the_previous_key_moved() {
     );
     editor.apply_plugin_mutations();
 
-    editor.active_document().buffer_mut().set_cursor(5).unwrap();
+    editor
+        .active_document()
+        .set_cursor(5, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.execute_command_line("zzprobe");
 
     lua_ok(&editor, "assert(_G.seen == '2:1', tostring(_G.seen))");
@@ -552,7 +555,10 @@ fn editor_quit_reads_the_final_cursor() {
            local row, col = rift.get_cursor() _G.seen = row .. ':' .. col \
          end)",
     );
-    editor.active_document().buffer_mut().set_cursor(9).unwrap();
+    editor
+        .active_document()
+        .set_cursor(9, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.should_quit = true;
 
     editor.run().unwrap();
@@ -857,7 +863,10 @@ fn timer_callback_reads_the_cursor_moved_after_it_was_scheduled() {
         &editor,
         "rift.timer(0, function() _G.seen = rift.get_cursor() end)",
     );
-    editor.active_document().buffer_mut().set_cursor(4).unwrap();
+    editor
+        .active_document()
+        .set_cursor(4, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     editor.tick().unwrap();
 

@@ -127,7 +127,10 @@ impl<T: TerminalBackend> Editor<T> {
         self.expand_history.push(current);
         self.visual_anchor = Some(new_start);
         if let Some(doc) = self.document_manager.active_document_mut() {
-            let _ = doc.buffer_mut().set_cursor(new_end.saturating_sub(1));
+            let _ = doc.set_cursor(
+                new_end.saturating_sub(1),
+                crate::document::ops::CursorCause::User,
+            );
         }
         true
     }
@@ -141,7 +144,10 @@ impl<T: TerminalBackend> Editor<T> {
         };
         self.visual_anchor = Some(start);
         if let Some(doc) = self.document_manager.active_document_mut() {
-            let _ = doc.buffer_mut().set_cursor(end.saturating_sub(1));
+            let _ = doc.set_cursor(
+                end.saturating_sub(1),
+                crate::document::ops::CursorCause::User,
+            );
         }
         true
     }
@@ -165,7 +171,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let Some(region) = target else { return false };
         let (start, _) = region.span();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
         true
     }
 
@@ -237,7 +243,7 @@ impl<T: TerminalBackend> Editor<T> {
         let first = anchors.remove(0);
         self.pending_multi_insert_anchors = anchors;
         if let Some(doc) = self.document_manager.active_document_mut() {
-            let _ = doc.buffer_mut().set_cursor(first);
+            let _ = doc.set_cursor(first, crate::document::ops::CursorCause::User);
         }
         if !self.dot_repeat.is_replaying() {
             self.dot_repeat.start_insert_recording(entry);
@@ -433,7 +439,7 @@ impl<T: TerminalBackend> Editor<T> {
             let ghosted_doc = self.document_manager.active_document_mut().map(|doc| {
                 doc.create_ghosts(&ranges, ghost_clip);
                 if let Some(pos) = cursor_target {
-                    let _ = doc.buffer_mut().set_cursor(pos);
+                    let _ = doc.set_cursor(pos, crate::document::ops::CursorCause::User);
                 }
                 doc.id
             });
@@ -538,7 +544,7 @@ impl<T: TerminalBackend> Editor<T> {
                 break;
             };
             let (start, _) = region.buffer_span(doc.buffer());
-            let _ = doc.buffer_mut().set_cursor(start);
+            let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
             let Some((open_range, close_range)) =
                 crate::text_objects::resolve_surround_pair(resolve_ch, doc.buffer(), count)
             else {
@@ -606,7 +612,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.dot_repeat.set_replaying(true);
         for anchor in anchors {
             if let Some(doc) = self.document_manager.active_document_mut() {
-                let _ = doc.buffer_mut().set_cursor(anchor);
+                let _ = doc.set_cursor(anchor, crate::document::ops::CursorCause::User);
             }
             for &cmd in &commands {
                 self.execute_buffer_command(cmd);

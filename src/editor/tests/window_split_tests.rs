@@ -118,8 +118,7 @@ fn resize_that_moves_the_cursor_leaves_a_single_soft_cursor() {
         .get_line_start(1);
     editor
         .active_document()
-        .buffer_mut()
-        .set_cursor(second_line)
+        .set_cursor(second_line, crate::document::ops::CursorCause::User)
         .unwrap();
     editor.update_and_render().unwrap();
 

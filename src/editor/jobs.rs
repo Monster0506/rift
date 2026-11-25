@@ -679,7 +679,7 @@ impl<T: TerminalBackend> Editor<T> {
                     })
                 });
             if let Some(pos) = line_pos {
-                let _ = doc.buffer_mut().set_cursor(pos);
+                let _ = doc.set_cursor(pos, crate::document::ops::CursorCause::User);
             }
         }
         self.sync_state_with_active_document();
@@ -1297,8 +1297,7 @@ impl<T: TerminalBackend> Editor<T> {
             );
             let line_offset = doc.buffer().line_start(goto_line);
             let target = (line_offset + char_col).min(doc.buffer().len());
-            doc.buffer_mut().clear_desired_col();
-            let _ = doc.buffer_mut().set_cursor(target);
+            let _ = doc.set_cursor(target, crate::document::ops::CursorCause::Jump);
         }
     }
 

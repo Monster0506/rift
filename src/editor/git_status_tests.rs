@@ -92,7 +92,7 @@ fn cursor_stage_action_runs_git_add_and_refreshes_the_buffer() {
             })
             .expect("must find new.txt line");
         let start = doc.buffer().line_index.get_start(target_line).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_status_cursor_action("stage");
     drain_jobs(&mut editor);
@@ -115,7 +115,7 @@ fn cursor_to_entry<T: crate::term::TerminalBackend>(editor: &mut Editor<T>, path
         })
         .expect("status entry line");
     let start = doc.buffer().line_index.get_start(line).unwrap();
-    let _ = doc.buffer_mut().set_cursor(start);
+    let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
 }
 
 fn porcelain(dir: &std::path::Path) -> String {
@@ -375,7 +375,7 @@ fn discard_untracked_entry_deletes_the_file_from_disk() {
             })
             .expect("scratch.txt entry line");
         let start = doc.buffer().line_index.get_start(target_line).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_status_cursor_action("discard");
     drain_jobs(&mut editor);
@@ -454,7 +454,7 @@ fn cursor_stage_action_on_a_single_diff_line_stages_only_that_line() {
             .find(|&l| doc.annotations.git_status_entry_at_line(l).is_some())
             .expect("must find the multi.txt entry line");
         let start = doc.buffer().line_index.get_start(entry_line).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_status_toggle_expand();
     drain_jobs(&mut editor);
@@ -470,7 +470,7 @@ fn cursor_stage_action_on_a_single_diff_line_stages_only_that_line() {
             })
             .expect("must find the '+A' hunk line");
         let start = doc.buffer().line_index.get_start(target_line).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_status_cursor_action("stage");
     drain_jobs(&mut editor);
@@ -519,7 +519,7 @@ fn expanding_an_untracked_files_entry_shows_its_hunk_diff() {
             })
             .expect("must find the untracked new.txt entry line");
         let start = doc.buffer().line_index.get_start(entry_line).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_status_toggle_expand();
     drain_jobs(&mut editor);
@@ -556,7 +556,7 @@ fn cursor_stage_action_on_an_untracked_files_hunk_line_stages_only_that_line() {
             })
             .expect("must find the untracked new.txt entry line");
         let start = doc.buffer().line_index.get_start(entry_line).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_status_toggle_expand();
     drain_jobs(&mut editor);
@@ -571,7 +571,7 @@ fn cursor_stage_action_on_an_untracked_files_hunk_line_stages_only_that_line() {
             })
             .expect("must find the '+two' hunk line");
         let start = doc.buffer().line_index.get_start(target_line).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_status_cursor_action("stage");
     drain_jobs(&mut editor);
@@ -627,7 +627,7 @@ fn discard_on_an_untracked_files_hunk_line_is_not_supported_and_leaves_it_untouc
             })
             .expect("must find the untracked new.txt entry line");
         let start = doc.buffer().line_index.get_start(entry_line).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_status_toggle_expand();
     drain_jobs(&mut editor);
@@ -642,7 +642,7 @@ fn discard_on_an_untracked_files_hunk_line_is_not_supported_and_leaves_it_untouc
             })
             .expect("must find the '+two' hunk line");
         let start = doc.buffer().line_index.get_start(target_line).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_status_cursor_action("discard");
     drain_jobs(&mut editor);
@@ -932,8 +932,7 @@ fn git_blame_keeps_source_scrolled_to_its_logical_line() {
         .unwrap();
     editor
         .active_document()
-        .buffer_mut()
-        .set_cursor(offset)
+        .set_cursor(offset, crate::document::ops::CursorCause::User)
         .unwrap();
     editor.update_and_render().unwrap();
 
@@ -970,8 +969,7 @@ fn git_blame_keeps_source_scrolled_to_its_logical_line() {
         .unwrap();
     editor
         .active_document()
-        .buffer_mut()
-        .set_cursor(offset)
+        .set_cursor(offset, crate::document::ops::CursorCause::User)
         .unwrap();
     editor.update_and_render().unwrap();
 
@@ -1185,7 +1183,7 @@ fn git_blame_walk_back_from_a_middle_line_re_blames_that_lines_own_history() {
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
         let start = doc.buffer().line_index.get_start(1).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.handle_git_blame_buffer_action("git_blame:walk_back");
     drain_jobs(&mut editor);
@@ -1426,7 +1424,7 @@ fn b_key_in_status_buffer_blames_the_file_under_cursor() {
             .find(|&l| doc.annotations.git_status_entry_at_line(l).is_some())
             .expect("must find an entry line");
         let start = doc.buffer().line_index.get_start(entry_line).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
 
     editor.git_status_blame_cursor();
@@ -1508,7 +1506,7 @@ fn status_buffer_shows_head_summary_line_and_enter_opens_log() {
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
         let start = doc.buffer().line_index.get_start(head_line).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_status_select();
     drain_jobs(&mut editor);

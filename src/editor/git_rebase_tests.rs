@@ -470,7 +470,7 @@ fn edit_pause_auto_resumes_after_amending_via_ca_in_status_buffer() {
             .line_index
             .get_start(entry_line)
             .unwrap();
-        let _ = status_doc.buffer_mut().set_cursor(start);
+        let _ = status_doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_status_cursor_action("stage");
     drain_jobs(&mut editor);
@@ -708,7 +708,7 @@ fn verb_keys_set_pick_squash_fixup_edit_directly_no_insert_mode() {
     {
         let doc = editor.document_manager.active_document_mut().unwrap();
         let start = doc.buffer().line_index.get_start(0).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_rebase_set_verb(crate::git::rebase::RebaseVerb::Squash);
     let text = editor
@@ -776,7 +776,7 @@ fn reorder_via_dedicated_action_is_a_single_undoable_edit() {
     {
         let doc = editor.document_manager.active_document_mut().unwrap();
         let start = doc.buffer().line_index.get_start(1).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_rebase_move(false);
     let moved = editor
@@ -820,7 +820,7 @@ fn toggle_fold_shows_and_hides_the_body_preview() {
     {
         let doc = editor.document_manager.active_document_mut().unwrap();
         let start = doc.buffer().line_index.get_start(2).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     let collapsed = editor
         .document_manager
@@ -872,7 +872,7 @@ fn message_editor_round_trip_updates_the_plan_without_touching_git() {
     {
         let doc = editor.document_manager.active_document_mut().unwrap();
         let start = doc.buffer().line_index.get_start(0).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_rebase_open_message_editor();
 
@@ -925,7 +925,7 @@ fn reword_via_pre_edited_message_applies_without_pausing() {
     {
         let doc = editor.document_manager.active_document_mut().unwrap();
         let start = doc.buffer().line_index.get_start(0).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_rebase_open_message_editor();
     {
@@ -963,14 +963,15 @@ fn reword_via_a_real_edit_closes_the_message_buffer() {
     {
         let doc = editor.document_manager.active_document_mut().unwrap();
         let start = doc.buffer().line_index.get_start(0).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_rebase_open_message_editor();
     let msg_doc_id = editor.active_document_id();
     {
         let doc = editor.document_manager.active_document_mut().unwrap();
         let len = doc.buffer().len();
-        doc.buffer_mut().set_cursor(len).unwrap();
+        doc.set_cursor(len, crate::document::ops::CursorCause::User)
+            .unwrap();
         doc.edit(Edit::type_text(" reworded"), EditSource::User)
             .unwrap();
     }
@@ -1012,7 +1013,7 @@ fn squash_with_a_pre_edited_message_uses_it_as_the_incoming_half() {
         doc.set_git_rebase_verb(&sha_b, crate::git::rebase::RebaseVerb::Squash);
         doc.remove_git_rebase_step(&sha_c);
         let start = doc.buffer().line_index.get_start(1).unwrap();
-        let _ = doc.buffer_mut().set_cursor(start);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_rebase_open_message_editor();
     {

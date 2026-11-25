@@ -280,8 +280,7 @@ impl<T: TerminalBackend> Editor<T> {
             .get_start(target_line)
             .unwrap_or(0);
         target_doc
-            .buffer_mut()
-            .set_cursor(cursor)
+            .set_cursor(cursor, crate::document::ops::CursorCause::User)
             .expect("line index must return a valid cursor offset");
         if let Some(window) = self.split_tree.get_window_mut(target_window_id) {
             window.cursor_position = cursor;

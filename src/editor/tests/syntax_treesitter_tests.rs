@@ -134,14 +134,16 @@ fn set_aware_delete_keeps_syntax_highlights_in_sync() {
     editor.active_document().set_syntax(syntax);
     editor.reparse_syntax(editor.active_document_id());
 
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualLine));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     let second_line_start = editor.active_document().buffer().line_start(1);
     editor
         .active_document()
-        .buffer_mut()
-        .set_cursor(second_line_start)
+        .set_cursor(second_line_start, crate::document::ops::CursorCause::User)
         .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualLine));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
@@ -183,7 +185,10 @@ fn ghost_paint_keeps_syntax_highlights_in_sync_while_painted() {
     editor.active_document().set_syntax(syntax);
     editor.reparse_syntax(editor.active_document_id());
 
-    editor.active_document().buffer_mut().set_cursor(0).unwrap();
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
@@ -308,8 +313,7 @@ fn type_at(editor: &mut Editor<MockTerminal>, byte: usize, text: &str) {
     let pos = editor.active_document().buffer().byte_to_char(byte);
     editor
         .active_document()
-        .buffer_mut()
-        .set_cursor(pos)
+        .set_cursor(pos, crate::document::ops::CursorCause::User)
         .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
     for ch in text.chars() {

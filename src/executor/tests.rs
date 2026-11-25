@@ -64,7 +64,8 @@ fn test_delete_find_char_forward_inclusive() {
     // dfa in "dcba" with cursor at 0 should delete "dcba" (inclusive of 'a')
     let mut doc = create_doc();
     doc.replace_content("dcba", crate::document::ops::ContentKind::Render);
-    doc.buffer_mut().set_cursor(0).unwrap();
+    doc.set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     execute_command(
         Command::Delete(Motion::FindCharForward('a'), 1),
@@ -84,7 +85,8 @@ fn test_delete_find_char_forward_inclusive_partial() {
     // dfc in "dcba" with cursor at 0 should delete "dc" (inclusive of 'c')
     let mut doc = create_doc();
     doc.replace_content("dcba", crate::document::ops::ContentKind::Render);
-    doc.buffer_mut().set_cursor(0).unwrap();
+    doc.set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     execute_command(
         Command::Delete(Motion::FindCharForward('c'), 1),
@@ -162,7 +164,8 @@ fn cw_on_blank_changes_blanks_only() {
 fn run_op(text: &str, cursor: usize, cmd: Command) -> String {
     let mut doc = create_doc();
     doc.replace_content(text, crate::document::ops::ContentKind::Render);
-    doc.buffer_mut().set_cursor(cursor).unwrap();
+    doc.set_cursor(cursor, crate::document::ops::CursorCause::User)
+        .unwrap();
     execute_command(cmd, &mut doc, false, 8, 24, None, None).unwrap();
     doc.buffer().to_string()
 }
@@ -648,7 +651,8 @@ fn test_execute_delete_5_lines_up_cursor_mid_line() {
 fn bug_dw_last_word_of_line_joins_lines() {
     let mut doc = create_doc();
     doc.replace_content("foo bar\nbaz", crate::document::ops::ContentKind::Render);
-    doc.buffer_mut().set_cursor(4).unwrap();
+    doc.set_cursor(4, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     execute_command(
         Command::Delete(Motion::NextWord, 1),
@@ -671,7 +675,8 @@ fn d2w_across_lines_clamps_last_word_only() {
         "foo\nbar baz\nqux",
         crate::document::ops::ContentKind::Render,
     );
-    doc.buffer_mut().set_cursor(0).unwrap();
+    doc.set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     execute_command(
         Command::Delete(Motion::NextWord, 2),
@@ -711,7 +716,8 @@ fn word_delete_at_line_end_cases() {
     for (text, cursor, motion, count, expected) in cases {
         let mut doc = create_doc();
         doc.replace_content(text, crate::document::ops::ContentKind::Render);
-        doc.buffer_mut().set_cursor(cursor).unwrap();
+        doc.set_cursor(cursor, crate::document::ops::CursorCause::User)
+            .unwrap();
 
         execute_command(
             Command::Delete(motion, count),
@@ -736,7 +742,8 @@ fn word_delete_at_line_end_cases() {
 fn cw_and_yw_stop_at_line_end() {
     let mut doc = create_doc();
     doc.replace_content("foo bar\nbaz", crate::document::ops::ContentKind::Render);
-    doc.buffer_mut().set_cursor(4).unwrap();
+    doc.set_cursor(4, crate::document::ops::CursorCause::User)
+        .unwrap();
 
     let range =
         crate::executor::compute_motion_range(Motion::NextWord, 1, &mut doc, 24, None).unwrap();
@@ -759,7 +766,8 @@ fn cw_and_yw_stop_at_line_end() {
 fn run_linewise(text: &str, cursor: usize, cmd: Command, typed: &str) -> String {
     let mut doc = create_doc();
     doc.replace_content(text, crate::document::ops::ContentKind::Render);
-    doc.buffer_mut().set_cursor(cursor).unwrap();
+    doc.set_cursor(cursor, crate::document::ops::CursorCause::User)
+        .unwrap();
     execute_command(cmd, &mut doc, false, 8, 24, None, None).unwrap();
     for ch in typed.chars() {
         execute_command(Command::InsertChar(ch), &mut doc, false, 8, 24, None, None).unwrap();

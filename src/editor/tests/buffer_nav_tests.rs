@@ -401,7 +401,7 @@ fn test_open_buffer_list_panel_shows_status_and_enter_switches() {
             .get_document_mut(layout.dir_doc_id)
             .unwrap();
         let line_start = doc.buffer().line_index.get_start(1).unwrap();
-        let _ = doc.buffer_mut().set_cursor(line_start);
+        let _ = doc.set_cursor(line_start, crate::document::ops::CursorCause::User);
     }
     editor.handle_buffer_list_select();
 

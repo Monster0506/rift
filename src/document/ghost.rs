@@ -44,7 +44,7 @@ impl Document {
             .map(|&(start, end)| end.min(cursor_before) - start)
             .sum();
         let restored = cursor_before.saturating_sub(shift).min(self.buffer.len());
-        let _ = self.buffer.set_cursor(restored);
+        let _ = self.set_cursor(restored, crate::document::ops::CursorCause::User);
 
         ghosts.sort_unstable_by_key(|g| g.at);
         self.pending_ghost = ghosts;
@@ -115,9 +115,10 @@ impl Document {
             shift += len;
         }
 
-        let _ = self
-            .buffer
-            .set_cursor((real_cursor + cursor_shift).min(self.buffer.len()));
+        let _ = self.set_cursor(
+            (real_cursor + cursor_shift).min(self.buffer.len()),
+            crate::document::ops::CursorCause::User,
+        );
         self.settle_syntax();
     }
 
@@ -150,7 +151,10 @@ impl Document {
             );
         }
 
-        let _ = self.buffer.set_cursor(real_cursor.min(self.buffer.len()));
+        let _ = self.set_cursor(
+            real_cursor.min(self.buffer.len()),
+            crate::document::ops::CursorCause::User,
+        );
         self.settle_syntax();
     }
 }

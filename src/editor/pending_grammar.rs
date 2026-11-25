@@ -180,13 +180,13 @@ impl<T: TerminalBackend> Editor<T> {
         }
         if let Some(start) = start {
             if let Some(doc) = self.document_manager.active_document_mut() {
-                let _ = doc.buffer_mut().set_cursor(start);
+                let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
             }
         }
         let result = self.try_run_set_aware_replace_char(ch);
         if let Some(start) = start {
             if let Some(doc) = self.document_manager.active_document_mut() {
-                let _ = doc.buffer_mut().set_cursor(start);
+                let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
             }
         }
         let follow_up = (!was_visual).then_some(Action::Editor(EditorAction::ReplaceSelection(ch)));
