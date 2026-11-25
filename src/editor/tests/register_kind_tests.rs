@@ -315,8 +315,8 @@ fn visual_put_vim_boundaries_and_cursor() {
                 "{keys}, source {source:?}"
             );
             assert_eq!(editor.current_mode, Mode::Normal, "{keys}");
-            assert_eq!(editor.visual_anchor, None, "{keys}");
-            assert!(editor.active_document().selection_set.is_empty(), "{keys}");
+            assert_eq!(editor.visual_anchor(), None, "{keys}");
+            assert!(editor.active_document().selections().is_empty(), "{keys}");
             vp_replay(&mut editor, "u");
             assert_eq!(
                 editor.active_document().buffer().to_string(),

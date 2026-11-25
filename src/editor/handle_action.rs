@@ -170,7 +170,7 @@ impl<T: TerminalBackend> Editor<T> {
                     let has_regions = self
                         .document_manager
                         .active_document()
-                        .is_some_and(|d| !d.selection_set.is_empty());
+                        .is_some_and(|d| !d.selections().is_empty());
                     if has_regions {
                         let forward = matches!(motion, Motion::RepeatFindForward);
                         return self.cycle_to_region(forward);
@@ -295,7 +295,7 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 if !self.current_mode.is_visual() {
                     if let Some(doc) = self.document_manager.active_document_mut() {
-                        doc.selection_set.clear();
+                        doc.clear_selection();
                         self.region_build_recording.clear();
                     }
                 }
@@ -707,7 +707,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
         let visual_yank_start = if op == crate::action::OperatorType::Yank {
             self.current_mode.visual_range_kind().and_then(|kind| {
-                let anchor = self.visual_anchor?;
+                let anchor = self.visual_anchor()?;
                 let doc = self.document_manager.active_document()?;
                 Some(
                     crate::selection::Region::new(anchor, doc.buffer().cursor(), kind)
@@ -1002,7 +1002,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn replace_visual_selection(&mut self, register: PutRegister) -> bool {
-        let Some(anchor) = self.visual_anchor else {
+        let Some(anchor) = self.visual_anchor() else {
             return false;
         };
         let Some(kind) = self.current_mode.visual_range_kind() else {
@@ -1056,7 +1056,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.refresh_clipboard_buffer_if_open();
         }
         self.post_paste_state = None;
-        self.visual_anchor = None;
+        self.set_visual_anchor(None);
         self.set_mode(Mode::Normal);
 
         true
@@ -1356,7 +1356,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let region = self
                     .document_manager
                     .get_document(layout.preview_doc_id)
-                    .map(|d| d.selection_set.sorted())
+                    .map(|d| d.selections().sorted())
                     .and_then(|sorted| sorted.get(line).copied());
                 let Some(region) = region else { return false };
                 if let Some(source) = self
@@ -1372,14 +1372,14 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::VisualSwapEnds => {
-                let Some(anchor) = self.visual_anchor else {
+                let Some(anchor) = self.visual_anchor() else {
                     return false;
                 };
                 let Some(doc) = self.document_manager.active_document_mut() else {
                     return false;
                 };
                 let cursor = doc.buffer().cursor();
-                self.visual_anchor = Some(cursor);
+                doc.set_selection(Some(cursor));
                 let _ = doc.set_cursor(anchor, crate::document::ops::CursorCause::User);
                 true
             }
@@ -1394,17 +1394,14 @@ impl<T: TerminalBackend> Editor<T> {
                 let Some(doc) = self.document_manager.active_document_mut() else {
                     return false;
                 };
-                if doc.selection_set.regions.is_empty() {
+                if doc.selections().regions.is_empty() {
                     self.state.notify(
                         crate::notification::NotificationType::Info,
                         "Bank a region first (v + Esc)".to_string(),
                     );
                     return false;
                 }
-                let buf_snapshot = doc.buffer().clone();
-                if let Some((region, needle)) =
-                    doc.selection_set.bank_occurrence(&buf_snapshot, forward)
-                {
+                if let Some((region, needle)) = doc.bank_occurrence(forward) {
                     let (start, _) = region.span();
                     let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
                     self.state.notify(
@@ -1488,19 +1485,7 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(doc) = self.document_manager.active_document_mut() else {
             return false;
         };
-        let cursor = doc.buffer().cursor();
-        if let Some(idx) = doc.selection_set.region_containing(cursor) {
-            let region = doc.selection_set.regions.remove(idx);
-            if region.kind == kind {
-                self.visual_anchor = Some(region.anchor);
-                let _ = doc.set_cursor(region.cursor, crate::document::ops::CursorCause::User);
-                self.expand_history.clear();
-                self.set_mode(mode);
-                return true;
-            }
-            doc.selection_set.regions.insert(idx, region);
-        }
-        self.visual_anchor = Some(cursor);
+        doc.resume_selection(kind);
         self.expand_history.clear();
         self.set_mode(mode);
         true

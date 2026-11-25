@@ -127,7 +127,6 @@ impl<T: TerminalBackend> Editor<T> {
             pending_operator: None,
             pending_grammar: None,
             pending_keys_started_at: None,
-            visual_anchor: None,
             pending_multi_insert_anchors: Vec::new(),
             replace_originals: Vec::new(),
             region_build_recording: Vec::new(),

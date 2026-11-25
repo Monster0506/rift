@@ -205,7 +205,8 @@ pub(crate) struct Document {
     >,
     pub(crate) custom_highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
     pub(crate) annotations: AnnotationStore,
-    pub(crate) selection_set: crate::selection::SelectionSet,
+    selection_set: crate::selection::SelectionSet,
+    visual_anchor: Option<usize>,
     pending_annotation_snapshot: Option<Vec<crate::annotations::Annotation>>,
     annotation_undo_stack: Vec<AnnotationUndo>,
     annotation_redo_stack: Vec<AnnotationUndo>,
@@ -258,10 +259,6 @@ impl Document {
         Some(f(syntax, &self.buffer))
     }
 
-    pub(crate) fn take_selection_batch(&mut self) -> Vec<crate::selection::Region> {
-        self.selection_set.take_for_batch(&self.buffer)
-    }
-
     #[cfg(test)]
     const fn version(&self) -> u64 {
         self.content_version
@@ -270,10 +267,6 @@ impl Document {
     #[cfg(feature = "treesitter")]
     pub(crate) fn set_syntax(&mut self, syntax: Syntax) {
         self.syntax = Some(syntax);
-    }
-
-    pub(crate) fn bank_region(&mut self, region: crate::selection::Region) {
-        self.selection_set.bank(region, &self.buffer);
     }
 
     pub(crate) fn check_invariants(

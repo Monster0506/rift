@@ -70,7 +70,7 @@ impl Document {
             self.restore_annotations_for_undo(entry);
         }
 
-        self.selection_set.clear();
+        self.clear_selection();
         self.settle_syntax();
         true
     }
@@ -107,7 +107,7 @@ impl Document {
             self.restore_annotations_for_redo(entry);
         }
 
-        self.selection_set.clear();
+        self.clear_selection();
         self.settle_syntax();
         true
     }
@@ -240,7 +240,7 @@ impl Document {
                     self.replay(op);
                 }
             }
-            self.selection_set.clear();
+            self.clear_selection();
             self.settle_syntax();
             return Ok(());
         }
@@ -261,7 +261,7 @@ impl Document {
                 self.restore_annotations_for_redo(entry);
             }
         }
-        self.selection_set.clear();
+        self.clear_selection();
         self.settle_syntax();
         Ok(())
     }

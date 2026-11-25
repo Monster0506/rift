@@ -86,20 +86,20 @@ fn shift_space_in_visual_mode_still_shrinks_the_region() {
         .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     let start = (
-        editor.visual_anchor,
+        editor.visual_anchor(),
         editor.active_document().buffer().cursor(),
     );
 
     press(&mut editor, &[Key::SPACE]);
     let grown = (
-        editor.visual_anchor,
+        editor.visual_anchor(),
         editor.active_document().buffer().cursor(),
     );
     assert_ne!(grown, start, "space must expand the region");
 
     press(&mut editor, &[Key::SHIFT_SPACE]);
     let shrunk = (
-        editor.visual_anchor,
+        editor.visual_anchor(),
         editor.active_document().buffer().cursor(),
     );
     assert_eq!(shrunk, start, "shift+space must shrink it back");

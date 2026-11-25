@@ -3,6 +3,7 @@ mod cursor;
 pub(in crate::document) use cursor::move_buffer;
 mod history;
 mod put;
+mod selection;
 pub(crate) mod standalone;
 mod text;
 

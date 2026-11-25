@@ -42,7 +42,7 @@ impl<T: TerminalBackend> Editor<T> {
             let tab_width = doc.options.tab_width;
 
             if is_mutating {
-                doc.selection_set.clear();
+                doc.clear_selection();
             }
 
             let _ = execute_command(

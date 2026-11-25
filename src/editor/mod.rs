@@ -172,7 +172,6 @@ pub struct Editor<T: TerminalBackend> {
     pending_operator: Option<PendingOperator>,
     pending_grammar: Option<pending_grammar::PendingGrammar>,
     pending_keys_started_at: Option<crate::time::Instant>,
-    visual_anchor: Option<usize>,
     pending_multi_insert_anchors: Vec<usize>,
     replace_originals: Vec<replace_mode::ReplaceEntry>,
     region_build_recording: Vec<crate::action::Action>,

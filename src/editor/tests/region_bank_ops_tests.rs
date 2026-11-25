@@ -26,7 +26,7 @@ fn apply_to_each_region_runs_f_once_per_region_highest_offset_first() {
     assert!(handled);
     assert_eq!(seen_starts, vec![5, 0], "highest-offset-first");
     assert!(
-        editor.active_document().selection_set.is_empty(),
+        editor.active_document().selections().is_empty(),
         "batch must clear the set"
     );
 }
@@ -141,7 +141,7 @@ fn set_aware_delete_removes_every_banked_region_as_one_op() {
         .active_document()
         .bank_region(Region::new(8, 10, RangeKind::Charwise));
     assert_eq!(
-        editor.active_document().selection_set.regions.len(),
+        editor.active_document().selections().regions.len(),
         3,
         "touching must not have merged"
     );
@@ -152,7 +152,7 @@ fn set_aware_delete_removes_every_banked_region_as_one_op() {
 
     assert_eq!(editor.active_document().buffer().to_string(), "\n\n\n");
     assert!(
-        editor.active_document().selection_set.is_empty(),
+        editor.active_document().selections().is_empty(),
         "set clears after the batch"
     );
 
@@ -209,7 +209,7 @@ fn set_aware_yank_captures_each_region_without_mutating() {
         "foo bar baz",
         "yank must not mutate"
     );
-    assert!(editor.active_document().selection_set.is_empty());
+    assert!(editor.active_document().selections().is_empty());
     assert_eq!(
         ring_text(&editor, 0),
         Some("foo".to_string()),
@@ -289,7 +289,7 @@ fn canonical_change_across_touching_regions_does_not_merge_them() {
     editor
         .active_document()
         .bank_region(Region::new(8, 10, RangeKind::Charwise));
-    assert_eq!(editor.active_document().selection_set.regions.len(), 3);
+    assert_eq!(editor.active_document().selections().regions.len(), 3);
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Change,
@@ -529,7 +529,7 @@ fn set_aware_replace_char_fills_each_region_to_its_own_length() {
     editor.advance_pending_grammar(grammar, Key::char('x'));
 
     assert_eq!(editor.active_document().buffer().to_string(), "xx234xxxx9");
-    assert!(editor.active_document().selection_set.is_empty());
+    assert!(editor.active_document().selections().is_empty());
 }
 
 #[test]
@@ -555,7 +555,7 @@ fn set_aware_sd_strips_surrounding_parens_from_every_region() {
     editor.advance_pending_grammar(grammar, Key::char('('));
 
     assert_eq!(editor.active_document().buffer().to_string(), "a b");
-    assert!(editor.active_document().selection_set.is_empty());
+    assert!(editor.active_document().selections().is_empty());
 }
 
 #[test]
@@ -618,7 +618,7 @@ fn set_aware_put_inserts_same_text_at_every_region() {
         "0X12345X6789",
         "p inserts after each region"
     );
-    assert!(editor.active_document().selection_set.is_empty());
+    assert!(editor.active_document().selections().is_empty());
 }
 
 #[test]
@@ -811,7 +811,7 @@ fn dot_repeat_destructive_group_reselects_without_reexecuting() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
-    assert!(editor.active_document().selection_set.is_empty());
+    assert!(editor.active_document().selections().is_empty());
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(editor.active_document().buffer().to_string(), " (b)");
@@ -828,7 +828,7 @@ fn dot_repeat_destructive_group_reselects_without_reexecuting() {
         "destructive group: '.' must NOT re-delete"
     );
     assert_eq!(
-        editor.active_document().selection_set.regions.len(),
+        editor.active_document().selections().regions.len(),
         1,
         "but the equivalent region must be rebanked for manual review"
     );
@@ -978,7 +978,7 @@ fn issue_worked_example_full_sequence_including_delete() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
-    assert!(editor.active_document().selection_set.is_empty());
+    assert!(editor.active_document().selections().is_empty());
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(
@@ -1001,11 +1001,11 @@ fn undo_of_unrelated_edit_clears_a_banked_set() {
     editor
         .active_document()
         .bank_region(Region::new(0, 1, RangeKind::Charwise));
-    assert!(!editor.active_document().selection_set.is_empty());
+    assert!(!editor.active_document().selections().is_empty());
 
     assert!(editor.active_document().undo());
 
-    assert!(editor.active_document().selection_set.is_empty());
+    assert!(editor.active_document().selections().is_empty());
 }
 
 #[test]
@@ -1030,7 +1030,7 @@ fn every_set_aware_command_clears_the_set_after_acting() {
         OperatorType::Delete,
     )));
     assert!(
-        editor.active_document().selection_set.is_empty(),
+        editor.active_document().selections().is_empty(),
         "d must clear the set"
     );
 
@@ -1039,7 +1039,7 @@ fn every_set_aware_command_clears_the_set_after_acting() {
     fresh_set(&mut editor);
     editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
     assert!(
-        editor.active_document().selection_set.is_empty(),
+        editor.active_document().selections().is_empty(),
         "y must clear the set"
     );
 
@@ -1049,7 +1049,7 @@ fn every_set_aware_command_clears_the_set_after_acting() {
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert!(
-        editor.active_document().selection_set.is_empty(),
+        editor.active_document().selections().is_empty(),
         "i must clear the set"
     );
 
@@ -1059,7 +1059,7 @@ fn every_set_aware_command_clears_the_set_after_acting() {
     editor.handle_action(&Action::Editor(EditorAction::OpenLineBelow));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert!(
-        editor.active_document().selection_set.is_empty(),
+        editor.active_document().selections().is_empty(),
         "o must clear the set"
     );
 
@@ -1071,7 +1071,7 @@ fn every_set_aware_command_clears_the_set_after_acting() {
     fresh_set(&mut editor);
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
     assert!(
-        editor.active_document().selection_set.is_empty(),
+        editor.active_document().selections().is_empty(),
         "p must clear the set"
     );
 }
@@ -1091,7 +1091,7 @@ fn dot_repeat_yank_reselects_without_reexecuting() {
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
     let buffer_before = editor.active_document().buffer().to_string();
-    assert!(editor.active_document().selection_set.is_empty());
+    assert!(editor.active_document().selections().is_empty());
 
     editor
         .active_document()
@@ -1105,7 +1105,7 @@ fn dot_repeat_yank_reselects_without_reexecuting() {
         "yank's dot-repeat must not mutate the buffer"
     );
     assert_eq!(
-        editor.active_document().selection_set.regions.len(),
+        editor.active_document().selections().regions.len(),
         1,
         "but must rebank the equivalent region"
     );

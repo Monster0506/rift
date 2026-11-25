@@ -16,7 +16,7 @@ fn visual_char_enters_mode_and_anchors_at_cursor() {
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
     assert_eq!(editor.current_mode, Mode::Visual);
-    assert_eq!(editor.visual_anchor, Some(3));
+    assert_eq!(editor.visual_anchor(), Some(3));
 }
 
 #[test]
@@ -39,7 +39,7 @@ fn visual_resumes_a_banked_region_under_the_cursor() {
 
     assert_eq!(editor.current_mode, Mode::Visual);
     assert_eq!(
-        editor.visual_anchor,
+        editor.visual_anchor(),
         Some(4),
         "anchor side must be restored"
     );
@@ -49,7 +49,7 @@ fn visual_resumes_a_banked_region_under_the_cursor() {
         "cursor side must be restored"
     );
     assert!(
-        editor.active_document().selection_set.regions.is_empty(),
+        editor.active_document().selections().regions.is_empty(),
         "resumed region must be popped out of the banked set"
     );
 }
@@ -76,7 +76,7 @@ fn visual_motion_extends_through_normal_fallthrough() {
     );
     assert_eq!(editor.active_document().buffer().cursor(), 2);
     assert_eq!(
-        editor.visual_anchor,
+        editor.visual_anchor(),
         Some(0),
         "anchor stays fixed while cursor moves"
     );
@@ -102,7 +102,7 @@ fn visual_swap_ends_exchanges_anchor_and_cursor() {
 
     editor.handle_action(&Action::Editor(EditorAction::VisualSwapEnds));
 
-    assert_eq!(editor.visual_anchor, Some(2));
+    assert_eq!(editor.visual_anchor(), Some(2));
     assert_eq!(editor.active_document().buffer().cursor(), 0);
 }
 
@@ -125,7 +125,7 @@ fn expand_region_grows_word_then_quotes_in_verified_order() {
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
     editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
-    let anchor = editor.visual_anchor.unwrap();
+    let anchor = editor.visual_anchor().unwrap();
     let cursor = editor.active_document().buffer().cursor();
     assert_eq!(
         (anchor, cursor),
@@ -134,7 +134,7 @@ fn expand_region_grows_word_then_quotes_in_verified_order() {
     );
 
     editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
-    let anchor = editor.visual_anchor.unwrap();
+    let anchor = editor.visual_anchor().unwrap();
     let cursor = editor.active_document().buffer().cursor();
     assert_eq!(
         (anchor, cursor),
@@ -157,12 +157,12 @@ fn expand_region_noop_when_already_at_buffer_extent() {
 
     editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
     let before = (
-        editor.visual_anchor,
+        editor.visual_anchor(),
         editor.active_document().buffer().cursor(),
     );
     editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
     let after = (
-        editor.visual_anchor,
+        editor.visual_anchor(),
         editor.active_document().buffer().cursor(),
     );
 
@@ -191,12 +191,12 @@ fn shrink_region_pops_the_last_expand_step() {
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
     let before_expand = (
-        editor.visual_anchor,
+        editor.visual_anchor(),
         editor.active_document().buffer().cursor(),
     );
     editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
     let after_expand = (
-        editor.visual_anchor,
+        editor.visual_anchor(),
         editor.active_document().buffer().cursor(),
     );
     assert_ne!(
@@ -206,7 +206,7 @@ fn shrink_region_pops_the_last_expand_step() {
 
     editor.handle_action(&Action::Editor(EditorAction::ShrinkRegion));
     let after_shrink = (
-        editor.visual_anchor,
+        editor.visual_anchor(),
         editor.active_document().buffer().cursor(),
     );
 
@@ -254,10 +254,10 @@ fn escape_in_visual_commits_active_region() {
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
     assert_eq!(editor.current_mode, Mode::Normal);
-    assert!(editor.visual_anchor.is_none());
-    assert_eq!(editor.active_document().selection_set.regions.len(), 1);
+    assert!(editor.visual_anchor().is_none());
+    assert_eq!(editor.active_document().selections().regions.len(), 1);
     assert_eq!(
-        editor.active_document().selection_set.regions[0].span(),
+        editor.active_document().selections().regions[0].span(),
         (0, 3)
     );
 }
@@ -276,7 +276,7 @@ fn escape_in_normal_clears_a_nonempty_banked_set() {
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
-    assert!(editor.active_document().selection_set.is_empty());
+    assert!(editor.active_document().selections().is_empty());
 }
 
 #[test]
@@ -317,9 +317,9 @@ fn issue_worked_example_bank_two_regions_no_delete_yet() {
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
-    assert_eq!(editor.active_document().selection_set.regions.len(), 1);
+    assert_eq!(editor.active_document().selections().regions.len(), 1);
     assert_eq!(
-        editor.active_document().selection_set.regions[0].span(),
+        editor.active_document().selections().regions[0].span(),
         (0, 2)
     );
 
@@ -331,13 +331,13 @@ fn issue_worked_example_bank_two_regions_no_delete_yet() {
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
     assert_eq!(
-        editor.active_document().selection_set.regions.len(),
+        editor.active_document().selections().regions.len(),
         2,
         "first region must survive the plain motion to line 3"
     );
     let spans: Vec<(usize, usize)> = editor
         .active_document()
-        .selection_set
+        .selections()
         .sorted()
         .iter()
         .map(crate::selection::Region::span)
@@ -438,7 +438,7 @@ fn region_bank_occurrence_next_finds_and_moves_cursor() {
 
     editor.handle_action(&Action::Editor(EditorAction::RegionBankOccurrenceNext));
 
-    assert_eq!(editor.active_document().selection_set.regions.len(), 2);
+    assert_eq!(editor.active_document().selections().regions.len(), 2);
     assert_eq!(editor.active_document().buffer().cursor(), 8);
 }
 
@@ -452,7 +452,7 @@ fn region_bank_occurrence_on_empty_set_is_a_noop() {
     let handled = editor.handle_action(&Action::Editor(EditorAction::RegionBankOccurrenceNext));
 
     assert!(!handled);
-    assert!(editor.active_document().selection_set.is_empty());
+    assert!(editor.active_document().selections().is_empty());
 }
 
 #[test]
@@ -470,7 +470,7 @@ fn region_bank_occurrence_disabled_for_blockwise_last_region() {
     let handled = editor.handle_action(&Action::Editor(EditorAction::RegionBankOccurrenceNext));
 
     assert!(!handled);
-    assert_eq!(editor.active_document().selection_set.regions.len(), 1);
+    assert_eq!(editor.active_document().selections().regions.len(), 1);
 }
 
 #[test]
@@ -536,7 +536,7 @@ fn regions_window_x_drops_the_selected_entry() {
             .document_manager
             .get_document(source_id)
             .unwrap()
-            .selection_set
+            .selections()
             .regions
             .len(),
         1,

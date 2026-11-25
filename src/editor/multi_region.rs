@@ -87,7 +87,7 @@ const EXPAND_CANDIDATES: &[(crate::text_objects::ObjectKind, u8)] = &[
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn expand_active_region(&mut self) -> bool {
-        let Some(anchor) = self.visual_anchor else {
+        let Some(anchor) = self.visual_anchor() else {
             return false;
         };
         let Some(doc) = self.document_manager.active_document() else {
@@ -125,7 +125,7 @@ impl<T: TerminalBackend> Editor<T> {
             return false;
         };
         self.expand_history.push(current);
-        self.visual_anchor = Some(new_start);
+        self.set_visual_anchor(Some(new_start));
         if let Some(doc) = self.document_manager.active_document_mut() {
             let _ = doc.set_cursor(
                 new_end.saturating_sub(1),
@@ -136,13 +136,13 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn shrink_active_region(&mut self) -> bool {
-        if self.visual_anchor.is_none() {
+        if self.visual_anchor().is_none() {
             return false;
         }
         let Some((start, end)) = self.expand_history.pop() else {
             return false;
         };
-        self.visual_anchor = Some(start);
+        self.set_visual_anchor(Some(start));
         if let Some(doc) = self.document_manager.active_document_mut() {
             let _ = doc.set_cursor(
                 end.saturating_sub(1),
@@ -156,7 +156,7 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(doc) = self.document_manager.active_document_mut() else {
             return false;
         };
-        if doc.selection_set.is_empty() {
+        if doc.selections().is_empty() {
             self.state.notify(
                 crate::notification::NotificationType::Info,
                 "No regions banked".to_string(),
@@ -165,9 +165,9 @@ impl<T: TerminalBackend> Editor<T> {
         }
         let cursor = doc.buffer().cursor();
         let target = if forward {
-            doc.selection_set.next_region(cursor)
+            doc.selections().next_region(cursor)
         } else {
-            doc.selection_set.prev_region(cursor)
+            doc.selections().prev_region(cursor)
         };
         let Some(region) = target else { return false };
         let (start, _) = region.span();
@@ -256,15 +256,25 @@ impl<T: TerminalBackend> Editor<T> {
         if !self.current_mode.is_visual() {
             return;
         }
-        if let (Some(anchor), Some(kind)) =
-            (self.visual_anchor, self.current_mode.visual_range_kind())
-        {
-            if let Some(doc) = self.document_manager.active_document_mut() {
-                let cursor = doc.buffer().cursor();
-                doc.bank_region(crate::selection::Region::new(anchor, cursor, kind));
+        let kind = self.current_mode.visual_range_kind();
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            match kind {
+                Some(kind) => doc.bank_selection(kind),
+                None => doc.set_selection(None),
             }
         }
-        self.visual_anchor = None;
+    }
+
+    pub(super) fn visual_anchor(&self) -> Option<usize> {
+        self.document_manager
+            .active_document()
+            .and_then(Document::visual_anchor)
+    }
+
+    pub(super) fn set_visual_anchor(&mut self, anchor: Option<usize>) {
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            doc.set_selection(anchor);
+        }
     }
 
     pub(super) fn try_multi_insert_for_command(&mut self, entry: crate::command::Command) -> bool {
@@ -274,7 +284,7 @@ impl<T: TerminalBackend> Editor<T> {
             || self
                 .document_manager
                 .active_document()
-                .is_some_and(|d| !d.selection_set.is_empty());
+                .is_some_and(|d| !d.selections().is_empty());
         if !has_candidate || self.active_doc_is(super::super::document::Document::is_read_only) {
             return false;
         }
@@ -284,7 +294,7 @@ impl<T: TerminalBackend> Editor<T> {
         let is_empty = self
             .document_manager
             .active_document()
-            .is_none_or(|d| d.selection_set.is_empty());
+            .is_none_or(|d| d.selections().is_empty());
         if is_empty {
             return false;
         }
@@ -330,7 +340,7 @@ impl<T: TerminalBackend> Editor<T> {
         let is_empty = self
             .document_manager
             .active_document()
-            .is_none_or(|d| d.selection_set.is_empty());
+            .is_none_or(|d| d.selections().is_empty());
         if is_empty {
             return false;
         }
@@ -465,7 +475,7 @@ impl<T: TerminalBackend> Editor<T> {
         let is_empty = self
             .document_manager
             .active_document()
-            .is_none_or(|d| d.selection_set.is_empty());
+            .is_none_or(|d| d.selections().is_empty());
         if is_empty {
             return false;
         }
@@ -515,7 +525,7 @@ impl<T: TerminalBackend> Editor<T> {
         let is_empty = self
             .document_manager
             .active_document()
-            .is_none_or(|d| d.selection_set.is_empty());
+            .is_none_or(|d| d.selections().is_empty());
         if is_empty {
             return false;
         }
@@ -566,7 +576,7 @@ impl<T: TerminalBackend> Editor<T> {
         let is_empty = self
             .document_manager
             .active_document()
-            .is_none_or(|d| d.selection_set.is_empty());
+            .is_none_or(|d| d.selections().is_empty());
         if is_empty {
             return false;
         }
@@ -588,7 +598,7 @@ impl<T: TerminalBackend> Editor<T> {
         let is_empty = self
             .document_manager
             .active_document()
-            .is_none_or(|d| d.selection_set.is_empty());
+            .is_none_or(|d| d.selections().is_empty());
         if is_empty {
             return false;
         }
@@ -646,7 +656,7 @@ impl<T: TerminalBackend> Editor<T> {
         let regions = self
             .document_manager
             .active_document()
-            .map_or_default(|d| d.selection_set.sorted());
+            .map_or_default(|d| d.selections().sorted());
         if regions.is_empty() {
             self.state.notify(
                 crate::notification::NotificationType::Info,
@@ -720,12 +730,12 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(source) = self.document_manager.get_document_mut(source_doc_id) else {
             return false;
         };
-        let sorted = source.selection_set.sorted();
+        let sorted = source.selections().sorted();
         let Some(target) = sorted.get(line).copied() else {
             return false;
         };
-        source.selection_set.regions.retain(|r| *r != target);
-        let remaining = source.selection_set.sorted();
+        source.unbank_region(target);
+        let remaining = source.selections().sorted();
         let source_buf = source.buffer().clone();
         if let Some(doc) = self.document_manager.active_document_mut() {
             doc.populate_regions_buffer(&source_buf, &remaining);

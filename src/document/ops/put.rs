@@ -153,7 +153,7 @@ impl Document {
             crate::document::ops::CursorCause::User,
         );
         self.buffer.clear_desired_col();
-        self.selection_set.clear();
+        self.clear_selection();
         self.commit_transaction();
     }
 }

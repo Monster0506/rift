@@ -59,12 +59,12 @@ impl<T: TerminalBackend> Editor<T> {
             ));
         }
 
-        if self.visual_anchor.is_some() != mode.is_visual() {
+        if self.visual_anchor().is_some() != mode.is_visual() {
             out.push(Violation::new(
                 "editor.visual_anchor",
                 format!(
                     "visual_anchor.is_some()={} but mode={mode:?}",
-                    self.visual_anchor.is_some()
+                    self.visual_anchor().is_some()
                 ),
             ));
         }

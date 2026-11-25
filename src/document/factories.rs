@@ -132,6 +132,7 @@ impl Document {
             custom_highlights: Vec::new(),
             annotations: AnnotationStore::new(),
             selection_set: crate::selection::SelectionSet::default(),
+            visual_anchor: None,
             pending_annotation_snapshot: None,
             annotation_undo_stack: Vec::new(),
             annotation_redo_stack: Vec::new(),

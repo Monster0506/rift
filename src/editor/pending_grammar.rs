@@ -162,7 +162,7 @@ impl<T: TerminalBackend> Editor<T> {
         let has_regions = self
             .document_manager
             .active_document()
-            .is_some_and(|doc| !doc.selection_set.is_empty());
+            .is_some_and(|doc| !doc.selections().is_empty());
         if !was_visual && !has_regions {
             return false;
         }
@@ -170,7 +170,7 @@ impl<T: TerminalBackend> Editor<T> {
             return true;
         }
 
-        let start = self.visual_anchor.and_then(|anchor| {
+        let start = self.visual_anchor().and_then(|anchor| {
             self.document_manager
                 .active_document()
                 .map(|doc| anchor.min(doc.buffer().cursor()).min(doc.buffer().len()))

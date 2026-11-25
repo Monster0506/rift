@@ -1250,7 +1250,7 @@ fn substitute_with_nonempty_set_scopes_to_banked_regions_only() {
         "XXX bar foo baz XXX",
         "middle 'foo' (not banked) must survive"
     );
-    assert!(document.selection_set.is_empty());
+    assert!(document.selections().is_empty());
 }
 
 fn substitute_at_cursor(text: &str, cursor: usize, pattern: &str, replacement: &str) -> String {

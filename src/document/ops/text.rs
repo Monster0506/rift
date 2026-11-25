@@ -224,7 +224,7 @@ impl Document {
             self.pending_annotation_snapshot = None;
             self.annotation_undo_stack.clear();
             self.annotation_redo_stack.clear();
-            self.selection_set.clear();
+            self.clear_selection();
         }
         self.reparse_syntax();
     }

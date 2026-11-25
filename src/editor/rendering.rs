@@ -168,7 +168,7 @@ impl<T: TerminalBackend> Editor<T> {
             crate::perf::PerfFields::default()
         );
         let is_visual = self.current_mode.is_visual();
-        let visual_anchor = self.visual_anchor;
+        let visual_anchor = self.visual_anchor();
         let visual_kind = self.current_mode.visual_range_kind();
         let Some(doc) = self.document_manager.active_document_mut() else {
             return;
@@ -180,7 +180,7 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             None
         };
-        let banked = doc.selection_set.sorted();
+        let banked = doc.selections().sorted();
         if active.is_none()
             && banked.is_empty()
             && doc.annotations.query_kind("ui.selection").next().is_none()

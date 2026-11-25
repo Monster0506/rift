@@ -432,11 +432,11 @@ fn execute_substitute(
         Ok((mut matches, _stats)) => {
             let is_global_subst = flags.contains('g');
             let whole_file = range == Some("%");
-            let has_selection = !document.selection_set.is_empty();
+            let has_selection = !document.selections().is_empty();
 
             if has_selection {
                 let region_spans: Vec<(usize, usize)> = document
-                    .selection_set
+                    .selections()
                     .sorted()
                     .iter()
                     .map(|r| r.buffer_span(document.buffer()))
@@ -508,7 +508,7 @@ fn execute_substitute(
 
             document.commit_transaction();
             if has_selection {
-                document.selection_set.clear();
+                document.clear_selection();
             }
 
             if changes_made > 0 {
