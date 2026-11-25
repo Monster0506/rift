@@ -64,6 +64,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn update_state(&mut self) -> Option<FrameState> {
         crate::perf_span!("update_state", crate::perf::PerfFields::default());
+        self.drain_document_changes();
         self.flush_pending_text_changed();
         self.drain_syntax_sync();
         self.flush_pending_syntax_updated();

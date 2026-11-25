@@ -288,6 +288,14 @@ impl DocumentManager {
             .collect()
     }
 
+    pub(crate) fn drain_changes(&mut self) -> Vec<(DocumentId, crate::document::ops::Changes)> {
+        self.documents
+            .values_mut()
+            .map(|doc| (doc.id, doc.drain_changes()))
+            .filter(|(_, changes)| *changes != crate::document::ops::Changes::default())
+            .collect()
+    }
+
     pub(crate) fn tabs(&self) -> impl Iterator<Item = (&Document, bool)> {
         self.tab_order
             .iter()

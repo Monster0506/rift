@@ -65,8 +65,6 @@ impl<T: TerminalBackend> Editor<T> {
                 self.refresh_display_map_after_mutation(doc_id, content_width, viewport_height);
             }
 
-            self.dispatch_buffer_events();
-
             return true;
         }
         false
@@ -99,19 +97,16 @@ impl<T: TerminalBackend> Editor<T> {
             self.resolve_display_map_cached(doc_id, content_width, cursor_after, viewport_height);
     }
 
-    fn dispatch_buffer_events(&mut self) {
-        let Some(doc) = self.document_manager.active_document_mut() else {
-            return;
-        };
-        let buf = doc.id;
-        let changes = doc.drain_changes();
-        if changes.text {
-            self.pending_text_changed = Some(buf);
-            #[cfg(feature = "lsp")]
-            self.lsp_notify_change(buf);
-        }
-        if let Some((row, col)) = changes.cursor {
-            self.pending_cursor_moved = Some((buf, row, col));
+    pub(super) fn drain_document_changes(&mut self) {
+        for (buf, changes) in self.document_manager.drain_changes() {
+            if changes.text {
+                self.pending_text_changed = Some(buf);
+                #[cfg(feature = "lsp")]
+                self.lsp_notify_change(buf);
+            }
+            if let Some((row, col)) = changes.cursor {
+                self.pending_cursor_moved = Some((buf, row, col));
+            }
         }
     }
 
