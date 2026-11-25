@@ -2,6 +2,8 @@ use super::*;
 
 mod common;
 
+mod content_tests;
+
 mod directory_buffer_tests;
 mod directory_diff_tests;
 mod encoding_tests;

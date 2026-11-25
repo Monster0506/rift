@@ -219,7 +219,7 @@ impl<T: TerminalBackend> Editor<T> {
                     return false;
                 }
             };
-            doc.replace_buffer_content(&content);
+            doc.replace_content(&content, crate::document::ops::ContentKind::Load);
             doc.set_read_only(true);
             doc.convert_to_scratch(format!(
                 "[Git] {} @ {}",

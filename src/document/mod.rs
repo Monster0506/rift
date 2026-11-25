@@ -695,11 +695,9 @@ impl Document {
         image: std::sync::Arc<crate::image_view::DecodedImage>,
     ) {
         self.kind = BufferKind::for_builtin(BufferKindId::IMAGE_VIEW);
-        self.replace_buffer_content(&image.summary());
+        self.replace_content(image.summary(), crate::document::ops::ContentKind::Load);
         self.custom_highlights.clear();
-        self.syntax = None;
         self.state = StateSlot::new(IMAGE_VIEW_STATE_KEY, ImageViewState { image });
-        self.history = UndoTree::new();
     }
 
     state_get!(pub(crate) fn image(&self) -> &std::sync::Arc<crate::image_view::DecodedImage> = IMAGE_VIEW_STATE_KEY, |s| &s.image);

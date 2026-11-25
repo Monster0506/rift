@@ -22,7 +22,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             doc.convert_to_directory(new_path.clone());
             doc.set_directory_show_hidden(show_hidden);
-            doc.replace_buffer_content("");
+            doc.replace_content("", crate::document::ops::ContentKind::Render);
         }
         let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
             doc_id,
@@ -315,13 +315,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.document_manager.add_private_document(index_doc);
 
         let preview_doc_id = self.document_manager.next_id();
-        let preview_doc = match crate::document::Document::new_clipboard_preview(preview_doc_id) {
-            Ok(d) => d,
-            Err(e) => {
-                self.state.handle_error(e);
-                return;
-            }
-        };
+        let preview_doc = crate::document::Document::new_clipboard_preview(preview_doc_id);
         self.document_manager.add_private_document(preview_doc);
 
         let size = self
@@ -553,15 +547,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             preview.convert_to_scratch("[Clipboard:preview]".to_string());
             preview.set_read_only(true);
-            preview.selection_set.clear();
-            preview.history = crate::history::UndoTree::new();
-            let old_revision = preview.buffer.revision;
-            if let Ok(mut new_buf) = crate::buffer::TextBuffer::new(entry_text.len().max(64)) {
-                new_buf.insert_chars(&entry_text);
-                let _ = new_buf.set_cursor(0);
-                new_buf.revision = old_revision + 1;
-                preview.buffer = new_buf;
-            }
+            preview.replace_content(&entry_text, crate::document::ops::ContentKind::Load);
             preview.custom_highlights.clear();
         }
 

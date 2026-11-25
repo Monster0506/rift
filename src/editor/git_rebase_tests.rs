@@ -354,7 +354,10 @@ fn reword_opens_commit_buffer_and_completes_on_save() {
             .document_manager
             .get_document_mut(msg_doc_id)
             .unwrap();
-        doc.replace_buffer_content("add b (reworded)");
+        doc.replace_content(
+            "add b (reworded)",
+            crate::document::ops::ContentKind::Render,
+        );
     }
     editor.apply_git_commit_message();
 
@@ -877,7 +880,7 @@ fn message_editor_round_trip_updates_the_plan_without_touching_git() {
     }
     {
         let doc = editor.document_manager.active_document_mut().unwrap();
-        doc.replace_buffer_content("reworded a");
+        doc.replace_content("reworded a", crate::document::ops::ContentKind::Render);
     }
     editor.apply_git_commit_message();
 
@@ -923,7 +926,7 @@ fn reword_via_pre_edited_message_applies_without_pausing() {
     editor.git_rebase_open_message_editor();
     {
         let doc = editor.document_manager.active_document_mut().unwrap();
-        doc.replace_buffer_content("reworded a");
+        doc.replace_content("reworded a", crate::document::ops::ContentKind::Render);
     }
     editor.apply_git_commit_message();
 
@@ -1010,7 +1013,10 @@ fn squash_with_a_pre_edited_message_uses_it_as_the_incoming_half() {
     editor.git_rebase_open_message_editor();
     {
         let doc = editor.document_manager.active_document_mut().unwrap();
-        doc.replace_buffer_content("tidied up incoming message");
+        doc.replace_content(
+            "tidied up incoming message",
+            crate::document::ops::ContentKind::Render,
+        );
     }
     editor.apply_git_commit_message();
 

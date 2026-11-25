@@ -183,7 +183,7 @@ fn test_resolve_display_map_cached_detects_placeholder_to_loaded_swap() {
         .document_manager
         .get_document_mut(doc_id)
         .unwrap()
-        .apply_loaded_content(line_index, decoded.line_ending, decoded.has_bom);
+        .replace_content(line_index, crate::document::ops::ContentKind::Load);
 
     let dm = editor
         .resolve_display_map_cached(doc_id, 80, 0, 100)
@@ -218,7 +218,7 @@ fn test_opening_a_file_shows_its_content_immediately_not_after_a_later_edit() {
         .document_manager
         .get_document_mut(doc_id)
         .unwrap()
-        .apply_loaded_content(line_index, decoded.line_ending, decoded.has_bom);
+        .replace_content(line_index, crate::document::ops::ContentKind::Load);
     editor.force_full_redraw().unwrap();
 
     let screen = render_ascii(&mut editor);

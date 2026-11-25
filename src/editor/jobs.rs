@@ -1017,8 +1017,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .update_job_state(&JobMessage::Finished(id, true));
             return;
         };
-        doc.replace_buffer_content("");
-        doc.syntax = None;
+        doc.replace_content("", crate::document::ops::ContentKind::Load);
         doc.custom_highlights.clear();
 
         if let Some(entries) = res.dir_entries {
@@ -1035,8 +1034,7 @@ impl<T: TerminalBackend> Editor<T> {
         } else if let Some(text) = res.file_text {
             doc.convert_to_file();
             doc.set_path(&preview_path);
-            let _ = doc.buffer.insert_str(&text);
-            let _ = doc.buffer.set_cursor(0);
+            doc.replace_content(&text, crate::document::ops::ContentKind::Load);
         }
 
         #[cfg(feature = "treesitter")]
@@ -1161,7 +1159,9 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
 
-        doc.apply_loaded_content(res.line_index, res.line_ending, res.has_bom);
+        doc.replace_content(res.line_index, crate::document::ops::ContentKind::Load);
+        doc.options.line_ending = res.line_ending;
+        doc.options.has_bom = res.has_bom;
         if res.is_reload {
             doc.mark_lsp_full_sync();
         }

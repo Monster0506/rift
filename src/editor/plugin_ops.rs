@@ -868,9 +868,8 @@ impl<T: TerminalBackend> Editor<T> {
         );
         let text = lines.join("\n");
         if !text.is_empty() {
-            let _ = document.buffer.insert_str(&text);
+            document.replace_content(&text, crate::document::ops::ContentKind::Load);
         }
-        let _ = document.buffer.set_cursor(0);
         let draft = match crate::document::manager::DocumentDraft::new(reservation, document) {
             Ok(draft) => draft,
             Err(error) => {

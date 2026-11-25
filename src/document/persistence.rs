@@ -1,6 +1,6 @@
 //! Document persistence: save, load, path management, display name.
 
-use super::{Document, LineEnding};
+use super::Document;
 use crate::error::{ErrorType, RiftError};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
@@ -120,30 +120,6 @@ impl Document {
     /// Get the saved view state when switching back to this document.
     pub(crate) const fn get_view_state(&self) -> &super::ViewState {
         &self.view_state
-    }
-
-    /// Apply content loaded from a background job.
-    ///
-    /// # Panics
-    /// Panics if the text buffer cannot be created.
-    pub(crate) fn apply_loaded_content(
-        &mut self,
-        line_index: crate::buffer::line_index::LineIndex,
-        line_ending: LineEnding,
-        has_bom: bool,
-    ) {
-        use crate::buffer::TextBuffer;
-        let mut buffer =
-            TextBuffer::new(4096).unwrap_or_else(|_| panic!("Failed to create buffer"));
-        buffer.line_index = line_index;
-        buffer.revision = 0;
-
-        self.buffer = buffer;
-        self.options.line_ending = line_ending;
-        self.options.has_bom = has_bom;
-        self.history = crate::history::UndoTree::new();
-        self.current_transaction = None;
-        self.syntax = None;
     }
 
     /// Mark the document as saved at a specific edit sequence

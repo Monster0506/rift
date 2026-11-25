@@ -105,7 +105,7 @@ fn reopen_image_as_text<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<()
         })?
         .to_path_buf();
     doc.convert_to_file();
-    doc.replace_buffer_content("");
+    doc.replace_content("", crate::document::ops::ContentKind::Load);
     // The load's async token records the kind at spawn; it must be FILE now.
     let (handle, kind) = (doc.handle(), doc.buffer_kind_id());
     editor

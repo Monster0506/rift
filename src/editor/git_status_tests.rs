@@ -243,7 +243,10 @@ fn wq_on_a_git_commit_message_buffer_commits_and_quits_instead_of_erroring() {
             .document_manager
             .get_document_mut(commit_doc_id)
             .unwrap();
-        doc.replace_buffer_content("wq commits this buffer");
+        doc.replace_content(
+            "wq commits this buffer",
+            crate::document::ops::ContentKind::Render,
+        );
     }
 
     editor.handle_action(&crate::action::Action::Editor(
@@ -279,7 +282,10 @@ fn commit_new_writes_a_real_commit_and_closes_the_buffer() {
             .document_manager
             .get_document_mut(commit_doc_id)
             .unwrap();
-        doc.replace_buffer_content("Update tracked.txt line two");
+        doc.replace_content(
+            "Update tracked.txt line two",
+            crate::document::ops::ContentKind::Render,
+        );
     }
     editor.apply_git_commit_message();
 
@@ -312,7 +318,7 @@ fn commit_amend_prefills_head_message_and_amends_in_place() {
             .document_manager
             .get_document_mut(commit_doc_id)
             .unwrap();
-        doc.replace_buffer_content("init (amended)");
+        doc.replace_content("init (amended)", crate::document::ops::ContentKind::Render);
     }
     editor.apply_git_commit_message();
 

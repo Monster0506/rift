@@ -1083,7 +1083,7 @@ impl<T: TerminalBackend> Editor<T> {
             .map(|e| e.display.as_str())
             .collect::<Vec<_>>()
             .join("\n");
-        doc.replace_buffer_content(&content);
+        doc.replace_content(&content, crate::document::ops::ContentKind::Load);
         let _ = doc.buffer.set_cursor(0);
         doc.set_location_list(entries);
         self.document_manager.add_private_document(doc);

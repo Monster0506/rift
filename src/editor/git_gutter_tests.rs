@@ -79,7 +79,10 @@ fn edit_then_debounce_produces_gutter_signs_for_changed_lines() {
     // Unsaved edit: line 2 modified ("change"), a brand-new line 5 appended ("add").
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
-        doc.replace_buffer_content("line one\nline TWO\nline three\nline four\nline five\n");
+        doc.replace_content(
+            "line one\nline TWO\nline three\nline four\nline five\n",
+            crate::document::ops::ContentKind::Render,
+        );
     }
 
     tick_until(&mut editor, |ed| {
@@ -236,7 +239,10 @@ fn edit_then_debounce_produces_delete_sign_for_removed_lines() {
     // Remove "line two" entirely (a pure deletion, no corresponding addition).
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
-        doc.replace_buffer_content("line one\nline three\nline four\n");
+        doc.replace_content(
+            "line one\nline three\nline four\n",
+            crate::document::ops::ContentKind::Render,
+        );
     }
 
     tick_until(&mut editor, |ed| {
@@ -282,7 +288,7 @@ fn unsaved_edit_matching_the_index_produces_no_signs() {
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
         let text = doc.buffer.to_string();
-        doc.replace_buffer_content(&text);
+        doc.replace_content(&text, crate::document::ops::ContentKind::Render);
     }
 
     // Drive ticks past the debounce window; nothing should ever appear.

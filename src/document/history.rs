@@ -331,7 +331,10 @@ impl Document {
         if let Some(snapshot) = &replay_path.snapshot_restore {
             // Teleport via checkpoint: replace buffer/annotations wholesale,
             // invalidate the tree (caller reparses), then replay the tail.
-            self.replace_buffer_content_chars(&snapshot.full_text);
+            self.replace_content(
+                &snapshot.full_text,
+                crate::document::ops::ContentKind::Render,
+            );
             self.annotations.restore(snapshot.annotations.clone());
             if let Some(syntax) = &mut self.syntax {
                 syntax.invalidate_trees();

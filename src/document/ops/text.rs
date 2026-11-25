@@ -1,9 +1,10 @@
 use super::super::runtime::StructuralEditPolicy;
 use super::super::{AnnotationUndo, AnnotationUndoHint, Document};
 use crate::buffer::api::BufferView;
+use crate::buffer::TextBuffer;
 use crate::character::Character;
 use crate::error::RiftError;
-use crate::history::{EditOperation, EditTransaction, Position, Range};
+use crate::history::{EditOperation, EditTransaction, Position, Range, UndoTree};
 
 pub(crate) trait IntoText {
     fn into_text(self) -> Vec<Character>;
@@ -122,7 +123,54 @@ pub(in crate::document) struct Resolved {
     pub(in crate::document) text: Vec<Character>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ContentKind {
+    Render,
+    Load,
+}
+
+pub(crate) enum Content {
+    Text(Vec<Character>),
+    Lines(crate::buffer::line_index::LineIndex),
+}
+
+impl<T: IntoText> From<T> for Content {
+    fn from(text: T) -> Self {
+        Self::Text(text.into_text())
+    }
+}
+
+impl From<crate::buffer::line_index::LineIndex> for Content {
+    fn from(lines: crate::buffer::line_index::LineIndex) -> Self {
+        Self::Lines(lines)
+    }
+}
+
 impl Document {
+    pub(crate) fn replace_content(&mut self, content: impl Into<Content>, kind: ContentKind) {
+        let mut buffer = match content.into() {
+            Content::Text(chars) => TextBuffer::from_chars(&chars),
+            Content::Lines(lines) => TextBuffer::from_line_index(lines),
+        };
+        buffer.revision = self.buffer.revision.wrapping_add(1);
+        self.buffer = buffer;
+        self.content_version = self.content_version.wrapping_add(1);
+        self.pending_lsp_edits.clear();
+        if let Some(syntax) = &mut self.syntax {
+            syntax.invalidate_trees();
+        }
+        if kind == ContentKind::Load {
+            self.syntax = None;
+            self.history = UndoTree::new();
+            self.current_transaction = None;
+            self.transaction_depth = 0;
+            self.pending_annotation_snapshot = None;
+            self.annotation_undo_stack.clear();
+            self.annotation_redo_stack.clear();
+            self.selection_set.clear();
+        }
+    }
+
     fn resolve_edit(&self, edit: Edit) -> Option<Resolved> {
         let cursor = self.buffer.cursor();
         let (start, end, text) = match edit {

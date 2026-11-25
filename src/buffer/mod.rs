@@ -64,6 +64,29 @@ impl TextBuffer {
         Ok(Self::default())
     }
 
+    #[must_use]
+    pub(crate) fn from_chars(chars: &[Character]) -> Self {
+        let mut buffer = Self::default();
+        if !chars.is_empty() {
+            buffer.insert_chars(chars);
+        }
+        buffer.cursor = 0;
+        buffer
+    }
+
+    #[must_use]
+    pub(crate) fn from_text(text: &str) -> Self {
+        Self::from_chars(&text.chars().map(Character::from).collect::<Vec<_>>())
+    }
+
+    #[must_use]
+    pub(crate) fn from_line_index(line_index: LineIndex) -> Self {
+        Self {
+            line_index,
+            ..Self::default()
+        }
+    }
+
     fn log_char_edit(&mut self, pos: usize, del: usize, ins: usize) {
         if self.char_edit_log.len() < CHAR_EDIT_LOG_CAP {
             self.char_edit_log.push(CharEdit { pos, del, ins });

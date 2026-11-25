@@ -565,18 +565,12 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
         let id = self.document_manager.next_id();
-        let doc = match crate::document::Document::new_git_commit_message(
+        let doc = crate::document::Document::new_git_commit_message(
             id,
             repo_root,
             target,
             initial_message,
-        ) {
-            Ok(d) => d,
-            Err(e) => {
-                self.state.handle_error(e);
-                return;
-            }
-        };
+        );
         self.document_manager.add_document(doc);
         if let Err(e) = self.document_manager.switch_to_document(id) {
             self.state.handle_error(e);
@@ -835,17 +829,8 @@ impl<T: TerminalBackend> Editor<T> {
             .lines()
             .map(std::string::ToString::to_string)
             .collect();
-        let doc = match crate::document::Document::new_scratch(id, format!("[Git: {args}]"), &lines)
-        {
-            Ok(mut d) => {
-                d.set_read_only(true);
-                d
-            }
-            Err(e) => {
-                self.state.handle_error(e);
-                return;
-            }
-        };
+        let mut doc = crate::document::Document::new_scratch(id, format!("[Git: {args}]"), &lines);
+        doc.set_read_only(true);
         self.document_manager.add_document(doc);
         if let Err(e) = self.document_manager.switch_to_document(id) {
             self.state.handle_error(e);
@@ -863,17 +848,8 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
         let id = self.document_manager.next_id();
-        let doc = match crate::document::Document::new_scratch(id, "[Git Help]".to_string(), &lines)
-        {
-            Ok(mut d) => {
-                d.set_read_only(true);
-                d
-            }
-            Err(e) => {
-                self.state.handle_error(e);
-                return;
-            }
-        };
+        let mut doc = crate::document::Document::new_scratch(id, "[Git Help]".to_string(), &lines);
+        doc.set_read_only(true);
         self.document_manager.add_document(doc);
         if let Err(e) = self.document_manager.switch_to_document(id) {
             self.state.handle_error(e);

@@ -60,8 +60,7 @@ fn test_new_scratch_has_no_path() {
         crate::document::DocumentId::new(1),
         "[Scratch] test".to_string(),
         &lines,
-    )
-    .unwrap();
+    );
     assert!(doc.path().is_none());
     assert_eq!(doc.display_name(), "[Scratch] test");
     assert_eq!(doc.kind.kind_str(), "scratch");
@@ -75,8 +74,7 @@ fn test_new_scratch_content_joins_lines_with_newline() {
         crate::document::DocumentId::new(1),
         "scratch".to_string(),
         &lines,
-    )
-    .unwrap();
+    );
     let text: String = doc
         .buffer
         .chars(0..doc.buffer.len())
@@ -91,8 +89,7 @@ fn test_new_scratch_empty_lines() {
         crate::document::DocumentId::new(1),
         "scratch".to_string(),
         &[],
-    )
-    .unwrap();
+    );
     assert_eq!(doc.buffer.len(), 0);
 }
 

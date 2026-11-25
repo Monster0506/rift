@@ -330,7 +330,7 @@ impl<T: TerminalBackend> Editor<T> {
         lines: &[String],
     ) -> Result<crate::document::DocumentId, RiftError> {
         let id = reservation.id();
-        let mut doc = crate::document::Document::new_scratch(id, title, lines)?;
+        let mut doc = crate::document::Document::new_scratch(id, title, lines);
         doc.set_handle(reservation.handle());
         let draft = crate::document::manager::DocumentDraft::new(reservation, doc)?;
         self.document_manager.commit_draft_active(draft);

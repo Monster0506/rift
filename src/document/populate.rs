@@ -1,3 +1,4 @@
+use super::ops::ContentKind;
 use super::{DirEntry, DirectoryDiff, Document};
 use crate::buffer::TextBuffer;
 use crate::character::Character;
@@ -65,31 +66,6 @@ struct GitStatusView<'a> {
 }
 
 impl Document {
-    pub(crate) fn replace_buffer_content(&mut self, content: &str) {
-        let old_revision = self.buffer.revision;
-        if let Ok(mut new_buffer) = TextBuffer::new(content.len().max(64)) {
-            let _ = new_buffer.insert_str(content);
-            let _ = new_buffer.set_cursor(0);
-            new_buffer.revision = old_revision + 1;
-            self.buffer = new_buffer;
-        }
-    }
-
-    pub(super) fn replace_buffer_content_chars(&mut self, chars: &[Character]) {
-        let old_revision = self.buffer.revision;
-        let byte_len: usize = chars
-            .iter()
-            .copied()
-            .map(super::super::character::Character::len_utf8)
-            .sum();
-        if let Ok(mut new_buffer) = TextBuffer::new(byte_len.max(64)) {
-            new_buffer.insert_chars(chars);
-            let _ = new_buffer.set_cursor(0);
-            new_buffer.revision = old_revision + 1;
-            self.buffer = new_buffer;
-        }
-    }
-
     pub(crate) fn populate_directory_buffer(&mut self, mut entries: Vec<DirEntry>) {
         use crate::color::Color;
 
@@ -148,7 +124,7 @@ impl Document {
             chars.pop();
         }
 
-        self.replace_buffer_content_chars(&chars);
+        self.replace_content(&chars, crate::document::ops::ContentKind::Render);
         self.custom_highlights = highlights;
         let Some(state) = self.state.try_get_mut(DIRECTORY_STATE_KEY) else {
             return;
@@ -244,7 +220,7 @@ impl Document {
         };
         state.sequences = sequences;
 
-        self.replace_buffer_content(text);
+        self.replace_content(text, crate::document::ops::ContentKind::Render);
         self.custom_highlights = highlights;
         self.history.mark_saved();
     }
@@ -275,7 +251,7 @@ impl Document {
             .map(|(range, color)| (range.start + offset..range.end + offset, color))
             .collect();
 
-        self.replace_buffer_content(&content);
+        self.replace_content(&content, crate::document::ops::ContentKind::Render);
         self.custom_highlights = highlights;
         if let Some(state) = self.state.try_get_mut(UNDO_FILE_VIEW_STATE_KEY) {
             state.sequences = sequences;
@@ -369,12 +345,8 @@ impl Document {
             content = "(no messages)".to_string();
         }
 
-        let old_revision = self.buffer.revision;
-        if let Ok(mut new_buffer) = TextBuffer::new(content.len().max(64)) {
-            let _ = new_buffer.insert_str(&content);
-            new_buffer.revision = old_revision + 1;
-            self.buffer = new_buffer;
-        }
+        self.replace_content(&content, ContentKind::Render);
+        let _ = self.buffer.set_cursor(self.buffer.len());
         self.custom_highlights = highlights;
         self.history.mark_saved();
     }
@@ -399,7 +371,7 @@ impl Document {
             content.pop();
         }
 
-        self.replace_buffer_content(&content);
+        self.replace_content(&content, crate::document::ops::ContentKind::Render);
         self.custom_highlights = highlights;
         self.annotations
             .clear_by_kind_prefix(super::clipboard::ROW_KIND);
@@ -461,7 +433,7 @@ impl Document {
             }
         }
 
-        self.replace_buffer_content(&content);
+        self.replace_content(&content, crate::document::ops::ContentKind::Render);
         self.custom_highlights = highlights;
         let Some(state) = self.state.try_get_mut(BUFFER_LIST_STATE_KEY) else {
             return;
@@ -502,7 +474,7 @@ impl Document {
                 content.pop();
             }
         }
-        self.replace_buffer_content(&content);
+        self.replace_content(&content, crate::document::ops::ContentKind::Render);
         self.history.mark_saved();
     }
 
@@ -632,37 +604,31 @@ impl Document {
             None => return,
         };
 
-        let old_revision = self.buffer.revision;
-        if let Ok(mut new_buffer) = TextBuffer::new(content.len().max(64)) {
-            let _ = new_buffer.insert_str(&content);
-
-            let total_lines = new_buffer.get_total_lines();
-            if cursor_line < total_lines {
-                let start = new_buffer.line_index.get_start(cursor_line).unwrap_or(0);
-                let line_end = new_buffer
-                    .line_index
-                    .get_end(cursor_line, new_buffer.len())
-                    .unwrap_or(start);
-                let target = start + cursor_col;
-                let pos = target.min(line_end);
-                let _ = new_buffer.set_cursor(pos);
-            }
-
-            new_buffer.revision = old_revision + 1;
-            self.buffer = new_buffer;
-            if let Some(state) = self.state.try_get_mut(TERMINAL_STATE_KEY) {
-                state.terminal_cursor = Some((cursor_line, cursor_col));
-                state.terminal_cell_colors = cell_colors;
-                let scroll = state
-                    .terminal_scroll_position
-                    .and_then(|previous| scroll_position.scroll_since(previous));
-                state.terminal_scroll = state
-                    .terminal_scroll
-                    .zip(scroll)
-                    .and_then(|(accumulated, scroll)| accumulated.checked_add(scroll));
-                state.terminal_scroll_position = Some(scroll_position);
-                state.terminal_dirty = false;
-            }
+        self.replace_content(&content, ContentKind::Render);
+        let pos = if cursor_line < self.buffer.get_total_lines() {
+            let start = self.buffer.line_index.get_start(cursor_line).unwrap_or(0);
+            let line_end = self
+                .buffer
+                .line_index
+                .get_end(cursor_line, self.buffer.len())
+                .unwrap_or(start);
+            (start + cursor_col).min(line_end)
+        } else {
+            self.buffer.len()
+        };
+        let _ = self.buffer.set_cursor(pos);
+        if let Some(state) = self.state.try_get_mut(TERMINAL_STATE_KEY) {
+            state.terminal_cursor = Some((cursor_line, cursor_col));
+            state.terminal_cell_colors = cell_colors;
+            let scroll = state
+                .terminal_scroll_position
+                .and_then(|previous| scroll_position.scroll_since(previous));
+            state.terminal_scroll = state
+                .terminal_scroll
+                .zip(scroll)
+                .and_then(|(accumulated, scroll)| accumulated.checked_add(scroll));
+            state.terminal_scroll_position = Some(scroll_position);
+            state.terminal_dirty = false;
         }
     }
 
@@ -750,7 +716,7 @@ impl Document {
             r.chars.pop();
         }
 
-        self.replace_buffer_content_chars(&r.chars);
+        self.replace_content(&r.chars, crate::document::ops::ContentKind::Render);
         self.custom_highlights = r.highlights;
         let restore_line = r
             .exact_restore_line
@@ -1192,7 +1158,7 @@ impl Document {
             &original_bodies,
             Some(banner),
         );
-        self.replace_buffer_content(&text);
+        self.replace_content(&text, crate::document::ops::ContentKind::Render);
         self.annotations.clear();
         for (line, sha) in head_lines {
             self.annotations.create_git_rebase_step(line, &sha);
@@ -1389,7 +1355,7 @@ impl Document {
             }
         }
 
-        self.replace_buffer_content(&text);
+        self.replace_content(&text, crate::document::ops::ContentKind::Render);
         self.custom_highlights = highlights;
         self.annotations.clear();
         for (source_line, (line, display_line)) in
@@ -1462,7 +1428,7 @@ impl Document {
             }
         }
 
-        self.replace_buffer_content(&lines.join("\n"));
+        self.replace_content(lines.join("\n"), crate::document::ops::ContentKind::Render);
         self.annotations.clear();
         for (line, sha) in commit_annotations {
             self.annotations.create_git_log_commit(line, &sha);

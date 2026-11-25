@@ -111,28 +111,16 @@ impl<T: TerminalBackend> Editor<T> {
             (text.to_vec(), index)
         };
 
-        let mut new_buf = match crate::buffer::TextBuffer::new(entry_text.len().max(64)) {
-            Ok(buffer) => buffer,
-            Err(error) => {
-                self.state.handle_error(error);
-                return;
-            }
-        };
-        new_buf.insert_chars(&entry_text);
-        let _ = new_buf.set_cursor(0);
         let Some(preview) = self
             .document_manager
             .get_document_mut(layout.preview_doc_id)
         else {
             return;
         };
-        new_buf.revision = preview.buffer.revision + 1;
-        preview.buffer = new_buf;
+        preview.replace_content(&entry_text, crate::document::ops::ContentKind::Load);
         preview.custom_highlights.clear();
-        preview.selection_set.clear();
         preview.convert_to_clipboard_entry(Some(entry_index));
         preview.set_read_only(false);
-        preview.history = crate::history::UndoTree::new();
 
         // Focus the preview pane so the user can edit
         self.split_tree.set_focus(layout.preview_win_id);
@@ -154,26 +142,16 @@ impl<T: TerminalBackend> Editor<T> {
         if !self.clipboard_entry_can_be_replaced(layout.preview_doc_id) {
             return;
         }
-        let mut new_buf = match crate::buffer::TextBuffer::new(64) {
-            Ok(buffer) => buffer,
-            Err(error) => {
-                self.state.handle_error(error);
-                return;
-            }
-        };
         let Some(preview) = self
             .document_manager
             .get_document_mut(layout.preview_doc_id)
         else {
             return;
         };
-        new_buf.revision = preview.buffer.revision + 1;
-        preview.buffer = new_buf;
+        preview.replace_content("", crate::document::ops::ContentKind::Load);
         preview.custom_highlights.clear();
-        preview.selection_set.clear();
         preview.convert_to_clipboard_entry(None);
         preview.set_read_only(false);
-        preview.history = crate::history::UndoTree::new();
 
         self.split_tree.set_focus(layout.preview_win_id);
         let _ = self

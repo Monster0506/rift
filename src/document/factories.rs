@@ -369,21 +369,13 @@ impl Document {
         Ok(doc)
     }
 
-    /// # Errors
-    /// Propagates the error from `TextBuffer::new`.
-    pub(crate) fn new_scratch(
-        id: super::DocumentId,
-        title: String,
-        lines: &[String],
-    ) -> Result<Self, RiftError> {
+    pub(crate) fn new_scratch(id: super::DocumentId, title: String, lines: &[String]) -> Self {
         let content = lines.join("\n");
-        let mut buffer = TextBuffer::new(content.len().max(64))?;
-        let _ = buffer.insert_str(&content);
-        buffer.move_to_start();
+        let buffer = TextBuffer::from_text(&content);
         let mut doc = Self::skeleton(id, buffer);
         doc.kind = BufferKind::scratch();
         doc.state = StateSlot::new(SCRATCH_STATE_KEY, ScratchState { title });
-        Ok(doc)
+        doc
     }
 
     /// # Errors
@@ -397,13 +389,11 @@ impl Document {
         Ok(doc)
     }
 
-    /// # Errors
-    /// Propagates the error from `TextBuffer::new`.
-    pub(crate) fn new_clipboard_preview(id: super::DocumentId) -> Result<Self, RiftError> {
-        let mut doc = Self::new_scratch(id, "[Clipboard:preview]".to_string(), &[])?;
+    pub(crate) fn new_clipboard_preview(id: super::DocumentId) -> Self {
+        let mut doc = Self::new_scratch(id, "[Clipboard:preview]".to_string(), &[]);
         doc.options.show_line_numbers = false;
         doc.set_read_only(true);
-        Ok(doc)
+        doc
     }
 
     /// # Errors
@@ -428,26 +418,20 @@ impl Document {
         Ok(doc)
     }
 
-    /// # Errors
-    /// Propagates the error from `TextBuffer::new`.
     pub(crate) fn new_git_commit_message(
         id: super::DocumentId,
         repo_root: PathBuf,
         target: super::GitCommitTarget,
         initial_message: &str,
-    ) -> Result<Self, RiftError> {
-        let mut buffer = TextBuffer::new(initial_message.len().max(64))?;
-        if !initial_message.is_empty() {
-            let _ = buffer.insert_str(initial_message);
-            buffer.move_to_start();
-        }
+    ) -> Self {
+        let buffer = TextBuffer::from_text(initial_message);
         let mut doc = Self::skeleton(id, buffer);
         doc.kind = BufferKind::git_commit_message();
         doc.state = StateSlot::new(
             GIT_COMMIT_MESSAGE_STATE_KEY,
             GitCommitMessageState { repo_root, target },
         );
-        Ok(doc)
+        doc
     }
 
     /// # Errors
