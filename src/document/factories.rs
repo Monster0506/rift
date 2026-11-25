@@ -133,6 +133,7 @@ impl Document {
             annotations: AnnotationStore::new(),
             selection_set: crate::selection::SelectionSet::default(),
             visual_anchor: None,
+            journal: super::ops::ChangeJournal::default(),
             pending_annotation_snapshot: None,
             annotation_undo_stack: Vec::new(),
             annotation_redo_stack: Vec::new(),

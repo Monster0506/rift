@@ -17,6 +17,7 @@ pub(crate) enum CursorCause {
 impl Document {
     pub(crate) fn set_cursor(&mut self, pos: usize, cause: CursorCause) -> Result<(), RiftError> {
         self.buffer.set_cursor(pos)?;
+        self.record_cursor_change();
         if matches!(cause, CursorCause::Jump | CursorCause::Lsp) {
             self.buffer.clear_desired_col();
         }
@@ -40,7 +41,11 @@ impl Document {
             viewport_height,
             last_search_query,
         );
-        self.buffer.cursor() != before
+        let moved = self.buffer.cursor() != before;
+        if moved {
+            self.record_cursor_change();
+        }
+        moved
     }
 
     pub(crate) fn move_cursor(&mut self, motion: Motion) -> bool {

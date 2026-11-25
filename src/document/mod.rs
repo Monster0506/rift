@@ -207,6 +207,7 @@ pub(crate) struct Document {
     pub(crate) annotations: AnnotationStore,
     selection_set: crate::selection::SelectionSet,
     visual_anchor: Option<usize>,
+    journal: ops::ChangeJournal,
     pending_annotation_snapshot: Option<Vec<crate::annotations::Annotation>>,
     annotation_undo_stack: Vec<AnnotationUndo>,
     annotation_redo_stack: Vec<AnnotationUndo>,

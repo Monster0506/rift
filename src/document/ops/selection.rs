@@ -11,16 +11,23 @@ impl Document {
         self.visual_anchor
     }
 
-    pub(crate) const fn set_selection(&mut self, anchor: Option<usize>) {
-        self.visual_anchor = anchor;
+    pub(crate) fn set_selection(&mut self, anchor: Option<usize>) {
+        if self.visual_anchor != anchor {
+            self.visual_anchor = anchor;
+            self.record_selection_change();
+        }
     }
 
     pub(crate) fn clear_selection(&mut self) {
-        self.selection_set.clear();
+        if !self.selection_set.is_empty() {
+            self.selection_set.clear();
+            self.record_selection_change();
+        }
     }
 
     pub(crate) fn bank_region(&mut self, region: Region) {
         self.selection_set.bank(region, &self.buffer);
+        self.record_selection_change();
     }
 
     pub(crate) fn bank_selection(&mut self, kind: RangeKind) {
@@ -31,11 +38,19 @@ impl Document {
     }
 
     pub(crate) fn bank_occurrence(&mut self, forward: bool) -> Option<(Region, String)> {
-        self.selection_set.bank_occurrence(&self.buffer, forward)
+        let banked = self.selection_set.bank_occurrence(&self.buffer, forward);
+        if banked.is_some() {
+            self.record_selection_change();
+        }
+        banked
     }
 
     pub(crate) fn take_selection_batch(&mut self) -> Vec<Region> {
-        self.selection_set.take_for_batch(&self.buffer)
+        let batch = self.selection_set.take_for_batch(&self.buffer);
+        if !batch.is_empty() {
+            self.record_selection_change();
+        }
+        batch
     }
 
     pub(crate) fn resume_selection(&mut self, kind: RangeKind) {
@@ -52,9 +67,14 @@ impl Document {
             }
             None => self.visual_anchor = Some(cursor),
         }
+        self.record_selection_change();
     }
 
     pub(crate) fn unbank_region(&mut self, region: Region) {
+        let before = self.selection_set.regions.len();
         self.selection_set.regions.retain(|r| *r != region);
+        if self.selection_set.regions.len() != before {
+            self.record_selection_change();
+        }
     }
 }

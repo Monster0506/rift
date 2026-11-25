@@ -32,11 +32,6 @@ impl<T: TerminalBackend> Editor<T> {
             let mut display_map =
                 self.resolve_display_map_cached(doc_id, content_width, cursor, viewport_height);
 
-            let cursor_before = self
-                .document_manager
-                .active_document()
-                .map(|d| (d.id, d.buffer().cursor()));
-
             let doc = self.document_manager.active_document_mut().unwrap();
             let expand_tabs = doc.options.expand_tabs;
             let tab_width = doc.options.tab_width;
@@ -70,7 +65,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.refresh_display_map_after_mutation(doc_id, content_width, viewport_height);
             }
 
-            self.dispatch_buffer_events(command, cursor_before);
+            self.dispatch_buffer_events();
 
             return true;
         }
@@ -104,38 +99,19 @@ impl<T: TerminalBackend> Editor<T> {
             self.resolve_display_map_cached(doc_id, content_width, cursor_after, viewport_height);
     }
 
-    fn dispatch_buffer_events(
-        &mut self,
-        command: crate::command::Command,
-        cursor_before: Option<(crate::document::DocumentId, usize)>,
-    ) {
-        let is_mutating = command.is_mutating();
-        let plugin_events = self.document_manager.active_document().map(|doc| {
-            let buf = doc.id;
-            let cursor_event = cursor_before.and_then(|(prev_buf, prev_cursor)| {
-                let new_cursor = doc.buffer().cursor();
-                if prev_buf != buf || prev_cursor != new_cursor {
-                    let row = doc.buffer().line_index.get_line_at(new_cursor);
-                    let col =
-                        new_cursor.saturating_sub(doc.buffer().line_index.get_line_start(row));
-                    Some((buf, row, col))
-                } else {
-                    None
-                }
-            });
-            (buf, is_mutating, cursor_event)
-        });
-
-        if let Some((buf, mutating, cursor_event)) = plugin_events {
-            if mutating {
-                self.pending_text_changed = Some(buf);
-                #[cfg(feature = "lsp")]
-                self.lsp_notify_change(buf);
-            }
-
-            if let Some(event) = cursor_event {
-                self.pending_cursor_moved = Some(event);
-            }
+    fn dispatch_buffer_events(&mut self) {
+        let Some(doc) = self.document_manager.active_document_mut() else {
+            return;
+        };
+        let buf = doc.id;
+        let changes = doc.drain_changes();
+        if changes.text {
+            self.pending_text_changed = Some(buf);
+            #[cfg(feature = "lsp")]
+            self.lsp_notify_change(buf);
+        }
+        if let Some((row, col)) = changes.cursor {
+            self.pending_cursor_moved = Some((buf, row, col));
         }
     }
 

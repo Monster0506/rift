@@ -226,6 +226,7 @@ impl Document {
             self.annotation_redo_stack.clear();
             self.clear_selection();
         }
+        self.record_text_change();
         self.reparse_syntax();
     }
 
@@ -380,6 +381,9 @@ impl Document {
         }
 
         self.mark_syntax_stale();
+        if origin != Origin::GhostPaint {
+            self.record_text_change();
+        }
         Ok(true)
     }
 
