@@ -114,6 +114,7 @@ pub(crate) enum EditSource {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::document) enum Origin {
     Source(EditSource),
+    Replay,
     GhostPaint,
 }
 
@@ -169,6 +170,7 @@ impl Document {
             self.annotation_redo_stack.clear();
             self.selection_set.clear();
         }
+        self.reparse_syntax();
     }
 
     fn resolve_edit(&self, edit: Edit) -> Option<Resolved> {
@@ -213,7 +215,9 @@ impl Document {
         {
             return Ok(false);
         }
-        self.apply_resolved(resolved, Origin::Source(source))
+        let applied = self.apply_resolved(resolved, Origin::Source(source));
+        self.settle_syntax();
+        applied
     }
 
     #[must_use]
@@ -307,7 +311,7 @@ impl Document {
 
         let line_inserts: Vec<usize> = (0..inserted_newlines).map(|i| start_line + 1 + i).collect();
 
-        if matches!(origin, Origin::Source(_)) {
+        if origin != Origin::GhostPaint {
             let (op, description, hint) = history_entry(
                 removed,
                 &text,
@@ -315,7 +319,12 @@ impl Document {
                 start_byte..new_end_byte,
                 &line_inserts,
             );
-            self.record_edit(op, &description, hint, cursor_before);
+            if origin == Origin::Replay {
+                self.content_version = self.content_version.wrapping_add(1);
+                self.pending_lsp_edits.push(op);
+            } else {
+                self.record_edit(op, &description, hint, cursor_before);
+            }
         }
 
         if let Some(syntax) = &mut self.syntax {
@@ -329,16 +338,19 @@ impl Document {
             );
         }
 
-        self.annotations
-            .on_edit(start_byte, old_end_byte, new_end_byte);
-        if let Some((first_line, count, merge_line)) = deleted_lines {
+        if origin != Origin::Replay {
             self.annotations
-                .on_lines_deleted(first_line, count, merge_line);
-        }
-        for at in line_inserts {
-            self.annotations.on_line_inserted(at);
+                .on_edit(start_byte, old_end_byte, new_end_byte);
+            if let Some((first_line, count, merge_line)) = deleted_lines {
+                self.annotations
+                    .on_lines_deleted(first_line, count, merge_line);
+            }
+            for at in line_inserts {
+                self.annotations.on_line_inserted(at);
+            }
         }
 
+        self.mark_syntax_stale();
         Ok(true)
     }
 

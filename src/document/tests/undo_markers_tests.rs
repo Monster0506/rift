@@ -6,7 +6,7 @@ use crate::document::ops::{Edit, EditSource};
 fn test_undo_binary_data() {
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let binary_char = crate::character::Character::Byte(0xFF);
-    doc.buffer.insert_character(binary_char);
+    doc.replace_content(binary_char, crate::document::ops::ContentKind::Render);
 
     assert_eq!(doc.buffer.len(), 1);
     assert_eq!(doc.buffer.char_at(0), Some(binary_char));

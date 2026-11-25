@@ -202,10 +202,6 @@ impl TextBuffer {
         Ok(())
     }
 
-    pub(crate) fn insert_character(&mut self, ch: Character) {
-        self.insert_chars(&[ch]);
-    }
-
     #[cfg(test)]
     pub(crate) fn insert_bytes(&mut self, bytes: &[u8]) {
         let mut chars = Vec::with_capacity(bytes.len());

@@ -4,7 +4,7 @@ use crate::action::{Action, EditorAction};
 use crate::buffer::api::BufferView;
 use crate::clipboard::Clip;
 use crate::command::Command;
-use crate::document::ops::{Edit, EditSource};
+use crate::document::ops::PutAt;
 use crate::document::runtime::{ActionDispatch, BufferKindId, NavigationPolicy};
 use crate::mode::Mode;
 use crate::search::SearchDirection;
@@ -897,7 +897,12 @@ impl<T: TerminalBackend> Editor<T> {
                     doc.undo();
                     let _ = doc.buffer.set_cursor(state.original_cursor);
                 }
-                let result = self.insert_text_at_cursor(&clip, state.before);
+                let result = self.put_into_active(
+                    &clip,
+                    PutAt::Cursor {
+                        before: state.before,
+                    },
+                );
                 if result {
                     self.post_paste_state = Some(PostPasteState {
                         ring_index: next,
@@ -928,7 +933,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .active_document_mut()
                     .is_some_and(|doc| doc.put_clipboard_rows(&rows, side));
             }
-            return self.insert_text_at_cursor(&register.clip, before);
+            return self.put_into_active(&register.clip, PutAt::Cursor { before });
         }
 
         if self.current_mode.is_visual() {
@@ -976,9 +981,9 @@ impl<T: TerminalBackend> Editor<T> {
             .active_document()
             .map_or(0, |d| d.buffer.cursor());
         let result = if let Some(origin) = same_location_origin {
-            self.insert_ghost_text_verbatim(clip.text(), origin)
+            self.put_into_active(&clip, PutAt::Verbatim(origin))
         } else {
-            self.insert_text_at_cursor(&clip, before)
+            self.put_into_active(&clip, PutAt::Cursor { before })
         };
         if result {
             self.post_paste_state = Some(PostPasteState {
@@ -991,9 +996,6 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn replace_visual_selection(&mut self, register: PutRegister) -> bool {
-        use crate::character::Character;
-        use crate::wrap::RangeKind;
-
         let Some(anchor) = self.visual_anchor else {
             return false;
         };
@@ -1023,68 +1025,25 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(doc) = self.document_manager.active_document_mut() else {
             return false;
         };
-        let cursor = doc.buffer.cursor();
-        let region = crate::selection::Region::new(anchor, cursor, kind);
-        // Replacement keeps the separator before a final line, unlike a line deletion.
-        let (start, end) = region.buffer_span(&doc.buffer);
-        let start = start.min(doc.buffer.len());
-        let end = end.min(doc.buffer.len());
         let selected = matches!(register, PutRegister::Replace).then(|| {
             crate::clipboard::capture_text(
                 &doc.buffer,
                 &crate::wrap::MotionRange {
                     anchor,
-                    new_cursor: cursor,
+                    new_cursor: doc.buffer.cursor(),
                     kind,
                     inclusive: true,
                 },
             )
         });
-        let target_linewise = kind == RangeKind::Linewise;
-        let source_linewise = clip.kind() == RangeKind::Linewise;
-        let last_selected_line = doc.buffer.line_index.get_line_at(anchor.max(cursor));
-        let has_following_line = last_selected_line + 1 < doc.buffer.get_total_lines();
-        let text = if target_linewise && source_linewise && !has_following_line {
-            clip.text()
-                .strip_suffix(&[Character::Newline])
-                .unwrap_or_else(|| clip.text())
-        } else {
-            clip.text()
-        };
-
-        let _ = doc.buffer.set_cursor(start);
-        doc.begin_transaction("Put");
-        let _ = doc.edit(Edit::delete(start..end), EditSource::User);
-        if source_linewise && !target_linewise {
-            let _ = doc.edit(Edit::type_text(Character::Newline), EditSource::User);
-        }
-        let inserted_start = doc.buffer.cursor();
-        for _ in 1..count {
-            let _ = doc.edit(Edit::type_text(clip.text()), EditSource::User);
-        }
-        let _ = doc.edit(Edit::type_text(text), EditSource::User);
-        if target_linewise && !source_linewise && has_following_line {
-            let _ = doc.edit(Edit::type_text(Character::Newline), EditSource::User);
-        }
-        let inserted_cursor = if target_linewise || source_linewise {
-            let first_line_end = text
-                .iter()
-                .position(|&ch| ch == Character::Newline)
-                .unwrap_or(text.len());
-            let first_nonblank = text[..first_line_end]
-                .iter()
-                .position(|&ch| !matches!(ch, Character::Unicode(' ') | Character::Tab))
-                .unwrap_or_else(|| first_line_end.saturating_sub(1));
-            inserted_start + first_nonblank
-        } else if text.contains(&Character::Newline) {
-            inserted_start
-        } else {
-            doc.buffer.cursor().saturating_sub(1)
-        };
-        let _ = doc.buffer.set_cursor(inserted_cursor.min(doc.buffer.len()));
-        doc.buffer.clear_desired_col();
-        doc.selection_set.clear();
-        doc.commit_transaction();
+        doc.put(
+            &clip,
+            PutAt::Selection {
+                anchor,
+                kind,
+                count,
+            },
+        );
 
         if let Some(selected) = selected {
             self.clipboard_ring.push(selected);
@@ -1093,7 +1052,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.post_paste_state = None;
         self.visual_anchor = None;
         self.set_mode(Mode::Normal);
-        self.do_incremental_syntax_parse();
+
         true
     }
 
@@ -1112,7 +1071,7 @@ impl<T: TerminalBackend> Editor<T> {
                         self.finish_region_build(Some(action.clone()));
                         return true;
                     }
-                    self.insert_text_at_cursor(&clip, *before)
+                    self.put_into_active(&clip, PutAt::Cursor { before: *before })
                 } else {
                     false
                 }
@@ -1556,102 +1515,9 @@ impl<T: TerminalBackend> Editor<T> {
         self.document_manager.set_most_recent_ghost_doc(None);
     }
 
-    fn insert_ghost_text_verbatim(
-        &mut self,
-        text: &[crate::character::Character],
-        pos: usize,
-    ) -> bool {
-        let Some(doc) = self.document_manager.active_document_mut() else {
-            return false;
-        };
-        let _ = doc.buffer.set_cursor(pos);
-        doc.begin_transaction("Put");
-        let _ = doc.edit(Edit::type_text(text), EditSource::User);
-        doc.commit_transaction();
-        let _ = doc.buffer.set_cursor(pos);
-        self.do_incremental_syntax_parse();
-        true
-    }
-
-    pub(super) fn insert_text_at_cursor(&mut self, clip: &Clip, before: bool) -> bool {
-        let text = clip.text();
-        let is_linewise = clip.kind() == crate::wrap::RangeKind::Linewise;
-
-        let Some(doc) = self.document_manager.active_document_mut() else {
-            return false;
-        };
-        if doc.is_read_only() {
-            return false;
-        }
-
-        let mut needs_leading_newline = false;
-
-        if is_linewise {
-            if before {
-                doc.buffer.move_to_line_start();
-            } else {
-                let line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
-                let total = doc.buffer.get_total_lines();
-                if line + 1 < total {
-                    let next = doc
-                        .buffer
-                        .line_index
-                        .get_start(line + 1)
-                        .unwrap_or(doc.buffer.len());
-                    let _ = doc.buffer.set_cursor(next);
-                } else {
-                    doc.buffer.move_to_end();
-                    needs_leading_newline = true;
-                }
-            }
-        } else if !before {
-            doc.buffer.move_right();
-        }
-
-        let start = if needs_leading_newline {
-            doc.buffer.cursor() + 1
-        } else {
-            doc.buffer.cursor()
-        };
-        let cursor_at_start = is_linewise || text.contains(&crate::character::Character::Newline);
-
-        doc.begin_transaction("Put");
-        if needs_leading_newline {
-            let _ = doc.edit(
-                Edit::type_text(crate::character::Character::Newline),
-                EditSource::User,
-            );
-            let trimmed = text
-                .strip_suffix(&[crate::character::Character::Newline])
-                .unwrap_or(text);
-            let _ = doc.edit(Edit::type_text(trimmed), EditSource::User);
-        } else {
-            let _ = doc.edit(Edit::type_text(text), EditSource::User);
-        }
-        doc.commit_transaction();
-
-        if cursor_at_start {
-            let _ = doc.buffer.set_cursor(start);
-        }
-
-        self.do_incremental_syntax_parse();
-        true
-    }
-
-    pub(super) fn insert_pasted_text_at_cursor(&mut self, text: &str) -> bool {
-        if text.is_empty() {
-            return false;
-        }
-        let Some(doc) = self.document_manager.active_document_mut() else {
-            return false;
-        };
-        if doc.is_read_only() {
-            return false;
-        }
-        doc.begin_transaction("Paste");
-        let _ = doc.edit(Edit::type_text(text), EditSource::User);
-        doc.commit_transaction();
-        self.do_incremental_syntax_parse();
-        true
+    pub(super) fn put_into_active(&mut self, clip: &Clip, at: PutAt) -> bool {
+        self.document_manager
+            .active_document_mut()
+            .is_some_and(|doc| doc.put(clip, at))
     }
 }

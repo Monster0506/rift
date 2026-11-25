@@ -152,7 +152,7 @@ impl<T: TerminalBackend> Editor<T> {
             .get_document(doc_id)
             .is_some_and(|d| d.syntax.is_some())
         {
-            self.do_incremental_syntax_parse_for(doc_id);
+            self.reparse_syntax(doc_id);
         } else {
             self.state.notify(
                 crate::notification::NotificationType::Warning,

@@ -55,8 +55,10 @@ impl<T: TerminalBackend> Editor<T> {
             self.pending_keys_started_at = None;
         }
 
+        self.drain_syntax_sync();
         let mut jobs_changed = self.drain_job_messages();
         self.replay_deferred_keys()?;
+        self.drain_syntax_sync();
         self.poll_pending_syntax_reparse();
         self.poll_pending_search_refresh();
         self.poll_git_gutter_diff();
@@ -648,7 +650,12 @@ impl<T: TerminalBackend> Editor<T> {
 
         match self.current_mode {
             Mode::Insert => {
-                self.insert_pasted_text_at_cursor(text);
+                let clip = crate::clipboard::Clip::from_plain(
+                    text.chars()
+                        .map(crate::character::Character::from)
+                        .collect(),
+                );
+                self.put_into_active(&clip, crate::document::ops::PutAt::Paste);
             }
             Mode::Replace => {
                 self.replace_paste(text);
@@ -659,11 +666,12 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             _ => {
-                let chars: Vec<crate::character::Character> = text
-                    .chars()
-                    .map(crate::character::Character::from)
-                    .collect();
-                self.insert_text_at_cursor(&crate::clipboard::Clip::from_plain(chars), false);
+                let clip = crate::clipboard::Clip::from_plain(
+                    text.chars()
+                        .map(crate::character::Character::from)
+                        .collect(),
+                );
+                self.put_into_active(&clip, crate::document::ops::PutAt::Cursor { before: false });
                 self.clamp_normal_cursor();
             }
         }

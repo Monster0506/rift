@@ -66,9 +66,9 @@ impl Document {
         self.ghost_clip = None;
     }
 
-    pub(crate) fn begin_ghost_paint(&mut self) -> Option<crate::document::syntax_sync::SyntaxSync> {
+    pub(crate) fn begin_ghost_paint(&mut self) {
         if self.pending_ghost.is_empty() {
-            return None;
+            return;
         }
         debug_assert!(self.ghost_paint_cursor.is_none(), "ghost paint re-entered");
         let real_cursor = self.buffer.cursor();
@@ -118,11 +118,13 @@ impl Document {
         let _ = self
             .buffer
             .set_cursor((real_cursor + cursor_shift).min(self.buffer.len()));
-        Some(self.resync_syntax())
+        self.settle_syntax();
     }
 
-    pub(crate) fn end_ghost_paint(&mut self) -> Option<crate::document::syntax_sync::SyntaxSync> {
-        let real_cursor = self.ghost_paint_cursor.take()?;
+    pub(crate) fn end_ghost_paint(&mut self) {
+        let Some(real_cursor) = self.ghost_paint_cursor.take() else {
+            return;
+        };
 
         let mut order: Vec<(usize, usize)> = self
             .pending_ghost
@@ -149,6 +151,6 @@ impl Document {
         }
 
         let _ = self.buffer.set_cursor(real_cursor.min(self.buffer.len()));
-        Some(self.resync_syntax())
+        self.settle_syntax();
     }
 }

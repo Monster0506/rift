@@ -24,7 +24,7 @@ fn stale_syntax_job_result_does_not_clobber_newer_state() {
         .map(Arc::new);
     let syntax = build_syntax(grammar, highlights, &loader);
     editor.active_document().set_syntax(syntax);
-    editor.do_incremental_syntax_parse();
+    editor.reparse_syntax(editor.active_document_id());
 
     let doc_id = editor.active_document_id();
 
@@ -82,12 +82,11 @@ fn undo_keeps_syntax_tree_for_incremental_reuse() {
         .map(Arc::new);
     let syntax = build_syntax(grammar, highlights, &loader);
     editor.active_document().set_syntax(syntax);
-    editor.do_incremental_syntax_parse();
+    editor.reparse_syntax(editor.active_document_id());
 
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertModeAtLineEnd));
     editor.handle_action(&Action::Editor(EditorAction::InsertChar(';')));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    editor.do_incremental_syntax_parse();
     assert!(editor
         .active_document()
         .syntax
@@ -129,7 +128,7 @@ fn set_aware_delete_keeps_syntax_highlights_in_sync() {
         .map(Arc::new);
     let syntax = build_syntax(grammar, highlights_query, &loader);
     editor.active_document().set_syntax(syntax);
-    editor.do_incremental_syntax_parse();
+    editor.reparse_syntax(editor.active_document_id());
 
     editor.active_document().buffer.set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualLine));
@@ -178,7 +177,7 @@ fn ghost_paint_keeps_syntax_highlights_in_sync_while_painted() {
         .map(Arc::new);
     let syntax = build_syntax(grammar, highlights_query, &loader);
     editor.active_document().set_syntax(syntax);
-    editor.do_incremental_syntax_parse();
+    editor.reparse_syntax(editor.active_document_id());
 
     editor.active_document().buffer.set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::Operator(
@@ -193,7 +192,6 @@ fn ghost_paint_keeps_syntax_highlights_in_sync_while_painted() {
         .get_document_mut(doc_id)
         .unwrap()
         .begin_ghost_paint();
-    editor.do_incremental_syntax_parse_for(doc_id);
 
     let painted_highlights = document_highlights(&mut editor);
     let fresh_highlights = fresh_highlights(&mut editor);

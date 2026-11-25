@@ -199,7 +199,7 @@ fn goto_past_last_line_lands_on_last_text_line() {
 
 #[cfg(feature = "lsp")]
 #[test]
-fn undo_forces_a_full_lsp_resync_instead_of_a_bogus_incremental_delta() {
+fn undo_sends_its_inverse_as_an_incremental_lsp_change() {
     use crate::lsp::protocol::PositionEncoding;
     let mut editor = create_editor();
     let doc = editor.active_document();
@@ -211,11 +211,12 @@ fn undo_forces_a_full_lsp_resync_instead_of_a_bogus_incremental_delta() {
 
     assert!(doc.undo());
     assert!(doc.has_pending_lsp_edits(), "undo changed the buffer");
-    assert!(
-        doc.take_incremental_lsp_changes(PositionEncoding::Utf16)
-            .is_none(),
-        "undo bypasses edit recording, so only a full sync is safe"
-    );
+    let (range, text) = doc
+        .take_incremental_lsp_changes(PositionEncoding::Utf16)
+        .expect("undo records the inverse edit");
+    assert_eq!((range.start.line, range.start.character), (0, 0));
+    assert_eq!((range.end.line, range.end.character), (0, 3));
+    assert!(text.is_empty());
     assert!(
         !doc.has_pending_lsp_edits(),
         "the drain marks the buffer synced"

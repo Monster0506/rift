@@ -186,9 +186,7 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
             }
-            if ghosted_doc.is_some() {
-                self.do_incremental_syntax_parse();
-            }
+
             if let Some(id) = ghosted_doc {
                 self.document_manager.set_most_recent_ghost_doc(Some(id));
             }
@@ -262,9 +260,7 @@ impl<T: TerminalBackend> Editor<T> {
                             ghosted_doc = Some(doc.id);
                         }
                     }
-                    if ghosted_doc.is_some() {
-                        self.do_incremental_syntax_parse();
-                    }
+
                     if let Some(id) = ghosted_doc {
                         self.document_manager.set_most_recent_ghost_doc(Some(id));
                     }

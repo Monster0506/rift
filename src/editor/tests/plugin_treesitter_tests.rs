@@ -327,7 +327,6 @@ fn syntax_updated_hands_handlers_the_reparsed_tree() {
         .active_document()
         .edit(Edit::type_text("fn extra() {}\n"), EditSource::User)
         .unwrap();
-    editor.do_incremental_syntax_parse();
     editor.update_and_render().unwrap();
     lua(
         &mut editor,

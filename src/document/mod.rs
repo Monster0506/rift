@@ -2,7 +2,6 @@ pub(crate) mod clipboard;
 pub(crate) mod definitions;
 pub(crate) mod factories;
 mod ghost;
-mod history;
 pub(crate) mod kind;
 pub(crate) mod manager;
 pub(crate) mod ops;
@@ -216,6 +215,7 @@ pub(crate) struct Document {
     pub(crate) pending_ghost: Vec<GhostCut>,
     ghost_clip: Option<crate::clipboard::Clip>,
     ghost_paint_cursor: Option<usize>,
+    syntax_settle: syntax_sync::SyntaxSettle,
 }
 
 macro_rules! state_get {

@@ -1,7 +1,7 @@
 use super::Editor;
 use crate::character::Character;
 use crate::clipboard::Clip;
-use crate::document::ops::{Edit, EditSource};
+use crate::document::ops::{Edit, EditSource, PutAt};
 use crate::document::Document;
 use crate::selection::Region;
 use crate::term::TerminalBackend;
@@ -41,27 +41,6 @@ fn fill_runs(buf: &crate::buffer::TextBuffer, region: &Region) -> Vec<(usize, us
     runs.push((run_start, end - run_start));
     runs.retain(|&(_, len)| len > 0);
     runs
-}
-
-fn put_lines(doc: &mut Document, offset: usize, before: bool, text: &[Character]) {
-    let line = doc.buffer.line_index.get_line_at(offset);
-    let next_line = line + 1;
-    let (pos, needs_newline) = if before {
-        (line_start_offset(&doc.buffer, line), false)
-    } else if next_line < doc.buffer.get_total_lines() {
-        (line_start_offset(&doc.buffer, next_line), false)
-    } else {
-        (doc.buffer.len(), true)
-    };
-    let _ = doc.buffer.set_cursor(pos);
-    if !needs_newline {
-        let _ = doc.edit(Edit::type_text(text), EditSource::User);
-        return;
-    }
-
-    let trimmed = text.strip_suffix(&[Character::Newline]).unwrap_or(text);
-    let _ = doc.edit(Edit::type_text(Character::Newline), EditSource::User);
-    let _ = doc.edit(Edit::type_text(trimmed), EditSource::User);
 }
 
 fn region_clip(buf: &crate::buffer::TextBuffer, region: &Region) -> Clip {
@@ -215,7 +194,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = self.document_manager.active_document_mut() {
             doc.commit_transaction();
         }
-        self.do_incremental_syntax_parse();
+
         any
     }
 
@@ -253,7 +232,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             anchors
         };
-        self.do_incremental_syntax_parse();
+
         let mut anchors = anchors;
         let first = anchors.remove(0);
         self.pending_multi_insert_anchors = anchors;
@@ -458,9 +437,7 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 doc.id
             });
-            if ghosted_doc.is_some() {
-                self.do_incremental_syntax_parse();
-            }
+
             if let Some(id) = ghosted_doc {
                 self.document_manager.set_most_recent_ghost_doc(Some(id));
             }
@@ -473,7 +450,7 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 doc.commit_transaction();
             }
-            self.do_incremental_syntax_parse();
+
             true
         }
     }
@@ -575,7 +552,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = self.document_manager.active_document_mut() {
             doc.commit_transaction();
         }
-        self.do_incremental_syntax_parse();
+
         any
     }
 
@@ -609,21 +586,12 @@ impl<T: TerminalBackend> Editor<T> {
         if is_empty {
             return false;
         }
-        let text = clip.text().to_vec();
-        let is_linewise = clip.kind() == RangeKind::Linewise;
         self.apply_to_each_region(|editor, region| {
             let Some(doc) = editor.document_manager.active_document_mut() else {
                 return false;
             };
             let (start, end) = region.buffer_span(&doc.buffer);
-            if is_linewise {
-                let offset = if before { start } else { end.saturating_sub(1) };
-                put_lines(doc, offset, before, &text);
-                return true;
-            }
-            let pos = if before { start } else { end };
-            let _ = doc.edit(Edit::insert(pos, &text), EditSource::User);
-            true
+            doc.put(clip, PutAt::Region { start, end, before })
         })
     }
 

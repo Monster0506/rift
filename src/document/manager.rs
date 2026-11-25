@@ -279,6 +279,15 @@ impl DocumentManager {
         self.documents.values()
     }
 
+    pub(crate) fn take_syntax_notices(
+        &mut self,
+    ) -> Vec<(DocumentId, crate::document::syntax_sync::SyntaxNotice)> {
+        self.documents
+            .values_mut()
+            .filter_map(|doc| Some((doc.id, doc.take_syntax_notice()?)))
+            .collect()
+    }
+
     pub(crate) fn tabs(&self) -> impl Iterator<Item = (&Document, bool)> {
         self.tab_order
             .iter()

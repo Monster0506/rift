@@ -64,7 +64,6 @@ impl<T: TerminalBackend> Editor<T> {
         doc.commit_transaction();
 
         self.replace_originals.extend(entries);
-        self.do_incremental_syntax_parse();
     }
 
     pub(super) fn replace_backspace(&mut self) {

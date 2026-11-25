@@ -607,7 +607,6 @@ impl<T: TerminalBackend> Editor<T> {
             }
             _ => {}
         }
-        self.do_incremental_syntax_parse_for(buf);
     }
 
     fn apply_cursor_mutation(&mut self, mutation: PluginMutation) {

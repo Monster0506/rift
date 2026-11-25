@@ -174,7 +174,7 @@ fn non_wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
             .map(Arc::new);
         let syntax = build_syntax(grammar, highlights, &loader);
         editor.active_document().set_syntax(syntax);
-        editor.do_incremental_syntax_parse();
+        editor.reparse_syntax(editor.active_document_id());
         drain_jobs_until_idle(&mut editor);
         ensure_syntax_parsed(&mut editor);
 
@@ -241,7 +241,7 @@ fn load_rust_syntax_and_parse(editor: &mut Editor<MockTerminal>) {
         .map(Arc::new);
     let syntax = build_syntax(grammar, highlights, &loader);
     editor.active_document().set_syntax(syntax);
-    editor.do_incremental_syntax_parse();
+    editor.reparse_syntax(editor.active_document_id());
     drain_jobs_until_idle(editor);
     ensure_syntax_parsed(editor);
 }
@@ -422,7 +422,7 @@ fn scroll_blit_repaints_when_annotations_or_theme_change_mid_scroll() {
             .map(Arc::new);
         let syntax = build_syntax(grammar, highlights, &loader);
         editor.active_document().set_syntax(syntax);
-        editor.do_incremental_syntax_parse();
+        editor.reparse_syntax(editor.active_document_id());
         drain_jobs_until_idle(&mut editor);
         ensure_syntax_parsed(&mut editor);
 

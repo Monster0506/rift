@@ -65,6 +65,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn update_state(&mut self) -> Option<FrameState> {
         crate::perf_span!("update_state", crate::perf::PerfFields::default());
         self.flush_pending_text_changed();
+        self.drain_syntax_sync();
         self.flush_pending_syntax_updated();
         self.flush_pending_cursor_moved();
         self.update_annotation_hover();
@@ -203,26 +204,19 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn begin_ghost_paint(&mut self, visible: &[crate::document::DocumentId]) {
         for &id in visible {
-            let Some(doc) = self.document_manager.get_document_mut(id) else {
-                continue;
-            };
-            let Some(outcome) = doc.begin_ghost_paint() else {
-                continue;
-            };
-            self.apply_syntax_sync(id, outcome);
+            if let Some(doc) = self.document_manager.get_document_mut(id) {
+                doc.begin_ghost_paint();
+            }
         }
     }
 
     fn end_ghost_paint(&mut self, visible: &[crate::document::DocumentId]) {
         for &id in visible {
-            let Some(doc) = self.document_manager.get_document_mut(id) else {
-                continue;
-            };
-            let Some(outcome) = doc.end_ghost_paint() else {
-                continue;
-            };
-            self.apply_syntax_sync(id, outcome);
+            if let Some(doc) = self.document_manager.get_document_mut(id) {
+                doc.end_ghost_paint();
+            }
         }
+        self.drain_syntax_sync();
     }
 
     /// # Errors

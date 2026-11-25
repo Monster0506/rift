@@ -26,3 +26,21 @@ fn loading_content_advances_the_revision_and_resets_undo_state() {
         )
         .is_empty());
 }
+
+#[test]
+fn undo_and_redo_queue_lsp_changes_and_bump_the_content_version() {
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
+    doc.edit(Edit::type_text("abc"), EditSource::User).unwrap();
+    doc.discard_pending_lsp_changes();
+
+    let version = doc.version();
+    assert!(doc.undo());
+    assert!(doc.version() > version);
+    assert_eq!(doc.pending_lsp_edits.len(), 1);
+
+    doc.discard_pending_lsp_changes();
+    let version = doc.version();
+    assert!(doc.redo());
+    assert!(doc.version() > version);
+    assert_eq!(doc.pending_lsp_edits.len(), 1);
+}

@@ -142,6 +142,7 @@ impl Document {
             pending_ghost: Vec::new(),
             ghost_clip: None,
             ghost_paint_cursor: None,
+            syntax_settle: super::syntax_sync::SyntaxSettle::default(),
         }
     }
 

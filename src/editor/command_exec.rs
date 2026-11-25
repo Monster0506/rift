@@ -67,7 +67,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
 
             if is_mutating {
-                self.reparse_after_mutation(doc_id, content_width, viewport_height);
+                self.refresh_display_map_after_mutation(doc_id, content_width, viewport_height);
             }
 
             self.dispatch_buffer_events(command, cursor_before);
@@ -90,14 +90,12 @@ impl<T: TerminalBackend> Editor<T> {
         (doc.id, content_width, doc.buffer.cursor())
     }
 
-    fn reparse_after_mutation(
+    fn refresh_display_map_after_mutation(
         &mut self,
         doc_id: crate::document::DocumentId,
         content_width: usize,
         viewport_height: usize,
     ) {
-        self.do_incremental_syntax_parse();
-
         let cursor_after = self
             .document_manager
             .active_document()
@@ -182,35 +180,23 @@ impl<T: TerminalBackend> Editor<T> {
         });
     }
 
-    pub(super) fn do_incremental_syntax_parse(&mut self) {
-        if let Some(doc_id) = self.document_manager.active_document_id() {
-            self.do_incremental_syntax_parse_for(doc_id);
-        }
-    }
-
-    pub(super) fn do_incremental_syntax_parse_for(&mut self, doc_id: crate::document::DocumentId) {
-        let Some(doc) = self.document_manager.get_document_mut(doc_id) else {
-            return;
-        };
-        let outcome = doc.resync_syntax();
-        self.apply_syntax_sync(doc_id, outcome);
-    }
-
-    pub(super) fn apply_syntax_sync(
-        &mut self,
-        doc_id: crate::document::DocumentId,
-        outcome: crate::document::syntax_sync::SyntaxSync,
-    ) {
-        match outcome {
-            #[cfg(feature = "treesitter")]
-            crate::document::syntax_sync::SyntaxSync::Completed => {
+    pub(super) fn drain_syntax_sync(&mut self) {
+        for (doc_id, notice) in self.document_manager.take_syntax_notices() {
+            if notice.completed {
                 self.cancel_pending_syntax_reparse(doc_id);
                 self.pending_syntax_updated.insert(doc_id);
             }
-            crate::document::syntax_sync::SyntaxSync::Deferred => {
+            if notice.deferred {
                 self.debounce_syntax_reparse(doc_id);
             }
-            crate::document::syntax_sync::SyntaxSync::NoSyntax => {}
         }
+    }
+
+    #[cfg(feature = "treesitter")]
+    pub(super) fn reparse_syntax(&mut self, doc_id: crate::document::DocumentId) {
+        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+            doc.reparse_syntax();
+        }
+        self.drain_syntax_sync();
     }
 }
