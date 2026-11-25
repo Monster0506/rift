@@ -193,7 +193,7 @@ impl<T: TerminalBackend> Editor<T> {
         let hash = self
             .document_manager
             .get_document(doc_id)
-            .map(|doc| crate::history::persist::sha256(&doc.buffer.to_logical_bytes()));
+            .map(|doc| crate::history::persist::sha256(&doc.buffer().to_logical_bytes()));
         if let Some(hash) = hash {
             self.restore_persisted_undo(doc_id, hash);
         }
@@ -265,7 +265,7 @@ impl<T: TerminalBackend> Editor<T> {
         let old_win_id = self.split_tree.focused_window_id();
         let old_doc_id = self.split_tree.focused_window().document_id;
         if let Some(doc) = self.document_manager.get_document(old_doc_id) {
-            let cursor = doc.buffer.cursor();
+            let cursor = doc.buffer().cursor();
             self.split_tree.focused_window_mut().cursor_position = cursor;
         }
 
@@ -284,7 +284,7 @@ impl<T: TerminalBackend> Editor<T> {
         let new_cursor = self.split_tree.focused_window().cursor_position;
         let _ = self.document_manager.switch_to_document(new_doc_id);
         if let Some(doc) = self.document_manager.get_document_mut(new_doc_id) {
-            let _ = doc.buffer.set_cursor(new_cursor);
+            let _ = doc.buffer_mut().set_cursor(new_cursor);
         }
 
         self.sync_state_with_active_document();
@@ -330,8 +330,8 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.set_file_path(file_path);
         self.state.update_dirty(is_dirty);
 
-        let total_lines = self.active_document().buffer.last_real_line() + 1;
-        let buffer_size = self.active_document().buffer.len();
+        let total_lines = self.active_document().buffer().last_real_line() + 1;
+        let buffer_size = self.active_document().buffer().len();
         self.state
             .update_buffer_stats(total_lines, buffer_size, line_ending);
 

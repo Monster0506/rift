@@ -96,7 +96,7 @@ impl<T: TerminalBackend> Editor<T> {
             ) else {
                 return;
             };
-            let line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
+            let line = doc.buffer().line_index.get_line_at(doc.buffer().cursor());
             let Some(sha) = doc.annotations.git_blame_sha_at_line(line) else {
                 return;
             };
@@ -250,7 +250,7 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.get_document(window.document_id) else {
                 return;
             };
-            let buffer_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
+            let buffer_line = doc.buffer().line_index.get_line_at(doc.buffer().cursor());
             doc.annotations
                 .git_blame_source_line_at_line(buffer_line)
                 .unwrap_or(buffer_line)
@@ -273,14 +273,14 @@ impl<T: TerminalBackend> Editor<T> {
             .annotations
             .git_blame_line_for_source_line(line)
             .unwrap_or(line)
-            .min(target_doc.buffer.get_total_lines().saturating_sub(1));
+            .min(target_doc.buffer().get_total_lines().saturating_sub(1));
         let cursor = target_doc
-            .buffer
+            .buffer()
             .line_index
             .get_start(target_line)
             .unwrap_or(0);
         target_doc
-            .buffer
+            .buffer_mut()
             .set_cursor(cursor)
             .expect("line index must return a valid cursor offset");
         if let Some(window) = self.split_tree.get_window_mut(target_window_id) {

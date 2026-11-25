@@ -34,7 +34,7 @@ fn rust_parser() -> Parser {
 
 fn make_buffer(src: &str) -> TextBuffer {
     let mut buffer = TextBuffer::new(src.len().max(16)).unwrap();
-    buffer.insert_str(src).unwrap();
+    crate::document::ops::Edit::type_text(src).apply_to(&mut buffer);
     buffer
 }
 
@@ -54,7 +54,7 @@ fn job_reparse(syntax: &mut Syntax, buffer: &TextBuffer) {
         syntax.tree.clone(),
         "rust".to_string(),
         crate::document::DocumentId::new(1),
-        buffer.revision,
+        buffer.revision(),
     );
     let result = run_job(job);
     assert!(result.tree.is_some());
@@ -86,7 +86,7 @@ fn insert(syntax: &mut Syntax, buffer: &mut TextBuffer, pos: usize, text: &str) 
     let old_source = buffer.to_logical_bytes();
     let start_byte = buffer.char_to_byte(pos);
     buffer.set_cursor(pos).unwrap();
-    buffer.insert_str(text).unwrap();
+    crate::document::ops::Edit::type_text(text).apply_to(buffer);
     let new_end_byte = start_byte + text.len();
     let new_source = buffer.to_logical_bytes();
 

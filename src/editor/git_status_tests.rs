@@ -63,7 +63,7 @@ fn open_git_status_populates_sections_from_a_real_repo() {
 
     let doc = editor.document_manager.active_document().unwrap();
     assert!(doc.is_git_status());
-    let text = doc.buffer.to_string();
+    let text = doc.buffer().to_string();
     assert!(text.contains("Unstaged changes"), "{text}");
     assert!(text.contains("tracked.txt"), "{text}");
     assert!(text.contains("Untracked files"), "{text}");
@@ -84,15 +84,15 @@ fn cursor_stage_action_runs_git_add_and_refreshes_the_buffer() {
     let doc_id = editor.active_document_id();
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
-        let target_line = (0..doc.buffer.get_total_lines())
+        let target_line = (0..doc.buffer().get_total_lines())
             .find(|&l| {
                 doc.annotations
                     .git_status_entry_at_line(l)
                     .is_some_and(|(p, ..)| p == "new.txt")
             })
             .expect("must find new.txt line");
-        let start = doc.buffer.line_index.get_start(target_line).unwrap();
-        let _ = doc.buffer.set_cursor(start);
+        let start = doc.buffer().line_index.get_start(target_line).unwrap();
+        let _ = doc.buffer_mut().set_cursor(start);
     }
     editor.git_status_cursor_action("stage");
     drain_jobs(&mut editor);
@@ -107,15 +107,15 @@ fn cursor_stage_action_runs_git_add_and_refreshes_the_buffer() {
 
 fn cursor_to_entry<T: crate::term::TerminalBackend>(editor: &mut Editor<T>, path: &str) {
     let doc = editor.document_manager.active_document_mut().unwrap();
-    let line = (0..doc.buffer.get_total_lines())
+    let line = (0..doc.buffer().get_total_lines())
         .find(|&l| {
             doc.annotations
                 .git_status_entry_at_line(l)
                 .is_some_and(|(p, ..)| p == path)
         })
         .expect("status entry line");
-    let start = doc.buffer.line_index.get_start(line).unwrap();
-    let _ = doc.buffer.set_cursor(start);
+    let start = doc.buffer().line_index.get_start(line).unwrap();
+    let _ = doc.buffer_mut().set_cursor(start);
 }
 
 fn porcelain(dir: &std::path::Path) -> String {
@@ -202,13 +202,13 @@ fn git_status_buffer_is_read_only_and_wq_reports_cannot_be_saved() {
     let doc = editor.document_manager.active_document().unwrap();
     assert!(doc.is_read_only(), "GitStatus must be read-only");
 
-    let before = doc.buffer.to_string();
+    let before = doc.buffer().to_string();
     assert!(!editor.execute_buffer_command(crate::command::Command::DeleteLine(1)));
     let after = editor
         .document_manager
         .active_document()
         .unwrap()
-        .buffer
+        .buffer()
         .to_string();
     assert_eq!(
         before, after,
@@ -310,7 +310,7 @@ fn commit_amend_prefills_head_message_and_amends_in_place() {
     editor.open_git_commit_amend();
 
     let doc = editor.document_manager.active_document().unwrap();
-    assert_eq!(doc.buffer.to_string().trim(), "init");
+    assert_eq!(doc.buffer().to_string().trim(), "init");
 
     let commit_doc_id = editor.active_document_id();
     {
@@ -367,15 +367,15 @@ fn discard_untracked_entry_deletes_the_file_from_disk() {
     let doc_id = editor.active_document_id();
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
-        let target_line = (0..doc.buffer.get_total_lines())
+        let target_line = (0..doc.buffer().get_total_lines())
             .find(|&l| {
                 doc.annotations
                     .git_status_entry_at_line(l)
                     .is_some_and(|(p, ..)| p == "scratch.txt")
             })
             .expect("scratch.txt entry line");
-        let start = doc.buffer.line_index.get_start(target_line).unwrap();
-        let _ = doc.buffer.set_cursor(start);
+        let start = doc.buffer().line_index.get_start(target_line).unwrap();
+        let _ = doc.buffer_mut().set_cursor(start);
     }
     editor.git_status_cursor_action("discard");
     drain_jobs(&mut editor);
@@ -450,11 +450,11 @@ fn cursor_stage_action_on_a_single_diff_line_stages_only_that_line() {
             .document_manager
             .get_document_mut(editor.active_document_id())
             .unwrap();
-        let entry_line = (0..doc.buffer.get_total_lines())
+        let entry_line = (0..doc.buffer().get_total_lines())
             .find(|&l| doc.annotations.git_status_entry_at_line(l).is_some())
             .expect("must find the multi.txt entry line");
-        let start = doc.buffer.line_index.get_start(entry_line).unwrap();
-        let _ = doc.buffer.set_cursor(start);
+        let start = doc.buffer().line_index.get_start(entry_line).unwrap();
+        let _ = doc.buffer_mut().set_cursor(start);
     }
     editor.git_status_toggle_expand();
     drain_jobs(&mut editor);
@@ -462,15 +462,15 @@ fn cursor_stage_action_on_a_single_diff_line_stages_only_that_line() {
     let doc_id = editor.active_document_id();
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
-        let target_line = (0..doc.buffer.get_total_lines())
+        let target_line = (0..doc.buffer().get_total_lines())
             .find(|&l| {
                 doc.annotations
                     .git_hunk_line_at_line(l)
                     .is_some_and(|(_, _, _, line_index)| line_index == 1)
             })
             .expect("must find the '+A' hunk line");
-        let start = doc.buffer.line_index.get_start(target_line).unwrap();
-        let _ = doc.buffer.set_cursor(start);
+        let start = doc.buffer().line_index.get_start(target_line).unwrap();
+        let _ = doc.buffer_mut().set_cursor(start);
     }
     editor.git_status_cursor_action("stage");
     drain_jobs(&mut editor);
@@ -511,21 +511,21 @@ fn expanding_an_untracked_files_entry_shows_its_hunk_diff() {
     let doc_id = editor.active_document_id();
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
-        let entry_line = (0..doc.buffer.get_total_lines())
+        let entry_line = (0..doc.buffer().get_total_lines())
             .find(|&l| {
                 doc.annotations
                     .git_status_entry_at_line(l)
                     .is_some_and(|(path, section, _)| path == "new.txt" && section == "untracked")
             })
             .expect("must find the untracked new.txt entry line");
-        let start = doc.buffer.line_index.get_start(entry_line).unwrap();
-        let _ = doc.buffer.set_cursor(start);
+        let start = doc.buffer().line_index.get_start(entry_line).unwrap();
+        let _ = doc.buffer_mut().set_cursor(start);
     }
     editor.git_status_toggle_expand();
     drain_jobs(&mut editor);
 
     let doc = editor.document_manager.get_document(doc_id).unwrap();
-    let text = doc.buffer.to_string();
+    let text = doc.buffer().to_string();
     assert!(
         text.contains("+one"),
         "expected new.txt's content as additions: {text}"
@@ -548,30 +548,30 @@ fn cursor_stage_action_on_an_untracked_files_hunk_line_stages_only_that_line() {
     let doc_id = editor.active_document_id();
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
-        let entry_line = (0..doc.buffer.get_total_lines())
+        let entry_line = (0..doc.buffer().get_total_lines())
             .find(|&l| {
                 doc.annotations
                     .git_status_entry_at_line(l)
                     .is_some_and(|(path, section, _)| path == "new.txt" && section == "untracked")
             })
             .expect("must find the untracked new.txt entry line");
-        let start = doc.buffer.line_index.get_start(entry_line).unwrap();
-        let _ = doc.buffer.set_cursor(start);
+        let start = doc.buffer().line_index.get_start(entry_line).unwrap();
+        let _ = doc.buffer_mut().set_cursor(start);
     }
     editor.git_status_toggle_expand();
     drain_jobs(&mut editor);
 
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
-        let target_line = (0..doc.buffer.get_total_lines())
+        let target_line = (0..doc.buffer().get_total_lines())
             .find(|&l| {
                 doc.annotations
                     .git_hunk_line_at_line(l)
                     .is_some_and(|(_, _, _, line_index)| line_index == 1)
             })
             .expect("must find the '+two' hunk line");
-        let start = doc.buffer.line_index.get_start(target_line).unwrap();
-        let _ = doc.buffer.set_cursor(start);
+        let start = doc.buffer().line_index.get_start(target_line).unwrap();
+        let _ = doc.buffer_mut().set_cursor(start);
     }
     editor.git_status_cursor_action("stage");
     drain_jobs(&mut editor);
@@ -619,30 +619,30 @@ fn discard_on_an_untracked_files_hunk_line_is_not_supported_and_leaves_it_untouc
     let doc_id = editor.active_document_id();
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
-        let entry_line = (0..doc.buffer.get_total_lines())
+        let entry_line = (0..doc.buffer().get_total_lines())
             .find(|&l| {
                 doc.annotations
                     .git_status_entry_at_line(l)
                     .is_some_and(|(path, section, _)| path == "new.txt" && section == "untracked")
             })
             .expect("must find the untracked new.txt entry line");
-        let start = doc.buffer.line_index.get_start(entry_line).unwrap();
-        let _ = doc.buffer.set_cursor(start);
+        let start = doc.buffer().line_index.get_start(entry_line).unwrap();
+        let _ = doc.buffer_mut().set_cursor(start);
     }
     editor.git_status_toggle_expand();
     drain_jobs(&mut editor);
 
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
-        let target_line = (0..doc.buffer.get_total_lines())
+        let target_line = (0..doc.buffer().get_total_lines())
             .find(|&l| {
                 doc.annotations
                     .git_hunk_line_at_line(l)
                     .is_some_and(|(_, _, _, line_index)| line_index == 1)
             })
             .expect("must find the '+two' hunk line");
-        let start = doc.buffer.line_index.get_start(target_line).unwrap();
-        let _ = doc.buffer.set_cursor(start);
+        let start = doc.buffer().line_index.get_start(target_line).unwrap();
+        let _ = doc.buffer_mut().set_cursor(start);
     }
     editor.git_status_cursor_action("discard");
     drain_jobs(&mut editor);
@@ -670,7 +670,7 @@ fn open_git_blame_populates_one_line_per_source_line() {
     let blame_window_id = editor.split_tree.focused_window_id();
     let doc = editor.document_manager.active_document().unwrap();
     assert!(doc.is_git_blame());
-    let text = doc.buffer.to_string();
+    let text = doc.buffer().to_string();
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(lines.len(), 2, "tracked.txt has 2 lines: {text}");
     for line in &lines {
@@ -781,7 +781,7 @@ fn assert_blame_spacer_rows(
         second > first + 1,
         "wrapped source line must insert blank blame rows"
     );
-    let rendered = doc.buffer.to_string();
+    let rendered = doc.buffer().to_string();
     let rendered_lines: Vec<_> = rendered.lines().collect();
     for spacer in first + 1..second {
         assert_eq!(
@@ -825,10 +825,10 @@ fn git_blame_inserts_and_skips_source_soft_wrap_spacers() {
 
     move_cursor(&mut editor, crate::action::Motion::Down);
     let doc = editor.document_manager.get_document(blame_doc_id).unwrap();
-    assert_eq!(doc.buffer.get_line(), second_source_line);
+    assert_eq!(doc.buffer().get_line(), second_source_line);
     assert_eq!(
         doc.annotations
-            .git_blame_source_line_at_line(doc.buffer.get_line()),
+            .git_blame_source_line_at_line(doc.buffer().get_line()),
         Some(1)
     );
     let source_window = editor.split_tree.get_window(source_window_id).unwrap();
@@ -837,7 +837,7 @@ fn git_blame_inserts_and_skips_source_soft_wrap_spacers() {
             .document_manager
             .get_document(source_window.document_id)
             .unwrap()
-            .buffer
+            .buffer()
             .get_line(),
         1,
         "source cursor must follow the selected blame metadata row"
@@ -849,7 +849,7 @@ fn git_blame_inserts_and_skips_source_soft_wrap_spacers() {
             .document_manager
             .get_document(blame_doc_id)
             .unwrap()
-            .buffer
+            .buffer()
             .get_line(),
         first_source_line,
         "k must skip every blank continuation row"
@@ -870,7 +870,7 @@ fn git_blame_inserts_and_skips_source_soft_wrap_spacers() {
             .document_manager
             .get_document(blame_doc_id)
             .unwrap()
-            .buffer
+            .buffer()
             .get_line(),
         last_metadata_line
     );
@@ -880,7 +880,7 @@ fn git_blame_inserts_and_skips_source_soft_wrap_spacers() {
             .document_manager
             .get_document(blame_doc_id)
             .unwrap()
-            .buffer
+            .buffer()
             .get_line(),
         last_metadata_line,
         "j at the last metadata row must not enter trailing wrap spacers"
@@ -900,7 +900,7 @@ fn git_blame_inserts_and_skips_source_soft_wrap_spacers() {
     assert_eq!(
         widened_doc
             .annotations
-            .git_blame_source_line_at_line(widened_doc.buffer.get_line()),
+            .git_blame_source_line_at_line(widened_doc.buffer().get_line()),
         Some(2),
         "blame selection must stay on the same source line while reflowing"
     );
@@ -926,21 +926,25 @@ fn git_blame_keeps_source_scrolled_to_its_logical_line() {
     drain_jobs(&mut editor);
     let offset = editor
         .active_document()
-        .buffer
+        .buffer()
         .line_index
         .get_start(40)
         .unwrap();
-    editor.active_document().buffer.set_cursor(offset).unwrap();
+    editor
+        .active_document()
+        .buffer_mut()
+        .set_cursor(offset)
+        .unwrap();
     editor.update_and_render().unwrap();
 
     let blame_window_id = editor.split_tree.focused_window_id();
-    let blame_line = editor.active_document().buffer.get_line();
+    let blame_line = editor.active_document().buffer().get_line();
     let source_window = editor.split_tree.get_window(source_window_id).unwrap();
     let source_line = editor
         .document_manager
         .get_document(source_window.document_id)
         .unwrap()
-        .buffer
+        .buffer()
         .get_line();
     assert_eq!(source_line, blame_line);
     assert_eq!(
@@ -960,11 +964,15 @@ fn git_blame_keeps_source_scrolled_to_its_logical_line() {
     editor.switch_focus(source_window_id);
     let offset = editor
         .active_document()
-        .buffer
+        .buffer()
         .line_index
         .get_start(39)
         .unwrap();
-    editor.active_document().buffer.set_cursor(offset).unwrap();
+    editor
+        .active_document()
+        .buffer_mut()
+        .set_cursor(offset)
+        .unwrap();
     editor.update_and_render().unwrap();
 
     let (blame_doc_id, blame_top_line) = {
@@ -981,9 +989,9 @@ fn git_blame_keeps_source_scrolled_to_its_logical_line() {
         .document_manager
         .get_document(blame_doc_id)
         .unwrap()
-        .buffer
+        .buffer()
         .get_line();
-    let source_line = editor.active_document().buffer.get_line();
+    let source_line = editor.active_document().buffer().get_line();
     assert_eq!(blame_line, source_line);
     assert_eq!(blame_top_line, source_top_line);
 }
@@ -1007,7 +1015,7 @@ fn git_blame_replay_renders_metadata_to_the_left_of_source() {
 
     let metadata_sha = editor
         .active_document()
-        .buffer
+        .buffer()
         .to_string()
         .lines()
         .next()
@@ -1097,7 +1105,7 @@ fn git_blame_walk_back_re_blames_at_the_parent_commit() {
         .document_manager
         .get_document(historical_doc_id)
         .unwrap()
-        .buffer
+        .buffer()
         .to_string()
         .contains("line one"));
     assert_eq!(
@@ -1176,8 +1184,8 @@ fn git_blame_walk_back_from_a_middle_line_re_blames_that_lines_own_history() {
 
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
-        let start = doc.buffer.line_index.get_start(1).unwrap();
-        let _ = doc.buffer.set_cursor(start);
+        let start = doc.buffer().line_index.get_start(1).unwrap();
+        let _ = doc.buffer_mut().set_cursor(start);
     }
     editor.handle_git_blame_buffer_action("git_blame:walk_back");
     drain_jobs(&mut editor);
@@ -1202,14 +1210,14 @@ fn open_git_log_lists_commits_and_expand_shows_git_show_body() {
 
     let doc = editor.document_manager.active_document().unwrap();
     assert!(doc.is_git_log());
-    let text = doc.buffer.to_string();
+    let text = doc.buffer().to_string();
     assert!(text.contains("init"), "{text}");
 
     editor.git_log_toggle_expand();
     drain_jobs(&mut editor);
 
     let doc = editor.document_manager.active_document().unwrap();
-    let text = doc.buffer.to_string();
+    let text = doc.buffer().to_string();
     assert!(
         text.contains("tracked.txt"),
         "expanded git show should mention the changed file: {text}"
@@ -1232,7 +1240,7 @@ fn git_command_escape_hatch_runs_and_shows_output() {
         "[Git: log -1]",
         "multi-line git output should open a scratch buffer, not just a notification"
     );
-    let text = doc.buffer.to_string();
+    let text = doc.buffer().to_string();
     assert!(
         text.contains("init"),
         "expected git log output in a scratch buffer: {text}"
@@ -1295,7 +1303,7 @@ fn bare_git_diff_command_opens_status_with_unstaged_hunks_expanded() {
     assert!(
         doc.is_git_status_expanded(&PathBuf::from("tracked.txt"), false),
         "the unstaged hunk must already be expanded: {}",
-        doc.buffer
+        doc.buffer()
     );
 }
 
@@ -1320,7 +1328,7 @@ fn bare_git_diff_cached_command_opens_status_with_staged_hunks_expanded() {
     assert!(
         doc.is_git_status_expanded(&PathBuf::from("tracked.txt"), true),
         "the staged hunk must already be expanded: {}",
-        doc.buffer
+        doc.buffer()
     );
 }
 
@@ -1414,11 +1422,11 @@ fn b_key_in_status_buffer_blames_the_file_under_cursor() {
             .document_manager
             .get_document_mut(editor.active_document_id())
             .unwrap();
-        let entry_line = (0..doc.buffer.get_total_lines())
+        let entry_line = (0..doc.buffer().get_total_lines())
             .find(|&l| doc.annotations.git_status_entry_at_line(l).is_some())
             .expect("must find an entry line");
-        let start = doc.buffer.line_index.get_start(entry_line).unwrap();
-        let _ = doc.buffer.set_cursor(start);
+        let start = doc.buffer().line_index.get_start(entry_line).unwrap();
+        let _ = doc.buffer_mut().set_cursor(start);
     }
 
     editor.git_status_blame_cursor();
@@ -1486,8 +1494,8 @@ fn status_buffer_shows_head_summary_line_and_enter_opens_log() {
     let doc_id = editor.active_document_id();
     let (head_line, text) = {
         let doc = editor.document_manager.get_document(doc_id).unwrap();
-        let text = doc.buffer.to_string();
-        let head_line = (0..doc.buffer.get_total_lines())
+        let text = doc.buffer().to_string();
+        let head_line = (0..doc.buffer().get_total_lines())
             .find(|&l| doc.annotations.is_git_status_head_at_line(l));
         (head_line, text)
     };
@@ -1499,8 +1507,8 @@ fn status_buffer_shows_head_summary_line_and_enter_opens_log() {
 
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
-        let start = doc.buffer.line_index.get_start(head_line).unwrap();
-        let _ = doc.buffer.set_cursor(start);
+        let start = doc.buffer().line_index.get_start(head_line).unwrap();
+        let _ = doc.buffer_mut().set_cursor(start);
     }
     editor.git_status_select();
     drain_jobs(&mut editor);
@@ -1549,7 +1557,7 @@ fn git_blame_and_log_buffers_block_insert_and_delete() {
 
     let doc = editor.document_manager.active_document().unwrap();
     assert!(doc.is_read_only(), "GitBlame must be read-only");
-    let before = doc.buffer.to_string();
+    let before = doc.buffer().to_string();
     editor.handle_mode_management(crate::command::Command::EnterInsertMode);
     assert_eq!(
         editor.current_mode,
@@ -1562,7 +1570,7 @@ fn git_blame_and_log_buffers_block_insert_and_delete() {
             .document_manager
             .active_document()
             .unwrap()
-            .buffer
+            .buffer()
             .to_string(),
         before,
         "dd must not mutate GitBlame"
@@ -1572,7 +1580,7 @@ fn git_blame_and_log_buffers_block_insert_and_delete() {
     drain_jobs(&mut editor);
     let doc = editor.document_manager.active_document().unwrap();
     assert!(doc.is_read_only(), "GitLog must be read-only");
-    let before = doc.buffer.to_string();
+    let before = doc.buffer().to_string();
     editor.handle_mode_management(crate::command::Command::EnterInsertMode);
     assert_eq!(
         editor.current_mode,
@@ -1585,7 +1593,7 @@ fn git_blame_and_log_buffers_block_insert_and_delete() {
             .document_manager
             .active_document()
             .unwrap()
-            .buffer
+            .buffer()
             .to_string(),
         before,
         "dd must not mutate GitLog"
@@ -1646,7 +1654,7 @@ fn g_question_mark_opens_a_read_only_help_buffer_for_each_git_buffer_kind() {
     editor.open_git_help();
     let doc = editor.document_manager.active_document().unwrap();
     assert!(doc.is_read_only(), "help buffer must be read-only");
-    let text = doc.buffer.to_string();
+    let text = doc.buffer().to_string();
     assert!(text.contains("Git Status"), "expected status help: {text}");
     assert!(
         text.contains("s       stage"),
@@ -1661,7 +1669,7 @@ fn g_question_mark_opens_a_read_only_help_buffer_for_each_git_buffer_kind() {
         .document_manager
         .active_document()
         .unwrap()
-        .buffer
+        .buffer()
         .to_string();
     assert!(text.contains("Git Blame"), "expected blame help: {text}");
     assert!(
@@ -1676,7 +1684,7 @@ fn g_question_mark_opens_a_read_only_help_buffer_for_each_git_buffer_kind() {
         .document_manager
         .active_document()
         .unwrap()
-        .buffer
+        .buffer()
         .to_string();
     assert!(text.contains("Git Log"), "expected log help: {text}");
 }
@@ -1738,13 +1746,13 @@ fn expanding_a_hunk_via_real_keys_lets_one_j_reach_the_first_hunk_line() {
     send(&mut editor, "j"); // land on the multi.txt entry
     let entry_line = {
         let doc = editor.active_document();
-        doc.buffer.line_index.get_line_at(doc.buffer.cursor())
+        doc.buffer().line_index.get_line_at(doc.buffer().cursor())
     };
 
     send(&mut editor, "=");
     let line_after_expand = {
         let doc = editor.active_document();
-        doc.buffer.line_index.get_line_at(doc.buffer.cursor())
+        doc.buffer().line_index.get_line_at(doc.buffer().cursor())
     };
     assert_eq!(
         line_after_expand, entry_line,
@@ -1753,11 +1761,11 @@ fn expanding_a_hunk_via_real_keys_lets_one_j_reach_the_first_hunk_line() {
 
     send(&mut editor, "j");
     let doc = editor.active_document();
-    let line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
+    let line = doc.buffer().line_index.get_line_at(doc.buffer().cursor());
     assert!(
         doc.annotations.git_hunk_line_at_line(line).is_some(),
         "a single 'j' after expand must land directly on the first hunk line: line={line}, buffer=\n{}",
-        doc.buffer
+        doc.buffer()
     );
 
     send(&mut editor, "s");
@@ -1824,7 +1832,7 @@ fn bug_g_lands_past_trailing_newline() {
         editor.tick().unwrap();
     }
 
-    let buf = &editor.active_document().buffer;
+    let buf = editor.active_document().buffer();
     assert!(buf.to_string().ends_with('\n'));
     assert_eq!(buf.get_line() + 2, buf.get_total_lines());
 }
@@ -1838,7 +1846,7 @@ fn reload_on_git_status_buffer_refreshes_entries_via_native_dispatch() {
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
     editor.open_git_status();
     drain_jobs(&mut editor);
-    let text_before = editor.active_document().buffer.to_string();
+    let text_before = editor.active_document().buffer().to_string();
     assert!(!text_before.contains("fresh.txt"));
 
     std::fs::write(dir.path().join("fresh.txt"), "content\n").unwrap();
@@ -1846,7 +1854,7 @@ fn reload_on_git_status_buffer_refreshes_entries_via_native_dispatch() {
     editor.open_file(None, false).unwrap();
     drain_jobs(&mut editor);
 
-    let text_after = editor.active_document().buffer.to_string();
+    let text_after = editor.active_document().buffer().to_string();
     assert!(
         text_after.contains("fresh.txt"),
         "git status reload should show newly added file; text was: {text_after}"
@@ -1862,7 +1870,7 @@ fn reload_on_git_log_buffer_refreshes_entries_via_native_dispatch() {
     editor.open_git_log(dir.path().to_path_buf(), None);
     drain_jobs(&mut editor);
 
-    let text_before = editor.active_document().buffer.to_string();
+    let text_before = editor.active_document().buffer().to_string();
     assert!(!text_before.contains("second commit"));
 
     crate::git::run_checked(
@@ -1874,7 +1882,7 @@ fn reload_on_git_log_buffer_refreshes_entries_via_native_dispatch() {
     editor.open_file(None, false).unwrap();
     drain_jobs(&mut editor);
 
-    let text_after = editor.active_document().buffer.to_string();
+    let text_after = editor.active_document().buffer().to_string();
     assert!(
         text_after.contains("second commit"),
         "git log reload should show newly added commit; text was: {text_after}"
@@ -1892,7 +1900,12 @@ fn reload_on_git_blame_buffer_refreshes_entries_via_native_dispatch() {
     editor.open_git_blame(path.clone(), dir.path().to_path_buf());
     drain_jobs(&mut editor);
 
-    let lines_before = editor.active_document().buffer.to_string().lines().count();
+    let lines_before = editor
+        .active_document()
+        .buffer()
+        .to_string()
+        .lines()
+        .count();
     assert_eq!(lines_before, 2);
 
     std::fs::write(&path, "line one\nline two\nthird line added\n").unwrap();
@@ -1901,7 +1914,7 @@ fn reload_on_git_blame_buffer_refreshes_entries_via_native_dispatch() {
     editor.open_file(None, false).unwrap();
     drain_jobs(&mut editor);
 
-    let text_after = editor.active_document().buffer.to_string();
+    let text_after = editor.active_document().buffer().to_string();
     let lines_after = text_after.lines().count();
     assert_eq!(
         lines_after, 3,

@@ -873,9 +873,9 @@ fn test_substitute_current_line() {
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    document.buffer.insert_str("foo bar foo").unwrap();
+    document.replace_content("foo bar foo", crate::document::ops::ContentKind::Render);
     // Cursor at 0
-    document.buffer.set_cursor(0).unwrap();
+    document.buffer_mut().set_cursor(0).unwrap();
 
     let command = ParsedCommand::Substitute {
         pattern: "foo".to_string(),
@@ -894,7 +894,7 @@ fn test_substitute_current_line() {
     );
 
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(document.buffer.to_string(), "baz bar foo");
+    assert_eq!(document.buffer().to_string(), "baz bar foo");
 }
 
 #[test]
@@ -903,8 +903,8 @@ fn test_substitute_global_line() {
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    document.buffer.insert_str("foo bar foo").unwrap();
-    document.buffer.set_cursor(0).unwrap();
+    document.replace_content("foo bar foo", crate::document::ops::ContentKind::Render);
+    document.buffer_mut().set_cursor(0).unwrap();
 
     let command = ParsedCommand::Substitute {
         pattern: "foo".to_string(),
@@ -923,7 +923,7 @@ fn test_substitute_global_line() {
     );
 
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(document.buffer.to_string(), "baz bar baz");
+    assert_eq!(document.buffer().to_string(), "baz bar baz");
 }
 
 #[test]
@@ -932,8 +932,8 @@ fn test_substitute_whole_file() {
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    document.buffer.insert_str("foo\nbar\nfoo").unwrap();
-    document.buffer.set_cursor(0).unwrap();
+    document.replace_content("foo\nbar\nfoo", crate::document::ops::ContentKind::Render);
+    document.buffer_mut().set_cursor(0).unwrap();
 
     // :s%/foo/baz/g
     let command = ParsedCommand::Substitute {
@@ -953,7 +953,7 @@ fn test_substitute_whole_file() {
     );
 
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(document.buffer.to_string(), "baz\nbar\nbaz");
+    assert_eq!(document.buffer().to_string(), "baz\nbar\nbaz");
 }
 
 #[test]
@@ -962,8 +962,8 @@ fn test_substitute_case_insensitive() {
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    document.buffer.insert_str("Foo bar foo").unwrap();
-    document.buffer.set_cursor(0).unwrap();
+    document.replace_content("Foo bar foo", crate::document::ops::ContentKind::Render);
+    document.buffer_mut().set_cursor(0).unwrap();
 
     // Smart case: lowercase pattern "foo" matches both "Foo" and "foo" (case-insensitive)
     let command = ParsedCommand::Substitute {
@@ -983,7 +983,7 @@ fn test_substitute_case_insensitive() {
     );
 
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(document.buffer.to_string(), "baz bar foo"); // First match only (no 'g' flag)
+    assert_eq!(document.buffer().to_string(), "baz bar foo"); // First match only (no 'g' flag)
 }
 
 #[test]
@@ -992,7 +992,7 @@ fn test_substitute_no_match() {
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    document.buffer.insert_str("hello world").unwrap();
+    document.replace_content("hello world", crate::document::ops::ContentKind::Render);
 
     let command = ParsedCommand::Substitute {
         pattern: "nothere".to_string(),
@@ -1011,7 +1011,7 @@ fn test_substitute_no_match() {
     );
 
     assert_eq!(result, ExecutionResult::Failure);
-    assert_eq!(document.buffer.revision, 1); // Only insert incremented it
+    assert_eq!(document.buffer().revision(), 1); // Only insert incremented it
     assert!(state
         .error_manager
         .notifications()
@@ -1118,9 +1118,9 @@ fn test_substitute_undo_redo() {
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
 
     // Initial content
-    document.buffer.insert_str("foo bar foo").unwrap();
-    document.buffer.set_cursor(0).unwrap();
-    let original_text = document.buffer.to_string();
+    document.replace_content("foo bar foo", crate::document::ops::ContentKind::Render);
+    document.buffer_mut().set_cursor(0).unwrap();
+    let original_text = document.buffer().to_string();
 
     // Perform substitute (global on line)
     let command = ParsedCommand::Substitute {
@@ -1140,19 +1140,19 @@ fn test_substitute_undo_redo() {
     );
 
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(document.buffer.to_string(), "baz bar baz");
+    assert_eq!(document.buffer().to_string(), "baz bar baz");
 
     // Undo the substitute
     assert!(document.undo());
-    assert_eq!(document.buffer.to_string(), original_text);
+    assert_eq!(document.buffer().to_string(), original_text);
 
     // Redo the substitute
     assert!(document.redo());
-    assert_eq!(document.buffer.to_string(), "baz bar baz");
+    assert_eq!(document.buffer().to_string(), "baz bar baz");
 
     // Undo again
     assert!(document.undo());
-    assert_eq!(document.buffer.to_string(), original_text);
+    assert_eq!(document.buffer().to_string(), original_text);
 }
 
 #[test]
@@ -1163,12 +1163,12 @@ fn test_substitute_whole_file_undo() {
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
 
     // Initial content with multiple lines
-    document
-        .buffer
-        .insert_str("foo\nbar\nfoo\nbaz\nfoo")
-        .unwrap();
-    document.buffer.set_cursor(0).unwrap();
-    let original_text = document.buffer.to_string();
+    document.replace_content(
+        "foo\nbar\nfoo\nbaz\nfoo",
+        crate::document::ops::ContentKind::Render,
+    );
+    document.buffer_mut().set_cursor(0).unwrap();
+    let original_text = document.buffer().to_string();
 
     // Perform whole-file substitute
     let command = ParsedCommand::Substitute {
@@ -1188,15 +1188,15 @@ fn test_substitute_whole_file_undo() {
     );
 
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(document.buffer.to_string(), "qux\nbar\nqux\nbaz\nqux");
+    assert_eq!(document.buffer().to_string(), "qux\nbar\nqux\nbaz\nqux");
 
     // Undo should restore all three substitutions as one operation
     assert!(document.undo());
-    assert_eq!(document.buffer.to_string(), original_text);
+    assert_eq!(document.buffer().to_string(), original_text);
 
     // Redo should reapply all three substitutions
     assert!(document.redo());
-    assert_eq!(document.buffer.to_string(), "qux\nbar\nqux\nbaz\nqux");
+    assert_eq!(document.buffer().to_string(), "qux\nbar\nqux\nbaz\nqux");
 }
 #[test]
 fn substitute_with_nonempty_set_scopes_to_banked_regions_only() {
@@ -1207,7 +1207,10 @@ fn substitute_with_nonempty_set_scopes_to_banked_regions_only() {
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    document.buffer.insert_str("foo bar foo baz foo").unwrap();
+    document.replace_content(
+        "foo bar foo baz foo",
+        crate::document::ops::ContentKind::Render,
+    );
     // Bank the first and third "foo" (char spans 0..3, 16..19); middle (8..11)
     // is left out. Region::span() is inclusive of cursor, so end = cursor + 1.
     document.bank_region(Region::new(0, 2, RangeKind::Charwise));
@@ -1231,7 +1234,7 @@ fn substitute_with_nonempty_set_scopes_to_banked_regions_only() {
 
     assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(
-        document.buffer.to_string(),
+        document.buffer().to_string(),
         "XXX bar foo baz XXX",
         "middle 'foo' (not banked) must survive"
     );
@@ -1243,8 +1246,8 @@ fn substitute_at_cursor(text: &str, cursor: usize, pattern: &str, replacement: &
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    document.buffer.insert_str(text).unwrap();
-    document.buffer.set_cursor(cursor).unwrap();
+    document.replace_content(text, crate::document::ops::ContentKind::Render);
+    document.buffer_mut().set_cursor(cursor).unwrap();
 
     let command = ParsedCommand::Substitute {
         pattern: pattern.to_string(),
@@ -1263,7 +1266,7 @@ fn substitute_at_cursor(text: &str, cursor: usize, pattern: &str, replacement: &
     );
 
     assert_eq!(result, ExecutionResult::Redraw);
-    document.buffer.to_string()
+    document.buffer().to_string()
 }
 
 #[test]

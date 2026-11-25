@@ -13,7 +13,7 @@ fn test_g_no_count_goes_to_last_line() {
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
     let doc = editor.active_document();
-    assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(2));
+    assert_eq!(doc.buffer().cursor(), doc.buffer().line_start(2));
 }
 
 #[test]
@@ -28,7 +28,7 @@ fn test_g_with_count_jumps_to_line() {
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
     let doc = editor.active_document();
-    assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(2));
+    assert_eq!(doc.buffer().cursor(), doc.buffer().line_start(2));
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn test_g_count_beyond_last_line_clamps() {
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
     let doc = editor.active_document();
-    assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(2));
+    assert_eq!(doc.buffer().cursor(), doc.buffer().line_start(2));
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn test_g_count_one_goes_to_first_line() {
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
     let doc = editor.active_document();
-    assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(0));
+    assert_eq!(doc.buffer().cursor(), doc.buffer().line_start(0));
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn test_goto_line_explicit_n_no_count() {
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(2)));
 
     let doc = editor.active_document();
-    assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(1));
+    assert_eq!(doc.buffer().cursor(), doc.buffer().line_start(1));
 }
 
 #[test]
@@ -88,7 +88,7 @@ fn test_f_find_char_forward_moves_to_char() {
         Motion::FindCharForward('o'),
     )));
 
-    assert_eq!(editor.active_document().buffer.cursor(), 4);
+    assert_eq!(editor.active_document().buffer().cursor(), 4);
 }
 
 #[test]
@@ -102,7 +102,7 @@ fn test_f_find_char_forward_not_found_stays() {
         Motion::FindCharForward('z'),
     )));
 
-    assert_eq!(editor.active_document().buffer.cursor(), 0);
+    assert_eq!(editor.active_document().buffer().cursor(), 0);
 }
 
 #[test]
@@ -111,12 +111,16 @@ fn test_f_find_char_backward_moves_to_char() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world\n");
-    editor.active_document().buffer.set_cursor(10).unwrap();
+    editor
+        .active_document()
+        .buffer_mut()
+        .set_cursor(10)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::FindCharBackward('h'),
     )));
 
-    assert_eq!(editor.active_document().buffer.cursor(), 0);
+    assert_eq!(editor.active_document().buffer().cursor(), 0);
 }
 
 #[test]
@@ -222,7 +226,7 @@ fn test_till_forward_stops_one_before_target() {
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::TillCharForward('o'),
     )));
-    assert_eq!(editor.active_document().buffer.cursor(), 3);
+    assert_eq!(editor.active_document().buffer().cursor(), 3);
 }
 
 #[test]
@@ -231,12 +235,16 @@ fn test_till_backward_stops_one_after_target() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world\n");
-    editor.active_document().buffer.set_cursor(10).unwrap();
+    editor
+        .active_document()
+        .buffer_mut()
+        .set_cursor(10)
+        .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::TillCharBackward('o'),
     )));
-    assert_eq!(editor.active_document().buffer.cursor(), 8);
+    assert_eq!(editor.active_document().buffer().cursor(), 8);
 }
 
 #[test]
@@ -252,12 +260,12 @@ fn test_till_records_last_find_and_repeats() {
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::TillCharForward('C'),
     )));
-    assert_eq!(editor.active_document().buffer.cursor(), 15);
+    assert_eq!(editor.active_document().buffer().cursor(), 15);
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::RepeatFindForward,
     )));
-    assert_eq!(editor.active_document().buffer.cursor(), 22);
+    assert_eq!(editor.active_document().buffer().cursor(), 22);
 }
 
 #[test]
@@ -273,30 +281,30 @@ fn test_till_direction_not_flipped_by_repeat() {
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::TillCharForward('C'),
     )));
-    let pos_before_clone = editor.active_document().buffer.cursor();
+    let pos_before_clone = editor.active_document().buffer().cursor();
     assert_eq!(pos_before_clone, 15);
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::RepeatFindForward,
     )));
-    let pos_before_copy = editor.active_document().buffer.cursor();
+    let pos_before_copy = editor.active_document().buffer().cursor();
     assert_eq!(pos_before_copy, 22);
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::RepeatFindBackward,
     )));
-    let pos_after_clone = editor.active_document().buffer.cursor();
+    let pos_after_clone = editor.active_document().buffer().cursor();
     assert_eq!(pos_after_clone, 17);
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::RepeatFindBackward,
     )));
-    assert_eq!(editor.active_document().buffer.cursor(), 17);
+    assert_eq!(editor.active_document().buffer().cursor(), 17);
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::RepeatFindForward,
     )));
-    assert_eq!(editor.active_document().buffer.cursor(), pos_before_copy);
+    assert_eq!(editor.active_document().buffer().cursor(), pos_before_copy);
 }
 
 #[test]
@@ -313,8 +321,8 @@ fn test_dt_on_char_not_found_does_nothing() {
         Motion::TillCharForward('a'),
     )));
 
-    assert_eq!(editor.active_document().buffer.len(), 6);
-    assert_eq!(editor.active_document().buffer.cursor(), 0);
+    assert_eq!(editor.active_document().buffer().len(), 6);
+    assert_eq!(editor.active_document().buffer().cursor(), 0);
     assert!(editor.active_document().pending_ghost.is_empty());
 }
 
@@ -332,8 +340,11 @@ fn test_dt_does_not_cross_line_boundary() {
         Motion::TillCharForward('a'),
     )));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "bcdef\naXXa\n");
-    assert_eq!(editor.active_document().buffer.cursor(), 0);
+    assert_eq!(
+        editor.active_document().buffer().to_string(),
+        "bcdef\naXXa\n"
+    );
+    assert_eq!(editor.active_document().buffer().cursor(), 0);
     assert!(editor.active_document().pending_ghost.is_empty());
 }
 
@@ -351,11 +362,11 @@ fn test_dtf_on_abcdef_leaves_f_only() {
         Motion::TillCharForward('f'),
     )));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "f");
+    assert_eq!(editor.active_document().buffer().to_string(), "f");
     assert_eq!(editor.active_document().pending_ghost.len(), 1);
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    assert_eq!(editor.active_document().buffer.to_string(), "f");
+    assert_eq!(editor.active_document().buffer().to_string(), "f");
     assert!(editor.active_document().pending_ghost.is_empty());
 }
 
@@ -373,9 +384,9 @@ fn test_dta_with_second_a_leaves_only_that_a() {
         Motion::TillCharForward('a'),
     )));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "a");
+    assert_eq!(editor.active_document().buffer().to_string(), "a");
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    assert_eq!(editor.active_document().buffer.to_string(), "a");
+    assert_eq!(editor.active_document().buffer().to_string(), "a");
 }
 
 #[test]
@@ -389,7 +400,7 @@ fn test_tf_move_still_stops_one_before_target() {
         Motion::TillCharForward('f'),
     )));
 
-    assert_eq!(editor.active_document().buffer.cursor(), 4);
+    assert_eq!(editor.active_document().buffer().cursor(), 4);
 }
 
 #[test]
@@ -404,11 +415,11 @@ fn test_dg_deletes_from_cursor_to_end_of_file() {
     )));
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
-    assert_eq!(editor.active_document().buffer.len(), 0);
+    assert_eq!(editor.active_document().buffer().len(), 0);
     assert_eq!(editor.active_document().pending_ghost.len(), 1);
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    assert_eq!(editor.active_document().buffer.len(), 0);
+    assert_eq!(editor.active_document().buffer().len(), 0);
 }
 
 #[test]
@@ -417,7 +428,7 @@ fn test_dg_with_count_deletes_to_specific_line() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "line1\nline2\nline3\nline4\n");
-    let lines_before = editor.active_document().buffer.get_total_lines();
+    let lines_before = editor.active_document().buffer().get_total_lines();
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
@@ -425,13 +436,13 @@ fn test_dg_with_count_deletes_to_specific_line() {
     editor.pending_count = 2;
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
-    assert!(editor.active_document().buffer.get_total_lines() < lines_before);
+    assert!(editor.active_document().buffer().get_total_lines() < lines_before);
     assert_eq!(editor.active_document().pending_ghost.len(), 1);
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     let doc = editor.active_document();
-    assert!(!doc.buffer.is_empty());
-    let remaining = doc.buffer.get_total_lines();
+    assert!(!doc.buffer().is_empty());
+    let remaining = doc.buffer().get_total_lines();
     assert!(remaining <= 3);
 }
 
@@ -446,8 +457,8 @@ fn test_g_outside_operator_pending_just_moves_cursor() {
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
     let doc = editor.active_document();
-    assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(2));
-    assert_eq!(doc.buffer.len(), 18);
+    assert_eq!(doc.buffer().cursor(), doc.buffer().line_start(2));
+    assert_eq!(doc.buffer().len(), 18);
 }
 
 #[test]
@@ -460,12 +471,12 @@ fn test_n_repeats_last_forward_find_in_same_direction() {
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::FindCharForward('b'),
     )));
-    assert_eq!(editor.active_document().buffer.cursor(), 1);
+    assert_eq!(editor.active_document().buffer().cursor(), 1);
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::RepeatFindForward,
     )));
-    assert_eq!(editor.active_document().buffer.cursor(), 3);
+    assert_eq!(editor.active_document().buffer().cursor(), 3);
 }
 
 #[test]
@@ -474,17 +485,17 @@ fn test_n_repeats_last_backward_find_in_same_direction() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "ababa\n");
-    editor.active_document().buffer.set_cursor(4).unwrap();
+    editor.active_document().buffer_mut().set_cursor(4).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::FindCharBackward('b'),
     )));
-    assert_eq!(editor.active_document().buffer.cursor(), 3);
+    assert_eq!(editor.active_document().buffer().cursor(), 3);
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::RepeatFindForward,
     )));
-    assert_eq!(editor.active_document().buffer.cursor(), 1);
+    assert_eq!(editor.active_document().buffer().cursor(), 1);
 }
 
 #[test]
@@ -497,17 +508,17 @@ fn test_shift_n_repeats_find_in_opposite_direction() {
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::FindCharForward('b'),
     )));
-    assert_eq!(editor.active_document().buffer.cursor(), 1);
+    assert_eq!(editor.active_document().buffer().cursor(), 1);
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::FindCharForward('b'),
     )));
-    assert_eq!(editor.active_document().buffer.cursor(), 3);
+    assert_eq!(editor.active_document().buffer().cursor(), 3);
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::RepeatFindBackward,
     )));
-    assert_eq!(editor.active_document().buffer.cursor(), 1);
+    assert_eq!(editor.active_document().buffer().cursor(), 1);
 }
 
 #[test]
@@ -523,29 +534,29 @@ fn test_fn_direction_not_flipped_by_repeat() {
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::FindCharForward('C'),
     )));
-    let pos_clone = editor.active_document().buffer.cursor();
+    let pos_clone = editor.active_document().buffer().cursor();
     assert_eq!(pos_clone, 16, "fC: expected C of Clone at col 16");
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::RepeatFindForward,
     )));
-    let pos_copy = editor.active_document().buffer.cursor();
+    let pos_copy = editor.active_document().buffer().cursor();
     assert_eq!(pos_copy, 23, "n: expected C of Copy at col 23");
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::RepeatFindBackward,
     )));
-    assert_eq!(editor.active_document().buffer.cursor(), pos_clone);
+    assert_eq!(editor.active_document().buffer().cursor(), pos_clone);
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::RepeatFindBackward,
     )));
-    assert_eq!(editor.active_document().buffer.cursor(), pos_clone);
+    assert_eq!(editor.active_document().buffer().cursor(), pos_clone);
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::RepeatFindForward,
     )));
-    assert_eq!(editor.active_document().buffer.cursor(), pos_copy);
+    assert_eq!(editor.active_document().buffer().cursor(), pos_copy);
 }
 
 #[test]
@@ -561,7 +572,7 @@ fn test_n_falls_back_to_search_when_no_find_char() {
         Motion::RepeatFindForward,
     )));
 
-    assert_eq!(editor.active_document().buffer.cursor(), 12);
+    assert_eq!(editor.active_document().buffer().cursor(), 12);
 }
 
 #[test]
@@ -570,7 +581,11 @@ fn test_shift_n_falls_back_to_prev_search_when_no_find_char() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world hello\n");
-    editor.active_document().buffer.set_cursor(12).unwrap();
+    editor
+        .active_document()
+        .buffer_mut()
+        .set_cursor(12)
+        .unwrap();
     editor.state.last_search_query = Some("hello".to_string());
     editor.state.last_find_char = None;
 
@@ -578,7 +593,7 @@ fn test_shift_n_falls_back_to_prev_search_when_no_find_char() {
         Motion::RepeatFindBackward,
     )));
 
-    assert_eq!(editor.active_document().buffer.cursor(), 0);
+    assert_eq!(editor.active_document().buffer().cursor(), 0);
 }
 
 #[test]
@@ -610,7 +625,7 @@ fn test_n_with_no_previous_find_stays_put() {
         Motion::RepeatFindForward,
     )));
 
-    assert_eq!(editor.active_document().buffer.cursor(), 0);
+    assert_eq!(editor.active_document().buffer().cursor(), 0);
 }
 
 #[test]
@@ -655,7 +670,7 @@ fn leading_count_composes_with_nest_count_through_full_key_path() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "((((ab))))");
-    editor.active_document().buffer.set_cursor(4).unwrap();
+    editor.active_document().buffer_mut().set_cursor(4).unwrap();
 
     editor.pending_count = 2;
     editor.handle_action(&Action::Editor(EditorAction::Operator(
@@ -676,7 +691,7 @@ fn leading_count_composes_with_nest_count_through_full_key_path() {
     editor.advance_pending_grammar(grammar, Key::char('('));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    assert_eq!(editor.active_document().buffer.to_string(), "()");
+    assert_eq!(editor.active_document().buffer().to_string(), "()");
 }
 
 #[test]
@@ -695,7 +710,7 @@ fn dd_with_leading_count_deletes_n_lines() {
     )));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    assert_eq!(editor.active_document().buffer.to_string(), "four\n");
+    assert_eq!(editor.active_document().buffer().to_string(), "four\n");
 }
 
 #[test]
@@ -716,13 +731,13 @@ fn dd_count_does_not_leak_into_next_motion() {
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "three\nfour\nfive\n"
     );
 
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Down)));
     assert_eq!(
-        editor.active_document().buffer.get_line(),
+        editor.active_document().buffer().get_line(),
         1,
         "a leaked count would have moved down 2 lines instead of 1"
     );
@@ -734,12 +749,12 @@ fn x_with_leading_count_deletes_n_chars() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
 
     editor.pending_count = 3;
     editor.handle_action(&Action::Editor(EditorAction::Delete(Motion::Right)));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "lo world");
+    assert_eq!(editor.active_document().buffer().to_string(), "lo world");
 }
 
 #[test]
@@ -748,7 +763,7 @@ fn operator_count_and_motion_count_multiply_not_concatenate() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "one two three four five six seven eight");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
 
     editor.pending_count = 2;
     editor.handle_action(&Action::Editor(EditorAction::Operator(
@@ -759,7 +774,7 @@ fn operator_count_and_motion_count_multiply_not_concatenate() {
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::NextWord)));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    assert_eq!(editor.active_document().buffer.to_string(), "seven eight");
+    assert_eq!(editor.active_document().buffer().to_string(), "seven eight");
 }
 
 #[test]
@@ -789,7 +804,7 @@ fn dd_deletes_the_current_line_via_the_operator_doubling_path_not_a_keymap_seque
         crate::action::EditorAction::EnterNormalMode,
     ));
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "second\nthird\n",
         "dd should delete the first line via the operator-doubling path"
     );
@@ -840,8 +855,8 @@ fn ambiguous_non_operator_binding_flushes_to_the_short_action_after_timeout() {
         "timeout flush should clear the pending-key timer"
     );
     assert_eq!(
-        editor.active_document().buffer.cursor(),
-        editor.active_document().buffer.line_start(1),
+        editor.active_document().buffer().cursor(),
+        editor.active_document().buffer().line_start(1),
         "the short 'Q' action (Move Down) should have fired, not the longer sequence"
     );
 }
@@ -853,22 +868,22 @@ fn dollar_in_normal_mode_rests_on_the_last_character() {
 
     feed_keys(&mut editor, "$");
     assert_eq!(
-        editor.active_document().buffer.cursor(),
+        editor.active_document().buffer().cursor(),
         2,
         "$ lands on 'c', not the newline"
     );
     feed_keys(&mut editor, "a");
     assert_eq!(editor.current_mode, Mode::Insert);
-    assert_eq!(editor.active_document().buffer.cursor(), 3);
+    assert_eq!(editor.active_document().buffer().cursor(), 3);
     editor.execute_buffer_command(crate::command::Command::InsertChar('Q'));
     feed_keys(&mut editor, "<Esc>");
-    assert_eq!(editor.active_document().buffer.to_string(), "abcQ\n\nxyz");
+    assert_eq!(editor.active_document().buffer().to_string(), "abcQ\n\nxyz");
 
     feed_keys(&mut editor, "j$");
-    assert_eq!(editor.active_document().buffer.cursor(), 5);
+    assert_eq!(editor.active_document().buffer().cursor(), 5);
 
     feed_keys(&mut editor, "j0D");
-    assert_eq!(editor.active_document().buffer.to_string(), "abcQ\n\n");
+    assert_eq!(editor.active_document().buffer().to_string(), "abcQ\n\n");
 }
 
 use crate::action::{Action, EditorAction, Motion, OperatorType};
@@ -904,7 +919,7 @@ fn cursor_after_move(motion: Motion, count: usize) -> usize {
     load_text(&mut editor, HUGE_COUNT_TEXT);
     editor.pending_count = count;
     do_act(&mut editor, EditorAction::Move(motion));
-    editor.active_document().buffer.cursor()
+    editor.active_document().buffer().cursor()
 }
 
 fn text_after_visual_delete(count: usize) -> String {
@@ -914,7 +929,7 @@ fn text_after_visual_delete(count: usize) -> String {
     editor.pending_count = count;
     do_act(&mut editor, EditorAction::Move(Motion::Right));
     do_act(&mut editor, EditorAction::Operator(OperatorType::Delete));
-    editor.active_document().buffer.to_string()
+    editor.active_document().buffer().to_string()
 }
 
 fn text_after_dot_repeat(count: usize) -> String {
@@ -923,7 +938,7 @@ fn text_after_dot_repeat(count: usize) -> String {
     do_act(&mut editor, EditorAction::Delete(Motion::Right));
     editor.pending_count = count;
     do_act(&mut editor, EditorAction::DotRepeat);
-    editor.active_document().buffer.to_string()
+    editor.active_document().buffer().to_string()
 }
 
 #[test]
@@ -958,7 +973,7 @@ fn op_text_after(text: &str, op: OperatorType, motion: EditorAction) -> String {
     load_text(&mut editor, text);
     do_act(&mut editor, EditorAction::Operator(op));
     do_act(&mut editor, motion);
-    editor.active_document().buffer.to_string()
+    editor.active_document().buffer().to_string()
 }
 
 #[test]
@@ -1001,7 +1016,7 @@ fn cursor_after_line_action(text: &str, count: usize, action: EditorAction) -> u
     let mut editor = editor_with_line_text(text);
     editor.pending_count = count;
     editor.handle_action(&Action::Editor(action));
-    editor.active_document().buffer.cursor()
+    editor.active_document().buffer().cursor()
 }
 
 fn text_after_line_keys(count: usize, keys: &str) -> String {
@@ -1009,7 +1024,7 @@ fn text_after_line_keys(count: usize, keys: &str) -> String {
     feed_keys(&mut editor, "G");
     editor.pending_count = count;
     feed_keys(&mut editor, keys);
-    editor.active_document().buffer.to_string()
+    editor.active_document().buffer().to_string()
 }
 
 #[test]

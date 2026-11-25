@@ -34,15 +34,19 @@ fn stale_syntax_job_result_does_not_clobber_newer_state() {
 
     {
         let doc = editor.active_document();
-        doc.buffer.move_to_end();
-        doc.buffer.insert_str("\nfn extra() {}\n").unwrap();
+        let end = doc.buffer().len();
+        doc.edit(Edit::insert(end, "\nfn extra() {}\n"), EditSource::User)
+            .unwrap();
     }
 
     let doc = editor.active_document();
-    let syntax = doc.syntax.as_mut().unwrap();
-    syntax.invalidate_trees();
-    assert!(syntax.incremental_parse(&doc.buffer));
-    let fresh_highlights = syntax.highlights(&doc.buffer, 0..doc.buffer.byte_len());
+    let fresh_highlights = doc
+        .with_syntax(|syntax, buffer| {
+            syntax.invalidate_trees();
+            assert!(syntax.incremental_parse(buffer));
+            syntax.highlights(buffer, 0..buffer.byte_len())
+        })
+        .unwrap();
     assert_ne!(fresh_highlights, Vec::new());
 
     let mut drained = false;
@@ -130,13 +134,13 @@ fn set_aware_delete_keeps_syntax_highlights_in_sync() {
     editor.active_document().set_syntax(syntax);
     editor.reparse_syntax(editor.active_document_id());
 
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualLine));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    let second_line_start = editor.active_document().buffer.line_start(1);
+    let second_line_start = editor.active_document().buffer().line_start(1);
     editor
         .active_document()
-        .buffer
+        .buffer_mut()
         .set_cursor(second_line_start)
         .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualLine));
@@ -147,7 +151,7 @@ fn set_aware_delete_keeps_syntax_highlights_in_sync() {
     )));
     assert!(!editor.active_document().pending_ghost.is_empty());
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    assert_eq!(editor.active_document().buffer.to_string(), "");
+    assert_eq!(editor.active_document().buffer().to_string(), "");
 
     let after_set_aware_delete = document_highlights(&mut editor);
     let fresh_highlights = fresh_highlights(&mut editor);
@@ -179,7 +183,7 @@ fn ghost_paint_keeps_syntax_highlights_in_sync_while_painted() {
     editor.active_document().set_syntax(syntax);
     editor.reparse_syntax(editor.active_document_id());
 
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
@@ -239,20 +243,22 @@ fn load_rust(text: &str) -> Editor<MockTerminal> {
 #[cfg(feature = "treesitter")]
 fn settle_syntax(editor: &mut Editor<MockTerminal>) {
     let doc = editor.active_document();
-    assert!(doc.syntax.as_mut().unwrap().incremental_parse(&doc.buffer));
+    assert!(doc
+        .with_syntax(|syntax, buffer| syntax.incremental_parse(buffer))
+        .unwrap());
 }
 
 #[cfg(feature = "treesitter")]
 fn document_highlights(editor: &mut Editor<MockTerminal>) -> Highlights {
     let doc = editor.active_document();
-    let len = doc.buffer.byte_len();
-    doc.syntax.as_mut().unwrap().highlights(&doc.buffer, 0..len)
+    doc.with_syntax(|syntax, buffer| syntax.highlights(buffer, 0..buffer.byte_len()))
+        .unwrap()
 }
 
 #[cfg(feature = "treesitter")]
 fn fresh_highlights(editor: &mut Editor<MockTerminal>) -> Highlights {
     let mut syntax = rust_syntax(editor);
-    let buffer = &editor.active_document().buffer;
+    let buffer = editor.active_document().buffer();
     assert!(syntax.incremental_parse(buffer));
     syntax.highlights(buffer, 0..buffer.byte_len())
 }
@@ -264,7 +270,7 @@ fn unchunked_highlights(editor: &mut Editor<MockTerminal>) -> Highlights {
 
     let syntax = rust_syntax(editor);
     let query = syntax.highlights_query.expect("rust highlights query");
-    let source = editor.active_document().buffer.to_logical_bytes();
+    let source = editor.active_document().buffer().to_logical_bytes();
     let mut parser = tree_sitter::Parser::new();
     parser.set_language(&syntax.language).unwrap();
     let tree = parser.parse(&source, None).unwrap();
@@ -299,8 +305,12 @@ fn paint(highlights: &Highlights, len: usize) -> Vec<Option<u32>> {
 fn type_at(editor: &mut Editor<MockTerminal>, byte: usize, text: &str) {
     use crate::action::{Action, EditorAction};
 
-    let pos = editor.active_document().buffer.byte_to_char(byte);
-    editor.active_document().buffer.set_cursor(pos).unwrap();
+    let pos = editor.active_document().buffer().byte_to_char(byte);
+    editor
+        .active_document()
+        .buffer_mut()
+        .set_cursor(pos)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
     for ch in text.chars() {
         editor.handle_action(&Action::Editor(EditorAction::InsertChar(ch)));
@@ -379,7 +389,7 @@ fn captures_spanning_chunk_boundaries_match_unchunked_query() {
     );
 
     type_at(&mut editor, text.find("comment line 700").unwrap(), "x");
-    let len = editor.active_document().buffer.byte_len();
+    let len = editor.active_document().buffer().byte_len();
     assert_eq!(
         document_highlights(&mut editor),
         fresh_highlights(&mut editor)
@@ -396,7 +406,8 @@ fn document_highlights_in(
     range: std::ops::Range<usize>,
 ) -> Highlights {
     let doc = editor.active_document();
-    doc.syntax.as_mut().unwrap().highlights(&doc.buffer, range)
+    doc.with_syntax(|syntax, buffer| syntax.highlights(buffer, range))
+        .unwrap()
 }
 
 #[cfg(feature = "treesitter")]
@@ -407,7 +418,7 @@ fn append_invalidates_rendered_eof() {
     document_highlights(&mut editor);
     let doc = editor.active_document();
     let generation = doc.syntax.as_ref().unwrap().highlights_generation();
-    doc.buffer.move_to_end();
+    doc.buffer_mut().move_to_end();
     doc.edit(Edit::type_text(' '), EditSource::User).unwrap();
     assert_ne!(
         generation,
@@ -430,7 +441,7 @@ fn substitute_leaves_a_reparsed_syntax_tree() {
     let mut editor = load_rust("fn main() {}\n");
     editor.execute_command_line("s /main/renamed");
     let doc = editor.active_document();
-    assert_eq!(doc.buffer.to_string(), "fn renamed() {}\n");
+    assert_eq!(doc.buffer().to_string(), "fn renamed() {}\n");
     let tree = doc.syntax.as_ref().unwrap().tree.as_ref().unwrap();
     assert!(!tree.root_node().has_changes());
 }

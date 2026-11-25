@@ -10,12 +10,13 @@ fn system_clipboard_cache_starts_empty() {
 #[test]
 fn capture_text_preserves_byte_and_control_chars() {
     let mut buf = TextBuffer::new(16).unwrap();
-    buf.insert_chars(&[
+    crate::document::ops::Edit::type_text([
         Character::Unicode('a'),
         Character::Byte(0xFF),
         Character::Control(0x0C),
         Character::Unicode('b'),
-    ]);
+    ])
+    .apply_to(&mut buf);
     let range = MotionRange {
         anchor: 0,
         new_cursor: 4,

@@ -19,9 +19,9 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.active_document_mut() else {
                 return false;
             };
-            let cursor = doc.buffer.cursor();
-            let line = doc.buffer.line_index.get_line_at(cursor);
-            let cursor_byte = doc.buffer.char_to_byte(cursor);
+            let cursor = doc.buffer().cursor();
+            let line = doc.buffer().line_index.get_line_at(cursor);
+            let cursor_byte = doc.buffer().char_to_byte(cursor);
             doc.annotations
                 .interactive_at(cursor_byte)
                 .or_else(|| doc.annotations.interactive_at_line(line))
@@ -56,7 +56,7 @@ impl<T: TerminalBackend> Editor<T> {
                     let Some(doc) = self.document_manager.active_document_mut() else {
                         return false;
                     };
-                    let position = doc.buffer.cursor();
+                    let position = doc.buffer().cursor();
                     let buffer = doc.id;
                     let Some(ann) = doc.annotations.get(ann_id) else {
                         return false;
@@ -160,10 +160,10 @@ impl<T: TerminalBackend> Editor<T> {
     /// preserving, so markers hold), returning the new state, or None if absent.
     fn toggle_buffer_checkbox(&mut self, byte_off: usize) -> Option<bool> {
         let doc = self.document_manager.active_document_mut()?;
-        let c0 = doc.buffer.byte_to_char(byte_off);
-        let open = doc.buffer.char_at(c0)?.to_char_lossy();
-        let mid = doc.buffer.char_at(c0 + 1)?.to_char_lossy();
-        let close = doc.buffer.char_at(c0 + 2)?.to_char_lossy();
+        let c0 = doc.buffer().byte_to_char(byte_off);
+        let open = doc.buffer().char_at(c0)?.to_char_lossy();
+        let mid = doc.buffer().char_at(c0 + 1)?.to_char_lossy();
+        let close = doc.buffer().char_at(c0 + 2)?.to_char_lossy();
         if open != '[' || close != ']' {
             return None;
         }
@@ -191,9 +191,9 @@ impl<T: TerminalBackend> Editor<T> {
                 self.hovered_annotation = None;
                 return;
             };
-            let cursor = doc.buffer.cursor();
-            let line = doc.buffer.line_index.get_line_at(cursor);
-            let cursor_byte = doc.buffer.char_to_byte(cursor);
+            let cursor = doc.buffer().cursor();
+            let line = doc.buffer().line_index.get_line_at(cursor);
+            let cursor_byte = doc.buffer().char_to_byte(cursor);
             doc.annotations
                 .query_at(cursor_byte)
                 .next()
@@ -220,7 +220,7 @@ impl<T: TerminalBackend> Editor<T> {
                 annotation_id: id.get(),
                 kind: ann.kind.as_str().to_string(),
                 payload: ann.payload.clone(),
-                position: doc.buffer.cursor(),
+                position: doc.buffer().cursor(),
                 buffer: doc.id.get(),
             })
         };
@@ -260,12 +260,12 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(doc) = self.document_manager.active_document_mut() else {
             return false;
         };
-        let cursor = doc.buffer.cursor();
-        let cur_line = doc.buffer.line_index.get_line_at(cursor);
+        let cursor = doc.buffer().cursor();
+        let cur_line = doc.buffer().line_index.get_line_at(cursor);
         let lines = doc.annotations.interactive_lines(|b| {
-            doc.buffer
+            doc.buffer()
                 .line_index
-                .get_line_at(doc.buffer.byte_to_char(b))
+                .get_line_at(doc.buffer().byte_to_char(b))
         });
         let target = if forward {
             lines.into_iter().find(|&l| l > cur_line)
@@ -275,8 +275,8 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(line) = target else {
             return false;
         };
-        if let Some(off) = doc.buffer.line_index.get_start(line) {
-            let _ = doc.buffer.set_cursor(off);
+        if let Some(off) = doc.buffer().line_index.get_start(line) {
+            let _ = doc.buffer_mut().set_cursor(off);
             let _ = self.update_and_render();
             true
         } else {
@@ -289,7 +289,7 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.active_document_mut() else {
                 return false;
             };
-            let cursor_byte = doc.buffer.char_to_byte(doc.buffer.cursor());
+            let cursor_byte = doc.buffer().char_to_byte(doc.buffer().cursor());
             let next = if forward {
                 doc.annotations.next_interactive(cursor_byte)
             } else {
@@ -300,11 +300,11 @@ impl<T: TerminalBackend> Editor<T> {
                 crate::annotations::Anchor::Range(s, _) => Some(s.offset),
                 crate::annotations::Anchor::Line(_) => None,
             })
-            .map(|byte_offset| doc.buffer.byte_to_char(byte_offset))
+            .map(|byte_offset| doc.buffer().byte_to_char(byte_offset))
         };
         if let Some(offset) = target {
             if let Some(doc) = self.document_manager.active_document_mut() {
-                let _ = doc.buffer.set_cursor(offset);
+                let _ = doc.buffer_mut().set_cursor(offset);
             }
             let _ = self.update_and_render();
             true

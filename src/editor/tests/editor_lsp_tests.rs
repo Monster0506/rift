@@ -85,7 +85,7 @@ fn workspace_edit_opens_unopened_file_in_background_and_applies_edits() {
         .find_open_document_id(&other)
         .expect("edited file is now open as a tab");
     let doc = editor.document_manager.get_document(doc_id).unwrap();
-    assert_eq!(doc.buffer.to_string(), "fn new() {}\n");
+    assert_eq!(doc.buffer().to_string(), "fn new() {}\n");
     assert!(doc.is_dirty(), "the edit is applied in memory, not written");
     assert_eq!(
         std::fs::read_to_string(&other).unwrap(),
@@ -106,7 +106,7 @@ fn workspace_edit_keeps_same_position_insert_order_and_restores_cursor() {
         .open_file(Some(path.display().to_string()), false)
         .unwrap();
     drain_jobs(&mut editor);
-    let _ = editor.active_document().buffer.set_cursor(6);
+    let _ = editor.active_document().buffer_mut().set_cursor(6);
 
     let uri = crate::lsp::protocol::path_to_uri(&path);
     let edit = serde_json::json!({ "changes": { uri: [
@@ -117,10 +117,10 @@ fn workspace_edit_keeps_same_position_insert_order_and_restores_cursor() {
     assert_eq!(editor.apply_workspace_edit(&edit), 1);
 
     let doc = editor.active_document();
-    assert_eq!(doc.buffer.to_string(), "12abc\nxyzw\n");
-    assert_eq!(doc.buffer.get_line(), 1, "cursor stays on its line");
+    assert_eq!(doc.buffer().to_string(), "12abc\nxyzw\n");
+    assert_eq!(doc.buffer().get_line(), 1, "cursor stays on its line");
     assert_eq!(
-        doc.buffer.cursor() - doc.buffer.line_index.get_line_start(1),
+        doc.buffer().cursor() - doc.buffer().line_index.get_line_start(1),
         2,
         "and its column"
     );
@@ -145,7 +145,7 @@ fn workspace_edit_with_a_malformed_edit_skips_that_document_entirely() {
         { "range": { "start": { "line": 0 } }, "newText": "broken" },
     ] } });
     assert_eq!(editor.apply_workspace_edit(&edit), 0);
-    assert_eq!(editor.active_document().buffer.to_string(), "abc\n");
+    assert_eq!(editor.active_document().buffer().to_string(), "abc\n");
 }
 
 #[cfg(feature = "lsp")]
@@ -169,7 +169,7 @@ fn goto_with_multiple_definitions_opens_a_location_list() {
         .document_manager
         .get_document(layout.dir_doc_id)
         .unwrap();
-    assert_eq!(doc.buffer.get_total_lines(), 2);
+    assert_eq!(doc.buffer().get_total_lines(), 2);
 }
 
 #[cfg(feature = "lsp")]
@@ -194,7 +194,7 @@ fn goto_past_last_line_lands_on_last_text_line() {
         },
     }]);
 
-    assert_eq!(editor.active_document().buffer.cursor(), 4);
+    assert_eq!(editor.active_document().buffer().cursor(), 4);
 }
 
 #[cfg(feature = "lsp")]
@@ -258,8 +258,8 @@ fn diagnostic_jump_lands_on_the_diagnostic_column() {
     let doc = editor.active_document();
     assert_eq!(
         (
-            doc.buffer.get_line(),
-            doc.buffer.cursor() - doc.buffer.line_index.get_line_start(0)
+            doc.buffer().get_line(),
+            doc.buffer().cursor() - doc.buffer().line_index.get_line_start(0)
         ),
         (0, 8)
     );
@@ -268,8 +268,8 @@ fn diagnostic_jump_lands_on_the_diagnostic_column() {
     let doc = editor.active_document();
     assert_eq!(
         (
-            doc.buffer.get_line(),
-            doc.buffer.cursor() - doc.buffer.line_index.get_line_start(1)
+            doc.buffer().get_line(),
+            doc.buffer().cursor() - doc.buffer().line_index.get_line_start(1)
         ),
         (1, 4)
     );
@@ -327,7 +327,7 @@ fn published_diagnostic_underlines_exactly_its_range_and_keeps_the_eol_message()
     assert_eq!(row[11..16].iter().collect::<String>(), "; bad");
 
     let doc = editor.active_document();
-    doc.buffer.set_cursor(0).ok();
+    doc.buffer_mut().set_cursor(0).ok();
     doc.edit(Edit::type_text("  "), EditSource::User).unwrap();
     editor.update_and_render().unwrap();
     let cells = editor.render_system.compositor.get_composited_slice();

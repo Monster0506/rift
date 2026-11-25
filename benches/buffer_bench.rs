@@ -13,7 +13,8 @@ fn buffer_insertion(c: &mut Criterion) {
             || TextBuffer::new(1024).unwrap(),
             |mut buf| {
                 for _ in 0..100 {
-                    buf.insert_char(black_box('a')).unwrap();
+                    monster_rift::bench_api::buffer::Edit::type_text(black_box('a'))
+                        .apply_to(&mut buf);
                 }
             },
             criterion::BatchSize::SmallInput,
@@ -26,7 +27,8 @@ fn buffer_insertion(c: &mut Criterion) {
         b.iter_batched(
             || TextBuffer::new(1024).unwrap(),
             |mut buf| {
-                buf.insert_str(black_box(TEXT)).unwrap();
+                monster_rift::bench_api::buffer::Edit::type_text(black_box(TEXT))
+                    .apply_to(&mut buf);
             },
             criterion::BatchSize::SmallInput,
         );
@@ -42,7 +44,8 @@ fn buffer_deletion(c: &mut Criterion) {
     let setup_buf = || {
         let mut buf = TextBuffer::new(1024).unwrap();
         for _ in 0..100 {
-            buf.insert_str("Some text to delete. ").unwrap();
+            monster_rift::bench_api::buffer::Edit::type_text("Some text to delete. ")
+                .apply_to(&mut buf);
         }
         buf
     };
@@ -53,7 +56,7 @@ fn buffer_deletion(c: &mut Criterion) {
             |mut buf| {
                 // Delete 50 chars
                 for _ in 0..50 {
-                    buf.delete_backward();
+                    monster_rift::bench_api::buffer::Edit::DeleteBackward.apply_to(&mut buf);
                 }
             },
             criterion::BatchSize::SmallInput,
@@ -71,7 +74,7 @@ fn buffer_access(c: &mut Criterion) {
         let mut buf = TextBuffer::new(1024 * 1024).unwrap();
         let line = "This is a line of text for testing buffer access speeds.\n";
         for _ in 0..10_000 {
-            buf.insert_str(line).unwrap();
+            monster_rift::bench_api::buffer::Edit::type_text(line).apply_to(&mut buf);
         }
         buf
     };
@@ -109,7 +112,7 @@ fn buffer_line_lookup_depth(c: &mut Criterion) {
     let total = content.chars().count();
 
     let mut buf = TextBuffer::new(content.len() + 16).unwrap();
-    buf.insert_str(&content).unwrap();
+    monster_rift::bench_api::buffer::Edit::type_text(&content).apply_to(&mut buf);
 
     for &frac in &[1usize, 25, 50, 75, 99] {
         let pos = total * frac / 100;
@@ -136,7 +139,7 @@ fn buffer_edit_latency(c: &mut Criterion) {
 
     let make = || {
         let mut buf = TextBuffer::new(content.len() + 4096).unwrap();
-        buf.insert_str(&content).unwrap();
+        monster_rift::bench_api::buffer::Edit::type_text(&content).apply_to(&mut buf);
         // Warm any line cache the way a render frame would.
         let _ = buf.line_index.get_line_at(mid);
         let _ = buf.line_index.get_start(buf.line_index.get_line_at(mid));
@@ -149,7 +152,8 @@ fn buffer_edit_latency(c: &mut Criterion) {
             |mut buf| {
                 buf.set_cursor(mid).ok();
                 for _ in 0..50 {
-                    buf.insert_char(black_box('z')).unwrap();
+                    monster_rift::bench_api::buffer::Edit::type_text(black_box('z'))
+                        .apply_to(&mut buf);
                 }
                 buf
             },
@@ -163,7 +167,8 @@ fn buffer_edit_latency(c: &mut Criterion) {
             |mut buf| {
                 buf.set_cursor(mid).ok();
                 for _ in 0..50 {
-                    buf.insert_char(black_box('\n')).unwrap();
+                    monster_rift::bench_api::buffer::Edit::type_text(black_box('\n'))
+                        .apply_to(&mut buf);
                 }
                 buf
             },
@@ -176,7 +181,10 @@ fn buffer_edit_latency(c: &mut Criterion) {
             make,
             |mut buf| {
                 for _ in 0..50 {
-                    buf.delete_range(black_box(mid), 1);
+                    monster_rift::bench_api::buffer::Edit::delete(
+                        black_box(mid)..black_box(mid) + 1,
+                    )
+                    .apply_to(&mut buf);
                 }
                 buf
             },

@@ -11,7 +11,7 @@ fn bug_clipboard_index_edit_wipes_ring() {
 
     assert_eq!(ring_text(&editor, 0).as_deref(), Some("one\n"));
     assert_eq!(editor.clipboard_ring.len(), 1);
-    assert_eq!(editor.active_document().buffer.to_string(), "[0]");
+    assert_eq!(editor.active_document().buffer().to_string(), "[0]");
 }
 
 #[test]
@@ -28,7 +28,7 @@ fn clipboard_number_collision_shifts_neighbors() {
     assert_eq!(editor.clipboard_ring.len(), 3);
     assert!(!editor.active_document().is_dirty());
     press(&mut editor, &keys("gg<CR>"));
-    assert_eq!(editor.active_document().buffer.to_string(), "one\n");
+    assert_eq!(editor.active_document().buffer().to_string(), "one\n");
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn clipboard_brackets_cannot_be_edited() {
 
     press(&mut editor, &keys("0xli<BS>!<Esc>$x"));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "[0]");
+    assert_eq!(editor.active_document().buffer().to_string(), "[0]");
     press(&mut editor, &keys(":w<CR>"));
     assert_eq!(ring_text(&editor, 0).as_deref(), Some("one\n"));
     assert!(!editor.active_document().is_dirty());
@@ -172,15 +172,16 @@ fn clipboard_malformed_save_atomic() {
     let mut editor = editor_with_text("one");
     press(&mut editor, &keys("yy"));
     editor.handle_action(&Action::Editor(EditorAction::OpenClipboard));
-    editor.active_document().buffer.move_to_end();
-    editor.active_document().buffer.insert_str("!").unwrap();
+    let doc = editor.active_document();
+    let text = format!("{}!", doc.buffer());
+    doc.replace_content(&text, crate::document::ops::ContentKind::Render);
 
     assert_eq!(
         editor.apply_clipboard_diff(),
         crate::document::runtime::SaveResult::Failed,
     );
     assert_eq!(ring_text(&editor, 0).as_deref(), Some("one\n"));
-    assert_eq!(editor.active_document().buffer.to_string(), "[0]!");
+    assert_eq!(editor.active_document().buffer().to_string(), "[0]!");
 }
 
 #[test]

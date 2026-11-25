@@ -87,8 +87,8 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(doc) = self.document_manager.active_document() else {
             return;
         };
-        let cursor = doc.buffer.cursor();
-        let last = doc.buffer.line_last_char();
+        let cursor = doc.buffer().cursor();
+        let last = doc.buffer().line_last_char();
         if cursor > last {
             out.push(Violation::new(
                 "editor.normal_cursor",
@@ -126,7 +126,7 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.get_document(window.document_id) else {
                 continue;
             };
-            let total_lines = doc.buffer.get_total_lines();
+            let total_lines = doc.buffer().get_total_lines();
             let viewport = &window.viewport;
             if viewport.visible_rows() == 0 || viewport.visible_cols() == 0 {
                 out.push(Violation::new(
@@ -158,13 +158,13 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.get_document(entry.doc_id) else {
                 continue;
             };
-            if entry.revision != doc.buffer.revision || entry.buf_len != doc.buffer.len() {
+            if entry.revision != doc.buffer().revision() || entry.buf_len != doc.buffer().len() {
                 continue;
             }
             extend(
                 out,
                 "editor.display_map_cache",
-                map.check_invariants(doc.buffer.len(), InvariantTier::Standard),
+                map.check_invariants(doc.buffer().len(), InvariantTier::Standard),
             );
         }
     }

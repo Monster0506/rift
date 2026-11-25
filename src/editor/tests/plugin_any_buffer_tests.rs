@@ -26,7 +26,7 @@ fn doc_mut(editor: &mut Editor<MockTerminal>, id: u64) -> &mut crate::document::
 }
 
 fn text(editor: &Editor<MockTerminal>, id: u64) -> String {
-    doc(editor, id).buffer.to_string()
+    doc(editor, id).buffer().to_string()
 }
 
 fn sync(editor: &mut Editor<MockTerminal>) {
@@ -62,11 +62,11 @@ fn lua_bool(value: bool) -> &'static str {
 fn reads_target_a_background_buffer() {
     let (_dir, mut editor, first, second) = background_file();
     let first_doc = doc_mut(&mut editor, first);
-    first_doc.buffer.set_cursor(0).unwrap();
+    first_doc.buffer_mut().set_cursor(0).unwrap();
     first_doc
         .edit(Edit::type_text(">"), EditSource::User)
         .unwrap();
-    first_doc.buffer.set_cursor(9).unwrap();
+    first_doc.buffer_mut().set_cursor(9).unwrap();
     first_doc.options.tab_width = 8;
     first_doc.options.line_ending = crate::document::LineEnding::Crlf;
     let mark = first_doc
@@ -179,7 +179,7 @@ fn writes_target_a_background_buffer_and_read_back_in_the_same_call() {
     assert_eq!(text(&editor, first), ">alpha\nbeta");
     assert_eq!(text(&editor, second), second_text);
     let first_doc = doc(&editor, first);
-    assert_eq!(first_doc.buffer.cursor(), 0);
+    assert_eq!(first_doc.buffer().cursor(), 0);
     assert_eq!(first_doc.options.tab_width, 8);
     assert_eq!(first_doc.options.line_ending.name(), "crlf");
     let probes = |id: u64| -> Vec<String> {
@@ -329,7 +329,10 @@ fn reloading_a_background_buffer_updates_only_its_document() {
 fn closing_a_background_buffer_preserves_the_focused_window_and_cursor() {
     let (_dir, mut editor, first, second) = background_file();
     let win = editor.split_tree.focused_window_id();
-    doc_mut(&mut editor, second).buffer.set_cursor(3).unwrap();
+    doc_mut(&mut editor, second)
+        .buffer_mut()
+        .set_cursor(3)
+        .unwrap();
     lua_ok(
         &editor,
         &format!("rift.close_buf(true, {{ buf = {first} }})"),
@@ -341,7 +344,7 @@ fn closing_a_background_buffer_preserves_the_focused_window_and_cursor() {
         .is_none());
     assert_eq!(editor.split_tree.focused_window_id(), win);
     assert_eq!(editor.active_document_id().get(), second);
-    assert_eq!(doc(&editor, second).buffer.cursor(), 3);
+    assert_eq!(doc(&editor, second).buffer().cursor(), 3);
     assert_eq!(text(&editor, second), "second");
 }
 
@@ -403,7 +406,7 @@ fn created_buffers_return_ids_and_support_immediate_reads_and_edits() {
         .documents_iter()
         .find(|doc| doc.kind.kind_str() == "created")
         .unwrap();
-    assert_eq!(created.buffer.to_string(), ">one\ntwo");
+    assert_eq!(created.buffer().to_string(), ">one\ntwo");
     lua_ok(
         &editor,
         &format!("assert(_G.created == {})", created.id.get()),
@@ -479,7 +482,7 @@ fn ninth_buffer_creation_fails_without_losing_the_first_eight() {
     ",
     );
     sync(&mut editor);
-    assert_eq!(editor.active_document().buffer.to_string(), "ok");
+    assert_eq!(editor.active_document().buffer().to_string(), "ok");
 }
 
 #[test]

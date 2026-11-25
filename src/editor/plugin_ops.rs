@@ -43,15 +43,15 @@ fn fingerprint<I: Hash>(items: impl IntoIterator<Item = I>) -> u64 {
 }
 
 fn lua_buf_cursor(doc: &crate::document::Document) -> (usize, usize) {
-    let cursor = doc.buffer.cursor();
-    let row = doc.buffer.line_index.get_line_at(cursor);
-    let col = cursor.saturating_sub(doc.buffer.line_index.get_line_start(row));
+    let cursor = doc.buffer().cursor();
+    let row = doc.buffer().line_index.get_line_at(cursor);
+    let col = cursor.saturating_sub(doc.buffer().line_index.get_line_start(row));
     (row, col)
 }
 
 fn lua_buf_sync_key(doc: &crate::document::Document) -> BufSyncKey {
     BufSyncKey {
-        text: doc.buffer.revision,
+        text: doc.buffer().revision(),
         meta: fingerprint([(
             lua_buf_cursor(doc),
             doc.kind.kind_str(),
@@ -227,7 +227,7 @@ impl<T: TerminalBackend> Editor<T> {
             })
         };
         if self.plugin_host.syntax_unchanged(
-            parsed().map(|(doc, _, root_id)| (doc.id.get(), doc.buffer.revision, root_id)),
+            parsed().map(|(doc, _, root_id)| (doc.id.get(), doc.buffer().revision(), root_id)),
         ) {
             return None;
         }
@@ -236,8 +236,8 @@ impl<T: TerminalBackend> Editor<T> {
                 let id = doc.id.get();
                 let fresh = self
                     .plugin_host
-                    .syntax_needs_sync(id, doc.buffer.revision, root_id)
-                    .then(|| syntax.snapshot(id, &doc.buffer))
+                    .syntax_needs_sync(id, doc.buffer().revision(), root_id)
+                    .then(|| syntax.snapshot(id, doc.buffer()))
                     .flatten();
                 (id, fresh)
             })
@@ -267,7 +267,7 @@ impl<T: TerminalBackend> Editor<T> {
                     previous.is_none_or(|previous| part(&previous) != part(&key))
                 };
                 let update = BufUpdate {
-                    text: changed(|k| k.text).then(|| doc.buffer.clone()),
+                    text: changed(|k| k.text).then(|| doc.buffer().clone()),
                     meta: changed(|k| k.meta).then(|| lua_buf_meta(doc)),
                     options: changed(|k| k.options).then(|| (*doc.options).clone()),
                     annotations: changed(|k| k.annotations).then(|| lua_annotations(doc)),
@@ -290,7 +290,7 @@ impl<T: TerminalBackend> Editor<T> {
                 is_current,
                 kind: doc.kind.kind_str(),
                 path: doc.path(),
-                line_count: doc.buffer.get_total_lines(),
+                line_count: doc.buffer().get_total_lines(),
                 is_read_only: doc.is_read_only(),
             })
     }
@@ -570,7 +570,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         match mutation {
             PluginMutation::AppendLines { lines, .. } => {
-                let end = doc.buffer.len();
+                let end = doc.buffer().len();
                 let _ = doc.edit(Edit::insert(end, lines.join("\n")), EditSource::Plugin);
             }
             PluginMutation::InsertAtCursor { text, .. } => {
@@ -589,7 +589,7 @@ impl<T: TerminalBackend> Editor<T> {
             PluginMutation::ReplaceLines {
                 start, end, lines, ..
             } => {
-                if let Some(edit) = doc.buffer.line_replacement(
+                if let Some(edit) = doc.buffer().line_replacement(
                     start.saturating_sub(1),
                     end.saturating_sub(1),
                     &lines,
@@ -601,7 +601,8 @@ impl<T: TerminalBackend> Editor<T> {
                         .edit(Edit::insert(edit.start, &edit.text), EditSource::Plugin)
                         .unwrap_or(false);
                     if deleted || inserted {
-                        let _ = doc.buffer.set_cursor(edit.cursor.min(doc.buffer.len()));
+                        let cursor = edit.cursor.min(doc.buffer().len());
+                        let _ = doc.buffer_mut().set_cursor(cursor);
                     }
                 }
             }
@@ -616,8 +617,8 @@ impl<T: TerminalBackend> Editor<T> {
                     self.drop_plugin_write(buf, "set_cursor");
                     return;
                 };
-                let pos = doc.buffer.line_col_position(row.saturating_sub(1), col);
-                let _ = doc.buffer.set_cursor(pos);
+                let pos = doc.buffer().line_col_position(row.saturating_sub(1), col);
+                let _ = doc.buffer_mut().set_cursor(pos);
             }
             PluginMutation::CenterOnLine { buf, row } => {
                 let active = self.document_manager.active_document_id() == Some(buf);
@@ -625,9 +626,10 @@ impl<T: TerminalBackend> Editor<T> {
                     self.drop_plugin_write(buf, "center_on_line");
                     return;
                 };
-                let total = doc.buffer.get_total_lines();
+                let total = doc.buffer().get_total_lines();
                 let row0 = row.saturating_sub(1).min(total.saturating_sub(1));
-                let _ = doc.buffer.set_cursor(doc.buffer.line_col_position(row0, 0));
+                let target = doc.buffer().line_col_position(row0, 0);
+                let _ = doc.buffer_mut().set_cursor(target);
                 if active {
                     self.render_system.viewport.center_on(row0, total);
                 }
@@ -683,7 +685,7 @@ impl<T: TerminalBackend> Editor<T> {
                         let new_cursor = self.split_tree.focused_window().cursor_position;
                         let _ = self.document_manager.switch_to_document(new_doc);
                         if let Some(doc) = self.document_manager.get_document_mut(new_doc) {
-                            let _ = doc.buffer.set_cursor(new_cursor);
+                            let _ = doc.buffer_mut().set_cursor(new_cursor);
                         }
                         self.sync_state_with_active_document();
                         self.render_system.viewport.mark_needs_full_redraw();
@@ -1357,7 +1359,7 @@ impl<T: TerminalBackend> Editor<T> {
                     self.drop_plugin_write(buf, "highlight.add");
                     return;
                 };
-                let bytes = highlight_bytes(&doc.buffer, &range);
+                let bytes = highlight_bytes(doc.buffer(), &range);
                 if bytes.is_empty() {
                     return;
                 }

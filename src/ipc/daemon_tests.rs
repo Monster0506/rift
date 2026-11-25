@@ -331,7 +331,7 @@ fn remote_paste(text: &str) -> String {
 
     while editor.tick().is_ok() {}
 
-    editor.active_document().buffer.to_string()
+    editor.active_document().buffer().to_string()
 }
 
 #[test]

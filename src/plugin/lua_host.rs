@@ -1,5 +1,6 @@
 //! Lua 5.4 plugin host - embeds mlua and exposes the `rift.*` API.
 
+use crate::document::ops::Edit;
 use crate::document::DocumentId;
 use crate::job_manager::jobs::plugin_process::{JobCommand, JobSpec, JobStream, PluginJobEvent};
 use crate::notification::NotificationType;
@@ -312,12 +313,12 @@ impl LuaSharedState {
         let (row, col) = snap.meta.cursor;
         let pos = buffer.line_index.get_line_start(row) + col;
         let _ = buffer.set_cursor(pos.min(buffer.len()));
-        let revision = buffer.revision;
+        let revision = buffer.revision();
         edit(buffer);
         let pos = buffer.cursor();
         let row = buffer.line_index.get_line_at(pos);
         snap.meta.cursor = (row, pos - buffer.line_index.get_line_start(row));
-        if buffer.revision != revision {
+        if buffer.revision() != revision {
             snap.meta.is_dirty = true;
             snap.meta.history = HistoryAvailability {
                 can_undo: true,
@@ -366,11 +367,7 @@ impl LuaSharedState {
         let id = self.creation_ids.pop().ok_or_else(|| {
             LuaError::RuntimeError("cannot create more than 8 buffers before the next sync".into())
         })?;
-        let mut buffer = crate::buffer::TextBuffer::default();
-        buffer
-            .insert_str(&lines.join("\n"))
-            .map_err(LuaError::external)?;
-        buffer.set_cursor(0).map_err(LuaError::external)?;
+        let buffer = crate::buffer::TextBuffer::from_text(&lines.join("\n"));
         self.buf_list.push(BufEntry {
             id: usize::try_from(id).map_err(LuaError::external)?,
             name: title.unwrap_or(kind).to_string(),
@@ -1119,10 +1116,11 @@ impl LuaHost {
                     let buf = opts_target(&sh, opts.as_ref())?;
                     let mut s = sh.borrow_mut();
                     let text = v.join("\n");
-                    s.edit_local_buf(buf, |buffer| {
-                        let _ = buffer.set_cursor(buffer.len());
-                        let _ = buffer.insert_str(&text);
-                    });
+                    if !s.local_buf_read_only(buf) {
+                        s.edit_local_buf(buf, |buffer| {
+                            Edit::insert(buffer.len(), &text).apply_to(buffer);
+                        });
+                    }
                     s.mutations.push(PluginMutation::AppendLines {
                         buf: DocumentId::new(buf),
                         lines: v,
@@ -1813,7 +1811,7 @@ impl LuaHost {
                 let mut s = sh.borrow_mut();
                 if !s.local_buf_read_only(buf) {
                     s.edit_local_buf(buf, |buffer| {
-                        let _ = buffer.insert_str(&text);
+                        Edit::type_text(&text).apply_to(buffer);
                     });
                 }
                 s.mutations.push(PluginMutation::InsertAtCursor {
@@ -1835,7 +1833,7 @@ impl LuaHost {
                     if !s.local_buf_read_only(buf) {
                         s.edit_local_buf(buf, |buffer| {
                             for _ in 0..count {
-                                buffer.delete_backward();
+                                Edit::DeleteBackward.apply_to(buffer);
                             }
                         });
                     }
@@ -1859,7 +1857,7 @@ impl LuaHost {
                     if !s.local_buf_read_only(buf) {
                         s.edit_local_buf(buf, |buffer| {
                             for _ in 0..count {
-                                buffer.delete_forward();
+                                Edit::DeleteForward.apply_to(buffer);
                             }
                         });
                     }
@@ -1913,14 +1911,16 @@ impl LuaHost {
                     if start >= 1 && end_ >= start {
                         let mut s = sh.borrow_mut();
                         let (start, end) = (lua_index(start), lua_index(end_));
-                        s.edit_local_buf(buf, |buffer| {
-                            if let Some(edit) = buffer.line_replacement(start - 1, end - 1, &v) {
-                                buffer.delete_range(edit.start, edit.end - edit.start);
-                                let _ = buffer.set_cursor(edit.start);
-                                let _ = buffer.insert_str(&edit.text);
-                                let _ = buffer.set_cursor(edit.cursor.min(buffer.len()));
-                            }
-                        });
+                        if !s.local_buf_read_only(buf) {
+                            s.edit_local_buf(buf, |buffer| {
+                                if let Some(edit) = buffer.line_replacement(start - 1, end - 1, &v)
+                                {
+                                    Edit::delete(edit.start..edit.end).apply_to(buffer);
+                                    Edit::insert(edit.start, &edit.text).apply_to(buffer);
+                                    let _ = buffer.set_cursor(edit.cursor.min(buffer.len()));
+                                }
+                            });
+                        }
                         s.mutations.push(PluginMutation::ReplaceLines {
                             buf: DocumentId::new(buf),
                             start,

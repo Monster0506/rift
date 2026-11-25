@@ -29,13 +29,15 @@ fn search_execution(c: &mut Criterion) {
         let mut buf = TextBuffer::new(1024 * 1024).unwrap();
         // 1000 iterations of a pattern
         for i in 0..1000 {
-            buf.insert_str(&format!("Prefix match_{i} Suffix\n"))
-                .unwrap();
+            monster_rift::bench_api::buffer::Edit::type_text(format!("Prefix match_{i} Suffix\n"))
+                .apply_to(&mut buf);
         }
         // Fill some noise
         for _ in 0..1000 {
-            buf.insert_str("Calculon is a acting robot who is very dramatic.\n")
-                .unwrap();
+            monster_rift::bench_api::buffer::Edit::type_text(
+                "Calculon is a acting robot who is very dramatic.\n",
+            )
+            .apply_to(&mut buf);
         }
         buf
     };

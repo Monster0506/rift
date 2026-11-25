@@ -138,7 +138,7 @@ fn compute_content_blit_key(ctx: &DrawContext, visible_rows: usize) -> ContentBl
         ctx.kind_registry_generation,
     );
     ContentBlitKey {
-        revision: ctx.buf.revision,
+        revision: ctx.buf.revision(),
         buf_len: ctx.buf.len(),
         tab_width: ctx.tab_width,
         show_line_numbers: ctx.state.line_numbers_on(ctx.show_line_numbers),

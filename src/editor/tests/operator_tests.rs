@@ -4,7 +4,7 @@ use super::*;
 const TEXT: &str = "abc\ndef";
 
 fn buffer_text(editor: &mut Editor<KeyQueue>) -> String {
-    editor.active_document().buffer.to_string()
+    editor.active_document().buffer().to_string()
 }
 
 #[test]

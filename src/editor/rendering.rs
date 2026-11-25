@@ -80,7 +80,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let doc_id = self.split_tree.focused_window().document_id;
         if let Some(doc) = self.document_manager.get_document(doc_id) {
-            self.split_tree.focused_window_mut().cursor_position = doc.buffer.cursor();
+            self.split_tree.focused_window_mut().cursor_position = doc.buffer().cursor();
         }
 
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
@@ -90,12 +90,12 @@ impl<T: TerminalBackend> Editor<T> {
         let (cursor_line, cursor_col, total_lines, is_terminal) = {
             let doc = self.document_manager.get_document(doc_id)?;
             let tw = doc.options.tab_width;
-            let line = doc.buffer.get_line();
-            let cursor = doc.buffer.cursor();
-            let line_start = doc.buffer.line_index.get_start(line).unwrap_or(0);
-            let col = render::calculate_cursor_column_at(&doc.buffer, line, tw, cursor)
+            let line = doc.buffer().get_line();
+            let cursor = doc.buffer().cursor();
+            let line_start = doc.buffer().line_index.get_start(line).unwrap_or(0);
+            let col = render::calculate_cursor_column_at(doc.buffer(), line, tw, cursor)
                 + doc.annotations.leading_width_in(line_start, cursor + 1);
-            let total = doc.buffer.get_total_lines();
+            let total = doc.buffer().get_total_lines();
             (line, col, total, doc.is_terminal())
         };
         self.state.update_cursor(cursor_line, cursor_col);
@@ -107,7 +107,7 @@ impl<T: TerminalBackend> Editor<T> {
         let cursor_char = self
             .document_manager
             .get_document(doc_id)
-            .map_or(0, |d| d.buffer.cursor());
+            .map_or(0, |d| d.buffer().cursor());
         let visible_rows = self.render_system.viewport.visible_rows();
         let display_map = {
             let content_width = self
@@ -175,7 +175,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let active = if is_visual {
             visual_anchor.zip(visual_kind).map(|(anchor, kind)| {
-                crate::selection::Region::new(anchor, doc.buffer.cursor(), kind)
+                crate::selection::Region::new(anchor, doc.buffer().cursor(), kind)
             })
         } else {
             None
@@ -340,7 +340,7 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let text_cols = layout.cols.saturating_sub(gutter);
             let summary_rows = if soft_wrap {
-                doc.buffer.len().div_ceil(text_cols.max(1)).max(1)
+                doc.buffer().len().div_ceil(text_cols.max(1)).max(1)
             } else {
                 1
             };
@@ -399,8 +399,8 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(doc) = self.document_manager.get_document(doc_id) else {
             return 0;
         };
-        let cursor = doc.buffer.cursor();
-        let line = doc.buffer.line_index.get_line_at(cursor);
+        let cursor = doc.buffer().cursor();
+        let line = doc.buffer().line_index.get_line_at(cursor);
         let row = self
             .resolve_display_map_cached(doc_id, content_width, cursor, rows)
             .map_or_else(
@@ -423,17 +423,17 @@ impl<T: TerminalBackend> Editor<T> {
         let wrap_width = self.state.settings.wrap_width;
         let include_lsp = self.state.settings.lsp.virtual_text;
         let doc = self.document_manager.get_document_mut(doc_id)?;
-        let revision = doc.buffer.revision;
-        let buf_len = doc.buffer.len();
+        let revision = doc.buffer().revision();
+        let buf_len = doc.buffer().len();
         let annotations_revision = doc.annotations.revision();
         let params = super::resolve_wrap_params(doc, content_width, soft_wrap, wrap_width);
-        let edits = doc.buffer.take_char_edits();
+        let edits = doc.buffer_mut().take_char_edits();
 
         let eol_rows = |doc: &crate::document::Document| {
             doc.annotations.trailing_adornment_lines(include_lsp, |b| {
-                doc.buffer
+                doc.buffer()
                     .line_index
-                    .get_line_at(doc.buffer.byte_to_char(b))
+                    .get_line_at(doc.buffer().byte_to_char(b))
             })
         };
 
@@ -464,7 +464,7 @@ impl<T: TerminalBackend> Editor<T> {
                     if let Some(combined) = combine_char_edits(&edits) {
                         if let Some(mut m) = entry.map {
                             if Arc::make_mut(&mut m).apply_edit(
-                                &doc.buffer,
+                                doc.buffer(),
                                 combined.pos,
                                 combined.del,
                                 combined.ins,
@@ -490,9 +490,9 @@ impl<T: TerminalBackend> Editor<T> {
         if !already_covered {
             if let Some(m) = map.as_mut() {
                 let mm = Arc::make_mut(m);
-                mm.extend_to_char(&doc.buffer, cursor_char);
+                mm.extend_to_char(doc.buffer(), cursor_char);
                 let row = mm.char_to_visual_row(cursor_char);
-                mm.extend_to_row(&doc.buffer, row + extend_margin_rows + 1);
+                mm.extend_to_row(doc.buffer(), row + extend_margin_rows + 1);
             }
         }
 
@@ -596,14 +596,10 @@ impl<T: TerminalBackend> Editor<T> {
         let (start_logical, end_logical, start_byte, end_byte) =
             Self::visible_span(doc, &render_system.viewport, display_map);
 
-        let highlights = doc
-            .syntax
-            .as_mut()
-            .map(|syntax| syntax.highlights(&doc.buffer, start_byte..end_byte));
-        let injection_hl = doc
-            .syntax
-            .as_mut()
-            .map(|s| s.injection_highlights_named(&doc.buffer, start_byte..end_byte));
+        let highlights =
+            doc.with_syntax(|syntax, buffer| syntax.highlights(buffer, start_byte..end_byte));
+        let injection_hl =
+            doc.with_syntax(|s, buffer| s.injection_highlights_named(buffer, start_byte..end_byte));
         let capture_names = doc
             .syntax
             .as_ref()
@@ -621,9 +617,9 @@ impl<T: TerminalBackend> Editor<T> {
             start_logical..end_logical,
             state.settings.lsp.virtual_text,
             |b| {
-                doc.buffer
+                doc.buffer()
                     .line_index
-                    .get_line_at(doc.buffer.byte_to_char(b))
+                    .get_line_at(doc.buffer().byte_to_char(b))
             },
         );
         let annotation_inline = doc.annotations.inline_adornments(
@@ -639,7 +635,7 @@ impl<T: TerminalBackend> Editor<T> {
         let git_gutter_colors_data = git_gutter::git_gutter_render_colors(doc);
 
         let state = render::RenderState {
-            buf: &doc.buffer,
+            buf: doc.buffer(),
             state,
             current_mode: *current_mode,
             pending_key: pending_keys.last().copied(),
@@ -701,24 +697,28 @@ impl<T: TerminalBackend> Editor<T> {
                             .saturating_sub(1)
                             .min(dm.total_visual_rows().saturating_sub(1)),
                     )
-                    .map_or_else(|| doc.buffer.get_total_lines(), |r| r.logical_line + 1);
+                    .map_or_else(|| doc.buffer().get_total_lines(), |r| r.logical_line + 1);
                 (start_l, end_l)
             },
         );
-        let start_char = doc.buffer.line_index.get_start(start_logical).unwrap_or(0);
-        let end_char = if end_logical < doc.buffer.get_total_lines() {
-            doc.buffer
+        let start_char = doc
+            .buffer()
+            .line_index
+            .get_start(start_logical)
+            .unwrap_or(0);
+        let end_char = if end_logical < doc.buffer().get_total_lines() {
+            doc.buffer()
                 .line_index
                 .get_start(end_logical)
-                .unwrap_or(doc.buffer.len())
+                .unwrap_or(doc.buffer().len())
         } else {
-            doc.buffer.len()
+            doc.buffer().len()
         };
         (
             start_logical,
             end_logical,
-            doc.buffer.char_to_byte(start_char),
-            doc.buffer.char_to_byte(end_char),
+            doc.buffer().char_to_byte(start_char),
+            doc.buffer().char_to_byte(end_char),
         )
     }
 
@@ -816,7 +816,7 @@ impl<T: TerminalBackend> Editor<T> {
                             source_doc_id,
                             wrap_width,
                             tab_width,
-                            source_doc.buffer.revision,
+                            source_doc.buffer().revision(),
                         ),
                         params,
                     )
@@ -833,14 +833,14 @@ impl<T: TerminalBackend> Editor<T> {
                     .map_or_default(|source_doc| match params {
                         Some((wrap_width, tab_width)) => {
                             let map = crate::wrap::DisplayMap::build(
-                                &source_doc.buffer,
+                                source_doc.buffer(),
                                 wrap_width,
                                 tab_width,
                             );
                             (0..blame_line_count)
                                 .map(|line| {
                                     let first = map.logical_to_first_visual(line);
-                                    let next = if line + 1 < source_doc.buffer.get_total_lines() {
+                                    let next = if line + 1 < source_doc.buffer().get_total_lines() {
                                         map.logical_to_first_visual(line + 1)
                                     } else {
                                         map.total_visual_rows()
@@ -854,7 +854,7 @@ impl<T: TerminalBackend> Editor<T> {
                 if let Some(blame_doc) = self.document_manager.get_document_mut(blame_doc_id) {
                     blame_doc.set_git_blame_wrap_rows(wrap_key, wrap_rows);
                     if let Some(window) = self.split_tree.get_window_mut(blame_window_id) {
-                        window.cursor_position = blame_doc.buffer.cursor();
+                        window.cursor_position = blame_doc.buffer().cursor();
                     }
                 }
             }
@@ -881,12 +881,15 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             };
             let tab_width = doc.options.tab_width;
-            let cursor_line = doc.buffer.line_index.get_line_at(cursor_pos);
-            let line_start = doc.buffer.line_index.get_start(cursor_line).unwrap_or(0);
-            let cursor_col =
-                render::calculate_cursor_column_at(&doc.buffer, cursor_line, tab_width, cursor_pos)
-                    + doc.annotations.leading_width_in(line_start, cursor_pos + 1);
-            let total_lines = doc.buffer.get_total_lines();
+            let cursor_line = doc.buffer().line_index.get_line_at(cursor_pos);
+            let line_start = doc.buffer().line_index.get_start(cursor_line).unwrap_or(0);
+            let cursor_col = render::calculate_cursor_column_at(
+                doc.buffer(),
+                cursor_line,
+                tab_width,
+                cursor_pos,
+            ) + doc.annotations.leading_width_in(line_start, cursor_pos + 1);
+            let total_lines = doc.buffer().get_total_lines();
             let viewport_col = if doc.is_terminal() { 0 } else { cursor_col };
             let gutter_width = Self::line_number_gutter_width(doc, &self.state);
             let terminal_resize = if doc.is_terminal() {
@@ -1188,14 +1191,10 @@ impl<T: TerminalBackend> Editor<T> {
         let (start_line, end_line, start_byte, end_byte) =
             Self::visible_span(doc, &window.viewport, display_map);
 
-        let highlights = doc
-            .syntax
-            .as_mut()
-            .map(|syntax| syntax.highlights(&doc.buffer, start_byte..end_byte));
-        let injection_hl = doc
-            .syntax
-            .as_mut()
-            .map(|s| s.injection_highlights_named(&doc.buffer, start_byte..end_byte));
+        let highlights =
+            doc.with_syntax(|syntax, buffer| syntax.highlights(buffer, start_byte..end_byte));
+        let injection_hl =
+            doc.with_syntax(|s, buffer| s.injection_highlights_named(buffer, start_byte..end_byte));
         let capture_names = doc
             .syntax
             .as_ref()
@@ -1212,9 +1211,9 @@ impl<T: TerminalBackend> Editor<T> {
             start_line..end_line,
             state.settings.lsp.virtual_text,
             |b| {
-                doc.buffer
+                doc.buffer()
                     .line_index
-                    .get_line_at(doc.buffer.byte_to_char(b))
+                    .get_line_at(doc.buffer().byte_to_char(b))
             },
         );
         let annotation_inline = doc.annotations.inline_adornments(
@@ -1227,7 +1226,7 @@ impl<T: TerminalBackend> Editor<T> {
         let git_gutter_colors_data = git_gutter::git_gutter_render_colors(doc);
 
         let ctx = render::DrawContext {
-            buf: &doc.buffer,
+            buf: doc.buffer(),
             viewport: &window.viewport,
             current_mode: *current_mode,
             pending_key: pending_keys.last().copied(),
@@ -1278,7 +1277,7 @@ impl<T: TerminalBackend> Editor<T> {
         doc: &crate::document::Document,
         state: &crate::state::State,
     ) -> usize {
-        let lines = doc.buffer.last_real_line() + 1;
+        let lines = doc.buffer().last_real_line() + 1;
         state.doc_gutter_cols(doc.options.show_line_numbers, lines)
     }
 
@@ -1286,14 +1285,14 @@ impl<T: TerminalBackend> Editor<T> {
         doc: &crate::document::Document,
         span: std::ops::Range<usize>,
     ) -> Vec<(usize, usize)> {
-        let cursor_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
+        let cursor_line = doc.buffer().line_index.get_line_at(doc.buffer().cursor());
         doc.annotations
             .concealed_ranges(span)
             .into_iter()
             .filter(|(s, _)| {
-                doc.buffer
+                doc.buffer()
                     .line_index
-                    .get_line_at(doc.buffer.byte_to_char(*s))
+                    .get_line_at(doc.buffer().byte_to_char(*s))
                     != cursor_line
             })
             .collect()
@@ -1414,7 +1413,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let focused_vp = &split_tree.focused_window().viewport;
         let render_state = render::RenderState {
-            buf: &focused_doc.buffer,
+            buf: focused_doc.buffer(),
             state,
             current_mode: *current_mode,
             pending_key: pending_keys.last().copied(),
@@ -1472,13 +1471,13 @@ impl<T: TerminalBackend> Editor<T> {
             self.document_manager
                 .active_document_mut()
                 .map_or((None, None), |doc| {
-                    let cursor = doc.buffer.cursor();
-                    let line = doc.buffer.line_index.get_line_at(cursor);
-                    let cursor_byte = doc.buffer.char_to_byte(cursor);
+                    let cursor = doc.buffer().cursor();
+                    let line = doc.buffer().line_index.get_line_at(cursor);
+                    let cursor_byte = doc.buffer().char_to_byte(cursor);
                     let line_of = |b: usize| {
-                        doc.buffer
+                        doc.buffer()
                             .line_index
-                            .get_line_at(doc.buffer.byte_to_char(b))
+                            .get_line_at(doc.buffer().byte_to_char(b))
                     };
                     let tip = doc
                         .annotations

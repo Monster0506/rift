@@ -4,8 +4,10 @@ use crate::replay::backend::ReplayBackend;
 fn replay_editor(text: &str) -> Editor<ReplayBackend<std::io::Sink>> {
     let backend = ReplayBackend::new(std::io::sink(), 24, 80);
     let mut editor = Editor::new(backend).unwrap();
-    editor.active_document().buffer.insert_str(text).unwrap();
-    editor.active_document().buffer.move_to_start();
+    editor
+        .active_document()
+        .replace_content(text, crate::document::ops::ContentKind::Render);
+    editor.active_document().buffer_mut().move_to_start();
 
     editor
 }
@@ -22,7 +24,7 @@ fn run(text: &str, keys: &str) -> (String, Mode) {
     let mut editor = replay_editor(text);
     press(&mut editor, keys);
     (
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         editor.current_mode,
     )
 }
@@ -162,7 +164,7 @@ fn visual_yank_returns_to_selection_start_in_both_directions() {
     for (keys, cursor) in [("vly", 0), ("lvhy", 0), ("jvkY", 0), ("ljvky", 1)] {
         let mut editor = replay_editor("abc\ndef\nghi");
         press(&mut editor, keys);
-        assert_eq!(editor.active_document().buffer.cursor(), cursor, "{keys}");
+        assert_eq!(editor.active_document().buffer().cursor(), cursor, "{keys}");
         assert_eq!(editor.current_mode, Mode::Normal, "{keys}");
     }
 }
@@ -193,7 +195,7 @@ fn mixed_banked_change_preserves_kinds_boundaries_and_one_undo_step() {
     )));
     press(&mut editor, "!<Esc>");
 
-    assert_eq!(editor.active_document().buffer.to_string(), "!\n!f\nghi");
+    assert_eq!(editor.active_document().buffer().to_string(), "!\n!f\nghi");
     assert!(editor.pending_multi_insert_anchors.is_empty());
     for (index, expected, kind) in [
         (0, "abc\n", RangeKind::Linewise),
@@ -204,7 +206,7 @@ fn mixed_banked_change_preserves_kinds_boundaries_and_one_undo_step() {
         assert_eq!((captured, clip.kind()), (expected.to_string(), kind));
     }
     assert!(editor.active_document().undo());
-    assert_eq!(editor.active_document().buffer.to_string(), text);
+    assert_eq!(editor.active_document().buffer().to_string(), text);
 }
 
 #[test]
@@ -217,7 +219,7 @@ fn readonly_visual_mutations_do_not_capture_or_enter_insert_mode() {
         editor.active_document().set_read_only(true);
         press(&mut editor, keys);
         assert_eq!(
-            editor.active_document().buffer.to_string(),
+            editor.active_document().buffer().to_string(),
             "abc\ndef",
             "{keys}"
         );
@@ -318,11 +320,11 @@ fn visual_line_delete_lands_on_first_nonblank_of_remaining_line() {
         let mut editor = replay_editor(text);
         press(&mut editor, keys);
         assert_eq!(
-            editor.active_document().buffer.to_string(),
+            editor.active_document().buffer().to_string(),
             expected,
             "{keys}"
         );
-        assert_eq!(editor.active_document().buffer.cursor(), cursor, "{keys}");
+        assert_eq!(editor.active_document().buffer().cursor(), cursor, "{keys}");
     }
 }
 
@@ -338,6 +340,6 @@ fn normal_banked_line_delete_retains_existing_cursor_convention() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
-    assert_eq!(editor.active_document().buffer.to_string(), "abc");
-    assert_eq!(editor.active_document().buffer.cursor(), 2);
+    assert_eq!(editor.active_document().buffer().to_string(), "abc");
+    assert_eq!(editor.active_document().buffer().cursor(), 2);
 }

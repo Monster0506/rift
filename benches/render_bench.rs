@@ -87,10 +87,10 @@ fn render_loop(c: &mut Criterion) {
         let mut buf = TextBuffer::new(1024 * 1024).unwrap();
         // Fill with some realistic code-like content
         for i in 0..10_000 {
-            buf.insert_str(&format!(
+            monster_rift::bench_api::buffer::Edit::type_text(format!(
                 "fn function_{i}() {{ println!(\"Hello World {i}\"); }}\n"
             ))
-            .unwrap();
+            .apply_to(&mut buf);
         }
 
         let state = State::new();

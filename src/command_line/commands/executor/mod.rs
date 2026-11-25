@@ -428,7 +428,7 @@ fn execute_substitute(
     flags: &str,
     range: Option<&str>,
 ) -> ExecutionResult {
-    match crate::search::find_all(&document.buffer, pattern) {
+    match crate::search::find_all(document.buffer(), pattern) {
         Ok((mut matches, _stats)) => {
             let is_global_subst = flags.contains('g');
             let whole_file = range == Some("%");
@@ -439,7 +439,7 @@ fn execute_substitute(
                     .selection_set
                     .sorted()
                     .iter()
-                    .map(|r| r.buffer_span(&document.buffer))
+                    .map(|r| r.buffer_span(document.buffer()))
                     .collect();
                 matches.retain(|m| {
                     region_spans
@@ -448,15 +448,15 @@ fn execute_substitute(
                 });
             } else if !whole_file {
                 let current_line_idx = document
-                    .buffer
+                    .buffer()
                     .line_index
-                    .get_line_at(document.buffer.cursor());
-                let start_byte = document.buffer.line_start(current_line_idx);
+                    .get_line_at(document.buffer().cursor());
+                let start_byte = document.buffer().line_start(current_line_idx);
                 let end_byte = document
-                    .buffer
+                    .buffer()
                     .line_index
-                    .get_end(current_line_idx, document.buffer.len())
-                    .unwrap_or(document.buffer.len());
+                    .get_end(current_line_idx, document.buffer().len())
+                    .unwrap_or(document.buffer().len());
 
                 matches.retain(|m| m.range.start >= start_byte && m.range.end <= end_byte);
             }
@@ -474,7 +474,7 @@ fn execute_substitute(
             let mut last_line_idx = None;
 
             for m in matches {
-                let line_idx = document.buffer.line_index.get_line_at(m.range.start);
+                let line_idx = document.buffer().line_index.get_line_at(m.range.start);
                 if !is_global_subst {
                     if Some(line_idx) == last_line_idx {
                         continue;
@@ -514,7 +514,7 @@ fn execute_substitute(
             if changes_made > 0 {
                 state.last_search_query = Some(pattern.to_string());
 
-                match crate::search::find_all(&document.buffer, pattern) {
+                match crate::search::find_all(document.buffer(), pattern) {
                     Ok((new_matches, _)) => state.search_matches = new_matches,
                     Err(_) => state.search_matches.clear(),
                 }

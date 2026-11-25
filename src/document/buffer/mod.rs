@@ -22,11 +22,38 @@ pub(crate) struct CharEdit {
 
 const CHAR_EDIT_LOG_CAP: usize = 64;
 
+#[cfg(test)]
+pub(crate) fn decode_bytes(bytes: &[u8]) -> Vec<Character> {
+    let mut chars = Vec::with_capacity(bytes.len());
+    let mut remaining = bytes;
+    loop {
+        match std::str::from_utf8(remaining) {
+            Ok(s) => {
+                chars.extend(s.chars().map(Character::from));
+                return chars;
+            }
+            Err(e) => {
+                let valid_up_to = e.valid_up_to();
+                // SAFETY: `valid_up_to` is the length of the prefix `from_utf8` validated.
+                let valid = unsafe { std::str::from_utf8_unchecked(&remaining[..valid_up_to]) };
+                chars.extend(valid.chars().map(Character::from));
+                let error_len = e.error_len().unwrap_or(1);
+                chars.extend(
+                    remaining[valid_up_to..valid_up_to + error_len]
+                        .iter()
+                        .map(|&b| Character::Byte(b)),
+                );
+                remaining = &remaining[valid_up_to + error_len..];
+            }
+        }
+    }
+}
+
 pub struct TextBuffer {
     pub line_index: LineIndex,
     cursor: usize,
     desired_col: Option<usize>,
-    pub(crate) revision: u64,
+    pub(in crate::document) revision: u64,
     line_cache: RefCell<LineCache>,
     char_edit_log: Vec<CharEdit>,
 }
@@ -100,6 +127,11 @@ impl TextBuffer {
     #[must_use]
     pub(crate) const fn cursor(&self) -> usize {
         self.cursor
+    }
+
+    #[must_use]
+    pub(crate) const fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// # Errors
@@ -194,53 +226,21 @@ impl TextBuffer {
         }
     }
 
-    /// # Errors
-    /// Never returns `Err`.
-    pub fn insert_char(&mut self, ch: char) -> Result<(), RiftError> {
+    #[cfg(test)]
+    pub(in crate::document) fn insert_char(&mut self, ch: char) -> Result<(), RiftError> {
         let character = Character::from(ch);
         self.insert_chars(&[character]);
         Ok(())
     }
 
     #[cfg(test)]
-    pub(crate) fn insert_bytes(&mut self, bytes: &[u8]) {
-        let mut chars = Vec::with_capacity(bytes.len());
-        let mut remaining = bytes;
-        loop {
-            match std::str::from_utf8(remaining) {
-                Ok(s) => {
-                    for c in s.chars() {
-                        chars.push(Character::from(c));
-                    }
-                    break;
-                }
-                Err(e) => {
-                    let valid_up_to = e.valid_up_to();
-                    // SAFETY: `valid_up_to` is the length of the prefix `from_utf8` validated.
-                    let valid = unsafe { std::str::from_utf8_unchecked(&remaining[..valid_up_to]) };
-                    for c in valid.chars() {
-                        chars.push(Character::from(c));
-                    }
-                    let error_len = e.error_len().unwrap_or(1);
-                    for &b in &remaining[valid_up_to..valid_up_to + error_len] {
-                        chars.push(Character::Byte(b));
-                    }
-                    remaining = &remaining[valid_up_to + error_len..];
-                }
-            }
-        }
-        self.insert_chars(&chars);
-    }
-
-    /// # Errors
-    /// Never returns `Err`.
-    pub fn insert_str(&mut self, s: &str) -> Result<(), RiftError> {
+    pub(in crate::document) fn insert_str(&mut self, s: &str) -> Result<(), RiftError> {
         let chars: Vec<Character> = s.chars().map(Character::from).collect();
         self.insert_chars(&chars);
         Ok(())
     }
 
-    pub(crate) fn insert_chars(&mut self, chars: &[Character]) {
+    pub(in crate::document) fn insert_chars(&mut self, chars: &[Character]) {
         crate::perf_span!(
             "buffer_mutate",
             crate::perf::PerfFields {
@@ -264,7 +264,7 @@ impl TextBuffer {
         self.revision += 1;
     }
 
-    pub fn delete_range(&mut self, start: usize, count: usize) -> bool {
+    pub(in crate::document) fn delete_range(&mut self, start: usize, count: usize) -> bool {
         if count == 0 {
             return false;
         }
@@ -296,7 +296,7 @@ impl TextBuffer {
         true
     }
 
-    pub(crate) fn replace_range(
+    pub(in crate::document) fn replace_range(
         &mut self,
         start: usize,
         count: usize,
@@ -333,7 +333,8 @@ impl TextBuffer {
         true
     }
 
-    pub fn delete_backward(&mut self) -> bool {
+    #[cfg(test)]
+    pub(in crate::document) fn delete_backward(&mut self) -> bool {
         if self.cursor == 0 {
             return false;
         }
@@ -344,7 +345,8 @@ impl TextBuffer {
         true
     }
 
-    pub(crate) fn delete_forward(&mut self) -> bool {
+    #[cfg(test)]
+    pub(in crate::document) fn delete_forward(&mut self) -> bool {
         if self.cursor >= self.len() {
             return false;
         }

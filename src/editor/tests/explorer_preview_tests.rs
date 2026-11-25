@@ -115,8 +115,8 @@ fn test_explorer_split_select_does_not_follow_swapped_symlink() {
             .document_manager
             .get_document_mut(layout.dir_doc_id)
             .unwrap();
-        let line_start = doc.buffer.line_index.get_start(1).unwrap();
-        doc.buffer.set_cursor(line_start).unwrap();
+        let line_start = doc.buffer().line_index.get_start(1).unwrap();
+        doc.buffer_mut().set_cursor(line_start).unwrap();
     }
     editor.handle_explorer_split_select();
 
@@ -142,8 +142,8 @@ fn move_explorer_cursor_to_line(
         .document_manager
         .get_document_mut(dir_doc_id)
         .unwrap();
-    let pos = doc.buffer.line_index.get_start(line).unwrap_or(0);
-    let _ = doc.buffer.set_cursor(pos);
+    let pos = doc.buffer().line_index.get_start(line).unwrap_or(0);
+    let _ = doc.buffer_mut().set_cursor(pos);
 }
 
 #[test]
@@ -241,7 +241,7 @@ fn test_explorer_preview_discards_stale_result() {
         .document_manager
         .get_document(preview_doc_id)
         .unwrap();
-    let text = String::from_utf8_lossy(&preview_doc.buffer.to_logical_bytes()).to_string();
+    let text = String::from_utf8_lossy(&preview_doc.buffer().to_logical_bytes()).to_string();
     assert!(
         text.contains("new content"),
         "preview should show the entry currently under the cursor, got: {text:?}"
@@ -282,7 +282,7 @@ fn test_explorer_preview_updates_on_real_j_keypress_navigation() {
         .document_manager
         .get_document(preview_doc_id)
         .unwrap();
-    let text = String::from_utf8_lossy(&preview_doc.buffer.to_logical_bytes()).to_string();
+    let text = String::from_utf8_lossy(&preview_doc.buffer().to_logical_bytes()).to_string();
 
     let _ = std::fs::remove_dir_all(&dir);
 
@@ -329,7 +329,7 @@ fn test_explorer_preview_populates_for_real_file_and_directory_targets() {
         .document_manager
         .get_document(preview_doc_id)
         .unwrap();
-    let text = String::from_utf8_lossy(&preview_doc.buffer.to_logical_bytes()).to_string();
+    let text = String::from_utf8_lossy(&preview_doc.buffer().to_logical_bytes()).to_string();
     assert!(
         text.contains("fn main"),
         "expected the file preview to show its contents, got: {text:?}"
@@ -393,7 +393,7 @@ fn test_explorer_preview_renders_a_persisted_undo_file_not_as_binary() {
         crate::document::runtime::BufferKindId::UNDO_FILE_VIEW,
         "previewing a .undo file should render it with its custom buffer type"
     );
-    let text = preview_doc.buffer.to_string();
+    let text = preview_doc.buffer().to_string();
     assert!(text.contains("insert 'hi'"), "text was: {text}");
     assert!(!text.contains("<binary file>"), "text was: {text}");
 

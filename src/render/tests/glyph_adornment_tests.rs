@@ -4,7 +4,7 @@ use super::common::*;
 fn test_tab_rendered_as_space_not_raw_tab() {
     let mut term = MockTerminal::new(5, 40);
     let mut buf = TextBuffer::new(64).unwrap();
-    buf.insert_str("\thello").unwrap();
+    crate::document::ops::Edit::type_text("\thello").apply_to(&mut buf);
     let mut state = State::new();
     state.update_buffer_stats(1, 6, crate::document::LineEnding::LF);
     let mut system = RenderSystem::new(5, 40);
@@ -86,7 +86,7 @@ fn test_trailing_adornment_hidden_when_line_end_scrolled_off() {
 fn test_tab_straddling_left_col_does_not_shift_text() {
     let mut term = MockTerminal::new(5, 40);
     let mut buf = TextBuffer::new(64).unwrap();
-    buf.insert_str("\thello").unwrap();
+    crate::document::ops::Edit::type_text("\thello").apply_to(&mut buf);
     let mut state = State::new();
     state.update_buffer_stats(1, 6, crate::document::LineEnding::LF);
     let mut system = RenderSystem::new(5, 40);
@@ -141,7 +141,7 @@ fn test_tab_straddling_left_col_does_not_shift_text() {
 fn test_wide_char_straddling_left_col_renders_as_space() {
     let mut term = MockTerminal::new(5, 40);
     let mut buf = TextBuffer::new(64).unwrap();
-    buf.insert_str("你hello").unwrap();
+    crate::document::ops::Edit::type_text("你hello").apply_to(&mut buf);
     let mut state = State::new();
     state.update_buffer_stats(1, 6, crate::document::LineEnding::LF);
     let mut system = RenderSystem::new(5, 40);
@@ -201,7 +201,7 @@ fn test_wide_char_straddling_left_col_renders_as_space() {
 fn test_zero_width_char_does_not_write_stray_cell() {
     let mut term = MockTerminal::new(5, 40);
     let mut buf = TextBuffer::new(64).unwrap();
-    buf.insert_str("a\u{0301}").unwrap();
+    crate::document::ops::Edit::type_text("a\u{0301}").apply_to(&mut buf);
     let mut state = State::new();
     state.update_buffer_stats(1, 2, crate::document::LineEnding::LF);
     let mut system = RenderSystem::new(5, 40);

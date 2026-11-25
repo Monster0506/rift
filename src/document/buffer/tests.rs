@@ -359,7 +359,8 @@ fn test_move_paragraph_empty() {
 #[test]
 fn test_insert_bytes_multibyte_utf8() {
     let mut buffer = TextBuffer::new(16).unwrap();
-    buffer.insert_bytes("—".as_bytes());
+    crate::document::ops::Edit::type_text(crate::buffer::decode_bytes("—".as_bytes()))
+        .apply_to(&mut buffer);
 
     assert_eq!(buffer.len(), 1);
     assert_eq!(buffer.char_at(0), Some(Character::Unicode('—')));
@@ -370,7 +371,7 @@ fn test_insert_bytes_multibyte_utf8() {
 fn test_insert_bytes_mixed_valid_and_invalid_utf8() {
     let mut buffer = TextBuffer::new(16).unwrap();
     let bytes: &[u8] = b"hi\xFF!";
-    buffer.insert_bytes(bytes);
+    crate::document::ops::Edit::type_text(crate::buffer::decode_bytes(bytes)).apply_to(&mut buffer);
 
     assert_eq!(buffer.len(), 4);
     assert_eq!(buffer.char_at(0), Some(Character::Unicode('h')));

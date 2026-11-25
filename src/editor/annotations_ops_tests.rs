@@ -11,7 +11,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn active_cursor(&mut self) -> usize {
         self.document_manager
             .active_document_mut()
-            .map_or(0, |d| d.buffer.cursor())
+            .map_or(0, |d| d.buffer().cursor())
     }
 }
 
@@ -318,7 +318,7 @@ Search: needle here and another needle over there.";
 
     // --- Demonstrate interactivity: toggle the first checkbox ----------
     let cb_offset = demo_offset(content, "[ ] pending item one");
-    e.active_document().buffer.set_cursor(cb_offset).ok();
+    e.active_document().buffer_mut().set_cursor(cb_offset).ok();
     assert!(e.activate_annotation_at_cursor(), "checkbox activates");
     let checked = e
         .active_document()
@@ -465,7 +465,7 @@ fn cursor_walks_through_leading_marker() {
             ),
     );
     for off in 0..=line.len() {
-        e.active_document().buffer.set_cursor(off).ok();
+        e.active_document().buffer_mut().set_cursor(off).ok();
         e.update_and_render().unwrap();
         let expected = off + if off >= 4 { 3 } else { 0 };
         assert_eq!(
@@ -498,9 +498,9 @@ fn visual_cursor_clears_leading_marker_with_softwrap() {
         }
         last
     };
-    e.active_document().buffer.set_cursor(3).ok();
+    e.active_document().buffer_mut().set_cursor(3).ok();
     let c3 = settle(&mut e);
-    e.active_document().buffer.set_cursor(4).ok();
+    e.active_document().buffer_mut().set_cursor(4).ok();
     let c4 = settle(&mut e);
     assert_eq!(
         c4 - c3,
@@ -524,7 +524,7 @@ fn cursor_clears_leading_marker() {
     );
 
     // Cursor on the space just before the marker (offset 3): column 3, unshifted.
-    e.active_document().buffer.set_cursor(3).ok();
+    e.active_document().buffer_mut().set_cursor(3).ok();
     e.update_and_render().unwrap();
     assert_eq!(
         e.state.cursor_pos.1, 3,
@@ -532,7 +532,7 @@ fn cursor_clears_leading_marker() {
     );
 
     // Cursor on 'w' (offset 4): must clear the 2-wide marker -> column 6, not 4.
-    e.active_document().buffer.set_cursor(4).ok();
+    e.active_document().buffer_mut().set_cursor(4).ok();
     e.update_and_render().unwrap();
     assert_eq!(
         e.state.cursor_pos.1, 6,
@@ -581,7 +581,7 @@ fn conceal_hides_markers_except_on_cursor_line() {
     }
 
     // Cursor on line 1: line 0's markers are concealed and the text reflows.
-    e.active_document().buffer.set_cursor(13).ok();
+    e.active_document().buffer_mut().set_cursor(13).ok();
     let out = screen(&mut e);
     assert!(
         out.contains("a bold x"),
@@ -589,7 +589,7 @@ fn conceal_hides_markers_except_on_cursor_line() {
     );
 
     // Cursor on line 0: its markers are revealed (concealcursor behavior).
-    e.active_document().buffer.set_cursor(0).ok();
+    e.active_document().buffer_mut().set_cursor(0).ok();
     let out2 = screen(&mut e);
     assert!(
         out2.contains("a **bold** x"),
@@ -628,7 +628,10 @@ fn conceal_reveal_unaffected_by_multibyte_chars_on_earlier_lines() {
     }
 
     // Cursor on line 1 (the markers' own line): they must be revealed.
-    e.active_document().buffer.set_cursor(line1_char_start).ok();
+    e.active_document()
+        .buffer_mut()
+        .set_cursor(line1_char_start)
+        .ok();
     let out = screen(&mut e);
     assert!(
         out.contains("**x**"),
@@ -638,7 +641,7 @@ fn conceal_reveal_unaffected_by_multibyte_chars_on_earlier_lines() {
 
     // Cursor on line 2: line 1's markers are concealed again.
     e.active_document()
-        .buffer
+        .buffer_mut()
         .set_cursor(line1_char_start + line1.chars().count() + 1)
         .ok();
     let out2 = screen(&mut e);
@@ -719,7 +722,7 @@ fn diagnostic_renders_adornment_and_hover_tooltip() {
     e.active_document()
         .annotations
         .create_diagnostic(0, 1, "type mismatch");
-    e.active_document().buffer.set_cursor(0).ok();
+    e.active_document().buffer_mut().set_cursor(0).ok();
     let out = screen(&mut e);
     // EOL adornment shows the bare message on the diagnostic line.
     assert!(out.contains("type mismatch"), "adornment missing:\n{out}");
@@ -744,7 +747,7 @@ fn checkbox_activation_toggles_payload() {
         .with_payload(payload)
         .with_actions(vec![Action::new("toggle").with_default()]),
     );
-    e.active_document().buffer.set_cursor(2).ok();
+    e.active_document().buffer_mut().set_cursor(2).ok();
 
     assert!(e.activate_annotation_at_cursor());
     let checked = e
@@ -781,7 +784,7 @@ fn checkbox_toggle_edits_literal_box_in_buffer() {
         .with_payload(payload)
         .with_actions(vec![Action::new("toggle").with_default()]),
     );
-    e.active_document().buffer.set_cursor(lb).ok();
+    e.active_document().buffer_mut().set_cursor(lb).ok();
 
     assert!(e.activate_annotation_at_cursor());
     assert!(
@@ -818,12 +821,12 @@ fn affordances_render_when_cursor_on_interactive_annotation() {
         ]),
     );
     // Cursor off the annotation: no affordance shown.
-    e.active_document().buffer.set_cursor(8).ok();
+    e.active_document().buffer_mut().set_cursor(8).ok();
     let off = screen(&mut e);
     assert!(!off.contains("stage"), "no affordance away from annotation");
 
     // Cursor on the annotation: the action hints render in the tooltip layer.
-    e.active_document().buffer.set_cursor(2).ok();
+    e.active_document().buffer_mut().set_cursor(2).ok();
     let on = screen(&mut e);
     assert!(
         on.contains("Enter: stage") && on.contains("d: discard"),
@@ -851,7 +854,7 @@ fn separate_verbs_dispatch_to_separate_handlers() {
             Action::new("stage"),
         ]),
     );
-    e.active_document().buffer.set_cursor(2).ok();
+    e.active_document().buffer_mut().set_cursor(2).ok();
 
     // Default activation resolves the default verb ("open").
     assert!(e.activate_annotation_verb(None));
@@ -864,14 +867,14 @@ fn separate_verbs_dispatch_to_separate_handlers() {
 #[test]
 fn verb_activation_is_noop_without_interactive_annotation() {
     let mut e = editor_with_text("hello world");
-    e.active_document().buffer.set_cursor(2).ok();
+    e.active_document().buffer_mut().set_cursor(2).ok();
     assert!(!e.activate_annotation_verb(Some("toggle")));
 }
 
 #[test]
 fn activation_is_noop_without_interactive_annotation() {
     let mut e = editor_with_text("hello world");
-    e.active_document().buffer.set_cursor(2).ok();
+    e.active_document().buffer_mut().set_cursor(2).ok();
     assert!(!e.activate_annotation_at_cursor());
 }
 
@@ -883,7 +886,11 @@ fn interface_mode_snaps_vertical_motion_between_actionable_lines() {
     e.active_document()
         .convert_to_directory(std::path::PathBuf::new());
     let line_start = |e: &mut Editor<MockTerminal>, l: usize| {
-        e.active_document().buffer.line_index.get_start(l).unwrap()
+        e.active_document()
+            .buffer()
+            .line_index
+            .get_start(l)
+            .unwrap()
     };
     for l in [1usize, 3, 5] {
         let off = line_start(&mut e, l);
@@ -897,12 +904,12 @@ fn interface_mode_snaps_vertical_motion_between_actionable_lines() {
         );
     }
     let cur_line = |e: &mut Editor<MockTerminal>| {
-        let c = e.active_document().buffer.cursor();
-        e.active_document().buffer.line_index.get_line_at(c)
+        let c = e.active_document().buffer().cursor();
+        e.active_document().buffer().line_index.get_line_at(c)
     };
     let down = EdAction::Editor(EditorAction::Move(Motion::Down));
     let up = EdAction::Editor(EditorAction::Move(Motion::Up));
-    e.active_document().buffer.set_cursor(0).ok();
+    e.active_document().buffer_mut().set_cursor(0).ok();
 
     // Down snaps 0 -> 1 -> 3 -> 5, skipping inert lines.
     e.handle_action(&down);
@@ -927,7 +934,12 @@ fn interface_mode_snaps_vertical_motion_between_actionable_lines() {
 fn snap_is_inert_without_interface_mode() {
     // A normal buffer does not snap: motion stays ordinary line movement.
     let mut e = editor_with_text("l0\nl1\nl2");
-    let off = e.active_document().buffer.line_index.get_start(2).unwrap();
+    let off = e
+        .active_document()
+        .buffer()
+        .line_index
+        .get_start(2)
+        .unwrap();
     e.active_document().annotations.add(
         Annotation::new(
             Kind::new("ui.link"),
@@ -936,7 +948,7 @@ fn snap_is_inert_without_interface_mode() {
         )
         .with_actions(vec![Action::activate()]),
     );
-    e.active_document().buffer.set_cursor(0).ok();
+    e.active_document().buffer_mut().set_cursor(0).ok();
     // snap_to_actionable_line only acts when called; the Move handler gates it
     // on interface_mode, so a normal buffer never reaches it. Confirm the gate.
     assert!(!e.active_document().is_interface_mode());
@@ -955,7 +967,7 @@ fn next_prev_navigation_moves_cursor_between_annotations() {
     };
     e.active_document().annotations.add(interactive(2, 4));
     e.active_document().annotations.add(interactive(10, 12));
-    e.active_document().buffer.set_cursor(0).ok();
+    e.active_document().buffer_mut().set_cursor(0).ok();
 
     assert!(e.goto_next_interactive_annotation());
     assert_eq!(e.active_cursor(), 2);
@@ -984,7 +996,7 @@ fn editor_with_failing_plugin(src: &str) -> Editor<MockTerminal> {
         )
         .with_actions(vec![Action::new("run").with_default()]),
     );
-    e.active_document().buffer.set_cursor(2).ok();
+    e.active_document().buffer_mut().set_cursor(2).ok();
     e
 }
 
@@ -1025,7 +1037,7 @@ fn annotation_action_reads_the_cursor_at_activation() {
            local _, col = rift.get_cursor() _G.seen = col \
          end)",
     );
-    e.active_document().buffer.set_cursor(4).ok();
+    e.active_document().buffer_mut().set_cursor(4).ok();
 
     assert!(e.activate_annotation_at_cursor());
 

@@ -62,11 +62,11 @@ fn apply_to_each_region_deletes_are_one_undo_step() {
             .active_document_mut()
             .is_some_and(|doc| doc.edit(Edit::delete(start..end), EditSource::User).is_ok())
     });
-    assert_eq!(editor.active_document().buffer.to_string(), "234789");
+    assert_eq!(editor.active_document().buffer().to_string(), "234789");
 
     assert!(editor.active_document().undo());
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "0123456789",
         "a single undo must restore both deletions at once"
     );
@@ -93,7 +93,7 @@ fn enter_multi_insert_replays_typed_session_at_every_remaining_anchor() {
     assert!(handled);
     assert_eq!(editor.current_mode, Mode::Insert);
     assert_eq!(
-        editor.active_document().buffer.cursor(),
+        editor.active_document().buffer().cursor(),
         5,
         "starts at the highest-offset anchor"
     );
@@ -102,7 +102,7 @@ fn enter_multi_insert_replays_typed_session_at_every_remaining_anchor() {
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "X01234X56789",
         "X inserted at both original anchors: live at 5, replayed at 0"
     );
@@ -150,14 +150,14 @@ fn set_aware_delete_removes_every_banked_region_as_one_op() {
         OperatorType::Delete,
     )));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "\n\n\n");
+    assert_eq!(editor.active_document().buffer().to_string(), "\n\n\n");
     assert!(
         editor.active_document().selection_set.is_empty(),
         "set clears after the batch"
     );
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    assert_eq!(editor.active_document().buffer.to_string(), "\n\n\n");
+    assert_eq!(editor.active_document().buffer().to_string(), "\n\n\n");
 }
 
 #[test]
@@ -178,13 +178,13 @@ fn set_aware_delete_is_one_undo_step() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
-    assert_eq!(editor.active_document().buffer.to_string(), "234789");
+    assert_eq!(editor.active_document().buffer().to_string(), "234789");
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    assert_eq!(editor.active_document().buffer.to_string(), "234789");
+    assert_eq!(editor.active_document().buffer().to_string(), "234789");
 
     assert!(editor.active_document().undo());
-    assert_eq!(editor.active_document().buffer.to_string(), "0123456789");
+    assert_eq!(editor.active_document().buffer().to_string(), "0123456789");
 }
 
 #[test]
@@ -205,7 +205,7 @@ fn set_aware_yank_captures_each_region_without_mutating() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "foo bar baz",
         "yank must not mutate"
     );
@@ -229,7 +229,7 @@ fn visual_d_commits_active_region_then_runs_the_batch() {
     editor
         .active_document()
         .bank_region(Region::new(5, 6, RangeKind::Charwise));
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(
         crate::action::Motion::Right,
@@ -242,7 +242,7 @@ fn visual_d_commits_active_region_then_runs_the_batch() {
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "234789",
         "both the just-committed and pre-banked region deleted as one batch"
     );
@@ -254,7 +254,7 @@ fn plain_d_with_empty_set_is_unaffected() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
@@ -296,7 +296,7 @@ fn canonical_change_across_touching_regions_does_not_merge_them() {
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "bar\n\nbarbar\n",
         "each touching region gets its own independent 'bar', not one merged replacement"
     );
@@ -309,7 +309,7 @@ fn single_region_change_unaffected_by_the_new_batching_branch() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo bar");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Change,
@@ -324,7 +324,7 @@ fn single_region_change_unaffected_by_the_new_batching_branch() {
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "X bar");
+    assert_eq!(editor.active_document().buffer().to_string(), "X bar");
 }
 
 #[test]
@@ -347,7 +347,10 @@ fn multi_i_inserts_at_start_of_every_region() {
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "X01234X56789");
+    assert_eq!(
+        editor.active_document().buffer().to_string(),
+        "X01234X56789"
+    );
 }
 
 #[test]
@@ -369,7 +372,10 @@ fn multi_a_inserts_after_end_of_every_region() {
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "0X12345X6789");
+    assert_eq!(
+        editor.active_document().buffer().to_string(),
+        "0X12345X6789"
+    );
 }
 
 #[test]
@@ -392,7 +398,7 @@ fn multi_capital_i_inserts_at_line_start_of_each_region_row() {
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "aaa\nXbbb\nXccc"
     );
 }
@@ -417,7 +423,7 @@ fn multi_capital_a_inserts_at_line_end_of_each_region_row() {
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "aaa\nbbbX\ncccX"
     );
 }
@@ -442,7 +448,7 @@ fn multi_o_opens_a_new_line_below_each_region_row() {
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "aaa\nX\nbbb\nX\nccc"
     );
 }
@@ -467,7 +473,7 @@ fn multi_capital_o_opens_a_new_line_above_each_region_row() {
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "X\naaa\nX\nbbb\nccc"
     );
 }
@@ -478,13 +484,13 @@ fn plain_i_with_empty_set_is_unaffected() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello");
-    editor.active_document().buffer.set_cursor(2).unwrap();
+    editor.active_document().buffer_mut().set_cursor(2).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
 
     assert_eq!(editor.current_mode, Mode::Insert);
     assert_eq!(
-        editor.active_document().buffer.cursor(),
+        editor.active_document().buffer().cursor(),
         2,
         "ordinary i must still anchor at the live cursor"
     );
@@ -510,7 +516,7 @@ fn set_aware_replace_char_fills_each_region_to_its_own_length() {
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('x'));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "xx234xxxx9");
+    assert_eq!(editor.active_document().buffer().to_string(), "xx234xxxx9");
     assert!(editor.active_document().selection_set.is_empty());
 }
 
@@ -536,7 +542,7 @@ fn set_aware_sd_strips_surrounding_parens_from_every_region() {
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('('));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "a b");
+    assert_eq!(editor.active_document().buffer().to_string(), "a b");
     assert!(editor.active_document().selection_set.is_empty());
 }
 
@@ -572,7 +578,7 @@ fn set_aware_sg_wraps_each_region_independently() {
     editor.advance_pending_grammar(grammar, Key::char('"'));
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "\"foo\"\n\n\"foo\"\"foo\"\n"
     );
 }
@@ -596,7 +602,7 @@ fn set_aware_put_inserts_same_text_at_every_region() {
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "0X12345X6789",
         "p inserts after each region"
     );
@@ -622,7 +628,7 @@ fn set_aware_put_before_inserts_ahead_of_every_region() {
     editor.handle_action(&Action::Editor(EditorAction::Put { before: true }));
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "X01234X56789",
         "P inserts before each region"
     );
@@ -649,7 +655,7 @@ fn bare_repeated_p_after_set_aware_put_only_affects_single_cursor() {
 
     let count_of_x = editor
         .active_document()
-        .buffer
+        .buffer()
         .to_string()
         .matches('X')
         .count();
@@ -677,11 +683,14 @@ fn multi_insert_is_one_undo_step() {
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    assert_eq!(editor.active_document().buffer.to_string(), "X01234X56789");
+    assert_eq!(
+        editor.active_document().buffer().to_string(),
+        "X01234X56789"
+    );
 
     assert!(editor.active_document().undo());
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "0123456789",
         "a single undo must remove both inserted X's at once"
     );
@@ -693,7 +702,7 @@ fn region_build_actions_accumulate_while_visual_and_during_bank_occurrence() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo bar foo");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(
@@ -723,7 +732,7 @@ fn region_build_recording_does_not_capture_plain_normal_mode_navigation() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "line one\nline two\nline three");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
@@ -757,10 +766,13 @@ fn multi_region_put_is_one_undo_step() {
         .bank_region(Region::new(5, 5, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
-    assert_eq!(editor.active_document().buffer.to_string(), "0X12345X6789");
+    assert_eq!(
+        editor.active_document().buffer().to_string(),
+        "0X12345X6789"
+    );
 
     assert!(editor.active_document().undo());
-    assert_eq!(editor.active_document().buffer.to_string(), "0123456789");
+    assert_eq!(editor.active_document().buffer().to_string(), "0123456789");
 }
 
 #[test]
@@ -769,7 +781,7 @@ fn dot_repeat_destructive_group_reselects_without_reexecuting() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "(a) (b)");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
@@ -781,13 +793,13 @@ fn dot_repeat_destructive_group_reselects_without_reexecuting() {
     assert!(editor.active_document().selection_set.is_empty());
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    assert_eq!(editor.active_document().buffer.to_string(), " (b)");
+    assert_eq!(editor.active_document().buffer().to_string(), " (b)");
 
-    editor.active_document().buffer.set_cursor(1).unwrap();
+    editor.active_document().buffer_mut().set_cursor(1).unwrap();
     editor.execute_dot_repeat();
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         " (b)",
         "destructive group: '.' must NOT re-delete"
     );
@@ -805,13 +817,13 @@ fn dot_repeat_leading_count_overrides_embedded_command_count() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "one two three four five six seven");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
 
     let d2w = Command::Delete(Motion::NextWord, 2);
     editor.execute_buffer_command(d2w);
     editor.dot_repeat.record_single(d2w);
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "three four five six seven"
     );
 
@@ -819,7 +831,7 @@ fn dot_repeat_leading_count_overrides_embedded_command_count() {
     editor.execute_dot_repeat();
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "six seven",
         "3. after d2w must delete 3 words once, not 2 words three times"
     );
@@ -831,30 +843,30 @@ fn dot_repeat_non_destructive_group_rebuilds_and_reexecutes() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "aaa\nbbb");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertModeAtLineStart));
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    assert_eq!(editor.active_document().buffer.to_string(), "Xaaa\nbbb");
+    assert_eq!(editor.active_document().buffer().to_string(), "Xaaa\nbbb");
 
     let bbb_offset = editor
         .active_document()
-        .buffer
+        .buffer()
         .to_string()
         .find('b')
         .unwrap();
     editor
         .active_document()
-        .buffer
+        .buffer_mut()
         .set_cursor(bbb_offset)
         .unwrap();
     editor.execute_dot_repeat();
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "Xaaa\nXbbb",
         "non-destructive group: '.' rebuilds AND re-runs the insert"
     );
@@ -866,7 +878,7 @@ fn dot_repeat_sg_fully_replays_using_addsurroundtoset() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo\nbar");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
@@ -884,23 +896,26 @@ fn dot_repeat_sg_fully_replays_using_addsurroundtoset() {
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, crate::key::Key::char('"'));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "\"foo\"\nbar");
+    assert_eq!(
+        editor.active_document().buffer().to_string(),
+        "\"foo\"\nbar"
+    );
 
     let bar_offset = editor
         .active_document()
-        .buffer
+        .buffer()
         .to_string()
         .find("bar")
         .unwrap();
     editor
         .active_document()
-        .buffer
+        .buffer_mut()
         .set_cursor(bar_offset)
         .unwrap();
     editor.execute_dot_repeat();
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "\"foo\"\n\"bar\"",
         "'.' rebuilds the equivalent region at the new cursor AND re-wraps it -- sg fully replays, unlike d/c/y/sd/sc"
     );
@@ -914,13 +929,16 @@ fn issue_worked_example_full_sequence_including_delete() {
     let mut editor = create_editor();
     load_text(&mut editor, "Hello\nworld\nfoo\n");
 
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
-    let line3_start = editor.active_document().buffer.line_start(2);
-    let _ = editor.active_document().buffer.set_cursor(line3_start);
+    let line3_start = editor.active_document().buffer().line_start(2);
+    let _ = editor
+        .active_document()
+        .buffer_mut()
+        .set_cursor(line3_start);
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
@@ -931,7 +949,7 @@ fn issue_worked_example_full_sequence_including_delete() {
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "llo\nworld\noo\n"
     );
 }
@@ -1031,19 +1049,19 @@ fn dot_repeat_yank_reselects_without_reexecuting() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "(a) (b)");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
-    let buffer_before = editor.active_document().buffer.to_string();
+    let buffer_before = editor.active_document().buffer().to_string();
     assert!(editor.active_document().selection_set.is_empty());
 
-    editor.active_document().buffer.set_cursor(5).unwrap();
+    editor.active_document().buffer_mut().set_cursor(5).unwrap();
     editor.execute_dot_repeat();
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         buffer_before,
         "yank's dot-repeat must not mutate the buffer"
     );
@@ -1060,7 +1078,7 @@ fn dot_repeat_paste_genuinely_differs_from_bare_repeat() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo bar foo baz foo");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
@@ -1072,14 +1090,14 @@ fn dot_repeat_paste_genuinely_differs_from_bare_repeat() {
         .push_str("X", crate::wrap::RangeKind::Charwise);
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
 
-    let _ = editor.active_document().buffer.set_cursor(0);
+    let _ = editor.active_document().buffer_mut().set_cursor(0);
     editor.execute_dot_repeat();
-    let _ = editor.active_document().buffer.set_cursor(0);
+    let _ = editor.active_document().buffer_mut().set_cursor(0);
     editor.execute_dot_repeat();
 
     let count_of_x = editor
         .active_document()
-        .buffer
+        .buffer()
         .to_string()
         .matches('X')
         .count();
@@ -1111,7 +1129,7 @@ fn cycle_paste_after_set_clears_only_touches_the_single_most_recent_position() {
 
     let count_of_y = editor
         .active_document()
-        .buffer
+        .buffer()
         .to_string()
         .matches('Y')
         .count();
@@ -1136,7 +1154,7 @@ fn delete_linewise_regions(text: &str, offsets: &[usize]) -> String {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
-    editor.active_document().buffer.to_string()
+    editor.active_document().buffer().to_string()
 }
 
 #[test]
@@ -1168,7 +1186,7 @@ fn mixed_kind_overlap_deletes_only_banked_text() {
         OperatorType::Delete,
     )));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "abc\nghi");
+    assert_eq!(editor.active_document().buffer().to_string(), "abc\nghi");
 }
 
 #[test]
@@ -1188,7 +1206,7 @@ fn linewise_replace_char_keeps_newline() {
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('x'));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "xxx\ndef");
+    assert_eq!(editor.active_document().buffer().to_string(), "xxx\ndef");
 }
 
 #[test]
@@ -1208,7 +1226,7 @@ fn linewise_replace_char_on_last_line_without_newline() {
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('x'));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "abc\nxxx");
+    assert_eq!(editor.active_document().buffer().to_string(), "abc\nxxx");
 }
 
 #[test]
@@ -1229,7 +1247,10 @@ fn multi_region_linewise_put_goes_on_new_lines() {
 
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "aa\nX\nbb\nX");
+    assert_eq!(
+        editor.active_document().buffer().to_string(),
+        "aa\nX\nbb\nX"
+    );
 }
 
 #[test]
@@ -1250,5 +1271,8 @@ fn multi_region_linewise_put_before_goes_above_each_line() {
 
     editor.handle_action(&Action::Editor(EditorAction::Put { before: true }));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "X\naa\nX\nbb");
+    assert_eq!(
+        editor.active_document().buffer().to_string(),
+        "X\naa\nX\nbb"
+    );
 }

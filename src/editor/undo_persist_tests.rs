@@ -62,7 +62,7 @@ fn undo_history_survives_a_simulated_editor_restart_when_enabled() {
         "reopened document should have its undo history restored"
     );
     assert!(editor2.active_document().undo());
-    assert_eq!(editor2.active_document().buffer.to_string(), "hello");
+    assert_eq!(editor2.active_document().buffer().to_string(), "hello");
 }
 
 #[test]

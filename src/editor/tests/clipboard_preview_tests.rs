@@ -19,7 +19,7 @@ fn clipboard_preview_is_read_only_and_does_not_save_index_data() {
     assert!(!editor.active_document().is_clipboard_index());
     press(&mut editor, &keys("iX<Esc>xuu<C-r>:w<CR>"));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "one\n");
+    assert_eq!(editor.active_document().buffer().to_string(), "one\n");
     assert_eq!(ring_text(&editor, 0).as_deref(), Some("one\n"));
 }
 
@@ -48,7 +48,7 @@ fn clipboard_entry_save_preserves_pending_number_move() {
         .document_manager
         .get_document(layout.dir_doc_id)
         .unwrap();
-    assert_eq!(index.buffer.to_string(), "[1]\n[1]");
+    assert_eq!(index.buffer().to_string(), "[1]\n[1]");
     assert!(index.is_dirty());
 
     editor.handle_clipboard_entry_close();
@@ -71,7 +71,7 @@ fn clipboard_return_and_navigation_preserve_dirty_entry() {
         .document_manager
         .get_document(layout.preview_doc_id)
         .unwrap();
-    assert_eq!(preview.buffer.to_string(), "Xtwo\n");
+    assert_eq!(preview.buffer().to_string(), "Xtwo\n");
     assert!(preview.is_dirty());
     assert_eq!(editor.active_document_id(), layout.dir_doc_id);
 }
@@ -84,7 +84,7 @@ fn clipboard_refresh_preserves_dirty_index() {
     press(&mut editor, &keys("0lxi1<Esc>"));
     editor.refresh_clipboard_buffer_if_open();
 
-    assert_eq!(editor.active_document().buffer.to_string(), "[1]\n[1]");
+    assert_eq!(editor.active_document().buffer().to_string(), "[1]\n[1]");
     assert!(editor.active_document().is_dirty());
 }
 

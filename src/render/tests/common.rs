@@ -70,7 +70,7 @@ pub(super) fn render_row_with_adornments(
 ) -> String {
     let mut term = MockTerminal::new(5, u16::try_from(cols).unwrap_or(u16::MAX));
     let mut buf = TextBuffer::new(64).unwrap();
-    buf.insert_str(text).unwrap();
+    crate::document::ops::Edit::type_text(text).apply_to(&mut buf);
     let mut state = State::new();
     state.update_buffer_stats(1, text.len(), crate::document::LineEnding::LF);
     let mut system = RenderSystem::new(5, cols);

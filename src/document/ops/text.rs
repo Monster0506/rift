@@ -6,7 +6,7 @@ use crate::character::Character;
 use crate::error::RiftError;
 use crate::history::{EditOperation, EditTransaction, Position, Range, UndoTree};
 
-pub(crate) trait IntoText {
+pub trait IntoText {
     fn into_text(self) -> Vec<Character>;
 }
 
@@ -29,6 +29,12 @@ impl IntoText for &Vec<Character> {
 }
 
 impl<const N: usize> IntoText for [Character; N] {
+    fn into_text(self) -> Vec<Character> {
+        self.to_vec()
+    }
+}
+
+impl<const N: usize> IntoText for &[Character; N] {
     fn into_text(self) -> Vec<Character> {
         self.to_vec()
     }
@@ -65,7 +71,7 @@ impl IntoText for String {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Edit {
+pub enum Edit {
     InsertAtCursor(Vec<Character>),
     Insert {
         at: usize,
@@ -81,27 +87,77 @@ pub(crate) enum Edit {
 }
 
 impl Edit {
-    pub(crate) fn type_text(text: impl IntoText) -> Self {
+    #[must_use]
+    pub fn type_text(text: impl IntoText) -> Self {
         Self::InsertAtCursor(text.into_text())
     }
 
-    pub(crate) fn insert(at: usize, text: impl IntoText) -> Self {
+    #[must_use]
+    pub fn insert(at: usize, text: impl IntoText) -> Self {
         Self::Insert {
             at,
             text: text.into_text(),
         }
     }
 
-    pub(crate) const fn delete(range: std::ops::Range<usize>) -> Self {
+    #[must_use]
+    pub const fn delete(range: std::ops::Range<usize>) -> Self {
         Self::Delete(range)
     }
 
-    pub(crate) fn replace(range: std::ops::Range<usize>, text: impl IntoText) -> Self {
+    #[must_use]
+    pub fn replace(range: std::ops::Range<usize>, text: impl IntoText) -> Self {
         Self::Replace {
             range,
             text: text.into_text(),
         }
     }
+
+    fn resolve(self, buffer: &TextBuffer) -> Option<Resolved> {
+        let cursor = buffer.cursor();
+        let (start, end, text) = match self {
+            Self::InsertAtCursor(text) => (cursor, cursor, text),
+            Self::Insert { at, text } => (at, at, text),
+            Self::Delete(range) => (range.start, range.end, Vec::new()),
+            Self::DeleteBackward => {
+                if cursor == 0 {
+                    return None;
+                }
+                (cursor - 1, cursor, Vec::new())
+            }
+            Self::DeleteForward => {
+                if cursor >= buffer.len() {
+                    return None;
+                }
+                (cursor, cursor + 1, Vec::new())
+            }
+            Self::Replace { range, text } => (range.start, range.end, text),
+        };
+        Some(Resolved { start, end, text })
+    }
+
+    pub fn apply_to(self, buffer: &mut TextBuffer) -> bool {
+        let Some(Resolved { start, end, text }) = self.resolve(buffer) else {
+            return false;
+        };
+        if start > end || end > buffer.len() || (start == end && text.is_empty()) {
+            return false;
+        }
+        splice(buffer, start, end, &text);
+        true
+    }
+}
+
+fn splice(buffer: &mut TextBuffer, start: usize, end: usize, text: &[Character]) {
+    if start == end {
+        let _ = buffer.set_cursor(start);
+        buffer.insert_chars(text);
+    } else if text.is_empty() {
+        buffer.delete_range(start, end - start);
+    } else {
+        buffer.replace_range(start, end - start, text);
+    }
+    let _ = buffer.set_cursor((start + text.len()).min(buffer.len()));
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -174,26 +230,7 @@ impl Document {
     }
 
     fn resolve_edit(&self, edit: Edit) -> Option<Resolved> {
-        let cursor = self.buffer.cursor();
-        let (start, end, text) = match edit {
-            Edit::InsertAtCursor(text) => (cursor, cursor, text),
-            Edit::Insert { at, text } => (at, at, text),
-            Edit::Delete(range) => (range.start, range.end, Vec::new()),
-            Edit::DeleteBackward => {
-                if cursor == 0 {
-                    return None;
-                }
-                (cursor - 1, cursor, Vec::new())
-            }
-            Edit::DeleteForward => {
-                if cursor >= self.buffer.len() {
-                    return None;
-                }
-                (cursor, cursor + 1, Vec::new())
-            }
-            Edit::Replace { range, text } => (range.start, range.end, text),
-        };
-        Some(Resolved { start, end, text })
+        edit.resolve(&self.buffer)
     }
 
     pub(crate) fn edit(&mut self, edit: Edit, source: EditSource) -> Result<bool, RiftError> {
@@ -296,16 +333,8 @@ impl Document {
         let (start_position, history_start) = self.get_edit_points(start_byte);
         let (old_end_position, history_end) = self.get_edit_points(old_end_byte);
 
-        if removed.is_empty() {
-            let _ = self.buffer.set_cursor(start);
-            self.buffer.insert_chars(&text);
-        } else if text.is_empty() {
-            self.buffer.delete_range(start, end - start);
-        } else {
-            self.buffer.replace_range(start, end - start, &text);
-        }
+        splice(&mut self.buffer, start, end, &text);
         let new_end = start + text.len();
-        let _ = self.buffer.set_cursor(new_end.min(self.buffer.len()));
         let new_end_byte = self.buffer.char_to_byte(new_end);
         let new_end_position = self.get_point(new_end_byte);
 

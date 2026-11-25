@@ -36,11 +36,11 @@ fn lua_err(editor: &mut Editor<MockTerminal>, code: &str) -> String {
 }
 
 fn set_cursor(editor: &mut Editor<MockTerminal>, needle: &str) {
-    let text = editor.active_document().buffer.to_string();
+    let text = editor.active_document().buffer().to_string();
     let char_idx = text[..text.find(needle).unwrap()].chars().count();
     editor
         .active_document()
-        .buffer
+        .buffer_mut()
         .set_cursor(char_idx)
         .unwrap();
 }
@@ -322,7 +322,7 @@ fn syntax_updated_hands_handlers_the_reparsed_tree() {
         end)
         "#,
     );
-    editor.active_document().buffer.move_to_end();
+    editor.active_document().buffer_mut().move_to_end();
     editor
         .active_document()
         .edit(Edit::type_text("fn extra() {}\n"), EditSource::User)

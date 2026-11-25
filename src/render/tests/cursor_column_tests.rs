@@ -3,14 +3,14 @@ use super::common::*;
 #[test]
 fn test_calculate_cursor_column_single_line() {
     let mut buf = TextBuffer::new(100).unwrap();
-    buf.insert_str("hello").unwrap();
+    crate::document::ops::Edit::type_text("hello").apply_to(&mut buf);
     assert_eq!(calculate_cursor_column(&buf, 0, 8), 5);
 }
 
 #[test]
 fn test_calculate_cursor_column_multiline() {
     let mut buf = TextBuffer::new(100).unwrap();
-    buf.insert_str("line1\nline2\nline3").unwrap();
+    crate::document::ops::Edit::type_text("line1\nline2\nline3").apply_to(&mut buf);
     for _ in 0..18 {
         buf.move_left();
     }
@@ -34,7 +34,7 @@ fn test_calculate_cursor_column_empty_buffer() {
 #[test]
 fn test_calculate_cursor_column_at_gap() {
     let mut buf = TextBuffer::new(100).unwrap();
-    buf.insert_str("hello").unwrap();
+    crate::document::ops::Edit::type_text("hello").apply_to(&mut buf);
     for _ in 0..3 {
         buf.move_left();
     }
@@ -44,7 +44,7 @@ fn test_calculate_cursor_column_at_gap() {
 #[test]
 fn test_calculate_cursor_column_multiline_complex() {
     let mut buf = TextBuffer::new(100).unwrap();
-    buf.insert_str("hello\nworld\ntest").unwrap();
+    crate::document::ops::Edit::type_text("hello\nworld\ntest").apply_to(&mut buf);
 
     for _ in 0..17 {
         buf.move_left();
@@ -68,7 +68,7 @@ fn test_calculate_cursor_column_multiline_complex() {
 #[test]
 fn test_cursor_column_wide_chars() {
     let mut buf = TextBuffer::new(100).unwrap();
-    buf.insert_str("a中b").unwrap();
+    crate::document::ops::Edit::type_text("a中b").apply_to(&mut buf);
 
     assert_eq!(calculate_cursor_column(&buf, 0, 4), 4);
     buf.move_left();
@@ -82,7 +82,7 @@ fn test_cursor_column_wide_chars() {
 #[test]
 fn test_cursor_column_combining_chars() {
     let mut buf = TextBuffer::new(100).unwrap();
-    buf.insert_str("e\u{0301}").unwrap();
+    crate::document::ops::Edit::type_text("e\u{0301}").apply_to(&mut buf);
 
     buf.move_left();
     assert_eq!(calculate_cursor_column(&buf, 0, 4), 1);
@@ -93,7 +93,8 @@ fn test_cursor_column_combining_chars() {
 #[test]
 fn test_cursor_column_truncated_utf8() {
     let mut buf = TextBuffer::new(100).unwrap();
-    buf.insert_bytes(&[0xE2, 0x80]);
+    crate::document::ops::Edit::type_text(crate::buffer::decode_bytes(&[0xE2, 0x80]))
+        .apply_to(&mut buf);
     assert_eq!(calculate_cursor_column(&buf, 0, 4), 8);
 }
 
@@ -122,7 +123,7 @@ fn test_wrap_text_cjk_counts_as_two_columns() {
 #[test]
 fn test_cursor_column_at_matches_plain() {
     let mut buf = TextBuffer::new(64).unwrap();
-    buf.insert_str("hello").unwrap();
+    crate::document::ops::Edit::type_text("hello").apply_to(&mut buf);
     assert_eq!(
         calculate_cursor_column_at(&buf, 0, 4, buf.cursor()),
         calculate_cursor_column(&buf, 0, 4),
@@ -132,7 +133,7 @@ fn test_cursor_column_at_matches_plain() {
 #[test]
 fn test_cursor_column_at_mid_text() {
     let mut buf = TextBuffer::new(64).unwrap();
-    buf.insert_str("abcde").unwrap();
+    crate::document::ops::Edit::type_text("abcde").apply_to(&mut buf);
     let _ = buf.set_cursor(3);
 
     assert_eq!(calculate_cursor_column_at(&buf, 0, 4, buf.cursor()), 3,);

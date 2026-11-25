@@ -39,7 +39,7 @@ fn test_cell_style_hash_no_alloc_and_distinguishes_styles() {
 fn test_inline_annotation_change_triggers_content_redraw() {
     let mut term = MockTerminal::new(10, 80);
     let mut buf = TextBuffer::new(100).unwrap();
-    buf.insert_str("hello").unwrap();
+    crate::document::ops::Edit::type_text("hello").apply_to(&mut buf);
     let state = State::new();
     let mut system = RenderSystem::new(10, 80);
 
@@ -256,7 +256,7 @@ fn non_wrap_scroll_blit_with_left_col_tabs_and_multibyte_matches_fresh_render() 
     }
 
     let mut buf = TextBuffer::new(text.len() + 16).unwrap();
-    buf.insert_str(&text).unwrap();
+    crate::document::ops::Edit::type_text(&text).apply_to(&mut buf);
 
     let custom_highlights: Vec<(Range<usize>, Color)> = text
         .match_indices("line_")
@@ -353,7 +353,7 @@ fn cursor_snaps_instead_of_animating_across_a_viewport_jump() {
         let _ = writeln!(text, "line {i}");
     }
     let mut buf = TextBuffer::new(text.len() + 16).unwrap();
-    buf.insert_str(&text).unwrap();
+    crate::document::ops::Edit::type_text(&text).apply_to(&mut buf);
 
     let mut state = State::new();
     state.update_buffer_stats(3000, buf.len(), crate::document::LineEnding::LF);
@@ -426,7 +426,7 @@ fn cursor_snaps_instead_of_animating_across_a_viewport_jump() {
 fn needs_clear_forces_repaint_even_when_blit_key_is_unchanged() {
     let text = "hello world\nsecond line\n";
     let mut buf = TextBuffer::new(text.len() + 16).unwrap();
-    buf.insert_str(text).unwrap();
+    crate::document::ops::Edit::type_text(text).apply_to(&mut buf);
 
     let mut state = State::new();
     state.update_buffer_stats(2, buf.len(), crate::document::LineEnding::LF);

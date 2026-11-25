@@ -258,7 +258,7 @@ impl RenderSystem {
     fn content_draw_state(ctx: &DrawContext) -> ContentDrawState {
         let effective_line_numbers = ctx.state.line_numbers_on(ctx.show_line_numbers);
         ContentDrawState {
-            revision: ctx.buf.revision,
+            revision: ctx.buf.revision(),
             top_line: ctx.viewport.top_line(),
             top_visual_row: ctx.viewport.top_visual_row(),
             left_col: ctx.viewport.left_col(),

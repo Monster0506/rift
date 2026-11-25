@@ -6,7 +6,7 @@ use crate::action::{Action, EditorAction};
 use crate::key::{Key, Mods};
 
 fn buffer_text(editor: &mut Editor<KeyQueue>) -> String {
-    editor.active_document().buffer.to_string()
+    editor.active_document().buffer().to_string()
 }
 
 #[test]
@@ -73,31 +73,35 @@ fn find_char_accepts_shift_space() {
 
     press(&mut editor, &[Key::char('f'), Key::SHIFT_SPACE]);
 
-    assert_eq!(editor.active_document().buffer.cursor(), 2);
+    assert_eq!(editor.active_document().buffer().cursor(), 2);
 }
 
 #[test]
 fn shift_space_in_visual_mode_still_shrinks_the_region() {
     let mut editor = editor_with_text("say \"hello world\" now");
     let pos = buffer_text(&mut editor).find("hello").unwrap();
-    editor.active_document().buffer.set_cursor(pos).unwrap();
+    editor
+        .active_document()
+        .buffer_mut()
+        .set_cursor(pos)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     let start = (
         editor.visual_anchor,
-        editor.active_document().buffer.cursor(),
+        editor.active_document().buffer().cursor(),
     );
 
     press(&mut editor, &[Key::SPACE]);
     let grown = (
         editor.visual_anchor,
-        editor.active_document().buffer.cursor(),
+        editor.active_document().buffer().cursor(),
     );
     assert_ne!(grown, start, "space must expand the region");
 
     press(&mut editor, &[Key::SHIFT_SPACE]);
     let shrunk = (
         editor.visual_anchor,
-        editor.active_document().buffer.cursor(),
+        editor.active_document().buffer().cursor(),
     );
     assert_eq!(shrunk, start, "shift+space must shrink it back");
 }
@@ -149,7 +153,7 @@ fn shift_arrow_moves_like_the_arrow() {
 
     press(&mut editor, &[Key::RIGHT.with(Mods::SHIFT)]);
 
-    assert_eq!(editor.active_document().buffer.cursor(), 1);
+    assert_eq!(editor.active_document().buffer().cursor(), 1);
 }
 
 #[test]

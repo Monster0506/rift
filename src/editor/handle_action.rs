@@ -82,9 +82,9 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(doc) = self.document_manager.active_document_mut() else {
             return;
         };
-        let last = doc.buffer.line_last_char();
-        if doc.buffer.cursor() > last {
-            let _ = doc.buffer.set_cursor(last);
+        let last = doc.buffer().line_last_char();
+        if doc.buffer().cursor() > last {
+            let _ = doc.buffer_mut().set_cursor(last);
         }
     }
 
@@ -310,10 +310,10 @@ impl<T: TerminalBackend> Editor<T> {
                         doc.commit_transaction();
                     }
                     if let Some(doc) = self.document_manager.active_document_mut() {
-                        if doc.buffer.get_col() > 0 {
-                            doc.buffer.move_left();
+                        if doc.buffer().get_col() > 0 {
+                            doc.buffer_mut().move_left();
                         }
-                        doc.buffer.clear_desired_col();
+                        doc.buffer_mut().clear_desired_col();
                     }
                 }
                 self.state.command_history.reset_navigation();
@@ -403,7 +403,7 @@ impl<T: TerminalBackend> Editor<T> {
                             viewport_height,
                             last_search_query.as_deref(),
                         )
-                        .map(|range| crate::clipboard::capture_text(&doc.buffer, &range))
+                        .map(|range| crate::clipboard::capture_text(doc.buffer(), &range))
                     });
                     let in_clipboard =
                         self.active_doc_is(super::super::document::Document::is_any_clipboard);
@@ -667,7 +667,7 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some(op) = self.pending_operator {
                 let target_line = {
                     if let Some(doc) = self.document_manager.active_document() {
-                        let last = doc.buffer.last_real_line();
+                        let last = doc.buffer().last_real_line();
                         if target_n == 0 || target_n > last + 1 {
                             last
                         } else {
@@ -681,15 +681,15 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
         if let Some(doc) = self.document_manager.active_document_mut() {
-            let last = doc.buffer.last_real_line();
+            let last = doc.buffer().last_real_line();
             let idx = if target_n == 0 || target_n > last + 1 {
                 last
             } else {
                 target_n - 1
             };
-            let offset = doc.buffer.line_start(idx);
-            doc.buffer.clear_desired_col();
-            let _ = doc.buffer.set_cursor(offset);
+            let offset = doc.buffer().line_start(idx);
+            doc.buffer_mut().clear_desired_col();
+            let _ = doc.buffer_mut().set_cursor(offset);
         }
         true
     }
@@ -708,8 +708,8 @@ impl<T: TerminalBackend> Editor<T> {
                 let anchor = self.visual_anchor?;
                 let doc = self.document_manager.active_document()?;
                 Some(
-                    crate::selection::Region::new(anchor, doc.buffer.cursor(), kind)
-                        .buffer_span(&doc.buffer)
+                    crate::selection::Region::new(anchor, doc.buffer().cursor(), kind)
+                        .buffer_span(doc.buffer())
                         .0,
                 )
             })
@@ -728,16 +728,17 @@ impl<T: TerminalBackend> Editor<T> {
         if self.try_run_set_aware_operator(op) {
             if let Some(start) = visual_yank_start {
                 if let Some(doc) = self.document_manager.active_document_mut() {
-                    let _ = doc.buffer.set_cursor(start.min(doc.buffer.len()));
+                    let start = start.min(doc.buffer().len());
+                    let _ = doc.buffer_mut().set_cursor(start);
                 }
             }
             if visual_line_delete {
                 if let Some(doc) = self.document_manager.active_document_mut() {
-                    let line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
-                    let start = doc.buffer.line_start(line);
+                    let line = doc.buffer().line_index.get_line_at(doc.buffer().cursor());
+                    let start = doc.buffer().line_start(line);
                     let column = doc
-                        .buffer
-                        .chars(start..doc.buffer.len())
+                        .buffer()
+                        .chars(start..doc.buffer().len())
                         .take_while(|&ch| ch != crate::character::Character::Newline)
                         .position(|ch| {
                             !matches!(
@@ -747,7 +748,7 @@ impl<T: TerminalBackend> Editor<T> {
                             )
                         })
                         .unwrap_or(0);
-                    let _ = doc.buffer.set_cursor(start + column);
+                    let _ = doc.buffer_mut().set_cursor(start + column);
                 }
             }
             let follow_up = (op == crate::action::OperatorType::Change).then(|| action.clone());
@@ -895,7 +896,7 @@ impl<T: TerminalBackend> Editor<T> {
                 };
                 if let Some(doc) = self.document_manager.active_document_mut() {
                     doc.undo();
-                    let _ = doc.buffer.set_cursor(state.original_cursor);
+                    let _ = doc.buffer_mut().set_cursor(state.original_cursor);
                 }
                 let result = self.put_into_active(
                     &clip,
@@ -948,7 +949,7 @@ impl<T: TerminalBackend> Editor<T> {
         let cursor_before_resolve = self
             .document_manager
             .active_document()
-            .map(|d| d.buffer.cursor());
+            .map(|d| d.buffer().cursor());
         let ghost_put = self
             .document_manager
             .most_recent_ghost_doc()
@@ -979,7 +980,7 @@ impl<T: TerminalBackend> Editor<T> {
         let original_cursor = self
             .document_manager
             .active_document()
-            .map_or(0, |d| d.buffer.cursor());
+            .map_or(0, |d| d.buffer().cursor());
         let result = if let Some(origin) = same_location_origin {
             self.put_into_active(&clip, PutAt::Verbatim(origin))
         } else {
@@ -1027,10 +1028,10 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let selected = matches!(register, PutRegister::Replace).then(|| {
             crate::clipboard::capture_text(
-                &doc.buffer,
+                doc.buffer(),
                 &crate::wrap::MotionRange {
                     anchor,
-                    new_cursor: doc.buffer.cursor(),
+                    new_cursor: doc.buffer().cursor(),
                     kind,
                     inclusive: true,
                 },
@@ -1336,18 +1337,17 @@ impl<T: TerminalBackend> Editor<T> {
                 if let Some(doc) = self.document_manager.active_document_mut() {
                     match editor_action {
                         EditorAction::RegionsListDown => {
-                            doc.buffer.move_down();
+                            doc.buffer_mut().move_down();
                         }
                         EditorAction::RegionsListUp => {
-                            doc.buffer.move_up();
+                            doc.buffer_mut().move_up();
                         }
                         _ => {}
                     }
                 }
-                let line = self
-                    .document_manager
-                    .active_document()
-                    .map_or(0, |d| d.buffer.line_index.get_line_at(d.buffer.cursor()));
+                let line = self.document_manager.active_document().map_or(0, |d| {
+                    d.buffer().line_index.get_line_at(d.buffer().cursor())
+                });
                 let region = self
                     .document_manager
                     .get_document(layout.preview_doc_id)
@@ -1358,8 +1358,8 @@ impl<T: TerminalBackend> Editor<T> {
                     .document_manager
                     .get_document_mut(layout.preview_doc_id)
                 {
-                    let (start, _) = region.buffer_span(&source.buffer);
-                    let _ = source.buffer.set_cursor(start);
+                    let (start, _) = region.buffer_span(source.buffer());
+                    let _ = source.buffer_mut().set_cursor(start);
                 }
                 if matches!(editor_action, EditorAction::RegionsListSelect) {
                     self.close_split_panel();
@@ -1373,9 +1373,9 @@ impl<T: TerminalBackend> Editor<T> {
                 let Some(doc) = self.document_manager.active_document_mut() else {
                     return false;
                 };
-                let cursor = doc.buffer.cursor();
+                let cursor = doc.buffer().cursor();
                 self.visual_anchor = Some(cursor);
-                let _ = doc.buffer.set_cursor(anchor);
+                let _ = doc.buffer_mut().set_cursor(anchor);
                 true
             }
             _ => self.handle_bank_action(editor_action),
@@ -1396,12 +1396,12 @@ impl<T: TerminalBackend> Editor<T> {
                     );
                     return false;
                 }
-                let buf_snapshot = doc.buffer.clone();
+                let buf_snapshot = doc.buffer().clone();
                 if let Some((region, needle)) =
                     doc.selection_set.bank_occurrence(&buf_snapshot, forward)
                 {
                     let (start, _) = region.span();
-                    let _ = doc.buffer.set_cursor(start);
+                    let _ = doc.buffer_mut().set_cursor(start);
                     self.state.notify(
                         crate::notification::NotificationType::Info,
                         format!("Banked occurrence of \"{needle}\""),
@@ -1483,12 +1483,12 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(doc) = self.document_manager.active_document_mut() else {
             return false;
         };
-        let cursor = doc.buffer.cursor();
+        let cursor = doc.buffer().cursor();
         if let Some(idx) = doc.selection_set.region_containing(cursor) {
             let region = doc.selection_set.regions.remove(idx);
             if region.kind == kind {
                 self.visual_anchor = Some(region.anchor);
-                let _ = doc.buffer.set_cursor(region.cursor);
+                let _ = doc.buffer_mut().set_cursor(region.cursor);
                 self.expand_history.clear();
                 self.set_mode(mode);
                 return true;

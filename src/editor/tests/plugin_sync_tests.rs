@@ -213,7 +213,7 @@ fn mutation_queued_by_a_nested_dispatch_applies_in_the_same_call() {
 
     let doc = editor.document_manager.active_document().unwrap();
     assert_eq!(doc.kind.kind_str(), "probe");
-    assert_eq!(doc.buffer.cursor(), 5);
+    assert_eq!(doc.buffer().cursor(), 5);
 }
 
 #[test]
@@ -249,7 +249,7 @@ fn plugin_command_reads_the_cursor_the_previous_key_moved() {
     );
     editor.apply_plugin_mutations();
 
-    editor.active_document().buffer.set_cursor(5).unwrap();
+    editor.active_document().buffer_mut().set_cursor(5).unwrap();
     editor.execute_command_line("zzprobe");
 
     lua_ok(&editor, "assert(_G.seen == '2:1', tostring(_G.seen))");
@@ -290,8 +290,8 @@ fn editor_with_probe_buffer() -> Editor<MockTerminal> {
     );
     editor.apply_plugin_mutations();
     let doc = editor.active_document();
-    doc.buffer.set_cursor(0).unwrap();
-    doc.buffer.insert_str("edited ").unwrap();
+    let text = format!("edited {}", doc.buffer());
+    doc.replace_content(&text, crate::document::ops::ContentKind::Render);
     editor
 }
 
@@ -343,8 +343,8 @@ fn buf_save_pre_reads_the_edit_made_before_write() {
         "rift.on('BufSavePre', function() _G.seen = rift.get_lines(1, 1)[1] end)",
     );
     let doc = editor.active_document();
-    doc.buffer.set_cursor(0).unwrap();
-    doc.buffer.insert_str("unsaved ").unwrap();
+    let text = format!("unsaved {}", doc.buffer());
+    doc.replace_content(&text, crate::document::ops::ContentKind::Render);
 
     editor.execute_command_line("w");
     drain_jobs(&mut editor);
@@ -552,7 +552,7 @@ fn editor_quit_reads_the_final_cursor() {
            local row, col = rift.get_cursor() _G.seen = row .. ':' .. col \
          end)",
     );
-    editor.active_document().buffer.set_cursor(9).unwrap();
+    editor.active_document().buffer_mut().set_cursor(9).unwrap();
     editor.should_quit = true;
 
     editor.run().unwrap();
@@ -603,7 +603,7 @@ fn buffer_text(editor: &Editor<MockTerminal>, id: u64) -> String {
         .document_manager
         .get_document(crate::document::DocumentId::new(id))
         .unwrap()
-        .buffer
+        .buffer()
         .to_string()
 }
 
@@ -719,7 +719,7 @@ fn text_edits_read_back_in_the_same_call_and_match_the_editor() {
     sync_applied_writes(&mut editor);
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "one\nTWO\nthree"
     );
     lua_ok(
@@ -857,7 +857,7 @@ fn timer_callback_reads_the_cursor_moved_after_it_was_scheduled() {
         &editor,
         "rift.timer(0, function() _G.seen = rift.get_cursor() end)",
     );
-    editor.active_document().buffer.set_cursor(4).unwrap();
+    editor.active_document().buffer_mut().set_cursor(4).unwrap();
 
     editor.tick().unwrap();
 
@@ -928,9 +928,7 @@ fn editing_a_background_buffer_resends_only_that_buffer() {
         .document_manager
         .get_document_mut(crate::document::DocumentId::new(first))
         .unwrap()
-        .buffer
-        .insert_str("x")
-        .unwrap();
+        .replace_content("x", crate::document::ops::ContentKind::Render);
 
     let updates = editor.lua_buf_snapshots().unwrap();
 
@@ -956,9 +954,7 @@ fn closed_buffer_drops_out_of_the_snapshot() {
         .document_manager
         .get_document_mut(crate::document::DocumentId::new(first))
         .unwrap()
-        .buffer
-        .insert_str("x")
-        .unwrap();
+        .replace_content("x", crate::document::ops::ContentKind::Render);
 
     let ids: Vec<u64> = editor
         .lua_buf_snapshots()

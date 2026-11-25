@@ -89,7 +89,7 @@ fn test_render_does_not_clear_screen() {
 fn test_render_cursor_positioning() {
     let mut term = MockTerminal::new(10, 80);
     let mut buf = TextBuffer::new(100).unwrap();
-    buf.insert_str("hello").unwrap();
+    crate::document::ops::Edit::type_text("hello").apply_to(&mut buf);
     let state = State::new();
     let mut system = RenderSystem::new(10, 80);
 
@@ -183,7 +183,7 @@ fn test_render_empty_buffer() {
 fn test_render_multiline_buffer() {
     let mut term = MockTerminal::new(10, 80);
     let mut buf = TextBuffer::new(100).unwrap();
-    buf.insert_str("line1\nline2\nline3\nline4\nline5").unwrap();
+    crate::document::ops::Edit::type_text("line1\nline2\nline3\nline4\nline5").apply_to(&mut buf);
     let state = State::new();
     let mut system = RenderSystem::new(10, 80);
 
@@ -234,7 +234,8 @@ fn test_render_file_loaded_at_start() {
     let mut term = MockTerminal::new(10, 80);
     let mut buf = TextBuffer::new(100).unwrap();
 
-    buf.insert_bytes(b"line1\nline2\nline3\n");
+    crate::document::ops::Edit::type_text(crate::buffer::decode_bytes(b"line1\nline2\nline3\n"))
+        .apply_to(&mut buf);
     buf.move_to_start();
 
     let state = State::new();
@@ -293,7 +294,7 @@ fn test_render_viewport_scrolling() {
     let mut term = MockTerminal::new(5, 80); // Small viewport
     let mut buf = TextBuffer::new(100).unwrap();
     for i in 0..10 {
-        buf.insert_str(&format!("line{i}\n")).unwrap();
+        crate::document::ops::Edit::type_text(format!("line{i}\n")).apply_to(&mut buf);
     }
     for _ in 0..8 {
         buf.move_up();
@@ -389,7 +390,7 @@ fn test_render_large_buffer() {
     let mut term = MockTerminal::new(10, 80);
     let mut buf = TextBuffer::new(10000).unwrap();
     for i in 0..100 {
-        buf.insert_str(&format!("line {i}\n")).unwrap();
+        crate::document::ops::Edit::type_text(format!("line {i}\n")).apply_to(&mut buf);
     }
     let state = State::new();
     let mut system = RenderSystem::new(10, 80);
@@ -439,7 +440,7 @@ fn test_render_cursor_at_viewport_boundaries() {
     let mut term = MockTerminal::new(5, 80);
     let mut buf = TextBuffer::new(100).unwrap();
     for i in 0..20 {
-        buf.insert_str(&format!("line {i}\n")).unwrap();
+        crate::document::ops::Edit::type_text(format!("line {i}\n")).apply_to(&mut buf);
     }
     let state = State::new();
     let mut system = RenderSystem::new(5, 80);
@@ -567,7 +568,7 @@ fn test_compositor_floating_window_layer() {
 fn test_no_redraw_on_noop() {
     let mut term = MockTerminal::new(10, 80);
     let mut buf = TextBuffer::new(100).unwrap();
-    buf.insert_str("test").unwrap();
+    crate::document::ops::Edit::type_text("test").apply_to(&mut buf);
     let mut state = State::new();
     state.settings.show_line_numbers = false;
     let mut system = RenderSystem::new(10, 80);

@@ -14,7 +14,7 @@ fn make_host() -> LuaHost {
 
 fn text_update(lines: &[&str]) -> BufUpdate {
     let mut buffer = crate::buffer::TextBuffer::default();
-    buffer.insert_str(&lines.join("\n")).unwrap();
+    crate::document::ops::Edit::type_text(lines.join("\n")).apply_to(&mut buffer);
     BufUpdate {
         text: Some(buffer),
         ..Default::default()

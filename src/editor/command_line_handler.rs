@@ -42,7 +42,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .search_highlights_synced
                     .as_ref()
                     .is_some_and(|(id, rev, q)| {
-                        *id == doc.id && *rev == doc.buffer.revision && q == query
+                        *id == doc.id && *rev == doc.buffer().revision() && q == query
                     });
                 if !synced && self.pending_search_refresh.is_none() {
                     self.schedule_search_refresh();
@@ -61,7 +61,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .search_highlights_synced
                 .as_ref()
                 .is_some_and(|(id, rev, q)| {
-                    *id == doc.id && *rev == doc.buffer.revision && q == query
+                    *id == doc.id && *rev == doc.buffer().revision() && q == query
                 });
             if synced {
                 return;
@@ -69,7 +69,7 @@ impl<T: TerminalBackend> Editor<T> {
             if let Ok((matches, _)) = doc.find_all_matches(query) {
                 // Render highlights through ui.search annotations, not a decorator.
                 doc.sync_search_annotations(&matches, None);
-                let key = (doc.id, doc.buffer.revision, query.to_string());
+                let key = (doc.id, doc.buffer().revision(), query.to_string());
                 self.state.search_matches = matches;
                 self.search_highlights_synced = Some(key);
             } else {
@@ -255,8 +255,8 @@ impl<T: TerminalBackend> Editor<T> {
                 let current_settings = Some(self.state.settings.clone());
                 let doc = self.active_document();
                 let current_doc_options = Some(doc.options.clone());
-                let line_count = doc.buffer.get_total_lines();
-                let buf_text = doc.buffer.to_string();
+                let line_count = doc.buffer().get_total_lines();
+                let buf_text = doc.buffer().to_string();
                 let buf_words = {
                     let mut words: Vec<String> = buf_text
                         .split(|c: char| !c.is_alphanumeric() && c != '_')

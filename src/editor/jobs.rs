@@ -78,7 +78,7 @@ impl<T: TerminalBackend> Editor<T> {
                     ..Default::default()
                 }
             );
-            doc.buffer.clone()
+            doc.buffer().clone()
         };
 
         let token = self.job_manager.next_token(
@@ -93,7 +93,7 @@ impl<T: TerminalBackend> Editor<T> {
             syntax.tree.clone(),
             syntax.language_name.clone(),
             doc_id,
-            doc.buffer.revision,
+            doc.buffer().revision(),
         )
         .with_token(token)
         .with_lib(syntax.lib());
@@ -674,12 +674,12 @@ impl<T: TerminalBackend> Editor<T> {
                                 .file_name()
                                 .and_then(|n| n.to_str())
                                 .filter(|n| *n == target_name)
-                                .map(|_| doc.buffer.line_index.get_start(line).unwrap_or(0))
+                                .map(|_| doc.buffer().line_index.get_start(line).unwrap_or(0))
                         })
                     })
                 });
             if let Some(pos) = line_pos {
-                let _ = doc.buffer.set_cursor(pos);
+                let _ = doc.buffer_mut().set_cursor(pos);
             }
         }
         self.sync_state_with_active_document();
@@ -933,7 +933,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .update_job_state(&JobMessage::Finished(id, true));
             return;
         };
-        if doc.buffer.revision == result.revision {
+        if doc.buffer().revision() == result.revision {
             doc.set_git_gutter_signs(&result.signs);
         }
         if self.active_document_id() == doc_id {
@@ -1064,10 +1064,8 @@ impl<T: TerminalBackend> Editor<T> {
             .get_document_by_handle_mut(token.handle)
         {
             doc.set_syntax(syntax);
-            if doc.buffer.byte_len() <= crate::syntax::SYNC_PARSE_MAX_BYTES {
-                if let Some(s) = &mut doc.syntax {
-                    s.incremental_parse(&doc.buffer);
-                }
+            if doc.buffer().byte_len() <= crate::syntax::SYNC_PARSE_MAX_BYTES {
+                doc.with_syntax(crate::syntax::Syntax::incremental_parse);
             }
         }
         self.spawn_syntax_parse_job(preview_doc_id);
@@ -1291,16 +1289,16 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .get_document_by_handle_mut(token.handle)
         {
-            let goto_line = goto_line.min(doc.buffer.last_real_line());
+            let goto_line = goto_line.min(doc.buffer().last_real_line());
             let char_col = doc.lsp_char_offset_in_line(
                 goto_line,
                 u32::try_from(goto_col).unwrap_or(u32::MAX),
                 encoding,
             );
-            let line_offset = doc.buffer.line_start(goto_line);
-            let target = (line_offset + char_col).min(doc.buffer.len());
-            doc.buffer.clear_desired_col();
-            let _ = doc.buffer.set_cursor(target);
+            let line_offset = doc.buffer().line_start(goto_line);
+            let target = (line_offset + char_col).min(doc.buffer().len());
+            doc.buffer_mut().clear_desired_col();
+            let _ = doc.buffer_mut().set_cursor(target);
         }
     }
 
@@ -1347,13 +1345,14 @@ impl<T: TerminalBackend> Editor<T> {
             return Ok(());
         };
 
-        let is_current = doc.buffer.revision == result.revision;
+        let is_current = doc.buffer().revision() == result.revision;
 
-        if is_current {
-            if let Some(syntax) = &mut doc.syntax {
-                syntax.update_from_result(result, &doc.buffer);
-                self.pending_syntax_updated.insert(doc.id);
-            }
+        if is_current
+            && doc
+                .with_syntax(|syntax, buffer| syntax.update_from_result(result, buffer))
+                .is_some()
+        {
+            self.pending_syntax_updated.insert(doc.id);
         }
 
         if let Some(entry) = self.pending_syntax_reparse.get_mut(&doc_id) {

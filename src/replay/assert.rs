@@ -50,7 +50,7 @@ pub(super) fn check<W: Write>(
 
 /// (row, col) of the cursor, found by binary search over line-start offsets.
 fn cursor_row_col<W: Write>(ed: &mut Editor<ReplayBackend<W>>) -> (usize, usize) {
-    let buf = &ed.active_document().buffer;
+    let buf = ed.active_document().buffer();
     let pos = buf.cursor();
     let mut lo = 0usize;
     let mut hi = buf.line_count().saturating_sub(1);
@@ -66,7 +66,7 @@ fn cursor_row_col<W: Write>(ed: &mut Editor<ReplayBackend<W>>) -> (usize, usize)
 }
 
 fn line_text<W: Write>(ed: &mut Editor<ReplayBackend<W>>, row: usize) -> Option<String> {
-    let buf = &ed.active_document().buffer;
+    let buf = ed.active_document().buffer();
     if row >= buf.line_count() {
         return None;
     }
@@ -84,7 +84,7 @@ fn line_text<W: Write>(ed: &mut Editor<ReplayBackend<W>>, row: usize) -> Option<
 }
 
 fn buffer_text<W: Write>(ed: &mut Editor<ReplayBackend<W>>) -> String {
-    let buf = &ed.active_document().buffer;
+    let buf = ed.active_document().buffer();
     strip_trailing_newline(
         buf.chars(0..buf.len())
             .map(super::super::character::Character::to_char_lossy)

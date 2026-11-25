@@ -51,7 +51,7 @@ fn overlap_merge_chains_through_a_third_region() {
 #[test]
 fn bank_merges_mixed_kind_overlap() {
     let mut buf = TextBuffer::new(20).unwrap();
-    buf.insert_str("abc\ndef\nghi").unwrap();
+    crate::document::ops::Edit::type_text("abc\ndef\nghi").apply_to(&mut buf);
     let mut set = SelectionSet::default();
     set.bank(region(5, 6), &buf);
     set.bank(Region::new(5, 5, RangeKind::Linewise), &buf);
@@ -64,7 +64,7 @@ fn bank_merges_mixed_kind_overlap() {
 #[test]
 fn bank_keeps_touching_mixed_kinds_separate() {
     let mut buf = TextBuffer::new(20).unwrap();
-    buf.insert_str("abc\ndef\nghi").unwrap();
+    crate::document::ops::Edit::type_text("abc\ndef\nghi").apply_to(&mut buf);
     let mut set = SelectionSet::default();
     set.bank(region(0, 3), &buf);
     set.bank(Region::new(5, 5, RangeKind::Linewise), &buf);
@@ -86,7 +86,7 @@ fn commit_active_banks_into_the_set() {
 #[test]
 fn bank_merges_same_line_linewise_regions() {
     let mut buf = TextBuffer::new(20).unwrap();
-    buf.insert_str("hello world\nfoo\n").unwrap();
+    crate::document::ops::Edit::type_text("hello world\nfoo\n").apply_to(&mut buf);
     let mut set = SelectionSet::default();
     set.bank(Region::new(0, 0, RangeKind::Linewise), &buf);
     set.bank(Region::new(5, 5, RangeKind::Linewise), &buf);
@@ -96,7 +96,7 @@ fn bank_merges_same_line_linewise_regions() {
 #[test]
 fn take_for_batch_dedupes_regions_with_identical_buffer_span() {
     let mut buf = TextBuffer::new(20).unwrap();
-    buf.insert_str("hello world\nfoo\n").unwrap();
+    crate::document::ops::Edit::type_text("hello world\nfoo\n").apply_to(&mut buf);
     let mut set = SelectionSet::default();
     set.regions.push(Region::new(0, 0, RangeKind::Linewise));
     set.regions.push(Region::new(5, 5, RangeKind::Linewise));
@@ -143,7 +143,7 @@ fn prev_region_cycles_and_wraps() {
 #[test]
 fn bank_occurrence_finds_next_match_and_wraps() {
     let mut buf = TextBuffer::new(20).unwrap();
-    buf.insert_str("foo bar foo baz foo").unwrap();
+    crate::document::ops::Edit::type_text("foo bar foo baz foo").apply_to(&mut buf);
     let mut set = SelectionSet::default();
     set.bank(region(0, 2), &buf); // first "foo"
     let (found, needle) = set.bank_occurrence(&buf, true).unwrap();
@@ -155,7 +155,7 @@ fn bank_occurrence_finds_next_match_and_wraps() {
 #[test]
 fn bank_occurrence_returns_none_when_all_occurrences_banked() {
     let mut buf = TextBuffer::new(20).unwrap();
-    buf.insert_str("foo foo").unwrap();
+    crate::document::ops::Edit::type_text("foo foo").apply_to(&mut buf);
     let mut set = SelectionSet::default();
     set.bank(region(0, 2), &buf);
     set.bank(region(4, 6), &buf);
@@ -165,7 +165,7 @@ fn bank_occurrence_returns_none_when_all_occurrences_banked() {
 #[test]
 fn bank_occurrence_disabled_for_blockwise() {
     let mut buf = TextBuffer::new(20).unwrap();
-    buf.insert_str("foo foo").unwrap();
+    crate::document::ops::Edit::type_text("foo foo").apply_to(&mut buf);
     let mut set = SelectionSet::default();
     set.bank(Region::new(0, 2, RangeKind::Blockwise), &buf);
     assert!(set.bank_occurrence(&buf, true).is_none());
@@ -174,7 +174,7 @@ fn bank_occurrence_disabled_for_blockwise() {
 #[test]
 fn bank_occurrence_matches_the_whole_line_for_linewise_not_one_char() {
     let mut buf = TextBuffer::new(20).unwrap();
-    buf.insert_str("foo\nbar\nfoo\n").unwrap();
+    crate::document::ops::Edit::type_text("foo\nbar\nfoo\n").apply_to(&mut buf);
     let mut set = SelectionSet::default();
     // V at the line start with no movement: anchor == cursor == 0. Using
     // span() instead of buffer_span() would collapse the needle to "f".
@@ -207,7 +207,7 @@ fn blockwise_regions_only_merge_with_other_blockwise_overlap() {
 #[test]
 fn linewise_region_on_last_line_includes_preceding_newline() {
     let mut buf = TextBuffer::new(20).unwrap();
-    buf.insert_str("a\nb\nc").unwrap();
+    crate::document::ops::Edit::type_text("a\nb\nc").apply_to(&mut buf);
 
     let last = Region::new(4, 4, RangeKind::Linewise);
     assert_eq!(last.delete_span(&buf), (3, 5));
@@ -222,7 +222,7 @@ fn linewise_region_on_last_line_includes_preceding_newline() {
 #[test]
 fn linewise_region_on_single_line_buffer_deletes_from_zero() {
     let mut buf = TextBuffer::new(20).unwrap();
-    buf.insert_str("abc").unwrap();
+    crate::document::ops::Edit::type_text("abc").apply_to(&mut buf);
 
     let only = Region::new(1, 1, RangeKind::Linewise);
     assert_eq!(only.delete_span(&buf), (0, 3));

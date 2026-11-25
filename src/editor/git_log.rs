@@ -63,8 +63,8 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(r) => r.to_path_buf(),
                 None => return,
             };
-            let cursor = doc.buffer.cursor();
-            let line = doc.buffer.line_index.get_line_at(cursor);
+            let cursor = doc.buffer().cursor();
+            let line = doc.buffer().line_index.get_line_at(cursor);
             let Some(sha) = doc.annotations.git_log_commit_sha_at_line(line) else {
                 return;
             };

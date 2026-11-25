@@ -94,7 +94,7 @@ fn editor_receives_all_keys_typed_over_channel() {
         editor.tick().unwrap();
     }
 
-    assert_eq!(editor.active_document().buffer.to_string(), "abc");
+    assert_eq!(editor.active_document().buffer().to_string(), "abc");
 }
 
 #[test]

@@ -46,7 +46,7 @@ pub(crate) fn compute_motion_range(
             let needs_tree = crate::text_objects::requires_treesitter(spec.kind);
             let ts_bytes: Option<Vec<u8>> =
                 if needs_tree && doc.syntax.as_ref().and_then(|s| s.tree.as_ref()).is_some() {
-                    Some(doc.buffer.to_logical_bytes())
+                    Some(doc.buffer().to_logical_bytes())
                 } else {
                     None
                 };
@@ -59,11 +59,11 @@ pub(crate) fn compute_motion_range(
                         source: bytes.as_slice(),
                     })
             });
-            return crate::text_objects::resolve(spec, &doc.buffer, count, syntax_ctx.as_ref());
+            return crate::text_objects::resolve(spec, doc.buffer(), count, syntax_ctx.as_ref());
         }
         #[cfg(not(feature = "treesitter"))]
         {
-            return crate::text_objects::resolve(spec, &doc.buffer, count, None);
+            return crate::text_objects::resolve(spec, doc.buffer(), count, None);
         }
     }
 
@@ -78,15 +78,15 @@ pub(crate) fn compute_motion_range(
         );
     let is_inclusive = matches!(motion, Motion::FindCharForward(_) | Motion::WordEnd);
 
-    let anchor = doc.buffer.cursor();
+    let anchor = doc.buffer().cursor();
 
     let count = count.min(MAX_MOTION_REPEAT);
 
     for i in 0..count {
-        let iter_start = doc.buffer.cursor();
+        let iter_start = doc.buffer().cursor();
 
         motion.apply(
-            &mut doc.buffer,
+            doc.buffer_mut(),
             None,
             OperatorContext::Operator,
             viewport_height,
@@ -94,12 +94,12 @@ pub(crate) fn compute_motion_range(
         );
 
         if i + 1 == count && matches!(motion, Motion::NextWord | Motion::NextBigWord) {
-            clamp_to_line_end(&mut doc.buffer, iter_start);
+            clamp_to_line_end(doc.buffer_mut(), iter_start);
         }
     }
 
-    let new_cursor = doc.buffer.cursor();
-    let _ = doc.buffer.set_cursor(anchor);
+    let new_cursor = doc.buffer().cursor();
+    let _ = doc.buffer_mut().set_cursor(anchor);
 
     if anchor == new_cursor && !is_jump {
         return None;
@@ -121,12 +121,12 @@ pub(crate) fn compute_change_range(
     viewport_height: usize,
     last_search_query: Option<&str>,
 ) -> Option<crate::wrap::MotionRange> {
-    if !matches!(motion, Motion::NextWord) || !on_non_blank(&doc.buffer) {
+    if !matches!(motion, Motion::NextWord) || !on_non_blank(doc.buffer()) {
         return compute_motion_range(motion, count, doc, viewport_height, last_search_query);
     }
 
-    let cursor = doc.buffer.cursor();
-    let remaining = if on_word_end(&doc.buffer) {
+    let cursor = doc.buffer().cursor();
+    let remaining = if on_word_end(doc.buffer()) {
         count.max(1) - 1
     } else {
         count
@@ -182,18 +182,18 @@ pub(crate) fn range_to_offsets(
     use crate::wrap::RangeKind;
     match range.kind {
         RangeKind::Linewise => {
-            let start_line = doc.buffer.line_index.get_line_at(range.anchor);
-            let end_line = doc.buffer.line_index.get_line_at(range.new_cursor);
+            let start_line = doc.buffer().line_index.get_line_at(range.anchor);
+            let end_line = doc.buffer().line_index.get_line_at(range.new_cursor);
             let (first_line, last_line) = if start_line <= end_line {
                 (start_line, end_line)
             } else {
                 (end_line, start_line)
             };
-            let mut start = doc.buffer.line_index.get_start(first_line).unwrap_or(0);
-            let len = doc.buffer.len();
+            let mut start = doc.buffer().line_index.get_start(first_line).unwrap_or(0);
+            let len = doc.buffer().len();
             let end = if consume_trailing_newline {
-                if last_line + 1 < doc.buffer.get_total_lines() {
-                    doc.buffer
+                if last_line + 1 < doc.buffer().get_total_lines() {
+                    doc.buffer()
                         .line_index
                         .get_start(last_line + 1)
                         .unwrap_or(len)
@@ -202,7 +202,10 @@ pub(crate) fn range_to_offsets(
                     len
                 }
             } else {
-                doc.buffer.line_index.get_end(last_line, len).unwrap_or(len)
+                doc.buffer()
+                    .line_index
+                    .get_end(last_line, len)
+                    .unwrap_or(len)
             };
             (start, end)
         }
@@ -211,12 +214,12 @@ pub(crate) fn range_to_offsets(
             if range.new_cursor > range.anchor {
                 (
                     range.anchor,
-                    (range.new_cursor + end_offset).min(doc.buffer.len()),
+                    (range.new_cursor + end_offset).min(doc.buffer().len()),
                 )
             } else {
                 (
                     range.new_cursor,
-                    (range.anchor + end_offset).min(doc.buffer.len()),
+                    (range.anchor + end_offset).min(doc.buffer().len()),
                 )
             }
         }
@@ -332,7 +335,7 @@ fn move_cmd(
     viewport_height: usize,
     last_search_query: Option<&str>,
 ) {
-    let buf = &mut doc.buffer;
+    let buf = doc.buffer_mut();
     let count = count.min(buf.len().max(1));
 
     for _ in 0..count {
@@ -396,27 +399,27 @@ fn delete_line_cmd(doc: &mut Document, count: usize) {
         return;
     }
     doc.begin_transaction("DeleteLine");
-    doc.buffer.move_to_line_start();
-    let start = doc.buffer.cursor();
+    doc.buffer_mut().move_to_line_start();
+    let start = doc.buffer().cursor();
     let mut reached_last_line = false;
     for _ in 0..count.max(1) {
-        if !doc.buffer.move_down() {
-            reached_last_line = doc.buffer.get_line() <= doc.buffer.last_real_line();
+        if !doc.buffer_mut().move_down() {
+            reached_last_line = doc.buffer().get_line() <= doc.buffer().last_real_line();
             break;
         }
     }
     if reached_last_line {
-        doc.buffer.move_to_line_end();
-        let end = doc.buffer.cursor();
+        doc.buffer_mut().move_to_line_end();
+        let end = doc.buffer().cursor();
         if end > start {
             let _ = doc.edit(Edit::delete(start..end), EditSource::User);
         }
         if start > 0 {
             let _ = doc.edit(Edit::DeleteBackward, EditSource::User);
-            doc.buffer.move_to_line_start();
+            doc.buffer_mut().move_to_line_start();
         }
     } else {
-        let end = doc.buffer.cursor();
+        let end = doc.buffer().cursor();
         let _ = doc.edit(Edit::delete(start..end), EditSource::User);
     }
     doc.commit_transaction();
@@ -424,16 +427,16 @@ fn delete_line_cmd(doc: &mut Document, count: usize) {
 
 /// Change `count` lines up to their end (`ChangeLine`).
 fn change_line_cmd(doc: &mut Document, count: usize) {
-    doc.buffer.move_to_line_start();
-    let start = doc.buffer.cursor();
+    doc.buffer_mut().move_to_line_start();
+    let start = doc.buffer().cursor();
     for _ in 0..count.max(1).saturating_sub(1) {
-        if doc.buffer.get_line() >= doc.buffer.last_real_line() {
+        if doc.buffer().get_line() >= doc.buffer().last_real_line() {
             break;
         }
-        doc.buffer.move_down();
+        doc.buffer_mut().move_down();
     }
-    doc.buffer.move_to_line_end();
-    let end = doc.buffer.cursor();
+    doc.buffer_mut().move_to_line_end();
+    let end = doc.buffer().cursor();
     if end > start {
         let _ = doc.edit(Edit::delete(start..end), EditSource::User);
     }
@@ -447,7 +450,7 @@ fn insert_char_cmd(
     ch: char,
 ) -> Result<(), RiftError> {
     if ch == '\t' && expand_tabs {
-        for _ in 0..tab_fill_width(&doc.buffer, tab_width) {
+        for _ in 0..tab_fill_width(doc.buffer(), tab_width) {
             doc.edit(Edit::type_text(' '), EditSource::User)?;
         }
         return Ok(());
@@ -457,8 +460,8 @@ fn insert_char_cmd(
 
 /// Replace `count` characters under the cursor (`ReplaceChar`).
 fn replace_char_cmd(doc: &mut Document, ch: char, count: usize) -> Result<(), RiftError> {
-    let pos = doc.buffer.cursor();
-    let avail = doc.buffer.len().saturating_sub(pos);
+    let pos = doc.buffer().cursor();
+    let avail = doc.buffer().len().saturating_sub(pos);
     let replace_count = count.min(avail);
     if replace_count > 0 {
         doc.begin_transaction("Replace");
@@ -482,17 +485,17 @@ fn replace_backspace_cmd(
         let _ = doc.edit(Edit::DeleteBackward, EditSource::User);
         return Ok(());
     };
-    let Some(pos) = doc.buffer.cursor().checked_sub(1) else {
+    let Some(pos) = doc.buffer().cursor().checked_sub(1) else {
         return Ok(());
     };
 
     doc.edit(Edit::replace(pos..pos + 1, original), EditSource::User)?;
-    doc.buffer.set_cursor(pos)
+    doc.buffer_mut().set_cursor(pos)
 }
 
 fn delete_surround_cmd(doc: &mut Document, ch: char, count: usize) {
     if let Some((open_range, close_range)) =
-        crate::text_objects::resolve_surround_pair(ch, &doc.buffer, count)
+        crate::text_objects::resolve_surround_pair(ch, doc.buffer(), count)
     {
         doc.begin_transaction("DeleteSurround");
         let _ = doc.edit(Edit::delete(close_range), EditSource::User);
@@ -503,7 +506,7 @@ fn delete_surround_cmd(doc: &mut Document, ch: char, count: usize) {
 
 fn change_surround_cmd(doc: &mut Document, from: char, to: char, count: usize) {
     if let (Some((open_range, close_range)), Some((new_open, new_close))) = (
-        crate::text_objects::resolve_surround_pair(from, &doc.buffer, count),
+        crate::text_objects::resolve_surround_pair(from, doc.buffer(), count),
         crate::text_objects::surround_strings(to, count),
     ) {
         doc.begin_transaction("ChangeSurround");

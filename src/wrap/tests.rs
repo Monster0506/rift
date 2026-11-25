@@ -2,18 +2,18 @@ use super::*;
 
 fn buf_from(s: &str) -> TextBuffer {
     let mut b = TextBuffer::new(s.len().max(16)).unwrap();
-    b.insert_str(s).unwrap();
+    crate::document::ops::Edit::type_text(s).apply_to(&mut b);
     b
 }
 
 fn insert_at(buf: &mut TextBuffer, pos: usize, s: &str) -> (usize, usize, usize) {
     buf.set_cursor(pos).unwrap();
-    buf.insert_str(s).unwrap();
+    crate::document::ops::Edit::type_text(s).apply_to(buf);
     (pos, 0, s.chars().count())
 }
 
 fn delete_at(buf: &mut TextBuffer, pos: usize, n: usize) -> (usize, usize, usize) {
-    assert!(buf.delete_range(pos, n));
+    assert!(crate::document::ops::Edit::delete(pos..pos + n).apply_to(buf));
     (pos, n, 0)
 }
 
@@ -155,7 +155,7 @@ fn apply_edit_with_tabs_and_wide_chars() {
 fn apply_edit_replace_range() {
     check_edit(SAMPLE, 8, |b| {
         let chars: Vec<crate::character::Character> = "REPLACED".chars().map(Into::into).collect();
-        assert!(b.replace_range(4, 9, &chars));
+        assert!(crate::document::ops::Edit::replace(4..4 + 9, &chars).apply_to(b));
         (4, 9, chars.len())
     });
 }
@@ -211,7 +211,7 @@ fn apply_edit_combined_delete_matches_full_rebuild() {
     assert!(map.apply_edit(&buf, pos, del, ins, Vec::new()));
 
     for p in (6..11).rev() {
-        assert!(buf.delete_range(p, 1));
+        assert!(crate::document::ops::Edit::delete(p..p + 1).apply_to(&mut buf));
     }
     assert!(
         map.apply_edit(&buf, 6, 5, 0, Vec::new()),
@@ -231,7 +231,7 @@ fn apply_edit_combined_fixed_position_delete_matches_full_rebuild() {
     assert!(map.apply_edit(&buf, pos, del, ins, Vec::new()));
 
     for _ in 0..5 {
-        assert!(buf.delete_range(6, 1));
+        assert!(crate::document::ops::Edit::delete(6..6 + 1).apply_to(&mut buf));
     }
     assert!(
         map.apply_edit(&buf, 6, 5, 0, Vec::new()),
@@ -275,9 +275,9 @@ fn apply_edit_combined_descending_then_repeat_matches_full_rebuild() {
     }
 
     for p in (7..12).rev() {
-        assert!(buf.delete_range(p, 1));
+        assert!(crate::document::ops::Edit::delete(p..p + 1).apply_to(&mut buf));
     }
-    assert!(buf.delete_range(6, 1));
+    assert!(crate::document::ops::Edit::delete(6..6 + 1).apply_to(&mut buf));
     assert!(
         map.apply_edit(&buf, 6, 6, 0, Vec::new()),
         "combined descending-then-repeat apply_edit refused"
@@ -302,8 +302,11 @@ fn combine_char_edits_handles_dd_shaped_batch() {
 
     let line_start = text.find("line to delete").unwrap();
     let line_len = "line to delete\n".len();
-    assert!(buf.delete_range(line_start, line_len - 1));
-    assert!(buf.delete_range(line_start, 1));
+    assert!(
+        crate::document::ops::Edit::delete(line_start..line_start + line_len - 1)
+            .apply_to(&mut buf)
+    );
+    assert!(crate::document::ops::Edit::delete(line_start..line_start + 1).apply_to(&mut buf));
     let edits = [
         CharEdit {
             pos: line_start,

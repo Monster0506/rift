@@ -9,7 +9,7 @@ fn apply(text: &str, mutation: impl FnOnce(DocumentId) -> PluginMutation) -> (St
     editor.plugin_host.queue_mutation(mutation(buf));
     editor.apply_plugin_mutations();
     let doc = editor.active_document();
-    (doc.buffer.to_string(), doc.buffer.cursor())
+    (doc.buffer().to_string(), doc.buffer().cursor())
 }
 
 fn replace_lines(
@@ -67,7 +67,7 @@ fn plugin_line_writes_leave_read_only_buffers_unchanged() {
         editor.plugin_host.queue_mutation(mutation(buf));
         editor.apply_plugin_mutations();
         assert_eq!(
-            editor.active_document().buffer.to_string(),
+            editor.active_document().buffer().to_string(),
             "one\ntwo\nthree"
         );
     }

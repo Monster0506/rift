@@ -94,9 +94,9 @@ fn plugin_selection_options_recolor_selected_cells_and_read_back_after_resync() 
     assert!(err.is_none(), "{err:?}");
     editor.apply_plugin_mutations();
 
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
-    editor.active_document().buffer.set_cursor(4).unwrap();
+    editor.active_document().buffer_mut().set_cursor(4).unwrap();
     editor.update_and_render().unwrap();
 
     let cols = editor.render_system.compositor.cols();

@@ -35,7 +35,7 @@ impl<T: TerminalBackend> Editor<T> {
             let cursor_before = self
                 .document_manager
                 .active_document()
-                .map(|d| (d.id, d.buffer.cursor()));
+                .map(|d| (d.id, d.buffer().cursor()));
 
             let doc = self.document_manager.active_document_mut().unwrap();
             let expand_tabs = doc.options.expand_tabs;
@@ -87,7 +87,7 @@ impl<T: TerminalBackend> Editor<T> {
             .visible_cols()
             .saturating_sub(gutter_width)
             .max(1);
-        (doc.id, content_width, doc.buffer.cursor())
+        (doc.id, content_width, doc.buffer().cursor())
     }
 
     fn refresh_display_map_after_mutation(
@@ -99,7 +99,7 @@ impl<T: TerminalBackend> Editor<T> {
         let cursor_after = self
             .document_manager
             .active_document()
-            .map_or(0, |d| d.buffer.cursor());
+            .map_or(0, |d| d.buffer().cursor());
         let _ =
             self.resolve_display_map_cached(doc_id, content_width, cursor_after, viewport_height);
     }
@@ -113,10 +113,11 @@ impl<T: TerminalBackend> Editor<T> {
         let plugin_events = self.document_manager.active_document().map(|doc| {
             let buf = doc.id;
             let cursor_event = cursor_before.and_then(|(prev_buf, prev_cursor)| {
-                let new_cursor = doc.buffer.cursor();
+                let new_cursor = doc.buffer().cursor();
                 if prev_buf != buf || prev_cursor != new_cursor {
-                    let row = doc.buffer.line_index.get_line_at(new_cursor);
-                    let col = new_cursor.saturating_sub(doc.buffer.line_index.get_line_start(row));
+                    let row = doc.buffer().line_index.get_line_at(new_cursor);
+                    let col =
+                        new_cursor.saturating_sub(doc.buffer().line_index.get_line_start(row));
                     Some((buf, row, col))
                 } else {
                     None

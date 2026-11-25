@@ -215,7 +215,7 @@ impl LuaUserData for LuaTree {
             let s = shared.borrow();
             Ok(s.bufs
                 .get(&buf)
-                .is_some_and(|snap| snap.buffer.revision != text.revision))
+                .is_some_and(|snap| snap.buffer.revision() != text.revision()))
         });
         methods.add_meta_method(LuaMetaMethod::ToString, |_, this, ()| {
             Ok(format!("<tree {}>", this.0.lang_name))

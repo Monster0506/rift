@@ -213,9 +213,9 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn cursor_lsp_position(&self) -> Option<(std::path::PathBuf, u32, u32)> {
         let doc = self.document_manager.active_document()?;
         let path = doc.path()?.to_path_buf();
-        let cur_line = doc.buffer.get_line();
-        let line_start = doc.buffer.line_start(cur_line);
-        let char_col = doc.buffer.cursor().saturating_sub(line_start);
+        let cur_line = doc.buffer().get_line();
+        let line_start = doc.buffer().line_start(cur_line);
+        let char_col = doc.buffer().cursor().saturating_sub(line_start);
         let encoding = self.lsp_manager.position_encoding_for_path(&path);
         let col = doc.lsp_position_units_in_line(cur_line, char_col, encoding);
         Some((path, u32::try_from(cur_line).unwrap_or(u32::MAX), col))
@@ -281,15 +281,15 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Diagnosed span in buffer bytes (None when empty or off the end), so
         // the annotation can underline exactly what the server flagged.
-        let line_count = doc.buffer.line_count();
+        let line_count = doc.buffer().line_count();
         let byte_at = |doc: &crate::document::Document, pos: &crate::lsp::protocol::LspPosition| {
             let line = pos.line as usize;
             if line >= line_count {
                 return None;
             }
             let col = doc.lsp_char_offset_in_line(line, pos.character, encoding);
-            let ch = (doc.buffer.line_start(line) + col).min(doc.buffer.len());
-            Some(doc.buffer.char_to_byte(ch))
+            let ch = (doc.buffer().line_start(line) + col).min(doc.buffer().len());
+            Some(doc.buffer().char_to_byte(ch))
         };
         let specs: Vec<crate::annotations::LspDiagnosticSpec> = diagnostics
             .iter()
@@ -391,11 +391,12 @@ impl<T: TerminalBackend> Editor<T> {
 
         let encoding = self.lsp_manager.position_encoding_for_path(path);
         if let Some(doc) = self.document_manager.active_document_mut() {
-            let line = line.min(doc.buffer.last_real_line());
+            let line = line.min(doc.buffer().last_real_line());
             let target_col = doc.lsp_char_offset_in_line(line, col_units, encoding);
-            let target = doc.buffer.line_start(line) + target_col;
-            doc.buffer.clear_desired_col();
-            let _ = doc.buffer.set_cursor(target.min(doc.buffer.len()));
+            let target = doc.buffer().line_start(line) + target_col;
+            doc.buffer_mut().clear_desired_col();
+            let target = target.min(doc.buffer().len());
+            let _ = doc.buffer_mut().set_cursor(target);
         }
         let _ = self.force_full_redraw();
     }
@@ -748,9 +749,9 @@ impl<T: TerminalBackend> Editor<T> {
                 .cmp(&(b.range.start.line, b.range.start.character))
         });
 
-        let cursor = doc.buffer.cursor();
-        let cursor_line = doc.buffer.line_index.get_line_at(cursor);
-        let cursor_col = cursor.saturating_sub(doc.buffer.line_start(cursor_line));
+        let cursor = doc.buffer().cursor();
+        let cursor_line = doc.buffer().line_index.get_line_at(cursor);
+        let cursor_col = cursor.saturating_sub(doc.buffer().line_start(cursor_line));
 
         doc.begin_transaction("LSP edit");
 
@@ -762,8 +763,8 @@ impl<T: TerminalBackend> Editor<T> {
             let end_char =
                 doc.lsp_char_offset_in_line(end_line, edit.range.end.character, encoding);
 
-            let start_offset = doc.buffer.line_start(start_line) + start_char;
-            let end_offset = doc.buffer.line_start(end_line) + end_char;
+            let start_offset = doc.buffer().line_start(start_line) + start_char;
+            let end_offset = doc.buffer().line_start(end_line) + end_char;
 
             // Use Document-level API so edits are recorded in the transaction
             // (for undo) and tree-sitter is updated incrementally (for syntax).
@@ -785,16 +786,16 @@ impl<T: TerminalBackend> Editor<T> {
         doc.commit_transaction();
 
         // Put the cursor back where the user had it, clamped to the new text.
-        let line = cursor_line.min(doc.buffer.get_total_lines().saturating_sub(1));
-        let line_start = doc.buffer.line_start(line);
-        let line_end = if line + 1 < doc.buffer.get_total_lines() {
-            doc.buffer.line_start(line + 1).saturating_sub(1)
+        let line = cursor_line.min(doc.buffer().get_total_lines().saturating_sub(1));
+        let line_start = doc.buffer().line_start(line);
+        let line_end = if line + 1 < doc.buffer().get_total_lines() {
+            doc.buffer().line_start(line + 1).saturating_sub(1)
         } else {
-            doc.buffer.len()
+            doc.buffer().len()
         };
-        doc.buffer.clear_desired_col();
+        doc.buffer_mut().clear_desired_col();
         let _ = doc
-            .buffer
+            .buffer_mut()
             .set_cursor((line_start + cursor_col).min(line_end));
 
         if was_open.is_none() {
@@ -857,8 +858,11 @@ impl<T: TerminalBackend> Editor<T> {
 
         let encoding = self.lsp_manager.position_encoding_for_path(&path);
         let cursor_pos = self.document_manager.active_document().map_or((0, 0), |d| {
-            let line = d.buffer.get_line();
-            let col = d.buffer.cursor().saturating_sub(d.buffer.line_start(line));
+            let line = d.buffer().get_line();
+            let col = d
+                .buffer()
+                .cursor()
+                .saturating_sub(d.buffer().line_start(line));
             (
                 u32::try_from(line).unwrap_or(u32::MAX),
                 d.lsp_position_units_in_line(line, col, encoding),
@@ -884,9 +888,9 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = self.document_manager.active_document_mut() {
             let line = diag.range.start.line as usize;
             let col = doc.lsp_char_offset_in_line(line, diag.range.start.character, encoding);
-            let offset = (doc.buffer.line_start(line) + col).min(doc.buffer.len());
-            doc.buffer.clear_desired_col();
-            let _ = doc.buffer.set_cursor(offset);
+            let offset = (doc.buffer().line_start(line) + col).min(doc.buffer().len());
+            doc.buffer_mut().clear_desired_col();
+            let _ = doc.buffer_mut().set_cursor(offset);
         }
 
         let (notif_type, prefix) = match diag.severity {
@@ -921,7 +925,7 @@ impl<T: TerminalBackend> Editor<T> {
         let info = self.document_manager.get_document(doc_id).and_then(|doc| {
             let path = doc.path()?.to_path_buf();
             let syntax_lang = doc.syntax.as_ref().map(|s| s.language_name.clone());
-            let content = String::from_utf8_lossy(&doc.buffer.to_logical_bytes()).into_owned();
+            let content = String::from_utf8_lossy(&doc.buffer().to_logical_bytes()).into_owned();
             Some((path, syntax_lang, content))
         });
 
@@ -981,7 +985,7 @@ impl<T: TerminalBackend> Editor<T> {
             doc.discard_pending_lsp_changes();
         }
 
-        let content = String::from_utf8_lossy(&doc.buffer.to_logical_bytes()).into_owned();
+        let content = String::from_utf8_lossy(&doc.buffer().to_logical_bytes()).into_owned();
         self.lsp_manager.did_change_uri(&uri, &content);
     }
 
@@ -1084,7 +1088,7 @@ impl<T: TerminalBackend> Editor<T> {
             .collect::<Vec<_>>()
             .join("\n");
         doc.replace_content(&content, crate::document::ops::ContentKind::Load);
-        let _ = doc.buffer.set_cursor(0);
+        let _ = doc.buffer_mut().set_cursor(0);
         doc.set_location_list(entries);
         self.document_manager.add_private_document(doc);
 

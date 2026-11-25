@@ -118,7 +118,7 @@ fn rapid_insert_mode_typing_keeps_up_on_a_large_file() {
         .document_manager
         .active_document()
         .unwrap()
-        .buffer
+        .buffer()
         .len();
 
     // 'i' enters Insert mode; the rest is a burst of plain letters, exactly
@@ -156,7 +156,7 @@ fn rapid_insert_mode_typing_keeps_up_on_a_large_file() {
         .document_manager
         .active_document()
         .unwrap()
-        .buffer
+        .buffer()
         .len();
     assert_eq!(
         end_len,

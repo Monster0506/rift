@@ -1,3 +1,4 @@
+pub(crate) mod buffer;
 pub(crate) mod clipboard;
 pub(crate) mod definitions;
 pub(crate) mod factories;
@@ -187,7 +188,7 @@ pub(crate) struct ViewState {
 
 pub(crate) struct Document {
     pub(crate) id: DocumentId,
-    pub(crate) buffer: TextBuffer,
+    buffer: TextBuffer,
     pub(crate) options: crate::tracked::Tracked<DocumentOptions>,
     file_path: Option<PathBuf>,
     readonly_override: bool,
@@ -245,6 +246,26 @@ macro_rules! state_set {
 }
 
 impl Document {
+    pub(crate) const fn buffer(&self) -> &TextBuffer {
+        &self.buffer
+    }
+
+    pub(crate) const fn buffer_mut(&mut self) -> &mut TextBuffer {
+        &mut self.buffer
+    }
+
+    pub(crate) fn with_syntax<R>(
+        &mut self,
+        f: impl FnOnce(&mut Syntax, &TextBuffer) -> R,
+    ) -> Option<R> {
+        let syntax = self.syntax.as_mut()?;
+        Some(f(syntax, &self.buffer))
+    }
+
+    pub(crate) fn take_selection_batch(&mut self) -> Vec<crate::selection::Region> {
+        self.selection_set.take_for_batch(&self.buffer)
+    }
+
     #[cfg(test)]
     const fn version(&self) -> u64 {
         self.content_version

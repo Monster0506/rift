@@ -364,7 +364,7 @@ fn test_bdelete_refuses_dirty_buffer_without_bang() {
     );
 
     editor.execute_command_line("bdelete!");
-    assert_eq!(editor.active_document().buffer.to_string(), "");
+    assert_eq!(editor.active_document().buffer().to_string(), "");
 }
 
 #[test]
@@ -391,7 +391,7 @@ fn test_open_buffer_list_panel_shows_status_and_enter_switches() {
         .document_manager
         .get_document(layout.dir_doc_id)
         .unwrap();
-    let text = list_doc.buffer.to_string();
+    let text = list_doc.buffer().to_string();
     assert!(text.contains("[2] doc1.txt:  "));
     assert!(text.contains("[3] doc2.txt: %+"));
 
@@ -400,8 +400,8 @@ fn test_open_buffer_list_panel_shows_status_and_enter_switches() {
             .document_manager
             .get_document_mut(layout.dir_doc_id)
             .unwrap();
-        let line_start = doc.buffer.line_index.get_start(1).unwrap();
-        let _ = doc.buffer.set_cursor(line_start);
+        let line_start = doc.buffer().line_index.get_start(1).unwrap();
+        let _ = doc.buffer_mut().set_cursor(line_start);
     }
     editor.handle_buffer_list_select();
 
@@ -441,7 +441,7 @@ fn test_buffer_list_j_snaps_between_entries_and_updates_preview() {
         .document_manager
         .get_document(layout.dir_doc_id)
         .unwrap()
-        .buffer
+        .buffer()
         .to_string();
     editor
         .active_document()
@@ -451,7 +451,7 @@ fn test_buffer_list_j_snaps_between_entries_and_updates_preview() {
         .document_manager
         .get_document(layout.dir_doc_id)
         .unwrap()
-        .buffer
+        .buffer()
         .to_string();
     assert_eq!(before, after, "buffer-list panel must be non-editable");
 }
@@ -496,9 +496,7 @@ fn test_search_closes_on_success() {
         .unwrap();
     editor
         .active_document()
-        .buffer
-        .insert_str("hello world")
-        .unwrap();
+        .replace_content("hello world", crate::document::ops::ContentKind::Render);
 
     editor.handle_action(&crate::action::Action::Editor(
         crate::action::EditorAction::EnterSearchMode,
@@ -540,9 +538,7 @@ fn test_search_stays_open_on_failure() {
         .unwrap();
     editor
         .active_document()
-        .buffer
-        .insert_str("hello world")
-        .unwrap();
+        .replace_content("hello world", crate::document::ops::ContentKind::Render);
 
     editor.handle_action(&crate::action::Action::Editor(
         crate::action::EditorAction::EnterSearchMode,

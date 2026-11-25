@@ -211,8 +211,8 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(repo_root) = doc.git_repo_root().map(Path::to_path_buf) else {
                 return;
             };
-            let cursor = doc.buffer.cursor();
-            let line = doc.buffer.line_index.get_line_at(cursor);
+            let cursor = doc.buffer().cursor();
+            let line = doc.buffer().line_index.get_line_at(cursor);
             let Some(sha) = doc.annotations.git_log_commit_sha_at_line(line) else {
                 return;
             };
@@ -595,8 +595,8 @@ impl<T: TerminalBackend> Editor<T> {
         if !doc.is_git_rebase_todo() {
             return None;
         }
-        let cursor = doc.buffer.cursor();
-        let line = doc.buffer.line_index.get_line_at(cursor);
+        let cursor = doc.buffer().cursor();
+        let line = doc.buffer().line_index.get_line_at(cursor);
         doc.annotations.git_rebase_step_at_line(line)
     }
 

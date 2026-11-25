@@ -40,7 +40,7 @@ fn open_file_on_nonexistent_path_opens_empty_buffer_with_no_error() {
 
     let doc = editor.document_manager.active_document().unwrap();
     assert_eq!(doc.path(), Some(path.as_path()));
-    assert_eq!(doc.buffer.len(), 0);
+    assert_eq!(doc.buffer().len(), 0);
     assert!(!path.exists(), "opening must not touch disk");
     assert!(
         editor.state.error_manager.notifications().is_empty(),
@@ -139,7 +139,7 @@ fn open_file_on_a_persisted_undo_file_shows_a_readonly_view() {
         crate::document::runtime::BufferKindId::UNDO_FILE_VIEW
     );
     assert!(doc.is_read_only());
-    let text = doc.buffer.to_string();
+    let text = doc.buffer().to_string();
     assert!(text.contains("insert 'hi'"), "text was: {text}");
     assert!(text.contains(&source_path.display().to_string()));
 }
@@ -206,7 +206,7 @@ fn reloading_an_open_undo_file_view_re_renders_instead_of_showing_raw_bytes() {
         doc.buffer_kind_id(),
         crate::document::runtime::BufferKindId::UNDO_FILE_VIEW
     );
-    let text = doc.buffer.to_string();
+    let text = doc.buffer().to_string();
     assert!(text.contains("insert 'hi'"), "text was: {text}");
     assert!(
         text.contains("insert ' there'"),
@@ -243,7 +243,7 @@ fn open_file_on_an_image_shows_a_readonly_image_buffer() {
         crate::document::runtime::BufferKindId::IMAGE_VIEW
     );
     assert!(doc.is_read_only());
-    assert!(doc.buffer.to_string().starts_with("PNG 64x32"));
+    assert!(doc.buffer().to_string().starts_with("PNG 64x32"));
     assert!(
         editor.term.get_written_string().contains("\x1bP0;1;0q"),
         "the image should be drawn as sixel"
@@ -280,7 +280,7 @@ fn edit_command_toggles_an_image_between_picture_and_raw_bytes() {
         let is_image = expected == BufferKindId::IMAGE_VIEW;
         assert_eq!(doc.is_read_only(), is_image);
         if !is_image {
-            assert!(doc.buffer.to_string().contains("PNG"));
+            assert!(doc.buffer().to_string().contains("PNG"));
         }
         assert_eq!(
             editor.term.get_written_string().contains("\x1bP0;1;0q"),
@@ -318,7 +318,7 @@ fn reload_on_a_directory_buffer_uses_its_own_refresh_mechanism() {
     drain_jobs(&mut editor);
 
     let doc = editor.document_manager.active_document().unwrap();
-    let text = doc.buffer.to_string();
+    let text = doc.buffer().to_string();
     assert!(
         text.contains("b.txt"),
         "reload should re-read the directory listing; text was: {text}"
@@ -340,7 +340,7 @@ fn reload_on_a_buffer_list_panel_refreshes_listing() {
         .document_manager
         .get_document(layout.dir_doc_id)
         .unwrap()
-        .buffer
+        .buffer()
         .to_string();
     assert!(!text_before.contains("[3]"));
 
@@ -353,7 +353,7 @@ fn reload_on_a_buffer_list_panel_refreshes_listing() {
         .document_manager
         .get_document(layout.dir_doc_id)
         .unwrap()
-        .buffer
+        .buffer()
         .to_string();
     assert!(
         text_after.contains("[3]"),

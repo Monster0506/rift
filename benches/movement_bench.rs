@@ -12,9 +12,10 @@ fn movement_semantic(c: &mut Criterion) {
                                                // Create 100 paragraphs
         for _ in 0..100 {
             for _ in 0..10 {
-                buf.insert_str(&line).unwrap();
+                monster_rift::bench_api::buffer::Edit::type_text(&line).apply_to(&mut buf);
             }
-            buf.insert_char('\n').unwrap(); // Empty line for paragraph
+            monster_rift::bench_api::buffer::Edit::type_text('\n').apply_to(&mut buf);
+            // Empty line for paragraph
         }
         buf
     };
@@ -57,7 +58,7 @@ fn movement_vertical(c: &mut Criterion) {
         for i in 0..10_000 {
             let len = (i % 80) + 10;
             let line = "a".repeat(len) + "\n";
-            buf.insert_str(&line).unwrap();
+            monster_rift::bench_api::buffer::Edit::type_text(&line).apply_to(&mut buf);
         }
         buf
     };

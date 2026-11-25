@@ -5,8 +5,10 @@ use crate::replay::backend::ReplayBackend;
 fn run(text: &str, keys: &str) -> (String, Mode, usize) {
     let backend = ReplayBackend::new(std::io::sink(), 24, 80);
     let mut editor = Editor::new(backend).unwrap();
-    editor.active_document().buffer.insert_str(text).unwrap();
-    editor.active_document().buffer.move_to_start();
+    editor
+        .active_document()
+        .replace_content(text, crate::document::ops::ContentKind::Render);
+    editor.active_document().buffer_mut().move_to_start();
     editor
         .term
         .push_keys(crate::key::notation::parse_key_sequence(keys).unwrap());
@@ -18,11 +20,11 @@ fn run(text: &str, keys: &str) -> (String, Mode, usize) {
     let mode = editor.current_mode;
     let doc = editor.active_document();
     let text = doc
-        .buffer
-        .chars(0..doc.buffer.len())
+        .buffer()
+        .chars(0..doc.buffer().len())
         .map(crate::character::Character::to_char_lossy)
         .collect();
-    (text, mode, doc.buffer.cursor())
+    (text, mode, doc.buffer().cursor())
 }
 
 #[test]

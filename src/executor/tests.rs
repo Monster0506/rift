@@ -13,8 +13,9 @@ fn create_doc() -> Document {
 #[test]
 fn test_execute_move_left() {
     let mut doc = create_doc();
-    doc.buffer.insert_str("hello").unwrap();
-    assert_eq!(doc.buffer.cursor(), 5);
+    doc.edit(Edit::type_text("hello"), EditSource::User)
+        .unwrap();
+    assert_eq!(doc.buffer().cursor(), 5);
 
     execute_command(
         Command::Move(Motion::Left, 1),
@@ -26,17 +27,17 @@ fn test_execute_move_left() {
         None,
     )
     .unwrap();
-    assert_eq!(doc.buffer.cursor(), 4);
+    assert_eq!(doc.buffer().cursor(), 4);
 }
 
 #[test]
 fn test_execute_move_right() {
     let mut doc = create_doc();
-    doc.buffer.insert_str("hello").unwrap();
+    doc.replace_content("hello", crate::document::ops::ContentKind::Render);
     for _ in 0..5 {
-        doc.buffer.move_left();
+        doc.buffer_mut().move_left();
     }
-    assert_eq!(doc.buffer.cursor(), 0);
+    assert_eq!(doc.buffer().cursor(), 0);
 
     execute_command(
         Command::Move(Motion::Right, 1),
@@ -48,22 +49,22 @@ fn test_execute_move_right() {
         None,
     )
     .unwrap();
-    assert_eq!(doc.buffer.cursor(), 1);
+    assert_eq!(doc.buffer().cursor(), 1);
 }
 
 #[test]
 fn test_execute_insert_char() {
     let mut doc = create_doc();
     execute_command(Command::InsertChar('a'), &mut doc, false, 8, 24, None, None).unwrap();
-    assert_eq!(doc.buffer.to_string(), "a");
+    assert_eq!(doc.buffer().to_string(), "a");
 }
 
 #[test]
 fn test_delete_find_char_forward_inclusive() {
     // dfa in "dcba" with cursor at 0 should delete "dcba" (inclusive of 'a')
     let mut doc = create_doc();
-    doc.buffer.insert_str("dcba").unwrap();
-    doc.buffer.set_cursor(0).unwrap();
+    doc.replace_content("dcba", crate::document::ops::ContentKind::Render);
+    doc.buffer_mut().set_cursor(0).unwrap();
 
     execute_command(
         Command::Delete(Motion::FindCharForward('a'), 1),
@@ -75,15 +76,15 @@ fn test_delete_find_char_forward_inclusive() {
         None,
     )
     .unwrap();
-    assert_eq!(doc.buffer.to_string(), "");
+    assert_eq!(doc.buffer().to_string(), "");
 }
 
 #[test]
 fn test_delete_find_char_forward_inclusive_partial() {
     // dfc in "dcba" with cursor at 0 should delete "dc" (inclusive of 'c')
     let mut doc = create_doc();
-    doc.buffer.insert_str("dcba").unwrap();
-    doc.buffer.set_cursor(0).unwrap();
+    doc.replace_content("dcba", crate::document::ops::ContentKind::Render);
+    doc.buffer_mut().set_cursor(0).unwrap();
 
     execute_command(
         Command::Delete(Motion::FindCharForward('c'), 1),
@@ -95,7 +96,7 @@ fn test_delete_find_char_forward_inclusive_partial() {
         None,
     )
     .unwrap();
-    assert_eq!(doc.buffer.to_string(), "ba");
+    assert_eq!(doc.buffer().to_string(), "ba");
 }
 
 #[test]
@@ -160,16 +161,17 @@ fn cw_on_blank_changes_blanks_only() {
 
 fn run_op(text: &str, cursor: usize, cmd: Command) -> String {
     let mut doc = create_doc();
-    doc.buffer.insert_str(text).unwrap();
-    doc.buffer.set_cursor(cursor).unwrap();
+    doc.replace_content(text, crate::document::ops::ContentKind::Render);
+    doc.buffer_mut().set_cursor(cursor).unwrap();
     execute_command(cmd, &mut doc, false, 8, 24, None, None).unwrap();
-    doc.buffer.to_string()
+    doc.buffer().to_string()
 }
 
 #[test]
 fn test_execute_insert_newline() {
     let mut doc = create_doc();
-    doc.buffer.insert_str("hello").unwrap();
+    doc.edit(Edit::type_text("hello"), EditSource::User)
+        .unwrap();
     execute_command(
         Command::InsertChar('\n'),
         &mut doc,
@@ -180,33 +182,35 @@ fn test_execute_insert_newline() {
         None,
     )
     .unwrap();
-    assert_eq!(doc.buffer.to_string(), "hello\n");
+    assert_eq!(doc.buffer().to_string(), "hello\n");
 }
 
 #[test]
 fn test_execute_delete_backward() {
     let mut doc = create_doc();
-    doc.buffer.insert_str("hello").unwrap();
+    doc.edit(Edit::type_text("hello"), EditSource::User)
+        .unwrap();
     execute_command(Command::DeleteBackward, &mut doc, false, 8, 24, None, None).unwrap();
-    assert_eq!(doc.buffer.to_string(), "hell");
+    assert_eq!(doc.buffer().to_string(), "hell");
 }
 
 #[test]
 fn test_execute_delete_forward() {
     let mut doc = create_doc();
-    doc.buffer.insert_str("hello").unwrap();
+    doc.replace_content("hello", crate::document::ops::ContentKind::Render);
     for _ in 0..5 {
-        doc.buffer.move_left();
+        doc.buffer_mut().move_left();
     }
     execute_command(Command::DeleteForward, &mut doc, false, 8, 24, None, None).unwrap();
-    assert_eq!(doc.buffer.to_string(), "ello");
+    assert_eq!(doc.buffer().to_string(), "ello");
 }
 
 #[test]
 fn test_execute_move_to_buffer_start() {
     let mut doc = create_doc();
-    doc.buffer.insert_str("hello").unwrap();
-    assert_eq!(doc.buffer.cursor(), 5);
+    doc.edit(Edit::type_text("hello"), EditSource::User)
+        .unwrap();
+    assert_eq!(doc.buffer().cursor(), 5);
 
     execute_command(
         Command::Move(Motion::StartOfFile, 1),
@@ -218,17 +222,17 @@ fn test_execute_move_to_buffer_start() {
         None,
     )
     .unwrap();
-    assert_eq!(doc.buffer.cursor(), 0);
+    assert_eq!(doc.buffer().cursor(), 0);
 }
 
 #[test]
 fn test_execute_move_to_buffer_end() {
     let mut doc = create_doc();
-    doc.buffer.insert_str("hello").unwrap();
+    doc.replace_content("hello", crate::document::ops::ContentKind::Render);
     for _ in 0..5 {
-        doc.buffer.move_left();
+        doc.buffer_mut().move_left();
     }
-    assert_eq!(doc.buffer.cursor(), 0);
+    assert_eq!(doc.buffer().cursor(), 0);
 
     execute_command(
         Command::Move(Motion::EndOfFile, 1),
@@ -240,7 +244,7 @@ fn test_execute_move_to_buffer_end() {
         None,
     )
     .unwrap();
-    assert_eq!(doc.buffer.cursor(), 5);
+    assert_eq!(doc.buffer().cursor(), 5);
 }
 
 #[test]
@@ -259,14 +263,14 @@ fn test_execute_insert_ctrl_char() {
     )
     .unwrap();
     // Verify using char_at because to_string() uses Display which renders ^A for control chars
-    assert_eq!(doc.buffer.char_at(0), Some(Character::Control(1)));
+    assert_eq!(doc.buffer().char_at(0), Some(Character::Control(1)));
 }
 
 #[test]
 fn test_execute_insert_tab_expanded_at_column_0() {
     let mut doc = create_doc();
     execute_command(Command::InsertChar('\t'), &mut doc, true, 8, 24, None, None).unwrap();
-    let text = doc.buffer.to_string();
+    let text = doc.buffer().to_string();
     assert_eq!(text, "        "); // 8 spaces
     assert_eq!(text.len(), 8);
 }
@@ -274,9 +278,9 @@ fn test_execute_insert_tab_expanded_at_column_0() {
 #[test]
 fn test_execute_insert_tab_expanded_at_column_1() {
     let mut doc = create_doc();
-    doc.buffer.insert_str("a").unwrap();
+    doc.edit(Edit::type_text("a"), EditSource::User).unwrap();
     execute_command(Command::InsertChar('\t'), &mut doc, true, 8, 24, None, None).unwrap();
-    let text = doc.buffer.to_string();
+    let text = doc.buffer().to_string();
     assert_eq!(text, "a       "); // 1 char + 7 spaces
     assert_eq!(text.len(), 8);
 }
@@ -284,9 +288,10 @@ fn test_execute_insert_tab_expanded_at_column_1() {
 #[test]
 fn test_execute_insert_tab_expanded_at_column_7() {
     let mut doc = create_doc();
-    doc.buffer.insert_str("abcdefg").unwrap();
+    doc.edit(Edit::type_text("abcdefg"), EditSource::User)
+        .unwrap();
     execute_command(Command::InsertChar('\t'), &mut doc, true, 8, 24, None, None).unwrap();
-    let text = doc.buffer.to_string();
+    let text = doc.buffer().to_string();
     assert_eq!(text, "abcdefg "); // 7 chars + 1 space
     assert_eq!(text.len(), 8);
 }
@@ -294,9 +299,10 @@ fn test_execute_insert_tab_expanded_at_column_7() {
 #[test]
 fn test_execute_insert_tab_expanded_at_column_8() {
     let mut doc = create_doc();
-    doc.buffer.insert_str("abcdefgh").unwrap();
+    doc.edit(Edit::type_text("abcdefgh"), EditSource::User)
+        .unwrap();
     execute_command(Command::InsertChar('\t'), &mut doc, true, 8, 24, None, None).unwrap();
-    let text = doc.buffer.to_string();
+    let text = doc.buffer().to_string();
     assert_eq!(text, "abcdefgh        "); // 8 chars + 8 spaces
     assert_eq!(text.len(), 16);
 }
@@ -314,7 +320,7 @@ fn test_execute_insert_tab_not_expanded() {
         None,
     )
     .unwrap();
-    let text = doc.buffer.to_string();
+    let text = doc.buffer().to_string();
     assert_eq!(text, "\t");
     assert_eq!(text.len(), 1);
     assert_eq!(text.as_bytes()[0], b'\t');
@@ -328,11 +334,11 @@ fn test_execute_undo_command() {
 
     // Insert something
     doc.edit(Edit::type_text('x'), EditSource::User).unwrap();
-    assert_eq!(doc.buffer.to_string(), "x");
+    assert_eq!(doc.buffer().to_string(), "x");
 
     // Execute undo command
     execute_command(Command::Undo, &mut doc, false, 8, 24, None, None).unwrap();
-    assert_eq!(doc.buffer.to_string(), "");
+    assert_eq!(doc.buffer().to_string(), "");
 }
 
 #[test]
@@ -342,11 +348,11 @@ fn test_execute_redo_command() {
     // Insert and undo
     doc.edit(Edit::type_text('y'), EditSource::User).unwrap();
     doc.undo();
-    assert_eq!(doc.buffer.to_string(), "");
+    assert_eq!(doc.buffer().to_string(), "");
 
     // Execute redo command
     execute_command(Command::Redo, &mut doc, false, 8, 24, None, None).unwrap();
-    assert_eq!(doc.buffer.to_string(), "y");
+    assert_eq!(doc.buffer().to_string(), "y");
 }
 
 #[test]
@@ -354,20 +360,20 @@ fn test_execute_delete_line_single_undo() {
     let mut doc = create_doc();
 
     // Add a line
-    doc.buffer.insert_str("hello world\n").unwrap();
-    doc.buffer.move_to_start();
-    assert_eq!(doc.buffer.to_string(), "hello world\n");
+    doc.replace_content("hello world\n", crate::document::ops::ContentKind::Render);
+    doc.buffer_mut().move_to_start();
+    assert_eq!(doc.buffer().to_string(), "hello world\n");
 
     // Wrap delete line in transaction (simulating normal mode behavior)
     doc.begin_transaction("DeleteLine");
     execute_command(Command::DeleteLine(1), &mut doc, false, 8, 24, None, None).unwrap();
     doc.commit_transaction();
 
-    assert_eq!(doc.buffer.to_string(), "");
+    assert_eq!(doc.buffer().to_string(), "");
 
     // Single undo should restore the entire line
     doc.undo();
-    assert_eq!(doc.buffer.to_string(), "hello world\n");
+    assert_eq!(doc.buffer().to_string(), "hello world\n");
 }
 
 #[test]
@@ -375,9 +381,9 @@ fn test_execute_delete_motion_single_undo() {
     let mut doc = create_doc();
 
     // Add text
-    doc.buffer.insert_str("one two three").unwrap();
-    doc.buffer.move_to_start();
-    assert_eq!(doc.buffer.cursor(), 0);
+    doc.replace_content("one two three", crate::document::ops::ContentKind::Render);
+    doc.buffer_mut().move_to_start();
+    assert_eq!(doc.buffer().cursor(), 0);
 
     // Wrap delete word in transaction (simulating d2w)
     doc.begin_transaction("Delete(NextWord, 2)");
@@ -394,11 +400,11 @@ fn test_execute_delete_motion_single_undo() {
     doc.commit_transaction();
 
     // "one two " should be deleted
-    assert_eq!(doc.buffer.to_string(), "three");
+    assert_eq!(doc.buffer().to_string(), "three");
 
     // Single undo should restore
     doc.undo();
-    assert_eq!(doc.buffer.to_string(), "one two three");
+    assert_eq!(doc.buffer().to_string(), "one two three");
 }
 
 #[test]
@@ -416,15 +422,15 @@ fn test_insert_mode_transaction_simulation() {
     // Simulate exiting insert mode
     doc.commit_transaction();
 
-    assert_eq!(doc.buffer.to_string(), "abc");
+    assert_eq!(doc.buffer().to_string(), "abc");
 
     // ONE undo should remove ALL characters (grouped as single transaction)
     doc.undo();
-    assert_eq!(doc.buffer.to_string(), "");
+    assert_eq!(doc.buffer().to_string(), "");
 
     // ONE redo should restore ALL characters
     doc.redo();
-    assert_eq!(doc.buffer.to_string(), "abc");
+    assert_eq!(doc.buffer().to_string(), "abc");
 }
 
 #[test]
@@ -442,15 +448,15 @@ fn test_multiple_insert_sessions() {
     doc.edit(Edit::type_text('Z'), EditSource::User).unwrap();
     doc.commit_transaction();
 
-    assert_eq!(doc.buffer.to_string(), "XYZ");
+    assert_eq!(doc.buffer().to_string(), "XYZ");
 
     // Undo second session
     doc.undo();
-    assert_eq!(doc.buffer.to_string(), "XY");
+    assert_eq!(doc.buffer().to_string(), "XY");
 
     // Undo first session
     doc.undo();
-    assert_eq!(doc.buffer.to_string(), "");
+    assert_eq!(doc.buffer().to_string(), "");
 }
 
 #[test]
@@ -467,26 +473,26 @@ fn test_undo_then_new_insert_creates_branch() {
     doc.edit(Edit::type_text('B'), EditSource::User).unwrap();
     doc.commit_transaction();
 
-    assert_eq!(doc.buffer.to_string(), "AB");
+    assert_eq!(doc.buffer().to_string(), "AB");
 
     // Undo B
     doc.undo();
-    assert_eq!(doc.buffer.to_string(), "A");
+    assert_eq!(doc.buffer().to_string(), "A");
 
     // New insert (creates branch)
     doc.begin_transaction("Insert C");
     doc.edit(Edit::type_text('C'), EditSource::User).unwrap();
     doc.commit_transaction();
 
-    assert_eq!(doc.buffer.to_string(), "AC");
+    assert_eq!(doc.buffer().to_string(), "AC");
 
     // Undo C
     doc.undo();
-    assert_eq!(doc.buffer.to_string(), "A");
+    assert_eq!(doc.buffer().to_string(), "A");
 
     // Redo goes to last visited branch (C, not B)
     doc.redo();
-    assert_eq!(doc.buffer.to_string(), "AC");
+    assert_eq!(doc.buffer().to_string(), "AC");
 }
 
 #[test]
@@ -494,13 +500,12 @@ fn test_execute_delete_16_lines_down() {
     let mut doc = create_doc();
 
     // Create 20 lines
-    for i in 0..20 {
-        doc.buffer.insert_str(&format!("line {i}\n")).unwrap();
-    }
-    doc.buffer.move_to_start();
+    let text: String = (0..20).map(|i| format!("line {i}\n")).collect();
+    doc.replace_content(&text, crate::document::ops::ContentKind::Render);
+    doc.buffer_mut().move_to_start();
 
     // Verify we have 20 lines (plus potential trailing content)
-    let initial_text = doc.buffer.to_string();
+    let initial_text = doc.buffer().to_string();
     let initial_line_count = initial_text.lines().count();
     assert_eq!(initial_line_count, 20);
 
@@ -517,7 +522,7 @@ fn test_execute_delete_16_lines_down() {
     )
     .unwrap();
 
-    let after_delete = doc.buffer.to_string();
+    let after_delete = doc.buffer().to_string();
     let remaining_lines: Vec<&str> = after_delete.lines().collect();
 
     // Should have lines 17, 18, 19 remaining (3 lines)
@@ -532,7 +537,7 @@ fn test_execute_delete_16_lines_down() {
 
     // Single undo should restore all 17 deleted lines
     doc.undo();
-    let after_undo = doc.buffer.to_string();
+    let after_undo = doc.buffer().to_string();
     let restored_line_count = after_undo.lines().count();
     assert_eq!(restored_line_count, 20, "Undo should restore all 20 lines");
 }
@@ -542,17 +547,16 @@ fn test_execute_delete_5_lines_up() {
     let mut doc = create_doc();
 
     // Create 10 lines
-    for i in 0..10 {
-        doc.buffer.insert_str(&format!("line {i}\n")).unwrap();
-    }
+    let text: String = (0..10).map(|i| format!("line {i}\n")).collect();
+    doc.replace_content(&text, crate::document::ops::ContentKind::Render);
 
     // Position cursor on line 7
-    doc.buffer.move_to_start();
+    doc.buffer_mut().move_to_start();
     for _ in 0..7 {
-        doc.buffer.move_down();
+        doc.buffer_mut().move_down();
     }
 
-    let current_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
+    let current_line = doc.buffer().line_index.get_line_at(doc.buffer().cursor());
     assert_eq!(current_line, 7, "Should be on line 7");
 
     // Execute d5k (delete with motion Up, count 5)
@@ -568,7 +572,7 @@ fn test_execute_delete_5_lines_up() {
     )
     .unwrap();
 
-    let after_delete = doc.buffer.to_string();
+    let after_delete = doc.buffer().to_string();
     let remaining_lines: Vec<&str> = after_delete.lines().collect();
 
     // Should have lines 0, 1, 8, 9 remaining (4 lines)
@@ -590,25 +594,24 @@ fn test_execute_delete_5_lines_up_cursor_mid_line() {
     let mut doc = create_doc();
 
     // Create 10 lines with longer content
-    for i in 0..10 {
-        doc.buffer
-            .insert_str(&format!("line {i} with some extra text\n"))
-            .unwrap();
-    }
+    let text: String = (0..10)
+        .map(|i| format!("line {i} with some extra text\n"))
+        .collect();
+    doc.replace_content(&text, crate::document::ops::ContentKind::Render);
 
     // Position cursor on line 7, column 10 (middle of line)
-    doc.buffer.move_to_start();
+    doc.buffer_mut().move_to_start();
     for _ in 0..7 {
-        doc.buffer.move_down();
+        doc.buffer_mut().move_down();
     }
     // Move right to column 10
     for _ in 0..10 {
-        doc.buffer.move_right();
+        doc.buffer_mut().move_right();
     }
 
-    let current_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
-    let line_start = doc.buffer.line_index.get_start(current_line).unwrap_or(0);
-    let col = doc.buffer.cursor() - line_start;
+    let current_line = doc.buffer().line_index.get_line_at(doc.buffer().cursor());
+    let line_start = doc.buffer().line_index.get_start(current_line).unwrap_or(0);
+    let col = doc.buffer().cursor() - line_start;
     eprintln!("Starting at line {current_line}, column {col}");
     assert_eq!(current_line, 7, "Should be on line 7");
     assert_eq!(col, 10, "Should be at column 10");
@@ -625,7 +628,7 @@ fn test_execute_delete_5_lines_up_cursor_mid_line() {
     )
     .unwrap();
 
-    let after_delete = doc.buffer.to_string();
+    let after_delete = doc.buffer().to_string();
     let remaining_lines: Vec<&str> = after_delete.lines().collect();
 
     eprintln!("Remaining lines: {remaining_lines:?}");
@@ -644,8 +647,8 @@ fn test_execute_delete_5_lines_up_cursor_mid_line() {
 #[test]
 fn bug_dw_last_word_of_line_joins_lines() {
     let mut doc = create_doc();
-    doc.buffer.insert_str("foo bar\nbaz").unwrap();
-    doc.buffer.set_cursor(4).unwrap();
+    doc.replace_content("foo bar\nbaz", crate::document::ops::ContentKind::Render);
+    doc.buffer_mut().set_cursor(4).unwrap();
 
     execute_command(
         Command::Delete(Motion::NextWord, 1),
@@ -658,14 +661,17 @@ fn bug_dw_last_word_of_line_joins_lines() {
     )
     .unwrap();
 
-    assert_eq!(doc.buffer.to_string(), "foo \nbaz");
+    assert_eq!(doc.buffer().to_string(), "foo \nbaz");
 }
 
 #[test]
 fn d2w_across_lines_clamps_last_word_only() {
     let mut doc = create_doc();
-    doc.buffer.insert_str("foo\nbar baz\nqux").unwrap();
-    doc.buffer.set_cursor(0).unwrap();
+    doc.replace_content(
+        "foo\nbar baz\nqux",
+        crate::document::ops::ContentKind::Render,
+    );
+    doc.buffer_mut().set_cursor(0).unwrap();
 
     execute_command(
         Command::Delete(Motion::NextWord, 2),
@@ -678,7 +684,7 @@ fn d2w_across_lines_clamps_last_word_only() {
     )
     .unwrap();
 
-    assert_eq!(doc.buffer.to_string(), "baz\nqux");
+    assert_eq!(doc.buffer().to_string(), "baz\nqux");
 }
 
 #[test]
@@ -704,8 +710,8 @@ fn word_delete_at_line_end_cases() {
 
     for (text, cursor, motion, count, expected) in cases {
         let mut doc = create_doc();
-        doc.buffer.insert_str(text).unwrap();
-        doc.buffer.set_cursor(cursor).unwrap();
+        doc.replace_content(text, crate::document::ops::ContentKind::Render);
+        doc.buffer_mut().set_cursor(cursor).unwrap();
 
         execute_command(
             Command::Delete(motion, count),
@@ -719,7 +725,7 @@ fn word_delete_at_line_end_cases() {
         .unwrap();
 
         assert_eq!(
-            doc.buffer.to_string(),
+            doc.buffer().to_string(),
             expected,
             "d{count}{motion:?} on {text:?} at {cursor}"
         );
@@ -729,8 +735,8 @@ fn word_delete_at_line_end_cases() {
 #[test]
 fn cw_and_yw_stop_at_line_end() {
     let mut doc = create_doc();
-    doc.buffer.insert_str("foo bar\nbaz").unwrap();
-    doc.buffer.set_cursor(4).unwrap();
+    doc.replace_content("foo bar\nbaz", crate::document::ops::ContentKind::Render);
+    doc.buffer_mut().set_cursor(4).unwrap();
 
     let range =
         crate::executor::compute_motion_range(Motion::NextWord, 1, &mut doc, 24, None).unwrap();
@@ -747,18 +753,18 @@ fn cw_and_yw_stop_at_line_end() {
         None,
     )
     .unwrap();
-    assert_eq!(doc.buffer.to_string(), "foo \nbaz");
+    assert_eq!(doc.buffer().to_string(), "foo \nbaz");
 }
 
 fn run_linewise(text: &str, cursor: usize, cmd: Command, typed: &str) -> String {
     let mut doc = create_doc();
-    doc.buffer.insert_str(text).unwrap();
-    doc.buffer.set_cursor(cursor).unwrap();
+    doc.replace_content(text, crate::document::ops::ContentKind::Render);
+    doc.buffer_mut().set_cursor(cursor).unwrap();
     execute_command(cmd, &mut doc, false, 8, 24, None, None).unwrap();
     for ch in typed.chars() {
         execute_command(Command::InsertChar(ch), &mut doc, false, 8, 24, None, None).unwrap();
     }
-    doc.buffer.to_string()
+    doc.buffer().to_string()
 }
 
 #[test]

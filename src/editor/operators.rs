@@ -65,7 +65,7 @@ impl<T: TerminalBackend> Editor<T> {
         let captured = motion_range.clone().and_then(|range| {
             self.document_manager
                 .active_document()
-                .map(|doc| crate::clipboard::capture_text(&doc.buffer, &range))
+                .map(|doc| crate::clipboard::capture_text(doc.buffer(), &range))
         });
         let has_range = captured.is_some();
         let cut = self.push_clip(captured, op);
@@ -84,11 +84,15 @@ impl<T: TerminalBackend> Editor<T> {
                     if let Motion::TextObject(spec) = motion {
                         let insert_pos =
                             self.document_manager.active_document_mut().and_then(|doc| {
-                                crate::text_objects::resolve_insert_cursor(spec, &doc.buffer, count)
+                                crate::text_objects::resolve_insert_cursor(
+                                    spec,
+                                    doc.buffer(),
+                                    count,
+                                )
                             });
                         if let Some(pos) = insert_pos {
                             if let Some(doc) = self.document_manager.active_document_mut() {
-                                let _ = doc.buffer.set_cursor(pos);
+                                let _ = doc.buffer_mut().set_cursor(pos);
                             }
                             if !self.dot_repeat.is_replaying() {
                                 let cmd = crate::command::Command::Change(motion, 1);
@@ -181,7 +185,7 @@ impl<T: TerminalBackend> Editor<T> {
                     let (start, end) = crate::executor::range_to_offsets(&range, doc, true);
                     if end > start {
                         doc.create_ghosts(&[(start, end)], clip);
-                        let _ = doc.buffer.set_cursor(start);
+                        let _ = doc.buffer_mut().set_cursor(start);
                         ghosted_doc = Some(doc.id);
                     }
                 }
@@ -218,7 +222,7 @@ impl<T: TerminalBackend> Editor<T> {
         let captured = self
             .document_manager
             .active_document()
-            .map(|doc| crate::clipboard::capture_current_line(&doc.buffer, count));
+            .map(|doc| crate::clipboard::capture_current_line(doc.buffer(), count));
         let cut = self.push_clip(captured, op);
 
         match op {
@@ -233,28 +237,28 @@ impl<T: TerminalBackend> Editor<T> {
                     let mut ghosted_doc = None;
                     if let Some((doc, clip)) = self.document_manager.active_document_mut().zip(cut)
                     {
-                        doc.buffer.move_to_line_start();
-                        let start = doc.buffer.cursor();
+                        doc.buffer_mut().move_to_line_start();
+                        let start = doc.buffer().cursor();
                         let mut reached_last_line = false;
                         for _ in 0..count.max(1) {
-                            if !doc.buffer.move_down() {
+                            if !doc.buffer_mut().move_down() {
                                 reached_last_line =
-                                    doc.buffer.get_line() <= doc.buffer.last_real_line();
+                                    doc.buffer().get_line() <= doc.buffer().last_real_line();
                                 break;
                             }
                         }
                         let (ghost_start, ghost_end) = if reached_last_line {
-                            doc.buffer.move_to_line_end();
-                            let end = doc.buffer.cursor();
+                            doc.buffer_mut().move_to_line_end();
+                            let end = doc.buffer().cursor();
                             if start > 0 {
                                 (start - 1, end)
                             } else {
                                 (start, end)
                             }
                         } else {
-                            (start, doc.buffer.cursor())
+                            (start, doc.buffer().cursor())
                         };
-                        let _ = doc.buffer.set_cursor(ghost_start);
+                        let _ = doc.buffer_mut().set_cursor(ghost_start);
                         if ghost_end > ghost_start {
                             doc.create_ghosts(&[(ghost_start, ghost_end)], clip);
                             ghosted_doc = Some(doc.id);

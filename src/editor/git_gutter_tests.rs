@@ -287,7 +287,7 @@ fn unsaved_edit_matching_the_index_produces_no_signs() {
     // Force a revision bump with no real content change.
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
-        let text = doc.buffer.to_string();
+        let text = doc.buffer().to_string();
         doc.replace_content(&text, crate::document::ops::ContentKind::Render);
     }
 

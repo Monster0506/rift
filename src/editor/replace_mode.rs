@@ -40,7 +40,7 @@ impl<T: TerminalBackend> Editor<T> {
         let mut entries = Vec::new();
         doc.begin_transaction("Paste");
         for ch in text.chars() {
-            let pos = doc.buffer.cursor();
+            let pos = doc.buffer().cursor();
             let (original, result) = if ch == '\n' {
                 (
                     None,
@@ -70,13 +70,13 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(cursor) = self
             .document_manager
             .active_document()
-            .map(|doc| doc.buffer.cursor())
+            .map(|doc| doc.buffer().cursor())
         else {
             return;
         };
         let Some(entry) = self.replace_pop(cursor) else {
             if let Some(doc) = self.document_manager.active_document_mut() {
-                doc.buffer.move_left();
+                doc.buffer_mut().move_left();
             }
             return;
         };
@@ -91,7 +91,7 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(start) = self
             .document_manager
             .active_document()
-            .map(|doc| doc.buffer.cursor())
+            .map(|doc| doc.buffer().cursor())
         else {
             return;
         };
@@ -100,8 +100,8 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(doc) = self.document_manager.active_document_mut() else {
             return;
         };
-        let target = doc.buffer.cursor();
-        let _ = doc.buffer.set_cursor(start);
+        let target = doc.buffer().cursor();
+        let _ = doc.buffer_mut().set_cursor(start);
 
         while self.replace_cursor().is_some_and(|c| c > target) {
             let before = self.replace_cursor();
@@ -115,14 +115,14 @@ impl<T: TerminalBackend> Editor<T> {
     fn replace_cursor(&self) -> Option<usize> {
         self.document_manager
             .active_document()
-            .map(|doc| doc.buffer.cursor())
+            .map(|doc| doc.buffer().cursor())
     }
 
     fn replace_one(&mut self, ch: char) {
         let Some(doc) = self.document_manager.active_document() else {
             return;
         };
-        let pos = doc.buffer.cursor();
+        let pos = doc.buffer().cursor();
         let original = doc.char_to_overwrite();
 
         if self.execute_buffer_command(Command::OverwriteChar(ch)) {
@@ -147,7 +147,7 @@ impl<T: TerminalBackend> Editor<T> {
         if ch != '\t' || !doc.options.expand_tabs {
             return (ch, 1);
         }
-        let width = crate::executor::tab_fill_width(&doc.buffer, doc.options.tab_width);
+        let width = crate::executor::tab_fill_width(doc.buffer(), doc.options.tab_width);
         (' ', width)
     }
 

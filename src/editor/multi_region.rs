@@ -93,7 +93,7 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(doc) = self.document_manager.active_document() else {
             return false;
         };
-        let cursor = doc.buffer.cursor();
+        let cursor = doc.buffer().cursor();
         let current = (anchor.min(cursor), anchor.max(cursor) + 1);
 
         let mut best: Option<(usize, usize)> = None;
@@ -105,12 +105,12 @@ impl<T: TerminalBackend> Editor<T> {
                 nesting,
                 kind,
             };
-            let Some(range) = crate::text_objects::resolve(spec, &doc.buffer, 1, None) else {
+            let Some(range) = crate::text_objects::resolve(spec, doc.buffer(), 1, None) else {
                 continue;
             };
             let end_offset = usize::from(range.inclusive);
             let s = range.anchor.min(range.new_cursor);
-            let e = (range.anchor.max(range.new_cursor) + end_offset).min(doc.buffer.len());
+            let e = (range.anchor.max(range.new_cursor) + end_offset).min(doc.buffer().len());
             let strictly_larger =
                 s <= current.0 && e >= current.1 && (s < current.0 || e > current.1);
             if !strictly_larger {
@@ -127,7 +127,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.expand_history.push(current);
         self.visual_anchor = Some(new_start);
         if let Some(doc) = self.document_manager.active_document_mut() {
-            let _ = doc.buffer.set_cursor(new_end.saturating_sub(1));
+            let _ = doc.buffer_mut().set_cursor(new_end.saturating_sub(1));
         }
         true
     }
@@ -141,7 +141,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         self.visual_anchor = Some(start);
         if let Some(doc) = self.document_manager.active_document_mut() {
-            let _ = doc.buffer.set_cursor(end.saturating_sub(1));
+            let _ = doc.buffer_mut().set_cursor(end.saturating_sub(1));
         }
         true
     }
@@ -157,7 +157,7 @@ impl<T: TerminalBackend> Editor<T> {
             );
             return false;
         }
-        let cursor = doc.buffer.cursor();
+        let cursor = doc.buffer().cursor();
         let target = if forward {
             doc.selection_set.next_region(cursor)
         } else {
@@ -165,7 +165,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let Some(region) = target else { return false };
         let (start, _) = region.span();
-        let _ = doc.buffer.set_cursor(start);
+        let _ = doc.buffer_mut().set_cursor(start);
         true
     }
 
@@ -177,7 +177,7 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.active_document_mut() else {
                 return false;
             };
-            doc.selection_set.take_for_batch(&doc.buffer)
+            doc.take_selection_batch()
         };
         if batch.is_empty() {
             return false;
@@ -213,16 +213,16 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.active_document_mut() else {
                 return false;
             };
-            let batch = doc.selection_set.take_for_batch(&doc.buffer);
+            let batch = doc.take_selection_batch();
             if batch.is_empty() {
                 return false;
             }
             doc.begin_transaction("MultiInsert");
             let mut anchors: Vec<usize> = Vec::with_capacity(batch.len());
             for region in batch {
-                let len_before = doc.buffer.len();
+                let len_before = doc.buffer().len();
                 let new_anchor = anchor_for(doc, region);
-                let delta = len_before.cast_signed() - doc.buffer.len().cast_signed();
+                let delta = len_before.cast_signed() - doc.buffer().len().cast_signed();
                 if delta != 0 {
                     for a in &mut anchors {
                         *a = ((*a).cast_signed() - delta).cast_unsigned();
@@ -237,7 +237,7 @@ impl<T: TerminalBackend> Editor<T> {
         let first = anchors.remove(0);
         self.pending_multi_insert_anchors = anchors;
         if let Some(doc) = self.document_manager.active_document_mut() {
-            let _ = doc.buffer.set_cursor(first);
+            let _ = doc.buffer_mut().set_cursor(first);
         }
         if !self.dot_repeat.is_replaying() {
             self.dot_repeat.start_insert_recording(entry);
@@ -254,7 +254,7 @@ impl<T: TerminalBackend> Editor<T> {
             (self.visual_anchor, self.current_mode.visual_range_kind())
         {
             if let Some(doc) = self.document_manager.active_document_mut() {
-                let cursor = doc.buffer.cursor();
+                let cursor = doc.buffer().cursor();
                 doc.bank_region(crate::selection::Region::new(anchor, cursor, kind));
             }
         }
@@ -285,32 +285,32 @@ impl<T: TerminalBackend> Editor<T> {
 
         match entry {
             Command::EnterInsertMode => {
-                self.enter_multi_insert(entry, |doc, region| region.buffer_span(&doc.buffer).0)
+                self.enter_multi_insert(entry, |doc, region| region.buffer_span(doc.buffer()).0)
             }
             Command::EnterInsertModeAfter => {
-                self.enter_multi_insert(entry, |doc, region| region.buffer_span(&doc.buffer).1)
+                self.enter_multi_insert(entry, |doc, region| region.buffer_span(doc.buffer()).1)
             }
             Command::EnterInsertModeAtLineStart => self.enter_multi_insert(entry, |doc, region| {
-                let (start, _) = region.buffer_span(&doc.buffer);
-                let row = doc.buffer.line_index.get_line_at(start);
-                line_start_offset(&doc.buffer, row)
+                let (start, _) = region.buffer_span(doc.buffer());
+                let row = doc.buffer().line_index.get_line_at(start);
+                line_start_offset(doc.buffer(), row)
             }),
             Command::EnterInsertModeAtLineEnd => self.enter_multi_insert(entry, |doc, region| {
-                let (_, end) = region.buffer_span(&doc.buffer);
-                let row = doc.buffer.line_index.get_line_at(end.saturating_sub(1));
-                line_end_offset(&doc.buffer, row)
+                let (_, end) = region.buffer_span(doc.buffer());
+                let row = doc.buffer().line_index.get_line_at(end.saturating_sub(1));
+                line_end_offset(doc.buffer(), row)
             }),
             Command::OpenLineBelow => self.enter_multi_insert(entry, |doc, region| {
-                let (_, end) = region.buffer_span(&doc.buffer);
-                let row = doc.buffer.line_index.get_line_at(end.saturating_sub(1));
-                let target = line_end_offset(&doc.buffer, row);
+                let (_, end) = region.buffer_span(doc.buffer());
+                let row = doc.buffer().line_index.get_line_at(end.saturating_sub(1));
+                let target = line_end_offset(doc.buffer(), row);
                 let _ = doc.edit(Edit::insert(target, '\n'), EditSource::User);
-                doc.buffer.cursor()
+                doc.buffer().cursor()
             }),
             Command::OpenLineAbove => self.enter_multi_insert(entry, |doc, region| {
-                let (start, _) = region.buffer_span(&doc.buffer);
-                let row = doc.buffer.line_index.get_line_at(start);
-                let target = line_start_offset(&doc.buffer, row);
+                let (start, _) = region.buffer_span(doc.buffer());
+                let row = doc.buffer().line_index.get_line_at(start);
+                let target = line_start_offset(doc.buffer(), row);
                 let _ = doc.edit(Edit::insert(target, '\n'), EditSource::User);
                 target
             }),
@@ -341,7 +341,7 @@ impl<T: TerminalBackend> Editor<T> {
                     };
                     editor
                         .clipboard_ring
-                        .push(region_clip(&doc.buffer, &region));
+                        .push(region_clip(doc.buffer(), &region));
                     true
                 });
                 self.refresh_clipboard_buffer_if_open();
@@ -351,16 +351,16 @@ impl<T: TerminalBackend> Editor<T> {
                 use crate::command::Command;
                 let mut clips = Vec::new();
                 let handled = self.enter_multi_insert(Command::EnterInsertMode, |doc, region| {
-                    clips.push(region_clip(&doc.buffer, &region));
-                    let (start, end) = region.buffer_span(&doc.buffer);
-                    let start = start.min(doc.buffer.len());
-                    let mut end = end.min(doc.buffer.len());
+                    clips.push(region_clip(doc.buffer(), &region));
+                    let (start, end) = region.buffer_span(doc.buffer());
+                    let start = start.min(doc.buffer().len());
+                    let mut end = end.min(doc.buffer().len());
                     if region.kind == RangeKind::Linewise {
                         let last_line = doc
-                            .buffer
+                            .buffer()
                             .line_index
                             .get_line_at(region.anchor.max(region.cursor));
-                        if last_line + 1 < doc.buffer.get_total_lines() {
+                        if last_line + 1 < doc.buffer().get_total_lines() {
                             end = end.saturating_sub(1).max(start);
                         }
                     }
@@ -383,7 +383,7 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.active_document_mut() else {
                 return false;
             };
-            doc.selection_set.take_for_batch(&doc.buffer)
+            doc.take_selection_batch()
         };
         if batch.is_empty() {
             return false;
@@ -395,20 +395,20 @@ impl<T: TerminalBackend> Editor<T> {
             let live: Vec<&crate::selection::Region> = batch
                 .iter()
                 .filter(|r| {
-                    let (s, e) = r.buffer_span(&doc.buffer);
+                    let (s, e) = r.buffer_span(doc.buffer());
                     r.kind == RangeKind::Linewise
-                        || s.min(doc.buffer.len()) < e.min(doc.buffer.len())
+                        || s.min(doc.buffer().len()) < e.min(doc.buffer().len())
                 })
                 .collect();
-            let clips = live.iter().map(|r| region_clip(&doc.buffer, r)).collect();
+            let clips = live.iter().map(|r| region_clip(doc.buffer(), r)).collect();
             let spans = live
                 .iter()
                 .map(|r| {
-                    let (start, end) = r.delete_span(&doc.buffer);
+                    let (start, end) = r.delete_span(doc.buffer());
                     (
-                        start.min(doc.buffer.len()),
-                        end.min(doc.buffer.len()),
-                        start < r.buffer_span(&doc.buffer).0,
+                        start.min(doc.buffer().len()),
+                        end.min(doc.buffer().len()),
+                        start < r.buffer_span(doc.buffer()).0,
                     )
                 })
                 .collect();
@@ -433,7 +433,7 @@ impl<T: TerminalBackend> Editor<T> {
             let ghosted_doc = self.document_manager.active_document_mut().map(|doc| {
                 doc.create_ghosts(&ranges, ghost_clip);
                 if let Some(pos) = cursor_target {
-                    let _ = doc.buffer.set_cursor(pos);
+                    let _ = doc.buffer_mut().set_cursor(pos);
                 }
                 doc.id
             });
@@ -468,7 +468,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return false;
             };
             let mut any = false;
-            for (pos, len) in fill_runs(&doc.buffer, &region) {
+            for (pos, len) in fill_runs(doc.buffer(), &region) {
                 any |= doc
                     .edit(
                         Edit::replace(pos..pos + len, vec![Character::from(ch); len]),
@@ -517,7 +517,7 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.active_document_mut() else {
                 return false;
             };
-            doc.selection_set.take_for_batch(&doc.buffer)
+            doc.take_selection_batch()
         };
         if batch.is_empty() {
             return false;
@@ -537,10 +537,10 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.active_document_mut() else {
                 break;
             };
-            let (start, _) = region.buffer_span(&doc.buffer);
-            let _ = doc.buffer.set_cursor(start);
+            let (start, _) = region.buffer_span(doc.buffer());
+            let _ = doc.buffer_mut().set_cursor(start);
             let Some((open_range, close_range)) =
-                crate::text_objects::resolve_surround_pair(resolve_ch, &doc.buffer, count)
+                crate::text_objects::resolve_surround_pair(resolve_ch, doc.buffer(), count)
             else {
                 continue;
             };
@@ -571,7 +571,7 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = editor.document_manager.active_document_mut() else {
                 return false;
             };
-            let (start, end) = region.buffer_span(&doc.buffer);
+            let (start, end) = region.buffer_span(doc.buffer());
             let _ = doc.edit(Edit::insert(end, &close), EditSource::User);
             let _ = doc.edit(Edit::insert(start, &open), EditSource::User);
             true
@@ -590,7 +590,7 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = editor.document_manager.active_document_mut() else {
                 return false;
             };
-            let (start, end) = region.buffer_span(&doc.buffer);
+            let (start, end) = region.buffer_span(doc.buffer());
             doc.put(clip, PutAt::Region { start, end, before })
         })
     }
@@ -606,7 +606,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.dot_repeat.set_replaying(true);
         for anchor in anchors {
             if let Some(doc) = self.document_manager.active_document_mut() {
-                let _ = doc.buffer.set_cursor(anchor);
+                let _ = doc.buffer_mut().set_cursor(anchor);
             }
             for &cmd in &commands {
                 self.execute_buffer_command(cmd);
@@ -658,7 +658,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
         if let Some(source) = self.document_manager.active_document() {
-            doc.populate_regions_buffer(&source.buffer, &regions);
+            doc.populate_regions_buffer(source.buffer(), &regions);
         }
         doc.set_regions(source_doc_id);
         self.document_manager.add_private_document(doc);
@@ -701,10 +701,9 @@ impl<T: TerminalBackend> Editor<T> {
         if layout.kind != crate::editor::PanelKind::Regions {
             return false;
         }
-        let line = self
-            .document_manager
-            .active_document()
-            .map_or(0, |d| d.buffer.line_index.get_line_at(d.buffer.cursor()));
+        let line = self.document_manager.active_document().map_or(0, |d| {
+            d.buffer().line_index.get_line_at(d.buffer().cursor())
+        });
         let Some(source_doc_id) = self
             .document_manager
             .active_document()
@@ -721,7 +720,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         source.selection_set.regions.retain(|r| *r != target);
         let remaining = source.selection_set.sorted();
-        let source_buf = source.buffer.clone();
+        let source_buf = source.buffer().clone();
         if let Some(doc) = self.document_manager.active_document_mut() {
             doc.populate_regions_buffer(&source_buf, &remaining);
         }

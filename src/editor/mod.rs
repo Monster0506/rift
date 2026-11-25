@@ -135,7 +135,7 @@ fn resolve_display_map(
 ) -> Option<crate::wrap::DisplayMap> {
     let (w, tab_width) =
         resolve_wrap_params(doc, content_width, global_soft_wrap, global_wrap_width)?;
-    Some(crate::wrap::DisplayMap::build(&doc.buffer, w, tab_width))
+    Some(crate::wrap::DisplayMap::build(doc.buffer(), w, tab_width))
 }
 
 pub struct Editor<T: TerminalBackend> {

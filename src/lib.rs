@@ -7,7 +7,7 @@ mod perf;
 
 mod action;
 mod annotations;
-mod buffer;
+use document::buffer;
 mod character;
 mod clipboard;
 mod color;
@@ -100,6 +100,7 @@ pub mod bench_api {
         pub use crate::buffer::line_index::LineIndex;
         pub use crate::buffer::rope::PieceTable;
         pub use crate::buffer::TextBuffer;
+        pub use crate::document::ops::{Edit, IntoText};
     }
     pub mod character {
         pub use crate::character::Character;

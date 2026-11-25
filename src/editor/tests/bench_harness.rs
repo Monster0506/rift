@@ -30,7 +30,7 @@ fn add_harness_annotations(editor: &mut Editor<MockTerminal>) {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner};
 
     let doc = editor.active_document();
-    let len = doc.buffer.len();
+    let len = doc.buffer().len();
     let n = 10_000usize;
     for k in 0..n {
         let start = k * (len / n);
@@ -134,7 +134,7 @@ fn ttfp_open_huge_treesitter_annotation_doc() {
     let lua_snapshot = t.elapsed();
 
     let t = Instant::now();
-    let buf_clone = editor.active_document().buffer.clone();
+    let buf_clone = editor.active_document().buffer().clone();
     let buffer_clone = t.elapsed();
     drop(buf_clone);
 
@@ -269,8 +269,8 @@ fn scroll_latency_wrapped_markdown() {
 
     eprintln!("--- scroll latency (soft wrap on, one j per sample) ---");
     {
-        let cursor = editor.active_document().buffer.cursor();
-        let line = editor.active_document().buffer.get_line();
+        let cursor = editor.active_document().buffer().cursor();
+        let line = editor.active_document().buffer().get_line();
         eprintln!(
             "pre: cursor={cursor} line={line} top_vr={} soft_wrap={}",
             editor.render_system.viewport.top_visual_row(),
@@ -279,8 +279,8 @@ fn scroll_latency_wrapped_markdown() {
     }
     measure_scroll(&mut editor, "j from top", crate::action::Motion::Down, 300);
     {
-        let cursor = editor.active_document().buffer.cursor();
-        let line = editor.active_document().buffer.get_line();
+        let cursor = editor.active_document().buffer().cursor();
+        let line = editor.active_document().buffer().get_line();
         eprintln!(
             "post: cursor={cursor} line={line} top_vr={}",
             editor.render_system.viewport.top_visual_row()

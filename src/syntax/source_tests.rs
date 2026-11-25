@@ -16,7 +16,8 @@ fn fragmented(parts: &[&[u8]]) -> TextBuffer {
     // Prepending keeps successive additions in separate pieces.
     for part in parts.iter().rev() {
         buffer.set_cursor(0).unwrap();
-        buffer.insert_bytes(part);
+        crate::document::ops::Edit::type_text(crate::buffer::decode_bytes(part))
+            .apply_to(&mut buffer);
     }
     assert!(buffer.iter_chunks_at(0).count() >= parts.len());
     assert_eq!(buffer.to_logical_bytes(), parts.concat());
@@ -191,10 +192,14 @@ fn edit_and_reparse(
     assert_eq!(buffer.char_to_byte(start_char), range.start);
     assert_eq!(buffer.char_to_byte(end_char), range.end);
     if start_char != end_char {
-        assert!(buffer.delete_range(start_char, end_char - start_char));
+        assert!(
+            crate::document::ops::Edit::delete(start_char..start_char + end_char - start_char)
+                .apply_to(buffer)
+        );
     }
     buffer.set_cursor(start_char).unwrap();
-    buffer.insert_bytes(replacement);
+    crate::document::ops::Edit::type_text(crate::buffer::decode_bytes(replacement))
+        .apply_to(buffer);
     let after = buffer.to_logical_bytes();
     let mut expected_bytes = before.clone();
     expected_bytes.splice(range.clone(), replacement.iter().copied());

@@ -10,7 +10,7 @@ fn make_buf(lines: usize, line_len: usize) -> TextBuffer {
     let mut buf = TextBuffer::new(lines * (line_len + 1)).unwrap();
     let line = "a".repeat(line_len) + "\n";
     for _ in 0..lines {
-        buf.insert_str(&line).unwrap();
+        monster_rift::bench_api::buffer::Edit::type_text(&line).apply_to(&mut buf);
     }
     buf
 }
@@ -32,7 +32,7 @@ fn make_buf_long_lines(lines: usize, line_len: usize) -> TextBuffer {
     let mut buf = TextBuffer::new(lines * (line_len + 1)).unwrap();
     let line = "word ".repeat(line_len / 5) + "\n";
     for _ in 0..lines {
-        buf.insert_str(&line).unwrap();
+        monster_rift::bench_api::buffer::Edit::type_text(&line).apply_to(&mut buf);
     }
     buf
 }

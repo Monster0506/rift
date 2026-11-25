@@ -69,7 +69,7 @@ fn test_edge_cases() {
 #[test]
 fn test_buffer_word_right_basic() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer.insert_str("hello world").unwrap();
+    crate::document::ops::Edit::type_text("hello world").apply_to(&mut buffer);
     buffer.move_to_start();
 
     assert!(move_word_right(&mut buffer));
@@ -84,7 +84,7 @@ fn test_buffer_word_right_basic() {
 #[test]
 fn test_buffer_word_right_symbols() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer.insert_str("foo->bar").unwrap();
+    crate::document::ops::Edit::type_text("foo->bar").apply_to(&mut buffer);
     buffer.move_to_start();
 
     assert!(move_word_right(&mut buffer));
@@ -100,7 +100,7 @@ fn test_buffer_word_right_symbols() {
 #[test]
 fn test_buffer_word_left_basic() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer.insert_str("hello world").unwrap();
+    crate::document::ops::Edit::type_text("hello world").apply_to(&mut buffer);
     assert_eq!(buffer.cursor(), 11); // After insert, cursor is at end
 
     assert!(move_word_left(&mut buffer));
@@ -115,7 +115,7 @@ fn test_buffer_word_left_basic() {
 #[test]
 fn test_buffer_word_left_symbols() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer.insert_str("foo->bar").unwrap();
+    crate::document::ops::Edit::type_text("foo->bar").apply_to(&mut buffer);
     assert_eq!(buffer.cursor(), 8); // After insert, cursor is at end
 
     assert!(move_word_left(&mut buffer));
@@ -131,7 +131,7 @@ fn test_buffer_word_left_symbols() {
 #[test]
 fn test_buffer_word_underscore() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer.insert_str("hello_world").unwrap();
+    crate::document::ops::Edit::type_text("hello_world").apply_to(&mut buffer);
     buffer.move_to_start();
 
     assert!(move_word_right(&mut buffer));
@@ -150,9 +150,7 @@ fn test_buffer_empty() {
 #[test]
 fn test_sentence_forward_basic() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer
-        .insert_str("First sentence. Second sentence.")
-        .unwrap();
+    crate::document::ops::Edit::type_text("First sentence. Second sentence.").apply_to(&mut buffer);
     buffer.move_to_start();
 
     assert!(move_sentence_forward(&mut buffer));
@@ -162,7 +160,7 @@ fn test_sentence_forward_basic() {
 #[test]
 fn test_sentence_forward_multiple() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer.insert_str("One. Two! Three?").unwrap();
+    crate::document::ops::Edit::type_text("One. Two! Three?").apply_to(&mut buffer);
     buffer.move_to_start();
 
     assert!(move_sentence_forward(&mut buffer));
@@ -178,7 +176,7 @@ fn test_sentence_forward_multiple() {
 #[test]
 fn test_sentence_forward_newline() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer.insert_str("First line\nSecond line").unwrap();
+    crate::document::ops::Edit::type_text("First line\nSecond line").apply_to(&mut buffer);
     buffer.move_to_start();
 
     assert!(move_sentence_forward(&mut buffer));
@@ -188,9 +186,8 @@ fn test_sentence_forward_newline() {
 #[test]
 fn test_sentence_newline_forward_backward_are_inverses() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer
-        .insert_str("first line\nsecond line\nthird line")
-        .unwrap();
+    crate::document::ops::Edit::type_text("first line\nsecond line\nthird line")
+        .apply_to(&mut buffer);
     buffer.move_to_start();
 
     assert!(move_sentence_forward(&mut buffer));
@@ -206,7 +203,7 @@ fn test_sentence_newline_forward_backward_are_inverses() {
 #[test]
 fn test_sentence_forward_no_punctuation() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer.insert_str("No punctuation here").unwrap();
+    crate::document::ops::Edit::type_text("No punctuation here").apply_to(&mut buffer);
     buffer.move_to_start();
 
     assert!(move_sentence_forward(&mut buffer));
@@ -216,9 +213,7 @@ fn test_sentence_forward_no_punctuation() {
 #[test]
 fn test_sentence_backward_basic() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer
-        .insert_str("First sentence. Second sentence.")
-        .unwrap();
+    crate::document::ops::Edit::type_text("First sentence. Second sentence.").apply_to(&mut buffer);
     buffer.move_to_end();
 
     assert!(move_sentence_backward(&mut buffer));
@@ -228,7 +223,7 @@ fn test_sentence_backward_basic() {
 #[test]
 fn test_sentence_backward_multiple() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer.insert_str("One. Two! Three?").unwrap();
+    crate::document::ops::Edit::type_text("One. Two! Three?").apply_to(&mut buffer);
     buffer.move_to_end();
 
     assert!(move_sentence_backward(&mut buffer));
@@ -244,7 +239,7 @@ fn test_sentence_backward_multiple() {
 #[test]
 fn test_sentence_at_boundary() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer.insert_str("Test.").unwrap();
+    crate::document::ops::Edit::type_text("Test.").apply_to(&mut buffer);
     buffer.move_to_start();
 
     assert!(!move_sentence_backward(&mut buffer)); // Already at start
@@ -263,9 +258,8 @@ fn test_sentence_empty_buffer() {
 #[test]
 fn test_paragraph_forward_basic() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer
-        .insert_str("First paragraph.\n\nSecond paragraph.")
-        .unwrap();
+    crate::document::ops::Edit::type_text("First paragraph.\n\nSecond paragraph.")
+        .apply_to(&mut buffer);
     buffer.move_to_start();
 
     assert!(move_paragraph_forward(&mut buffer));
@@ -275,7 +269,7 @@ fn test_paragraph_forward_basic() {
 #[test]
 fn test_paragraph_forward_multiple_empty_lines() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer.insert_str("Para one.\n\n\nPara two.").unwrap();
+    crate::document::ops::Edit::type_text("Para one.\n\n\nPara two.").apply_to(&mut buffer);
     buffer.move_to_start();
 
     assert!(move_paragraph_forward(&mut buffer));
@@ -285,9 +279,8 @@ fn test_paragraph_forward_multiple_empty_lines() {
 #[test]
 fn test_paragraph_forward_no_empty_lines() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer
-        .insert_str("Line one.\nLine two.\nLine three.")
-        .unwrap();
+    crate::document::ops::Edit::type_text("Line one.\nLine two.\nLine three.")
+        .apply_to(&mut buffer);
     buffer.move_to_start();
 
     assert!(move_paragraph_forward(&mut buffer));
@@ -297,9 +290,8 @@ fn test_paragraph_forward_no_empty_lines() {
 #[test]
 fn test_paragraph_backward_basic() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer
-        .insert_str("First paragraph.\n\nSecond paragraph.")
-        .unwrap();
+    crate::document::ops::Edit::type_text("First paragraph.\n\nSecond paragraph.")
+        .apply_to(&mut buffer);
     buffer.move_to_end();
 
     assert!(move_paragraph_backward(&mut buffer));
@@ -309,9 +301,8 @@ fn test_paragraph_backward_basic() {
 #[test]
 fn test_paragraph_backward_from_middle() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer
-        .insert_str("Para one.\n\nPara two.\n\nPara three.")
-        .unwrap();
+    crate::document::ops::Edit::type_text("Para one.\n\nPara two.\n\nPara three.")
+        .apply_to(&mut buffer);
     // Position cursor in "Para three"
     buffer.set_cursor(24).unwrap();
 
@@ -322,7 +313,7 @@ fn test_paragraph_backward_from_middle() {
 #[test]
 fn test_paragraph_backward_no_empty_lines() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer.insert_str("Line one.\nLine two.").unwrap();
+    crate::document::ops::Edit::type_text("Line one.\nLine two.").apply_to(&mut buffer);
     buffer.move_to_end();
 
     assert!(move_paragraph_backward(&mut buffer));
@@ -332,7 +323,7 @@ fn test_paragraph_backward_no_empty_lines() {
 #[test]
 fn test_paragraph_at_boundary() {
     let mut buffer = TextBuffer::new(0).unwrap();
-    buffer.insert_str("Single line.").unwrap();
+    crate::document::ops::Edit::type_text("Single line.").apply_to(&mut buffer);
     buffer.move_to_start();
 
     assert!(!move_paragraph_backward(&mut buffer)); // Already at start

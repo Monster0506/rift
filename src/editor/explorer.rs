@@ -53,9 +53,9 @@ impl<T: TerminalBackend> Editor<T> {
                 );
                 return;
             }
-            let cursor = doc.buffer.cursor();
-            let line_num = doc.buffer.line_index.get_line_at(cursor);
-            let line_bytes = doc.buffer.get_line_bytes(line_num);
+            let cursor = doc.buffer().cursor();
+            let line_num = doc.buffer().line_index.get_line_at(cursor);
+            let line_bytes = doc.buffer().get_line_bytes(line_num);
             let line_text = String::from_utf8_lossy(&line_bytes).trim_end().to_string();
             let Some(dir_path) = doc.directory_path().cloned() else {
                 return;
@@ -278,8 +278,8 @@ impl<T: TerminalBackend> Editor<T> {
 
         let log = self.state.error_manager.notifications().message_log();
         doc.populate_messages_buffer(&log);
-        let len = doc.buffer.len();
-        let _ = doc.buffer.set_cursor(len.saturating_sub(1));
+        let len = doc.buffer().len();
+        let _ = doc.buffer_mut().set_cursor(len.saturating_sub(1));
 
         self.document_manager.add_document(doc);
         if let Err(e) = self.document_manager.switch_to_document(id) {
@@ -434,12 +434,14 @@ impl<T: TerminalBackend> Editor<T> {
         let cursor_line = self
             .document_manager
             .get_document(layout.dir_doc_id)
-            .map_or(0, |d| d.buffer.line_index.get_line_at(d.buffer.cursor()));
+            .map_or(0, |d| {
+                d.buffer().line_index.get_line_at(d.buffer().cursor())
+            });
         if let Some(doc) = self.document_manager.get_document_mut(layout.dir_doc_id) {
             doc.populate_buffer_list_buffer(&infos);
             let target_line = cursor_line.min(infos.len().saturating_sub(1));
-            if let Some(start) = doc.buffer.line_index.get_start(target_line) {
-                let _ = doc.buffer.set_cursor(start);
+            if let Some(start) = doc.buffer().line_index.get_start(target_line) {
+                let _ = doc.buffer_mut().set_cursor(start);
             }
         }
     }
@@ -459,8 +461,8 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.get_document(layout.dir_doc_id) else {
                 return;
             };
-            let cursor = doc.buffer.cursor();
-            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            let cursor = doc.buffer().cursor();
+            let line_num = doc.buffer().line_index.get_line_at(cursor);
             match doc
                 .buffer_list_entries()
                 .and_then(|entries| entries.get(line_num))
@@ -495,8 +497,8 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.get_document(layout.dir_doc_id) else {
                 return;
             };
-            let cursor = doc.buffer.cursor();
-            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            let cursor = doc.buffer().cursor();
+            let line_num = doc.buffer().line_index.get_line_at(cursor);
             match doc
                 .buffer_list_entries()
                 .and_then(|entries| entries.get(line_num))
@@ -530,8 +532,8 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.get_document(layout.dir_doc_id) else {
                 return;
             };
-            let cursor = doc.buffer.cursor();
-            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            let cursor = doc.buffer().cursor();
+            let line_num = doc.buffer().line_index.get_line_at(cursor);
             let idx = doc.clipboard_source_at(line_num);
 
             let text = idx
@@ -577,7 +579,7 @@ impl<T: TerminalBackend> Editor<T> {
             .clipboard_entries()
             .is_some_and(|entries| entries.iter().eq(self.clipboard_ring.entries().iter()));
         let parsed = doc.parse_clipboard_entries();
-        let cursor_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
+        let cursor_line = doc.buffer().line_index.get_line_at(doc.buffer().cursor());
         let capacity = self.clipboard_ring.capacity();
         let Some(entries) = parsed.filter(|entries| snapshot_matches && entries.len() <= capacity)
         else {
@@ -597,9 +599,9 @@ impl<T: TerminalBackend> Editor<T> {
         self.clipboard_ring = ring;
         if let Some(doc) = self.document_manager.active_document_mut() {
             doc.populate_clipboard_buffer(self.clipboard_ring.entries());
-            let line = cursor_line.min(doc.buffer.get_total_lines().saturating_sub(1));
-            let cursor = doc.buffer.line_index.get_start(line).unwrap_or(0);
-            let _ = doc.buffer.set_cursor(cursor);
+            let line = cursor_line.min(doc.buffer().get_total_lines().saturating_sub(1));
+            let cursor = doc.buffer().line_index.get_start(line).unwrap_or(0);
+            let _ = doc.buffer_mut().set_cursor(cursor);
         }
 
         self.state.notify(
@@ -705,9 +707,9 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         let doc = self.document_manager.get_document(layout.dir_doc_id)?;
-        let cursor = doc.buffer.cursor();
-        let line_num = doc.buffer.line_index.get_line_at(cursor);
-        let line_bytes = doc.buffer.get_line_bytes(line_num);
+        let cursor = doc.buffer().cursor();
+        let line_num = doc.buffer().line_index.get_line_at(cursor);
+        let line_bytes = doc.buffer().get_line_bytes(line_num);
         let line_text = String::from_utf8_lossy(&line_bytes).trim_end().to_string();
         let dir_path = doc.directory_path()?.clone();
         let entry_name = line_text.trim_end_matches('/');
@@ -783,8 +785,8 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.get_document(layout.dir_doc_id) else {
                 return;
             };
-            let cursor = doc.buffer.cursor();
-            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            let cursor = doc.buffer().cursor();
+            let line_num = doc.buffer().line_index.get_line_at(cursor);
             match doc
                 .undotree_sequences()
                 .and_then(|sequences| sequences.get(line_num))
@@ -799,7 +801,7 @@ impl<T: TerminalBackend> Editor<T> {
             .get_document_mut(layout.preview_doc_id)
         {
             let _ = linked_doc.goto_seq(seq);
-            let _ = linked_doc.buffer.set_cursor(0);
+            let _ = linked_doc.buffer_mut().set_cursor(0);
         }
         if let Some(w) = self.split_tree.get_window_mut(layout.preview_win_id) {
             w.cursor_position = 0;
@@ -825,9 +827,9 @@ impl<T: TerminalBackend> Editor<T> {
                 );
                 return;
             }
-            let cursor = doc.buffer.cursor();
-            let line_num = doc.buffer.line_index.get_line_at(cursor);
-            let line_bytes = doc.buffer.get_line_bytes(line_num);
+            let cursor = doc.buffer().cursor();
+            let line_num = doc.buffer().line_index.get_line_at(cursor);
+            let line_bytes = doc.buffer().get_line_bytes(line_num);
             let line_text = String::from_utf8_lossy(&line_bytes).trim_end().to_string();
             let Some(dir_path) = doc.directory_path().cloned() else {
                 return;
@@ -900,8 +902,8 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.get_document(doc_id) else {
                 return;
             };
-            let cursor = doc.buffer.cursor();
-            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            let cursor = doc.buffer().cursor();
+            let line_num = doc.buffer().line_index.get_line_at(cursor);
             let Some(linked_id) = doc.undotree_linked_doc_id() else {
                 return;
             };
@@ -932,10 +934,10 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.get_document(doc_id) else {
                 return;
             };
-            let cursor = doc.buffer.cursor();
+            let cursor = doc.buffer().cursor();
             let line_num =
-                i64::try_from(doc.buffer.line_index.get_line_at(cursor)).unwrap_or(i64::MAX);
-            let total = i64::try_from(doc.buffer.get_total_lines()).unwrap_or(i64::MAX);
+                i64::try_from(doc.buffer().line_index.get_line_at(cursor)).unwrap_or(i64::MAX);
+            let total = i64::try_from(doc.buffer().get_total_lines()).unwrap_or(i64::MAX);
             let Some(sequences) = doc.undotree_sequences() else {
                 return;
             };
@@ -954,8 +956,8 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-            let pos = doc.buffer.line_index.get_line_start(target_line);
-            let _ = doc.buffer.set_cursor(pos);
+            let pos = doc.buffer().line_index.get_line_start(target_line);
+            let _ = doc.buffer_mut().set_cursor(pos);
         }
         self.update_undotree_preview();
     }

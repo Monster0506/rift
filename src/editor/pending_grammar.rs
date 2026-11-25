@@ -173,20 +173,20 @@ impl<T: TerminalBackend> Editor<T> {
         let start = self.visual_anchor.and_then(|anchor| {
             self.document_manager
                 .active_document()
-                .map(|doc| anchor.min(doc.buffer.cursor()).min(doc.buffer.len()))
+                .map(|doc| anchor.min(doc.buffer().cursor()).min(doc.buffer().len()))
         });
         if was_visual {
             self.set_mode(Mode::Normal);
         }
         if let Some(start) = start {
             if let Some(doc) = self.document_manager.active_document_mut() {
-                let _ = doc.buffer.set_cursor(start);
+                let _ = doc.buffer_mut().set_cursor(start);
             }
         }
         let result = self.try_run_set_aware_replace_char(ch);
         if let Some(start) = start {
             if let Some(doc) = self.document_manager.active_document_mut() {
-                let _ = doc.buffer.set_cursor(start);
+                let _ = doc.buffer_mut().set_cursor(start);
             }
         }
         let follow_up = (!was_visual).then_some(Action::Editor(EditorAction::ReplaceSelection(ch)));

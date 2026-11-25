@@ -13,8 +13,8 @@ fn run(text: &str, keys: &str, ghost_cut: GhostCut) -> (String, (usize, usize)) 
     editor.state.settings.editing.ghost_cut = matches!(ghost_cut, GhostCut::On);
 
     let doc = editor.active_document();
-    doc.buffer.insert_str(text).unwrap();
-    doc.buffer.move_to_start();
+    doc.replace_content(text, crate::document::ops::ContentKind::Render);
+    doc.buffer_mut().move_to_start();
 
     let keys = crate::key::notation::parse_key_sequence(keys).expect("valid key sequence");
     editor.term.push_keys(keys);
@@ -23,10 +23,10 @@ fn run(text: &str, keys: &str, ghost_cut: GhostCut) -> (String, (usize, usize)) 
     }
 
     let doc = editor.active_document();
-    let offset = doc.buffer.cursor();
-    let line = doc.buffer.line_index.get_line_at(offset);
-    let start = doc.buffer.line_index.get_start(line).unwrap_or(0);
-    (doc.buffer.to_string(), (line, offset - start))
+    let offset = doc.buffer().cursor();
+    let line = doc.buffer().line_index.get_line_at(offset);
+    let start = doc.buffer().line_index.get_start(line).unwrap_or(0);
+    (doc.buffer().to_string(), (line, offset - start))
 }
 
 #[track_caller]
@@ -113,8 +113,10 @@ fn bug_dd_last_line_register_is_charwise() {
 fn vp_editor(text: &str) -> Editor<crate::replay::backend::ReplayBackend<std::io::Sink>> {
     let backend = crate::replay::backend::ReplayBackend::new(std::io::sink(), 24, 80);
     let mut editor = Editor::new(backend).unwrap();
-    editor.active_document().buffer.insert_str(text).unwrap();
-    editor.active_document().buffer.move_to_start();
+    editor
+        .active_document()
+        .replace_content(text, crate::document::ops::ContentKind::Render);
+    editor.active_document().buffer_mut().move_to_start();
     editor
 }
 
@@ -133,7 +135,7 @@ fn vp_run(text: &str, keys: &str) -> (String, Mode) {
     let mut editor = vp_editor(text);
     vp_replay(&mut editor, keys);
     (
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         editor.current_mode,
     )
 }
@@ -172,7 +174,7 @@ fn visual_put_undo_restores_region() {
         vp_replay(&mut editor, keys);
         let doc = editor.active_document();
         assert_eq!(
-            (doc.buffer.to_string(), doc.buffer.cursor()),
+            (doc.buffer().to_string(), doc.buffer().cursor()),
             ("abc def".to_string(), 4),
             "{keys}"
         );
@@ -301,12 +303,12 @@ fn visual_put_vim_boundaries_and_cursor() {
             let keys = format!("{selection}{put}");
             vp_replay(&mut editor, &keys);
             assert_eq!(
-                editor.active_document().buffer.to_string(),
+                editor.active_document().buffer().to_string(),
                 expected,
                 "{keys}, source {source:?}"
             );
             assert_eq!(
-                editor.active_document().buffer.cursor(),
+                editor.active_document().buffer().cursor(),
                 cursor,
                 "{keys}, source {source:?}"
             );
@@ -315,7 +317,7 @@ fn visual_put_vim_boundaries_and_cursor() {
             assert!(editor.active_document().selection_set.is_empty(), "{keys}");
             vp_replay(&mut editor, "u");
             assert_eq!(
-                editor.active_document().buffer.to_string(),
+                editor.active_document().buffer().to_string(),
                 text,
                 "{keys}: one undo"
             );
@@ -331,7 +333,7 @@ fn visual_put_resolves_pending_ghost_before_register_swap() {
     vp_replay(&mut editor, "ddV");
     editor.clipboard_ring.push_str("wrong", RangeKind::Charwise);
     vp_replay(&mut editor, "p");
-    assert_eq!(editor.active_document().buffer.to_string(), "one\nthree");
+    assert_eq!(editor.active_document().buffer().to_string(), "one\nthree");
     assert_eq!(
         editor.clipboard_ring.most_recent().unwrap().kind(),
         RangeKind::Linewise
@@ -339,7 +341,7 @@ fn visual_put_resolves_pending_ghost_before_register_swap() {
     assert!(editor.active_document().most_recent_ghost().is_none());
     assert!(editor.document_manager.most_recent_ghost_doc().is_none());
     vp_replay(&mut editor, "u");
-    assert_eq!(editor.active_document().buffer.to_string(), "two\nthree");
+    assert_eq!(editor.active_document().buffer().to_string(), "two\nthree");
 }
 
 #[test]
@@ -358,7 +360,7 @@ fn visual_put_undo_restores_annotation_anchors_in_same_transaction() {
         editor.active_document().annotations.get(id).unwrap().anchor,
         anchor
     );
-    assert_eq!(editor.active_document().buffer.to_string(), "abc def");
+    assert_eq!(editor.active_document().buffer().to_string(), "abc def");
 }
 
 #[test]
@@ -372,14 +374,14 @@ fn visual_put_repeats_source_count() {
         let mut editor = vp_editor(text);
         vp_replay(&mut editor, keys);
         assert_eq!(
-            editor.active_document().buffer.to_string(),
+            editor.active_document().buffer().to_string(),
             expected,
             "{keys}"
         );
-        assert_eq!(editor.active_document().buffer.cursor(), cursor, "{keys}");
+        assert_eq!(editor.active_document().buffer().cursor(), cursor, "{keys}");
         vp_replay(&mut editor, "u");
         assert_eq!(
-            editor.active_document().buffer.to_string(),
+            editor.active_document().buffer().to_string(),
             text,
             "{keys}: undo"
         );

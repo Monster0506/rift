@@ -73,7 +73,7 @@ fn pasting_a_shell_command_into_insert_mode_inserts_every_character() {
 
     assert_eq!(editor.current_mode, Mode::Insert);
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         " 1 npm install -g @openai/codex"
     );
 }
@@ -93,7 +93,7 @@ fn pasting_a_shell_command_into_normal_mode_does_not_panic_or_hang() {
         );
     }
 
-    let content = editor.active_document().buffer.to_string();
+    let content = editor.active_document().buffer().to_string();
     eprintln!(
         "after Normal-mode paste: mode={:?} pending_keys={:?} buffer={:?}",
         editor.current_mode, editor.pending_keys, content
@@ -110,7 +110,7 @@ fn bracketed_paste_in_insert_mode_renders_the_full_text_without_a_second_render(
     editor.handle_paste(" 4 CS Classes to Visit").unwrap();
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         " 4 CS Classes to Visit"
     );
     let screen = compositor_ascii(&mut editor);
@@ -128,7 +128,7 @@ fn paste_normalizes_crlf_and_lone_cr_in_insert_mode() {
 
     editor.handle_paste("a\r\nb\rc").unwrap();
 
-    assert_eq!(editor.active_document().buffer.to_string(), "a\nb\nc");
+    assert_eq!(editor.active_document().buffer().to_string(), "a\nb\nc");
 }
 
 #[test]
@@ -137,7 +137,7 @@ fn paste_normalizes_crlf_in_normal_mode() {
 
     editor.handle_paste("a\r\nb").unwrap();
 
-    assert_eq!(editor.active_document().buffer.to_string(), "a\nb");
+    assert_eq!(editor.active_document().buffer().to_string(), "a\nb");
 }
 
 #[test]
@@ -154,7 +154,7 @@ fn bracketed_paste_near_soft_wrap_boundary_renders_the_full_text() {
     editor.handle_paste(" 4 CS Classes to Visit").unwrap();
 
     let expected = "0123456789012345 4 CS Classes to Visit";
-    assert_eq!(editor.active_document().buffer.to_string(), expected);
+    assert_eq!(editor.active_document().buffer().to_string(), expected);
 
     let screen = compositor_ascii(&mut editor);
     let joined: String = screen.chars().filter(|c| *c != '\n').collect();
@@ -251,7 +251,7 @@ fn bracketed_paste_reproduced_through_a_real_vte_parser() {
     parser.advance(&mut *term.lock(), &bytes);
 
     let expected = "Top of the list:  4 CS Classes to Visit";
-    assert_eq!(editor.active_document().buffer.to_string(), expected);
+    assert_eq!(editor.active_document().buffer().to_string(), expected);
 
     let line0: String = {
         let t = term.lock();
@@ -355,7 +355,7 @@ fn paste_burst_with_trailing_release_events_still_renders_without_a_further_key(
         assert!(ticks < 10_000, "tick loop must drain the queue, not spin");
     }
 
-    assert_eq!(editor.active_document().buffer.to_string(), pasted);
+    assert_eq!(editor.active_document().buffer().to_string(), pasted);
 
     let screen = compositor_ascii(&mut editor);
     let joined: String = screen.chars().filter(|c| *c != '\n').collect();
@@ -381,7 +381,7 @@ fn single_space_keypress_with_release_moves_the_rendered_cursor() {
         editor.tick().unwrap();
     }
 
-    assert_eq!(editor.active_document().buffer.to_string(), "a ");
+    assert_eq!(editor.active_document().buffer().to_string(), "a ");
     let after = editor.term.inner.cursor_moves.last().copied();
     assert_ne!(
         after, before,

@@ -9,7 +9,7 @@ fn treesitter_object_without_parse_tree_silently_no_ops() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo(a, b)");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
@@ -20,7 +20,7 @@ fn treesitter_object_without_parse_tree_silently_no_ops() {
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('f'));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "foo(a, b)");
+    assert_eq!(editor.active_document().buffer().to_string(), "foo(a, b)");
     assert!(editor.state.error_manager.notifications().is_empty());
 }
 
@@ -31,7 +31,7 @@ fn surround_delete_strips_enclosing_parens() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo(bar)baz");
-    editor.active_document().buffer.set_cursor(5).unwrap();
+    editor.active_document().buffer_mut().set_cursor(5).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
@@ -39,7 +39,7 @@ fn surround_delete_strips_enclosing_parens() {
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('('));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "foobarbaz");
+    assert_eq!(editor.active_document().buffer().to_string(), "foobarbaz");
     assert_eq!(editor.current_mode, Mode::Normal);
 }
 
@@ -50,7 +50,7 @@ fn surround_delete_via_bracket_alias() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo(bar)baz");
-    editor.active_document().buffer.set_cursor(5).unwrap();
+    editor.active_document().buffer_mut().set_cursor(5).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
@@ -58,7 +58,7 @@ fn surround_delete_via_bracket_alias() {
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('b'));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "foobarbaz");
+    assert_eq!(editor.active_document().buffer().to_string(), "foobarbaz");
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn surround_change_swaps_parens_for_quotes() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo(bar)baz");
-    editor.active_document().buffer.set_cursor(5).unwrap();
+    editor.active_document().buffer_mut().set_cursor(5).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
@@ -78,7 +78,10 @@ fn surround_change_swaps_parens_for_quotes() {
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('"'));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "foo\"bar\"baz");
+    assert_eq!(
+        editor.active_document().buffer().to_string(),
+        "foo\"bar\"baz"
+    );
     assert_eq!(editor.current_mode, Mode::Normal);
 }
 
@@ -89,7 +92,7 @@ fn surround_change_pads_opening_bracket_char() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo(bar)baz");
-    editor.active_document().buffer.set_cursor(5).unwrap();
+    editor.active_document().buffer_mut().set_cursor(5).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
@@ -99,7 +102,10 @@ fn surround_change_pads_opening_bracket_char() {
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('{'));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "foo{ bar }baz");
+    assert_eq!(
+        editor.active_document().buffer().to_string(),
+        "foo{ bar }baz"
+    );
 }
 
 #[test]
@@ -110,7 +116,7 @@ fn surround_add_wraps_inner_word_with_padding() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo bar baz");
-    editor.active_document().buffer.set_cursor(4).unwrap();
+    editor.active_document().buffer_mut().set_cursor(4).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
@@ -134,7 +140,7 @@ fn surround_add_wraps_inner_word_with_padding() {
     editor.advance_pending_grammar(grammar, Key::char('('));
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "foo ( bar ) baz"
     );
     assert_eq!(editor.current_mode, Mode::Normal);
@@ -147,7 +153,7 @@ fn surround_add_sgg_wraps_current_line() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world\nfoo");
-    editor.active_document().buffer.set_cursor(2).unwrap();
+    editor.active_document().buffer_mut().set_cursor(2).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
@@ -158,7 +164,7 @@ fn surround_add_sgg_wraps_current_line() {
     editor.advance_pending_grammar(grammar, Key::char('"'));
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "\"hello world\"\nfoo"
     );
 }
@@ -170,19 +176,19 @@ fn surround_delete_dot_repeat_reresolves_at_new_cursor() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "(a) (b)");
-    editor.active_document().buffer.set_cursor(1).unwrap();
+    editor.active_document().buffer_mut().set_cursor(1).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('d'));
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('('));
-    assert_eq!(editor.active_document().buffer.to_string(), "a (b)");
+    assert_eq!(editor.active_document().buffer().to_string(), "a (b)");
 
-    editor.active_document().buffer.set_cursor(3).unwrap();
+    editor.active_document().buffer_mut().set_cursor(3).unwrap();
     editor.execute_dot_repeat();
 
-    assert_eq!(editor.active_document().buffer.to_string(), "a b");
+    assert_eq!(editor.active_document().buffer().to_string(), "a b");
 }
 
 #[test]
@@ -192,7 +198,7 @@ fn surround_escape_cancels_pending_grammar() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo(bar)baz");
-    editor.active_document().buffer.set_cursor(5).unwrap();
+    editor.active_document().buffer_mut().set_cursor(5).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     assert!(editor.pending_grammar.is_some());
@@ -205,7 +211,7 @@ fn surround_escape_cancels_pending_grammar() {
     assert!(editor.pending_grammar.is_none());
     let grammar = editor.pending_grammar.take();
     assert!(grammar.is_none());
-    assert_eq!(editor.active_document().buffer.to_string(), "foo(bar)baz");
+    assert_eq!(editor.active_document().buffer().to_string(), "foo(bar)baz");
     let _ = Key::char('j');
 }
 
@@ -216,7 +222,7 @@ fn surround_delete_count_removes_doubled_delimiter() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "((text))");
-    editor.active_document().buffer.set_cursor(3).unwrap();
+    editor.active_document().buffer_mut().set_cursor(3).unwrap();
 
     editor.pending_count = 2;
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
@@ -225,7 +231,7 @@ fn surround_delete_count_removes_doubled_delimiter() {
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('('));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "text");
+    assert_eq!(editor.active_document().buffer().to_string(), "text");
 }
 
 #[test]
@@ -235,7 +241,7 @@ fn surround_change_count_doubles_both_sides() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "\"\"text\"\"");
-    editor.active_document().buffer.set_cursor(3).unwrap();
+    editor.active_document().buffer_mut().set_cursor(3).unwrap();
 
     editor.pending_count = 2;
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
@@ -246,7 +252,10 @@ fn surround_change_count_doubles_both_sides() {
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('('));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "( ( text ) )");
+    assert_eq!(
+        editor.active_document().buffer().to_string(),
+        "( ( text ) )"
+    );
 }
 
 #[test]
@@ -256,7 +265,7 @@ fn surround_add_count_doubles_delimiter_for_sgg() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "line");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
 
     editor.pending_count = 2;
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
@@ -266,7 +275,10 @@ fn surround_add_count_doubles_delimiter_for_sgg() {
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('"'));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "\"\"line\"\"");
+    assert_eq!(
+        editor.active_document().buffer().to_string(),
+        "\"\"line\"\""
+    );
 }
 
 #[test]
@@ -276,7 +288,7 @@ fn surround_add_outer_and_inner_counts_compose_for_sgg() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "line\nline");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
 
     editor.pending_count = 2;
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
@@ -288,7 +300,7 @@ fn surround_add_outer_and_inner_counts_compose_for_sgg() {
     editor.advance_pending_grammar(grammar, Key::char('"'));
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "\"\"line\nline\"\""
     );
 }
@@ -301,7 +313,7 @@ fn surround_interrupted_sg_does_not_corrupt_later_yank() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo bar");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
@@ -328,7 +340,7 @@ fn surround_interrupted_sg_does_not_corrupt_later_yank() {
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('w'));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "foo bar");
+    assert_eq!(editor.active_document().buffer().to_string(), "foo bar");
     assert_eq!(editor.current_mode, Mode::Normal);
     assert!(editor.pending_grammar.is_none());
     assert_eq!(ring_text(&editor, 0), Some("foo".to_string()));

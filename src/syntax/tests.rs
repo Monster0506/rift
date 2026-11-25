@@ -9,7 +9,7 @@ use tree_sitter::Query;
 
 fn buffer(text: &str) -> TextBuffer {
     let mut buffer = TextBuffer::new(text.len() + 64).unwrap();
-    buffer.insert_str(text).unwrap();
+    crate::document::ops::Edit::type_text(text).apply_to(&mut buffer);
     buffer
 }
 
@@ -43,10 +43,12 @@ fn edit(
     let start_char = text[..range.start].chars().count();
     let old_chars = text[range.clone()].chars().count();
     if old_chars > 0 {
-        assert!(buffer.delete_range(start_char, old_chars));
+        assert!(
+            crate::document::ops::Edit::delete(start_char..start_char + old_chars).apply_to(buffer)
+        );
     }
     buffer.set_cursor(start_char).unwrap();
-    buffer.insert_str(replacement).unwrap();
+    crate::document::ops::Edit::type_text(replacement).apply_to(buffer);
     text.replace_range(range.clone(), replacement);
     let new_end = range.start + replacement.len();
     syntax.notify_edit(

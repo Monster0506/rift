@@ -13,7 +13,7 @@ fn test_display_map_cache_populated_after_command() {
         1,
     ));
 
-    let rev = editor.active_document().buffer.revision;
+    let rev = editor.active_document().buffer().revision();
     match editor.display_map_cache.last() {
         Some(entry) => assert_eq!(entry.revision, rev),
         None => panic!("display_map_cache should be populated after a command"),
@@ -169,8 +169,8 @@ fn test_resolve_display_map_cached_detects_placeholder_to_loaded_swap() {
             .document_manager
             .get_document(doc_id)
             .unwrap()
-            .buffer
-            .revision,
+            .buffer()
+            .revision(),
         0
     );
 
@@ -233,7 +233,7 @@ fn test_display_map_stays_partial_for_large_document_small_viewport() {
     let mut editor = create_editor_sized(10, 30);
     let text = "the quick brown fox jumps over the lazy dog\n".repeat(2000);
     set_content(&mut editor, &text);
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
     editor.update_and_render().unwrap();
 
     let doc_id = editor.document_manager.active_document_id().unwrap();
@@ -264,11 +264,11 @@ fn test_lazy_display_map_extends_correctly_for_far_cursor_jump() {
 
     let far_char = {
         let doc = editor.document_manager.get_document(doc_id).unwrap();
-        doc.buffer.len() * 3 / 4
+        doc.buffer().len() * 3 / 4
     };
     editor
         .active_document()
-        .buffer
+        .buffer_mut()
         .set_cursor(far_char)
         .unwrap();
     editor.update_and_render().unwrap();
@@ -299,7 +299,7 @@ fn test_edit_on_partial_display_map_stays_correct() {
     editor.state.settings.show_line_numbers = false;
     let text = "the quick brown fox jumps over the lazy dog\n".repeat(800);
     set_content(&mut editor, &text);
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
     editor.update_and_render().unwrap();
 
     let doc_id = editor.document_manager.active_document_id().unwrap();
@@ -321,14 +321,14 @@ fn test_edit_on_partial_display_map_stays_correct() {
         editor.state.settings.wrap_width,
     )
     .unwrap();
-    reference.extend_to_end(&doc.buffer);
+    reference.extend_to_end(doc.buffer());
 
     let mut actual = editor
         .resolve_display_map_cached(doc_id, content_width, 0, 0)
         .unwrap();
     {
         let doc = editor.document_manager.get_document(doc_id).unwrap();
-        std::sync::Arc::make_mut(&mut actual).extend_to_end(&doc.buffer);
+        std::sync::Arc::make_mut(&mut actual).extend_to_end(doc.buffer());
     }
     assert_eq!(
         *actual, reference,
@@ -342,7 +342,7 @@ fn test_large_count_down_motion_matches_full_build_reference() {
     editor.state.settings.show_line_numbers = false;
     let text = "the quick brown fox jumps over the lazy dog\n".repeat(500);
     set_content(&mut editor, &text);
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
     editor.current_mode = Mode::Normal;
     editor.update_and_render().unwrap();
 
@@ -361,7 +361,7 @@ fn test_large_count_down_motion_matches_full_build_reference() {
         .unwrap();
         let mut pos = 0usize;
         for _ in 0..count {
-            pos = reference.visual_down(pos, &doc.buffer);
+            pos = reference.visual_down(pos, doc.buffer());
         }
         pos
     };
@@ -375,7 +375,7 @@ fn test_large_count_down_motion_matches_full_build_reference() {
         .document_manager
         .get_document(doc_id)
         .unwrap()
-        .buffer
+        .buffer()
         .cursor();
     assert_eq!(
         actual, expected,
@@ -531,20 +531,20 @@ fn exactly_full_wrapped_line_gets_an_eol_row_only_for_its_adornment() {
     );
 
     feed_keys(&mut editor, "j");
-    assert_eq!(editor.active_document().buffer.get_line(), 1);
+    assert_eq!(editor.active_document().buffer().get_line(), 1);
     feed_keys(&mut editor, "k");
-    assert_eq!(editor.active_document().buffer.get_line(), 0);
+    assert_eq!(editor.active_document().buffer().get_line(), 0);
 
     feed_keys(&mut editor, "A");
     editor.update_and_render().unwrap();
-    let cursor = editor.active_document().buffer.cursor();
+    let cursor = editor.active_document().buffer().cursor();
     assert_eq!(cursor, 20);
     let dm = editor
         .resolve_display_map_cached(editor.active_document_id(), 20, cursor, 8)
         .expect("wrap map");
     assert_eq!(dm.char_to_visual_row(cursor), 1);
     assert_eq!(
-        dm.char_to_visual_col(cursor, &editor.active_document().buffer),
+        dm.char_to_visual_col(cursor, editor.active_document().buffer()),
         0
     );
 }

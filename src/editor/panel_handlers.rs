@@ -78,10 +78,12 @@ impl<T: TerminalBackend> Editor<T> {
         let entries: std::collections::VecDeque<crate::clipboard::Clip> =
             self.clipboard_ring.entries().clone();
         if let Some(doc) = self.document_manager.get_document_mut(layout.dir_doc_id) {
-            let cursor = doc.buffer.cursor();
+            let cursor = doc.buffer().cursor();
             doc.populate_clipboard_buffer(&entries);
-            let len = doc.buffer.len();
-            let _ = doc.buffer.set_cursor(cursor.min(len.saturating_sub(1)));
+            let len = doc.buffer().len();
+            let _ = doc
+                .buffer_mut()
+                .set_cursor(cursor.min(len.saturating_sub(1)));
         }
         if self.active_document_id() == layout.dir_doc_id {
             let _ = self.update_and_render();
@@ -100,8 +102,8 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.get_document(layout.dir_doc_id) else {
                 return;
             };
-            let cursor = doc.buffer.cursor();
-            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            let cursor = doc.buffer().cursor();
+            let line_num = doc.buffer().line_index.get_line_at(cursor);
             let Some(index) = doc.clipboard_source_at(line_num) else {
                 return;
             };
@@ -195,8 +197,8 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(entry_index) = doc.clipboard_entry_index() else {
                 return SaveResult::Failed;
             };
-            let len = doc.buffer.len();
-            let text = doc.buffer.chars(0..len).collect::<Vec<_>>();
+            let len = doc.buffer().len();
+            let text = doc.buffer().chars(0..len).collect::<Vec<_>>();
             (entry_index, crate::clipboard::Clip::from_plain(text))
         };
 
@@ -258,11 +260,11 @@ impl<T: TerminalBackend> Editor<T> {
                 return SaveResult::Failed;
             }
         } else {
-            let cursor = index_doc.buffer.cursor();
+            let cursor = index_doc.buffer().cursor();
             index_doc.populate_clipboard_buffer(ring.entries());
-            let len = index_doc.buffer.len();
+            let len = index_doc.buffer().len();
             let _ = index_doc
-                .buffer
+                .buffer_mut()
                 .set_cursor(cursor.min(len.saturating_sub(1)));
         }
         self.clipboard_ring = ring;
@@ -290,11 +292,13 @@ impl<T: TerminalBackend> Editor<T> {
         let log = self.state.error_manager.notifications().message_log();
 
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-            let cursor = doc.buffer.cursor();
+            let cursor = doc.buffer().cursor();
             doc.populate_messages_buffer(&log);
             // Preserve cursor position on background refresh
-            let len = doc.buffer.len();
-            let _ = doc.buffer.set_cursor(cursor.min(len.saturating_sub(1)));
+            let len = doc.buffer().len();
+            let _ = doc
+                .buffer_mut()
+                .set_cursor(cursor.min(len.saturating_sub(1)));
         }
 
         // Only re-render if the messages buffer is currently visible
@@ -324,8 +328,8 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.get_document(layout.dir_doc_id) else {
                 return;
             };
-            let cursor = doc.buffer.cursor();
-            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            let cursor = doc.buffer().cursor();
+            let line_num = doc.buffer().line_index.get_line_at(cursor);
             doc.location_list_entry_at(line_num)
         };
 
@@ -375,8 +379,8 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.get_document(layout.dir_doc_id) else {
                 return;
             };
-            let cursor = doc.buffer.cursor();
-            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            let cursor = doc.buffer().cursor();
+            let line_num = doc.buffer().line_index.get_line_at(cursor);
             doc.location_list_entry_at(line_num)
         };
 

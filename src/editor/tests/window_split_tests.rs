@@ -111,10 +111,14 @@ fn test_terminal_resize_updates_layout() {
 fn resize_that_moves_the_cursor_leaves_a_single_soft_cursor() {
     let mut editor = create_editor_sized(24, 40);
     set_content(&mut editor, &format!("{}\nbbbb\n", "a".repeat(60)));
-    let second_line = editor.active_document().buffer.line_index.get_line_start(1);
+    let second_line = editor
+        .active_document()
+        .buffer()
+        .line_index
+        .get_line_start(1);
     editor
         .active_document()
-        .buffer
+        .buffer_mut()
         .set_cursor(second_line)
         .unwrap();
     editor.update_and_render().unwrap();

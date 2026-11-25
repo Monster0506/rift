@@ -4,7 +4,7 @@ use crate::buffer::TextBuffer;
 fn buf_from(s: &str) -> TextBuffer {
     let mut buf = TextBuffer::new(64).unwrap();
     for ch in s.chars() {
-        buf.insert_char(ch).unwrap();
+        crate::document::ops::Edit::type_text(ch).apply_to(&mut buf);
     }
     buf
 }

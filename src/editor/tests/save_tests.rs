@@ -159,7 +159,7 @@ fn bug_e_path_with_space_rejected() {
     settle(&mut editor);
 
     assert!(active_path(&mut editor).unwrap().ends_with("sp ace.txt"));
-    assert_eq!(editor.active_document().buffer.to_string(), "x");
+    assert_eq!(editor.active_document().buffer().to_string(), "x");
 }
 
 #[test]

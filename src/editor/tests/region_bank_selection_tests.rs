@@ -8,7 +8,7 @@ fn visual_char_enters_mode_and_anchors_at_cursor() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
-    editor.active_document().buffer.set_cursor(3).unwrap();
+    editor.active_document().buffer_mut().set_cursor(3).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
@@ -28,7 +28,7 @@ fn visual_resumes_a_banked_region_under_the_cursor() {
         .active_document()
         .bank_region(Region::new(4, 0, RangeKind::Charwise));
 
-    editor.active_document().buffer.set_cursor(2).unwrap();
+    editor.active_document().buffer_mut().set_cursor(2).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
     assert_eq!(editor.current_mode, Mode::Visual);
@@ -38,7 +38,7 @@ fn visual_resumes_a_banked_region_under_the_cursor() {
         "anchor side must be restored"
     );
     assert_eq!(
-        editor.active_document().buffer.cursor(),
+        editor.active_document().buffer().cursor(),
         0,
         "cursor side must be restored"
     );
@@ -54,7 +54,7 @@ fn visual_motion_extends_through_normal_fallthrough() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
@@ -65,7 +65,7 @@ fn visual_motion_extends_through_normal_fallthrough() {
         Mode::Visual,
         "motion must not exit Visual"
     );
-    assert_eq!(editor.active_document().buffer.cursor(), 2);
+    assert_eq!(editor.active_document().buffer().cursor(), 2);
     assert_eq!(
         editor.visual_anchor,
         Some(0),
@@ -79,7 +79,7 @@ fn visual_swap_ends_exchanges_anchor_and_cursor() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(
         crate::action::Motion::Right,
@@ -91,7 +91,7 @@ fn visual_swap_ends_exchanges_anchor_and_cursor() {
     editor.handle_action(&Action::Editor(EditorAction::VisualSwapEnds));
 
     assert_eq!(editor.visual_anchor, Some(2));
-    assert_eq!(editor.active_document().buffer.cursor(), 0);
+    assert_eq!(editor.active_document().buffer().cursor(), 0);
 }
 
 #[test]
@@ -102,16 +102,20 @@ fn expand_region_grows_word_then_quotes_in_verified_order() {
     load_text(&mut editor, "say \"hello world\" now");
     let pos = editor
         .active_document()
-        .buffer
+        .buffer()
         .to_string()
         .find("hello")
         .unwrap();
-    editor.active_document().buffer.set_cursor(pos).unwrap();
+    editor
+        .active_document()
+        .buffer_mut()
+        .set_cursor(pos)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
     editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
     let anchor = editor.visual_anchor.unwrap();
-    let cursor = editor.active_document().buffer.cursor();
+    let cursor = editor.active_document().buffer().cursor();
     assert_eq!(
         (anchor, cursor),
         (5, 10),
@@ -120,7 +124,7 @@ fn expand_region_grows_word_then_quotes_in_verified_order() {
 
     editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
     let anchor = editor.visual_anchor.unwrap();
-    let cursor = editor.active_document().buffer.cursor();
+    let cursor = editor.active_document().buffer().cursor();
     assert_eq!(
         (anchor, cursor),
         (4, 16),
@@ -134,18 +138,18 @@ fn expand_region_noop_when_already_at_buffer_extent() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "x");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
     editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
     let before = (
         editor.visual_anchor,
-        editor.active_document().buffer.cursor(),
+        editor.active_document().buffer().cursor(),
     );
     editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
     let after = (
         editor.visual_anchor,
-        editor.active_document().buffer.cursor(),
+        editor.active_document().buffer().cursor(),
     );
 
     assert_eq!(
@@ -162,21 +166,25 @@ fn shrink_region_pops_the_last_expand_step() {
     load_text(&mut editor, "say \"hello world\" now");
     let pos = editor
         .active_document()
-        .buffer
+        .buffer()
         .to_string()
         .find("hello")
         .unwrap();
-    editor.active_document().buffer.set_cursor(pos).unwrap();
+    editor
+        .active_document()
+        .buffer_mut()
+        .set_cursor(pos)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
     let before_expand = (
         editor.visual_anchor,
-        editor.active_document().buffer.cursor(),
+        editor.active_document().buffer().cursor(),
     );
     editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
     let after_expand = (
         editor.visual_anchor,
-        editor.active_document().buffer.cursor(),
+        editor.active_document().buffer().cursor(),
     );
     assert_ne!(
         before_expand, after_expand,
@@ -186,7 +194,7 @@ fn shrink_region_pops_the_last_expand_step() {
     editor.handle_action(&Action::Editor(EditorAction::ShrinkRegion));
     let after_shrink = (
         editor.visual_anchor,
-        editor.active_document().buffer.cursor(),
+        editor.active_document().buffer().cursor(),
     );
 
     assert_eq!(
@@ -201,7 +209,7 @@ fn shrink_region_with_empty_history_is_a_noop() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
     let handled = editor.handle_action(&Action::Editor(EditorAction::ShrinkRegion));
@@ -215,7 +223,7 @@ fn escape_in_visual_commits_active_region() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(
         crate::action::Motion::Right,
@@ -268,7 +276,7 @@ fn set_aware_delete_surround_handles_two_regions_sharing_one_enclosing_pair() {
     assert!(editor.try_run_set_aware_delete_surround('(', 1));
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "a(b)c",
         "must strip only the shared outer pair, leaving the inner \"(b)\" intact"
     );
@@ -282,7 +290,7 @@ fn issue_worked_example_bank_two_regions_no_delete_yet() {
     let mut editor = create_editor();
     load_text(&mut editor, "Hello\nworld\nfoo\n");
 
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
@@ -293,8 +301,11 @@ fn issue_worked_example_bank_two_regions_no_delete_yet() {
         (0, 2)
     );
 
-    let line3_start = editor.active_document().buffer.line_start(2);
-    let _ = editor.active_document().buffer.set_cursor(line3_start);
+    let line3_start = editor.active_document().buffer().line_start(2);
+    let _ = editor
+        .active_document()
+        .buffer_mut()
+        .set_cursor(line3_start);
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
@@ -328,18 +339,18 @@ fn n_cycles_banked_regions_when_set_is_nonempty() {
     editor
         .active_document()
         .bank_region(Region::new(10, 11, RangeKind::Charwise));
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::RepeatFindForward,
     )));
-    assert_eq!(editor.active_document().buffer.cursor(), 10);
+    assert_eq!(editor.active_document().buffer().cursor(), 10);
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::RepeatFindForward,
     )));
     assert_eq!(
-        editor.active_document().buffer.cursor(),
+        editor.active_document().buffer().cursor(),
         0,
         "wraps to first"
     );
@@ -359,12 +370,16 @@ fn shift_n_cycles_backward_when_set_is_nonempty() {
     editor
         .active_document()
         .bank_region(Region::new(10, 11, RangeKind::Charwise));
-    editor.active_document().buffer.set_cursor(15).unwrap();
+    editor
+        .active_document()
+        .buffer_mut()
+        .set_cursor(15)
+        .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::RepeatFindBackward,
     )));
-    assert_eq!(editor.active_document().buffer.cursor(), 10);
+    assert_eq!(editor.active_document().buffer().cursor(), 10);
 }
 
 #[test]
@@ -373,14 +388,14 @@ fn n_keeps_repeat_find_behavior_when_set_is_empty() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo bar foo baz");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
     editor.state.last_find_char = Some(('o', true, false));
 
     editor.handle_action(&Action::Editor(EditorAction::Move(
         Motion::RepeatFindForward,
     )));
 
-    assert_eq!(editor.active_document().buffer.cursor(), 1);
+    assert_eq!(editor.active_document().buffer().cursor(), 1);
 }
 
 #[test]
@@ -398,7 +413,7 @@ fn region_bank_occurrence_next_finds_and_moves_cursor() {
     editor.handle_action(&Action::Editor(EditorAction::RegionBankOccurrenceNext));
 
     assert_eq!(editor.active_document().selection_set.regions.len(), 2);
-    assert_eq!(editor.active_document().buffer.cursor(), 8);
+    assert_eq!(editor.active_document().buffer().cursor(), 8);
 }
 
 #[test]
@@ -519,12 +534,12 @@ fn regions_window_j_moves_the_list_cursor_and_live_jumps_the_preview() {
         .bank_region(Region::new(5, 6, RangeKind::Charwise));
     let source_id = editor.active_document_id();
     editor.handle_action(&Action::Editor(EditorAction::ToggleRegionsWindow));
-    let list_cursor_before = editor.active_document().buffer.cursor();
+    let list_cursor_before = editor.active_document().buffer().cursor();
 
     editor.handle_action(&Action::Editor(EditorAction::RegionsListDown));
 
     assert_ne!(
-        editor.active_document().buffer.cursor(),
+        editor.active_document().buffer().cursor(),
         list_cursor_before,
         "j must move the regions list's own cursor to line 2, not stay on line 1"
     );
@@ -533,7 +548,7 @@ fn regions_window_j_moves_the_list_cursor_and_live_jumps_the_preview() {
             .document_manager
             .get_document(source_id)
             .unwrap()
-            .buffer
+            .buffer()
             .cursor(),
         5,
         "and live-jump the source buffer to the second region (sorted order: 0..1, then 5..6)"
@@ -572,7 +587,7 @@ fn regions_window_operator_redirects_to_the_source_document() {
             .document_manager
             .get_document(source_id)
             .unwrap()
-            .buffer
+            .buffer()
             .to_string(),
         "234789"
     );
@@ -584,7 +599,7 @@ fn visual_block_renders_and_edits_identically_to_charwise() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualBlock));
     editor.handle_action(&Action::Editor(EditorAction::Move(
         crate::action::Motion::Right,
@@ -595,7 +610,7 @@ fn visual_block_renders_and_edits_identically_to_charwise() {
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
     assert_eq!(
-        editor.active_document().buffer.to_string(),
+        editor.active_document().buffer().to_string(),
         "23456789",
         "Ctrl-V behaves exactly like v -- no rectangle semantics by design"
     );
@@ -609,7 +624,7 @@ fn real_keymap_v_then_l_renders_a_visible_highlight_in_the_composited_cells() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
 
     let feed_key = |editor: &mut Editor<MockTerminal>, key: Key| {
         let context = if editor.current_mode.is_visual() {
@@ -652,7 +667,7 @@ fn visual_highlight_redraws_on_a_frame_after_the_initial_one() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
-    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.active_document().buffer_mut().set_cursor(0).unwrap();
 
     editor.update_and_render().unwrap();
 

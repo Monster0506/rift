@@ -4,7 +4,7 @@ use super::common::*;
 fn test_render_line_numbers_enabled() {
     let mut term = MockTerminal::new(10, 80);
     let mut buf = TextBuffer::new(100).unwrap();
-    buf.insert_str("line1\nline2").unwrap();
+    crate::document::ops::Edit::type_text("line1\nline2").apply_to(&mut buf);
     let mut state = State::new();
     state.settings.show_line_numbers = true;
     state.update_buffer_stats(2, 11, crate::document::LineEnding::LF);
@@ -70,7 +70,7 @@ fn test_render_line_numbers_enabled() {
 fn test_render_line_numbers_disabled() {
     let mut term = MockTerminal::new(10, 80);
     let mut buf = TextBuffer::new(100).unwrap();
-    buf.insert_str("line1").unwrap();
+    crate::document::ops::Edit::type_text("line1").apply_to(&mut buf);
     let mut state = State::new();
     state.settings.show_line_numbers = false;
     state.update_buffer_stats(1, 5, crate::document::LineEnding::LF);
@@ -193,7 +193,7 @@ fn test_render_line_numbers_gutter_width() {
 fn test_render_cursor_position_with_line_numbers() {
     let mut term = MockTerminal::new(10, 80);
     let mut buf = TextBuffer::new(100).unwrap();
-    buf.insert_str("test").unwrap();
+    crate::document::ops::Edit::type_text("test").apply_to(&mut buf);
     buf.move_to_start();
     let mut state = State::new();
     state.settings.show_line_numbers = true;

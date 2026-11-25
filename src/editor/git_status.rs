@@ -258,8 +258,8 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(r) => r.to_path_buf(),
                 None => return,
             };
-            let cursor = doc.buffer.cursor();
-            let line = doc.buffer.line_index.get_line_at(cursor);
+            let cursor = doc.buffer().cursor();
+            let line = doc.buffer().line_index.get_line_at(cursor);
 
             let action = if let Some((path, staged_side, hunk_index, line_index)) =
                 doc.annotations.git_hunk_line_at_line(line)
@@ -349,8 +349,8 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(r) => r.to_path_buf(),
                 None => return,
             };
-            let cursor = doc.buffer.cursor();
-            let line = doc.buffer.line_index.get_line_at(cursor);
+            let cursor = doc.buffer().cursor();
+            let line = doc.buffer().line_index.get_line_at(cursor);
 
             let target = if let Some((path, staged_side, _)) =
                 doc.annotations.git_hunk_at_line(line)
@@ -406,8 +406,8 @@ impl<T: TerminalBackend> Editor<T> {
     /// `]c`/`[c`: move the cursor to the next/previous expanded hunk header.
     fn git_status_navigate_hunk(&mut self, forward: bool) {
         let doc = self.active_document();
-        let cursor = doc.buffer.cursor();
-        let current_line = doc.buffer.line_index.get_line_at(cursor);
+        let cursor = doc.buffer().cursor();
+        let current_line = doc.buffer().line_index.get_line_at(cursor);
         let hunks = doc.annotations.git_hunks_by_line();
         if hunks.is_empty() {
             return;
@@ -430,8 +430,8 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
         let doc = self.active_document();
-        if let Some(start) = doc.buffer.line_index.get_start(target_line) {
-            let _ = doc.buffer.set_cursor(start);
+        if let Some(start) = doc.buffer().line_index.get_start(target_line) {
+            let _ = doc.buffer_mut().set_cursor(start);
         }
     }
 
@@ -449,8 +449,8 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(r) => r.to_path_buf(),
                 None => return,
             };
-            let cursor = doc.buffer.cursor();
-            let line = doc.buffer.line_index.get_line_at(cursor);
+            let cursor = doc.buffer().cursor();
+            let line = doc.buffer().line_index.get_line_at(cursor);
             let selection = if doc.annotations.git_hunk_at_line(line).is_some() {
                 Some(Selection::Hunk)
             } else if doc.annotations.is_git_status_head_at_line(line) {
@@ -598,8 +598,8 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             };
             let message: String = doc
-                .buffer
-                .chars(0..doc.buffer.len())
+                .buffer()
+                .chars(0..doc.buffer().len())
                 .map(super::super::character::Character::to_char_lossy)
                 .collect();
             (repo_root, target, message, doc.id)
@@ -778,8 +778,8 @@ impl<T: TerminalBackend> Editor<T> {
         let doc = self.active_document();
         if doc.is_git_status() {
             let repo_root = doc.git_repo_root()?.to_path_buf();
-            let cursor = doc.buffer.cursor();
-            let line = doc.buffer.line_index.get_line_at(cursor);
+            let cursor = doc.buffer().cursor();
+            let line = doc.buffer().line_index.get_line_at(cursor);
             let (path, ..) = doc.annotations.git_status_entry_at_line(line)?;
             return Some((repo_root.join(path), repo_root));
         }

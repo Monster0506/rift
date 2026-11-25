@@ -25,7 +25,8 @@ impl<T: TerminalBackend> Editor<T> {
             if doc.buffer_kind_id() != crate::document::runtime::BufferKindId::FILE {
                 return None;
             }
-            doc.path().map(|p| (doc.buffer.revision, p.to_path_buf()))
+            doc.path()
+                .map(|p| (doc.buffer().revision(), p.to_path_buf()))
         }) else {
             return;
         };
@@ -67,8 +68,8 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.get_document(doc_id) else {
                 return;
             };
-            doc.buffer
-                .chars(0..doc.buffer.len())
+            doc.buffer()
+                .chars(0..doc.buffer().len())
                 .map(super::super::character::Character::to_char_lossy)
                 .collect()
         };

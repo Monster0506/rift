@@ -56,14 +56,9 @@ pub(super) fn do_resize_pane(editor: &mut Editor<MockTerminal>, delta: i32) {
 }
 
 pub(super) fn set_content(editor: &mut Editor<MockTerminal>, text: &str) {
-    let doc = editor.active_document();
-    doc.buffer.move_to_start();
-    let len = doc.buffer.len();
-    for _ in 0..len {
-        doc.buffer.delete_forward();
-    }
-    doc.buffer.insert_str(text).unwrap();
-    doc.buffer.move_to_start();
+    editor
+        .active_document()
+        .replace_content(text, crate::document::ops::ContentKind::Render);
 }
 
 pub(super) fn divider_cols(screen: &str) -> Vec<usize> {
@@ -90,9 +85,8 @@ pub(super) fn split_current(
 
 pub(super) fn load_text(editor: &mut Editor<MockTerminal>, text: &str) {
     let doc = editor.active_document();
-    doc.buffer.move_to_start();
-    doc.buffer.insert_str(text).unwrap();
-    doc.buffer.move_to_start();
+    let text = format!("{text}{}", doc.buffer());
+    doc.replace_content(&text, crate::document::ops::ContentKind::Render);
 }
 
 pub(super) fn open_and_load(editor: &mut Editor<MockTerminal>, path: &std::path::Path) {
@@ -293,8 +287,8 @@ pub(super) fn editor_with_text(text: &str) -> Editor<KeyQueue> {
     };
     let mut editor = Editor::new(term).unwrap();
     let doc = editor.active_document();
-    doc.buffer.insert_str(text).unwrap();
-    doc.buffer.move_to_start();
+    doc.replace_content(text, crate::document::ops::ContentKind::Render);
+    doc.buffer_mut().move_to_start();
     editor
 }
 

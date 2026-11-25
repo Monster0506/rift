@@ -341,7 +341,7 @@ impl<T: TerminalBackend> Editor<T> {
                 };
                 let job = crate::job_manager::jobs::file_operations::FileSaveJob::new(
                     document.id,
-                    document.buffer.line_index.table.clone(),
+                    document.buffer().line_index.table.clone(),
                     path,
                     document.options.line_ending,
                     document.options.has_bom,
@@ -396,7 +396,7 @@ impl<T: TerminalBackend> Editor<T> {
                     (
                         doc.id,
                         path,
-                        doc.buffer.line_index.table.clone(),
+                        doc.buffer().line_index.table.clone(),
                         doc.options.line_ending,
                         doc.options.has_bom,
                         doc.history.current_seq(),
@@ -513,7 +513,7 @@ impl<T: TerminalBackend> Editor<T> {
             let new_cursor = self.split_tree.focused_window().cursor_position;
             let _ = self.document_manager.switch_to_document(new_doc_id);
             if let Some(doc) = self.document_manager.get_document_mut(new_doc_id) {
-                let _ = doc.buffer.set_cursor(new_cursor);
+                let _ = doc.buffer_mut().set_cursor(new_cursor);
             }
             self.sync_state_with_active_document();
             self.call_plugins(|editor| {
@@ -879,7 +879,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let new_cursor = self.split_tree.focused_window().cursor_position;
                 let _ = self.document_manager.switch_to_document(new_doc);
                 if let Some(doc) = self.document_manager.get_document_mut(new_doc) {
-                    let _ = doc.buffer.set_cursor(new_cursor);
+                    let _ = doc.buffer_mut().set_cursor(new_cursor);
                 }
                 self.sync_state_with_active_document();
                 self.render_system.viewport.mark_needs_full_redraw();
