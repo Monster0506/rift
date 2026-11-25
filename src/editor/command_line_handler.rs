@@ -217,9 +217,6 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn redraw_from_command(&mut self) {
         self.state.clear_command_line();
-        // :s mutates the doc directly, skipping the sync reparse trigger;
-        // a no-op for non-mutating Redraw commands like :redraw/:nohl.
-
         if let Err(e) = self.force_full_redraw() {
             self.state.handle_error(e);
         }

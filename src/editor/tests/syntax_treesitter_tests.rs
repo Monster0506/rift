@@ -423,3 +423,14 @@ fn append_invalidates_rendered_eof() {
         fresh_highlights(&mut editor)
     );
 }
+
+#[cfg(feature = "treesitter")]
+#[test]
+fn substitute_leaves_a_reparsed_syntax_tree() {
+    let mut editor = load_rust("fn main() {}\n");
+    editor.execute_command_line("s /main/renamed");
+    let doc = editor.active_document();
+    assert_eq!(doc.buffer.to_string(), "fn renamed() {}\n");
+    let tree = doc.syntax.as_ref().unwrap().tree.as_ref().unwrap();
+    assert!(!tree.root_node().has_changes());
+}
