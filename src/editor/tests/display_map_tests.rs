@@ -299,11 +299,8 @@ fn test_lazy_display_map_extends_correctly_for_far_cursor_jump() {
 fn test_edit_on_partial_display_map_stays_correct() {
     let mut editor = create_editor_sized(10, 30);
     editor
-        .set_option(
-            "number",
-            Some("false"),
-            crate::command_line::settings::resolver::OptionScope::Global,
-        )
+        .active_document()
+        .set_option("number", Some("false"))
         .unwrap();
     let text = "the quick brown fox jumps over the lazy dog\n".repeat(800);
     set_content(&mut editor, &text);
@@ -351,11 +348,8 @@ fn test_edit_on_partial_display_map_stays_correct() {
 fn test_large_count_down_motion_matches_full_build_reference() {
     let mut editor = create_editor_sized(10, 30);
     editor
-        .set_option(
-            "number",
-            Some("false"),
-            crate::command_line::settings::resolver::OptionScope::Global,
-        )
+        .active_document()
+        .set_option("number", Some("false"))
         .unwrap();
     let text = "the quick brown fox jumps over the lazy dog\n".repeat(500);
     set_content(&mut editor, &text);
@@ -516,11 +510,8 @@ fn exactly_full_wrapped_line_gets_an_eol_row_only_for_its_adornment() {
         )
         .unwrap();
     editor
-        .set_option(
-            "number",
-            Some("false"),
-            crate::command_line::settings::resolver::OptionScope::Global,
-        )
+        .active_document()
+        .set_option("number", Some("false"))
         .unwrap();
     load_text(&mut editor, "abcdefghijklmnopqrst\nnext");
 

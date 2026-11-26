@@ -279,12 +279,8 @@ fn test_gutter_cols_needs_the_document_and_the_global_setting() {
 
     assert_eq!(state.gutter_cols(true), 5);
     assert_eq!(state.gutter_cols(false), 0);
-    assert_eq!(state.doc_gutter_cols(true, 9), 3);
-    assert_eq!(state.doc_gutter_cols(false, 9), 0);
-
-    state.settings.show_line_numbers = false;
-    assert_eq!(state.gutter_cols(true), 0);
-    assert_eq!(state.doc_gutter_cols(true, 9), 0);
+    assert_eq!(State::doc_gutter_cols(true, 9), 3);
+    assert_eq!(State::doc_gutter_cols(false, 9), 0);
 }
 
 fn selection_style(settings: &UserSettings) -> Option<crate::layer::CellStyle> {

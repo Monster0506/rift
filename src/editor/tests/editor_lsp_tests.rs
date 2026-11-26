@@ -287,16 +287,13 @@ fn published_diagnostic_underlines_exactly_its_range_and_keeps_the_eol_message()
 
     let mut editor = create_editor_sized(6, 40);
     editor
-        .set_option(
-            "number",
-            Some("false"),
-            crate::command_line::settings::resolver::OptionScope::Global,
-        )
-        .unwrap();
-    editor
         .open_file(Some(path.display().to_string()), false)
         .unwrap();
     drain_jobs(&mut editor);
+    editor
+        .active_document()
+        .set_option("number", Some("false"))
+        .unwrap();
 
     let uri = crate::lsp::protocol::path_to_uri(&path);
     crate::lsp::LspMessage::Diagnostics {

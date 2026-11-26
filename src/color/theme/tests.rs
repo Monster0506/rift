@@ -28,12 +28,9 @@ fn test_theme_by_name_case_insensitive() {
 
 #[test]
 fn test_available_themes() {
-    let themes = Theme::available_themes();
-    assert!(themes.contains(&"light"));
-    assert!(themes.contains(&"dark"));
-    assert!(themes.contains(&"gruvbox"));
-    assert!(themes.contains(&"nordic"));
-    assert_eq!(themes.len(), 4);
+    for &name in Theme::NAMES {
+        assert_eq!(Theme::by_name(name).unwrap().name(), name);
+    }
 }
 
 #[test]

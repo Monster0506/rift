@@ -529,10 +529,7 @@ fn test_no_redraw_on_noop() {
     let mut term = MockTerminal::new(10, 80);
     let mut buf = TextBuffer::new(100).unwrap();
     crate::document::ops::Edit::type_text("test").apply_to(&mut buf);
-    let mut state = State::new();
-    crate::state::definitions::create_settings_registry()
-        .set("number", Some("false"), &mut state.settings)
-        .unwrap();
+    let state = State::new();
     let mut system = RenderSystem::new(10, 80);
 
     system
@@ -560,7 +557,7 @@ fn test_no_redraw_on_noop() {
                 annotation_adornments: None,
                 annotation_inline: None,
                 annotation_concealed: None,
-                show_line_numbers: true,
+                show_line_numbers: false,
                 display_map: None,
                 scroll_hints: &[],
             },
@@ -604,7 +601,7 @@ fn test_no_redraw_on_noop() {
                 annotation_adornments: None,
                 annotation_inline: None,
                 annotation_concealed: None,
-                show_line_numbers: true,
+                show_line_numbers: false,
                 display_map: None,
                 scroll_hints: &[],
             },

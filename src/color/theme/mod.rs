@@ -106,6 +106,20 @@ pub(crate) struct Theme {
     syntax: Option<SyntaxColors>,
 }
 
+macro_rules! builtin_themes {
+    ($($name:path => $constructor:ident),+ $(,)?) => {
+        pub(crate) const NAMES: &'static [&'static str] = &[$($name),+];
+
+        #[must_use]
+        pub(crate) fn by_name(name: &str) -> Option<Self> {
+            $(if name.eq_ignore_ascii_case($name) {
+                return Some(Self::$constructor());
+            })+
+            None
+        }
+    };
+}
+
 impl Theme {
     /// Create a new theme
     #[must_use]
@@ -597,28 +611,12 @@ impl Theme {
         ])
     }
 
-    /// Get theme by name
-    #[must_use]
-    pub(crate) fn by_name(name: &str) -> Option<Self> {
-        match name.to_lowercase().as_str() {
-            crate::constants::themes::LIGHT => Some(Self::light()),
-            crate::constants::themes::DARK => Some(Self::dark()),
-            crate::constants::themes::GRUVBOX => Some(Self::gruvbox()),
-            crate::constants::themes::NORDIC => Some(Self::nordic()),
-            _ => None,
-        }
-    }
-
-    /// Get all available theme names
-    #[must_use]
-    pub(crate) fn available_themes() -> Vec<&'static str> {
-        vec![
-            crate::constants::themes::LIGHT,
-            crate::constants::themes::DARK,
-            crate::constants::themes::GRUVBOX,
-            crate::constants::themes::NORDIC,
-        ]
-    }
+    builtin_themes!(
+        crate::constants::themes::LIGHT => light,
+        crate::constants::themes::DARK => dark,
+        crate::constants::themes::GRUVBOX => gruvbox,
+        crate::constants::themes::NORDIC => nordic,
+    );
 
     #[must_use]
     pub(crate) const fn name(&self) -> &'static str {

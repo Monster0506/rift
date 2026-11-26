@@ -113,7 +113,6 @@ impl Default for UndoSettings {
 
 #[derive(Debug, Clone)]
 pub(crate) struct UserSettings {
-    show_line_numbers: bool,
     default_border_chars: Option<BorderChars>,
     command_line_window: CommandLineWindowSettings,
     status_line: StatusLineSettings,
@@ -140,7 +139,6 @@ impl UserSettings {
     #[must_use]
     pub(crate) fn new() -> Self {
         let mut settings = Self {
-            show_line_numbers: true,    // Default to showing line numbers
             default_border_chars: None, // None means use FloatingWindow defaults
             command_line_window: CommandLineWindowSettings::default(),
             status_line: StatusLineSettings::default(),
@@ -186,11 +184,6 @@ impl UserSettings {
             }
         }
         self.refresh_derived_highlights();
-    }
-
-    #[must_use]
-    pub(crate) const fn show_line_numbers(&self) -> bool {
-        self.show_line_numbers
     }
 
     #[must_use]
@@ -583,16 +576,10 @@ impl State {
         self.line_ending = line_ending;
     }
 
-    /// Line numbers draw only when both the document and the global setting allow them.
-    #[must_use]
-    pub(crate) fn line_numbers_on(&self, doc_enabled: bool) -> bool {
-        doc_enabled && self.settings.show_line_numbers()
-    }
-
     /// Gutter columns of the active document, 0 when its line numbers are hidden.
     #[must_use]
     pub(crate) fn gutter_cols(&self, doc_enabled: bool) -> usize {
-        if self.line_numbers_on(doc_enabled) {
+        if doc_enabled {
             self.gutter_width
         } else {
             0
@@ -601,8 +588,8 @@ impl State {
 
     /// Gutter columns of any document with `total_lines` lines, 0 when hidden.
     #[must_use]
-    pub(crate) fn doc_gutter_cols(&self, doc_enabled: bool, total_lines: usize) -> usize {
-        if self.line_numbers_on(doc_enabled) {
+    pub(crate) fn doc_gutter_cols(doc_enabled: bool, total_lines: usize) -> usize {
+        if doc_enabled {
             gutter_width_for(total_lines)
         } else {
             0

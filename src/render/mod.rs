@@ -140,7 +140,7 @@ fn compute_content_blit_key(ctx: &DrawContext, visible_rows: usize) -> ContentBl
         revision: ctx.buf.revision(),
         buf_len: ctx.buf.len(),
         tab_width: ctx.tab_width,
-        show_line_numbers: ctx.state.line_numbers_on(ctx.show_line_numbers),
+        show_line_numbers: ctx.show_line_numbers,
         gutter_width,
         left_col: ctx.viewport.left_col(),
         visible_rows,
@@ -406,7 +406,7 @@ impl<'a> DrawContext<'a> {
     /// Gutter columns for this draw, 0 when line numbers are hidden.
     #[must_use]
     fn gutter_cols(&self) -> usize {
-        if !self.state.line_numbers_on(self.show_line_numbers) {
+        if !self.show_line_numbers {
             return 0;
         }
         self.gutter_width_override

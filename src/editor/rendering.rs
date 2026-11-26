@@ -328,7 +328,7 @@ impl<T: TerminalBackend> Editor<T> {
                 continue;
             };
             let gutter = if multi_window {
-                Self::line_number_gutter_width(doc, &self.state)
+                Self::line_number_gutter_width(doc)
             } else {
                 self.active_gutter_cols(doc_id)
             };
@@ -511,7 +511,7 @@ impl<T: TerminalBackend> Editor<T> {
         cols: usize,
     ) -> Option<(crate::document::DocumentId, usize)> {
         let doc = self.document_manager.get_document(doc_id)?;
-        let gutter_width = Self::line_number_gutter_width(doc, &self.state);
+        let gutter_width = Self::line_number_gutter_width(doc);
         Some((doc_id, cols.saturating_sub(gutter_width).max(1)))
     }
 
@@ -795,7 +795,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .document_manager
                 .get_document(source_doc_id)
                 .map(|source_doc| {
-                    let gutter_width = Self::line_number_gutter_width(source_doc, &self.state);
+                    let gutter_width = Self::line_number_gutter_width(source_doc);
                     let content_width = source_cols.saturating_sub(gutter_width).max(1);
                     let params = super::resolve_wrap_params(
                         source_doc,
@@ -884,7 +884,7 @@ impl<T: TerminalBackend> Editor<T> {
             ) + doc.annotations.leading_width_in(line_start, cursor_pos + 1);
             let total_lines = doc.buffer().get_total_lines();
             let viewport_col = if doc.is_terminal() { 0 } else { cursor_col };
-            let gutter_width = Self::line_number_gutter_width(doc, &self.state);
+            let gutter_width = Self::line_number_gutter_width(doc);
             let terminal_resize = if doc.is_terminal() {
                 let new_rows = u16::try_from(layout.rows).unwrap_or(u16::MAX);
                 let new_cols = u16::try_from(layout.cols).unwrap_or(u16::MAX);
@@ -1172,7 +1172,7 @@ impl<T: TerminalBackend> Editor<T> {
         doc.recompute_directory_highlights();
 
         let tab_width = doc.options().tab_width();
-        let gutter_width = Self::line_number_gutter_width(doc, state);
+        let gutter_width = Self::line_number_gutter_width(doc);
         let (start_line, end_line, start_byte, end_byte) =
             Self::visible_span(doc, &window.viewport, display_map);
 
@@ -1258,12 +1258,9 @@ impl<T: TerminalBackend> Editor<T> {
         })
     }
 
-    fn line_number_gutter_width(
-        doc: &crate::document::Document,
-        state: &crate::state::State,
-    ) -> usize {
+    fn line_number_gutter_width(doc: &crate::document::Document) -> usize {
         let lines = doc.buffer().last_real_line() + 1;
-        state.doc_gutter_cols(doc.options().show_line_numbers(), lines)
+        crate::state::State::doc_gutter_cols(doc.options().show_line_numbers(), lines)
     }
 
     fn concealed_outside_cursor_line(

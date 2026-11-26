@@ -197,7 +197,7 @@ fn set_theme(settings: &mut UserSettings, value: &SettingValue) -> Result<(), Se
                     Err(SettingError::ValidationError(format!(
                         "Unknown theme: {}. Available themes: {}",
                         theme_name,
-                        crate::color::theme::Theme::available_themes().join(", ")
+                        crate::color::theme::Theme::NAMES.join(", ")
                     )))
                 },
                 |theme| {
@@ -233,21 +233,6 @@ fn set_show_dirty_indicator(
     match value {
         &SettingValue::Bool(b) => {
             settings.status_line.segments.show_dirty_indicator = b;
-            Ok(())
-        }
-        _ => Err(SettingError::ValidationError(
-            "Expected boolean".to_string(),
-        )),
-    }
-}
-
-fn set_show_line_numbers(
-    settings: &mut UserSettings,
-    value: &SettingValue,
-) -> Result<(), SettingError> {
-    match value {
-        &SettingValue::Bool(b) => {
-            settings.show_line_numbers = b;
             Ok(())
         }
         _ => Err(SettingError::ValidationError(
@@ -345,10 +330,6 @@ const fn get_show_status_line(s: &UserSettings) -> SettingValue {
 
 const fn get_show_dirty_indicator(s: &UserSettings) -> SettingValue {
     SettingValue::Bool(s.status_line.segments.show_dirty_indicator)
-}
-
-const fn get_show_line_numbers(s: &UserSettings) -> SettingValue {
-    SettingValue::Bool(s.show_line_numbers)
 }
 
 const fn get_equalize_proportional(s: &UserSettings) -> SettingValue {
@@ -809,12 +790,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         aliases: &["colorscheme"],
         description: "Color theme",
         ty: SettingType::Enum {
-            variants: &[
-                crate::constants::themes::LIGHT,
-                crate::constants::themes::DARK,
-                crate::constants::themes::GRUVBOX,
-                crate::constants::themes::NORDIC,
-            ],
+            variants: crate::color::theme::Theme::NAMES,
         },
         set: set_theme,
         get: get_theme,
@@ -855,15 +831,6 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         set: set_show_dirty_indicator,
         get: get_show_dirty_indicator,
         needs_full_redraw: false,
-    },
-    SettingDescriptor {
-        name: "number",
-        aliases: &[],
-        description: "Show line numbers",
-        ty: SettingType::Boolean,
-        set: set_show_line_numbers,
-        get: get_show_line_numbers,
-        needs_full_redraw: true,
     },
     SettingDescriptor {
         name: "clipboard.size",
