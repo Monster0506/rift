@@ -1,18 +1,15 @@
 use super::*;
 use crate::character::Character;
 use crate::render::Color;
-use crate::search::SearchMatch;
 
 // Helper to create basic items
 fn chars(s: &str) -> Vec<RenderItem> {
     let mut byte_offset = 0;
-    let mut char_offset = 0;
     s.chars()
         .map(|c| {
             let len = c.len_utf8();
-            let item = RenderItem::new(Character::from(c), byte_offset, len, char_offset);
+            let item = RenderItem::new(Character::from(c), byte_offset, len);
             byte_offset += len;
-            char_offset += 1;
             item
         })
         .collect()
@@ -48,48 +45,6 @@ fn test_tab_layout_wide_and_zero_width_unicode_chars() {
     assert_eq!(items[0].width, 2, "CJK ideograph must be width 2");
     assert_eq!(items[1].width, 0, "combining mark must be width 0");
     assert_eq!(items[2].width, 1, "ASCII 'a' must still be width 1");
-}
-
-#[test]
-fn test_search_decorator() {
-    let input = chars("hello world").into_iter();
-    // Match "world" (offset 6..11)
-    let matches = vec![SearchMatch { range: 6..11 }];
-    let mut matches_idx = 0;
-
-    let decorator = SearchDecorator::new(input, &matches, &mut matches_idx);
-    let items: Vec<RenderItem> = decorator.collect();
-
-    // Check "hello "
-    for item in &items[0..6] {
-        assert!(item.fg.is_none());
-        assert!(item.bg.is_none());
-    }
-
-    // Check "world"
-    for item in &items[6..11] {
-        assert_eq!(item.fg, Some(Color::Black));
-        assert_eq!(item.bg, Some(Color::Yellow));
-    }
-}
-
-#[test]
-fn test_search_decorator_multibyte_unicode() {
-    // Each CJK character uses three UTF-8 bytes; character offset 2 maps to bytes 6..9.
-    let input = chars("日本語").into_iter();
-    let matches = vec![SearchMatch { range: 2..3 }];
-    let mut matches_idx = 0;
-
-    let decorator = SearchDecorator::new(input, &matches, &mut matches_idx);
-    let items: Vec<RenderItem> = decorator.collect();
-
-    assert_eq!(items.len(), 3);
-    // The first two characters should not be highlighted.
-    assert!(items[0].bg.is_none(), "日 should not be highlighted");
-    assert!(items[1].bg.is_none(), "本 should not be highlighted");
-    // The final character should be highlighted.
-    assert_eq!(items[2].fg, Some(Color::Black), "語 fg");
-    assert_eq!(items[2].bg, Some(Color::Yellow), "語 bg");
 }
 
 #[test]
@@ -182,7 +137,7 @@ fn test_presentation_decorator_cursor_carries_over_across_calls() {
     assert_eq!(idx, 0, "idx should not advance past a style still in range");
 
     // Second "row" at byte offset 10 - cursor must not be stuck/corrupted from the first call.
-    let mut second_item = RenderItem::new(Character::from('z'), 10, 1, 10);
+    let mut second_item = RenderItem::new(Character::from('z'), 10, 1);
     second_item = PresentationDecorator::new(std::iter::once(second_item), &styles, &mut idx)
         .next()
         .unwrap();

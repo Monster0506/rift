@@ -3,8 +3,6 @@ use crate::action::{Action, EditorAction};
 use crate::command::Command;
 use crate::error::{ErrorType, RiftError};
 use crate::key::{InputEvent, Key};
-#[cfg(test)]
-use crate::key_handler::KeyAction;
 use crate::mode::Mode;
 use crate::term::TerminalBackend;
 
@@ -703,55 +701,6 @@ impl<T: TerminalBackend> Editor<T> {
             self.update_and_render()?;
         }
         Ok(())
-    }
-
-    /// Handle special actions (mutations happen here, not during input handling)
-    #[cfg(test)]
-    pub(super) fn handle_key_actions(&mut self, action: crate::key_handler::KeyAction) {
-        match action {
-            KeyAction::ExitInsertMode => {
-                // Finalize insert recording for dot-repeat
-                if !self.dot_repeat.is_replaying() {
-                    self.dot_repeat.finish_insert_recording();
-                }
-                // Commit insert mode transaction before exiting
-                self.document_manager
-                    .active_document_mut()
-                    .unwrap()
-                    .commit_transaction();
-                self.set_mode(Mode::Normal);
-            }
-            KeyAction::ExitCommandMode => {
-                // Close completion dropdown without exiting command mode
-                if self.current_mode == Mode::Command
-                    && self
-                        .state
-                        .completion_session
-                        .as_ref()
-                        .is_some_and(|s| s.dropdown_open)
-                {
-                    if let Some(session) = &mut self.state.completion_session {
-                        session.dropdown_open = false;
-                        session.selected = None;
-                    }
-                    return;
-                }
-
-                self.state.clear_command_line();
-                self.set_mode(Mode::Normal);
-            }
-            KeyAction::ExitSearchMode => {
-                self.state.clear_command_line();
-                self.set_mode(Mode::Normal);
-            }
-            KeyAction::ToggleDebug => {
-                self.state.toggle_debug();
-            }
-            KeyAction::Resize(cols, rows) => {
-                self.handle_terminal_resize(rows, cols).unwrap();
-            }
-            KeyAction::SkipAndRender | KeyAction::Continue => {}
-        }
     }
 }
 

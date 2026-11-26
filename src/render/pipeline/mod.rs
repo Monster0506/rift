@@ -13,12 +13,11 @@ pub(crate) struct RenderItem {
     attrs: crate::layer::CellAttrs,
     byte_offset: usize,
     len_bytes: usize,
-    char_offset: usize,
 }
 
 impl RenderItem {
     #[must_use]
-    fn new(char: Character, byte_offset: usize, len_bytes: usize, char_offset: usize) -> Self {
+    fn new(char: Character, byte_offset: usize, len_bytes: usize) -> Self {
         Self {
             char,
             fg: None,
@@ -26,7 +25,6 @@ impl RenderItem {
             attrs: crate::layer::CellAttrs::default(),
             byte_offset,
             len_bytes,
-            char_offset,
         }
     }
 
@@ -44,7 +42,6 @@ impl RenderItem {
 pub(super) struct LineSource<'a, I: Iterator<Item = Character>> {
     chars: I,
     current_byte_offset: usize,
-    current_char_offset: usize,
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
@@ -60,12 +57,10 @@ pub(super) fn new_line_source(
 
     let chars = buf.chars(line_start..line_end);
     let current_byte_offset = buf.char_to_byte(line_start);
-    let current_char_offset = line_start;
 
     LineSource {
         chars,
         current_byte_offset,
-        current_char_offset,
         _marker: std::marker::PhantomData,
     }
 }
@@ -76,9 +71,8 @@ impl<I: Iterator<Item = Character>> Iterator for LineSource<'_, I> {
     fn next(&mut self) -> Option<Self::Item> {
         let ch = self.chars.next()?;
         let len = ch.len_utf8();
-        let item = RenderItem::new(ch, self.current_byte_offset, len, self.current_char_offset);
+        let item = RenderItem::new(ch, self.current_byte_offset, len);
         self.current_byte_offset += len;
-        self.current_char_offset += 1;
         Some(item)
     }
 }
@@ -270,52 +264,6 @@ impl<I: Iterator<Item = RenderItem>> Iterator for TerminalColorDecorator<'_, I> 
                 if let Some(c) = bg {
                     item.bg = Some(*c);
                 }
-            }
-        }
-
-        Some(item)
-    }
-}
-
-#[cfg(test)]
-struct SearchDecorator<'a, I: Iterator<Item = RenderItem>> {
-    input: I,
-    matches: &'a [crate::search::SearchMatch],
-    idx: &'a mut usize,
-}
-
-#[cfg(test)]
-impl<'a, I: Iterator<Item = RenderItem>> SearchDecorator<'a, I> {
-    const fn new(input: I, matches: &'a [crate::search::SearchMatch], idx: &'a mut usize) -> Self {
-        Self {
-            input,
-            matches,
-            idx,
-        }
-    }
-}
-
-#[cfg(test)]
-impl<I: Iterator<Item = RenderItem>> Iterator for SearchDecorator<'_, I> {
-    type Item = RenderItem;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut item = self.input.next()?;
-
-        while *self.idx < self.matches.len() {
-            if self.matches[*self.idx].range.end <= item.char_offset {
-                *self.idx += 1;
-                crate::perf_cursor_advance!();
-            } else {
-                break;
-            }
-        }
-
-        if *self.idx < self.matches.len() {
-            let m = &self.matches[*self.idx];
-            if m.range.start <= item.char_offset {
-                item.fg = Some(Color::Black);
-                item.bg = Some(Color::Yellow);
             }
         }
 
