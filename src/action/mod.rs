@@ -1,5 +1,4 @@
 //! Editor actions, including movements and operations
-use crate::command::Command;
 use crate::text_objects::TextObjectSpec;
 
 pub(crate) mod table;
@@ -121,8 +120,8 @@ pub enum EditorAction {
     Quit,
     /// Pending Operator (d, c, y)
     Operator(OperatorType),
-    /// Generic wrapper for other commands
-    Command(Box<Command>),
+    ChangeToLineEnd,
+    DeleteToLineEnd,
     Submit,
     /// Navigate to previous (older) history entry
     HistoryUp,

@@ -7,7 +7,7 @@ mod input;
 
 /// Editor commands
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Command {
+pub(crate) enum Command {
     // Movement
     Move(Motion, usize),
 
@@ -20,8 +20,6 @@ pub enum Command {
     OpenLineAbove,
     Delete(Motion, usize),
     Change(Motion, usize),
-    DeleteForward,
-    DeleteBackward,
     DeleteLine(usize),
     ChangeLine(usize),
     InsertChar(char),
@@ -49,31 +47,21 @@ pub enum Command {
 
     // Search
     ExecuteSearch,
-    NextMatch,
-    PreviousMatch,
 
     // Command line editing
     AppendToCommandLine(char),
     DeleteFromCommandLine,
     ExecuteCommandLine,
 
-    // Buffer/Tab management
-    BufferNext,
-    BufferPrevious,
-
     // History
     Undo,
     Redo,
-
-    // Repeat
-    DotRepeat,
 
     // Completion
     TabComplete,
     TabCompletePrev,
 
     // Control
-    Quit,
     Noop,
 }
 
@@ -83,9 +71,7 @@ impl Command {
     pub(crate) const fn is_mutating(&self) -> bool {
         matches!(
             self,
-            Self::DeleteForward
-                | Self::DeleteBackward
-                | Self::DeleteLine(_)
+            Self::DeleteLine(_)
                 | Self::Delete(_, _)
                 | Self::Change(_, _)
                 | Self::ChangeLine(_)

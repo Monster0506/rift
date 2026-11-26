@@ -189,26 +189,6 @@ fn test_execute_insert_newline() {
 }
 
 #[test]
-fn test_execute_delete_backward() {
-    let mut doc = create_doc();
-    doc.edit(Edit::type_text("hello"), EditSource::User)
-        .unwrap();
-    execute_command(Command::DeleteBackward, &mut doc, false, 8, 24, None, None).unwrap();
-    assert_eq!(doc.buffer().to_string(), "hell");
-}
-
-#[test]
-fn test_execute_delete_forward() {
-    let mut doc = create_doc();
-    doc.replace_content("hello", crate::document::ops::ContentKind::Render);
-    for _ in 0..5 {
-        doc.move_cursor(crate::action::Motion::Left);
-    }
-    execute_command(Command::DeleteForward, &mut doc, false, 8, 24, None, None).unwrap();
-    assert_eq!(doc.buffer().to_string(), "ello");
-}
-
-#[test]
 fn test_execute_move_to_buffer_start() {
     let mut doc = create_doc();
     doc.edit(Edit::type_text("hello"), EditSource::User)

@@ -331,8 +331,14 @@ fn sample_id(spec: &table::ActionSpec) -> String {
     for shape in spec.args {
         id.push(':');
         id.push_str(match shape {
-            table::ArgShape::Text => "probe",
+            table::ArgShape::Text | table::ArgShape::Path => "probe",
             table::ArgShape::Count => "7",
+            table::ArgShape::Int => "-3",
+            table::ArgShape::Char => "x",
+            table::ArgShape::Motion => "word:next",
+            table::ArgShape::TextObject => "in2(",
+            table::ArgShape::SplitDirection => "vertical",
+            table::ArgShape::SplitSubcommand => "navigate:left",
         });
     }
     id

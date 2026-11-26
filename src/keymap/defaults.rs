@@ -1,5 +1,4 @@
 use crate::action::{Action, EditorAction, Motion};
-use crate::command::Command;
 use crate::document::runtime::BufferKindId;
 use crate::key::{Key, Mods};
 use crate::keymap::{KeyContext, KeyMap};
@@ -912,18 +911,12 @@ fn register_region_defaults(keymap: &mut KeyMap) {
     keymap.register(
         KeyContext::Normal,
         Key::char('C'),
-        Action::Editor(EditorAction::Command(Box::new(Command::Change(
-            Motion::EndOfLine,
-            1,
-        )))),
+        Action::Editor(EditorAction::ChangeToLineEnd),
     );
     keymap.register(
         KeyContext::Normal,
         Key::char('D'),
-        Action::Editor(EditorAction::Command(Box::new(Command::Delete(
-            Motion::EndOfLine,
-            1,
-        )))),
+        Action::Editor(EditorAction::DeleteToLineEnd),
     );
 }
 

@@ -122,6 +122,22 @@ pub(crate) fn object_kind_for_key(ch: char) -> Option<ObjectKind> {
         .map(|&(_, kind)| kind)
 }
 
+pub(crate) fn object_key(kind: ObjectKind) -> Option<char> {
+    OBJECT_KEY_TABLE
+        .iter()
+        .find(|&&(_, k)| k == kind)
+        .map(|&(c, _)| c)
+}
+
+pub(crate) const fn modifier_key(modifier: Modifier) -> char {
+    match modifier {
+        Modifier::Inner => 'i',
+        Modifier::Around => 'a',
+        Modifier::InnerStrict => 'I',
+        Modifier::AroundLoose => 'A',
+    }
+}
+
 #[must_use]
 pub(crate) const fn modifier_for_key(ch: char) -> Option<Modifier> {
     match ch {

@@ -539,12 +539,6 @@ impl State {
         }
     }
 
-    pub(crate) fn delete_forward_command_line(&mut self) {
-        if self.command_line_cursor < self.command_line.len() {
-            self.command_line.remove(self.command_line_cursor);
-        }
-    }
-
     pub(crate) fn clear_command_line(&mut self) {
         self.command_line.clear();
         self.command_line_cursor = 0;

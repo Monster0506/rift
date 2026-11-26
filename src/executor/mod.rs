@@ -254,12 +254,6 @@ pub(crate) fn execute_command(
         Command::Change(motion, count) => {
             change_motion_cmd(doc, motion, count, viewport_height, last_search_query);
         }
-        Command::DeleteForward => {
-            let _ = doc.edit(Edit::DeleteForward, EditSource::User);
-        }
-        Command::DeleteBackward => {
-            let _ = doc.edit(Edit::DeleteBackward, EditSource::User);
-        }
         Command::DeleteLine(count) => {
             delete_line_cmd(doc, count);
         }
@@ -314,12 +308,6 @@ pub(crate) fn execute_command(
         | Command::DeleteFromCommandLine
         | Command::ExecuteCommandLine
         | Command::ExecuteSearch
-        | Command::NextMatch
-        | Command::PreviousMatch
-        | Command::Quit
-        | Command::BufferNext
-        | Command::BufferPrevious
-        | Command::DotRepeat
         | Command::TabComplete
         | Command::TabCompletePrev
         | Command::Noop => {}

@@ -5,8 +5,6 @@ use crate::command::Command;
 fn test_command_is_mutating() {
     // Mutating commands
     assert!(Command::InsertChar('a').is_mutating());
-    assert!(Command::DeleteForward.is_mutating());
-    assert!(Command::DeleteBackward.is_mutating());
     assert!(Command::DeleteLine(1).is_mutating());
 
     // Non-mutating commands
@@ -24,6 +22,5 @@ fn test_command_is_mutating() {
     assert!(!Command::AppendToCommandLine('a').is_mutating());
     assert!(!Command::DeleteFromCommandLine.is_mutating());
     assert!(!Command::ExecuteCommandLine.is_mutating());
-    assert!(!Command::Quit.is_mutating());
     assert!(!Command::Noop.is_mutating());
 }

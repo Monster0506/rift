@@ -324,13 +324,6 @@ impl<T: TerminalBackend> Editor<T> {
             {
                 self.state.move_command_line_word_right();
             }
-            Command::DeleteForward
-                if self.current_mode == Mode::Command
-                    || self.current_mode == Mode::Search
-                    || self.current_mode == Mode::Rename =>
-            {
-                self.state.delete_forward_command_line();
-            }
             _ => {}
         }
     }

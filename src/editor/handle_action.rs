@@ -769,8 +769,12 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_history_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
-            EditorAction::Command(cmd) => {
-                let command = *cmd.clone();
+            EditorAction::ChangeToLineEnd | EditorAction::DeleteToLineEnd => {
+                let command = if matches!(editor_action, EditorAction::ChangeToLineEnd) {
+                    Command::Change(crate::action::Motion::EndOfLine, 1)
+                } else {
+                    Command::Delete(crate::action::Motion::EndOfLine, 1)
+                };
                 self.handle_mode_management(command);
                 self.execute_buffer_command(command)
             }
