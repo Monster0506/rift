@@ -41,6 +41,22 @@ fn ex_undo_and_redo_raise_text_changed() {
 }
 
 #[test]
+fn history_keys_report_the_same_boundaries_as_ex_commands() {
+    let mut editor = editor_with_text("abc");
+
+    press(&mut editor, &keys("u<C-r>"));
+
+    let messages: Vec<_> = editor
+        .state
+        .notifications
+        .iter_active()
+        .map(|notification| notification.message.as_str())
+        .collect();
+    assert!(messages.contains(&"Already at oldest change"));
+    assert!(messages.contains(&"Already at newest change"));
+}
+
+#[test]
 fn plugin_edits_and_moves_raise_text_changed_and_cursor_moved() {
     let mut editor = settled("one\ntwo");
     let buf = editor.active_document().id;

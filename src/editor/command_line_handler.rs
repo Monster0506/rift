@@ -128,7 +128,10 @@ impl<T: TerminalBackend> Editor<T> {
             ExecutionResult::Failure => return false, // keep command line visible for editing
             ExecutionResult::OpenTerminal { cmd, .. } => return self.open_terminal_from_ex(cmd),
             ExecutionResult::RunGit { args } => self.run_git_from_command(args),
-            ExecutionResult::Success | ExecutionResult::Checkpoint => {}
+            ExecutionResult::Success => {}
+            ExecutionResult::Checkpoint => {
+                self.create_checkpoint();
+            }
             ExecutionResult::Quit { bangs } => {
                 self.do_quit(bangs > 0);
             }

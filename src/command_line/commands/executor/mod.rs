@@ -263,7 +263,7 @@ impl CommandExecutor {
             ParsedCommand::Undo { count, bangs: _ } => ExecutionResult::Undo { count },
             ParsedCommand::Redo { count, bangs: _ } => ExecutionResult::Redo { count },
             ParsedCommand::UndoGoto { seq, bangs: _ } => ExecutionResult::UndoGoto { seq },
-            ParsedCommand::Checkpoint { bangs: _ } => create_checkpoint(state, document),
+            ParsedCommand::Checkpoint { bangs: _ } => ExecutionResult::Checkpoint,
             ParsedCommand::UndoTree { bangs: _ } => ExecutionResult::OpenUndoTree,
             ParsedCommand::Messages { show_all, bangs: _ } => {
                 ExecutionResult::OpenMessages { show_all }
@@ -290,15 +290,6 @@ impl CommandExecutor {
 
 fn notify_error(state: &mut State, err: RiftError) {
     state.notifications.notify(err.severity.into(), err.message);
-}
-
-fn create_checkpoint(state: &mut State, document: &mut Document) -> ExecutionResult {
-    document.checkpoint();
-    state.notifications.notify(
-        crate::notification::NotificationType::Info,
-        "Checkpoint created".to_string(),
-    );
-    ExecutionResult::Checkpoint
 }
 
 fn clear_highlight(state: &mut State) -> ExecutionResult {

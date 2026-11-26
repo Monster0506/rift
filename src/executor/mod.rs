@@ -289,12 +289,6 @@ pub(crate) fn execute_command(
                 last_search_query,
             );
         }
-        Command::ReplayUndo => {
-            undo_cmd(doc);
-        }
-        Command::ReplayRedo => {
-            redo_cmd(doc);
-        }
         Command::BeginInsert(_)
         | Command::BeginReplace
         | Command::ReadExLine
@@ -527,16 +521,6 @@ fn add_surround_cmd(
     let _ = doc.edit(Edit::insert(end, &close), EditSource::User);
     let _ = doc.edit(Edit::insert(start, &open), EditSource::User);
     doc.commit_transaction();
-}
-
-fn undo_cmd(doc: &mut Document) {
-    crate::perf_span!("history_undo", crate::perf::PerfFields::default());
-    doc.undo();
-}
-
-fn redo_cmd(doc: &mut Document) {
-    crate::perf_span!("history_redo", crate::perf::PerfFields::default());
-    doc.redo();
 }
 
 #[cfg(test)]

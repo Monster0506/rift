@@ -94,8 +94,8 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_mode_exit_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
             EditorAction::EnterNormalMode => self.action_enter_normal_mode(),
-            EditorAction::Undo => self.execute_buffer_command(crate::command::Command::ReplayUndo),
-            EditorAction::Redo => self.execute_buffer_command(crate::command::Command::ReplayRedo),
+            EditorAction::Undo => self.do_undo(None),
+            EditorAction::Redo => self.do_redo(None),
             EditorAction::Quit => {
                 self.do_quit(false);
                 true
@@ -253,7 +253,7 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::ClearHighlights => self.action_clear_highlights(),
             EditorAction::ClearNotifications => self.action_clear_notifications(),
             EditorAction::ClearLastNotification => self.action_clear_last_notification(),
-            EditorAction::Checkpoint => self.action_checkpoint(),
+            EditorAction::Checkpoint => self.create_checkpoint(),
             EditorAction::RunCommand(cmd_str) => {
                 self.execute_command_line(cmd_str);
                 true
@@ -404,14 +404,8 @@ impl<T: TerminalBackend> Editor<T> {
                 direction,
                 subcommand,
             } => self.action_split_window(*direction, subcommand),
-            EditorAction::UndoCount(count) => {
-                self.do_undo(*count);
-                true
-            }
-            EditorAction::RedoCount(count) => {
-                self.do_redo(*count);
-                true
-            }
+            EditorAction::UndoCount(count) => self.do_undo(*count),
+            EditorAction::RedoCount(count) => self.do_redo(*count),
             EditorAction::UndoGoto(seq) => {
                 self.do_undo_goto(*seq);
                 true
@@ -1064,17 +1058,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.notifications.clear_last();
         self.state.clear_command_line();
         self.force_full_redraw().ok();
-        true
-    }
-
-    fn action_checkpoint(&mut self) -> bool {
-        if let Some(doc) = self.document_manager.active_document_mut() {
-            doc.checkpoint();
-            self.notify(
-                crate::notification::NotificationType::Info,
-                "Checkpoint created".to_string(),
-            );
-        }
         true
     }
 

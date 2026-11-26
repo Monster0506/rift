@@ -57,10 +57,6 @@ pub(crate) enum Command {
     DeleteFromCommandLine,
     ExecuteCommandLine,
 
-    // History
-    ReplayUndo,
-    ReplayRedo,
-
     // Completion
     TabComplete,
     TabCompletePrev,
@@ -87,15 +83,13 @@ impl Command {
                 | Self::DeleteSurround(_, _)
                 | Self::ChangeSurround(_, _, _)
                 | Self::AddSurround(_, _, _, _)
-                | Self::ReplayUndo
-                | Self::ReplayRedo
         )
     }
 
     /// Check if command should be recorded for dot-repeat
     #[must_use]
     pub(crate) const fn is_repeatable(&self) -> bool {
-        self.is_mutating() && !matches!(self, Self::ReplayUndo | Self::ReplayRedo)
+        self.is_mutating()
     }
 }
 

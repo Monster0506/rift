@@ -4,56 +4,70 @@ use crate::mode::Mode;
 use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
-    pub(super) fn do_undo(&mut self, count: Option<u64>) {
+    pub(super) fn do_undo(&mut self, count: Option<u64>) -> bool {
         crate::perf_span!("history_undo", crate::perf::PerfFields::default());
-        let doc = self.document_manager.active_document_mut().unwrap();
-        let count = usize::try_from(count.unwrap_or(1)).unwrap_or(usize::MAX);
-        let mut undone = 0;
-        for _ in 0..count {
-            if doc.undo() {
-                undone += 1;
-            } else {
-                break;
-            }
-        }
-        if undone == 0 {
-            self.notify(
-                crate::notification::NotificationType::Info,
-                "Already at oldest change".to_string(),
-            );
-        }
-        self.state.clear_command_line();
-        self.schedule_search_refresh();
-
-        if let Some(doc_id) = self.document_manager.active_document_id() {
-            self.spawn_syntax_parse_job_immediate(doc_id);
-        }
+        self.replay_history(
+            count,
+            crate::document::Document::undo,
+            "Already at oldest change",
+        )
     }
 
-    pub(super) fn do_redo(&mut self, count: Option<u64>) {
+    pub(super) fn do_redo(&mut self, count: Option<u64>) -> bool {
         crate::perf_span!("history_redo", crate::perf::PerfFields::default());
-        let doc = self.document_manager.active_document_mut().unwrap();
-        let count = usize::try_from(count.unwrap_or(1)).unwrap_or(usize::MAX);
-        let mut redone = 0;
-        for _ in 0..count {
-            if doc.redo() {
-                redone += 1;
-            } else {
+        self.replay_history(
+            count,
+            crate::document::Document::redo,
+            "Already at newest change",
+        )
+    }
+
+    fn replay_history(
+        &mut self,
+        count: Option<u64>,
+        step: fn(&mut crate::document::Document) -> bool,
+        limit_message: &'static str,
+    ) -> bool {
+        if self.active_doc_is(crate::document::Document::is_read_only) {
+            return false;
+        }
+        if self.current_mode.is_visual() {
+            self.set_mode(Mode::Normal);
+        }
+        let Some(doc) = self.document_manager.active_document_mut() else {
+            return false;
+        };
+        let doc_id = doc.id;
+        doc.clear_selection();
+        let mut changed = false;
+        for _ in 0..count.unwrap_or(1) {
+            if !step(doc) {
                 break;
             }
+            changed = true;
         }
-        if redone == 0 {
-            self.notify(
-                crate::notification::NotificationType::Info,
-                "Already at newest change".to_string(),
-            );
+        if changed {
+            self.drain_syntax_sync();
+        } else {
+            self.notify(crate::notification::NotificationType::Info, limit_message);
         }
         self.state.clear_command_line();
         self.schedule_search_refresh();
-
-        if let Some(doc_id) = self.document_manager.active_document_id() {
+        if changed {
             self.spawn_syntax_parse_job_immediate(doc_id);
         }
+        true
+    }
+
+    pub(super) fn create_checkpoint(&mut self) -> bool {
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            doc.checkpoint();
+            self.notify(
+                crate::notification::NotificationType::Info,
+                "Checkpoint created",
+            );
+        }
+        true
     }
 
     pub(super) fn do_undo_goto(&mut self, seq: u64) {

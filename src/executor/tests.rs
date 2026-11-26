@@ -295,35 +295,6 @@ fn test_execute_insert_tab_not_expanded() {
     assert_eq!(text.as_bytes()[0], b'\t');
 }
 
-// Undo/Redo Executor Tests
-
-#[test]
-fn test_execute_undo_command() {
-    let mut doc = create_doc();
-
-    // Insert something
-    doc.edit(Edit::type_text('x'), EditSource::User).unwrap();
-    assert_eq!(doc.buffer().to_string(), "x");
-
-    // Execute undo command
-    execute_command(Command::ReplayUndo, &mut doc, false, 8, 24, None, None).unwrap();
-    assert_eq!(doc.buffer().to_string(), "");
-}
-
-#[test]
-fn test_execute_redo_command() {
-    let mut doc = create_doc();
-
-    // Insert and undo
-    doc.edit(Edit::type_text('y'), EditSource::User).unwrap();
-    doc.undo();
-    assert_eq!(doc.buffer().to_string(), "");
-
-    // Execute redo command
-    execute_command(Command::ReplayRedo, &mut doc, false, 8, 24, None, None).unwrap();
-    assert_eq!(doc.buffer().to_string(), "y");
-}
-
 #[test]
 fn test_execute_delete_line_single_undo() {
     let mut doc = create_doc();
