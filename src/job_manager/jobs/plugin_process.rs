@@ -1,4 +1,4 @@
-use crate::job_manager::{impl_job_payload, CancellationSignal, Job, JobMessage};
+use crate::job_manager::{CancellationSignal, Job, JobMessage, JobPayload, JobRef, JobTarget};
 use std::io::{Read, Write};
 use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -80,12 +80,16 @@ impl PluginJobEvent {
 }
 
 #[derive(Debug)]
-pub(crate) struct PluginJobPayload {
+pub struct PluginJobPayload {
     pub(crate) job: u64,
     pub(crate) event: PluginJobEvent,
 }
 
-impl_job_payload!(PluginJobPayload);
+impl JobPayload for PluginJobPayload {
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, _job: JobRef) {
+        editor.apply_plugin_job(*self);
+    }
+}
 
 #[derive(Debug)]
 enum JobControl {

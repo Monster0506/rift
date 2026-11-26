@@ -8,7 +8,7 @@ use crate::command_line::commands::completion::{
 use crate::command_line::settings::definitions::create_settings_registry;
 use crate::command_line::settings::registry::SettingsRegistry;
 use crate::document::definitions::{create_document_settings_registry, DocumentOptions};
-use crate::job_manager::{CancellationSignal, Job, JobMessage};
+use crate::job_manager::{CancellationSignal, Job, JobMessage, JobPayload, JobRef, JobTarget};
 use crate::state::UserSettings;
 use std::sync::{mpsc::Sender, LazyLock};
 
@@ -19,13 +19,17 @@ static DOCUMENT_SETTINGS_REGISTRY: LazyLock<SettingsRegistry<DocumentOptions>> =
     LazyLock::new(create_document_settings_registry);
 
 #[derive(Debug, Clone)]
-pub(crate) struct CompletionPayload {
+pub struct CompletionPayload {
     pub(crate) result: CompletionResult,
     pub(crate) input: String,
     pub(crate) token_start: usize,
 }
 
-crate::job_manager::impl_job_payload!(CompletionPayload);
+impl JobPayload for CompletionPayload {
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, _job: JobRef) {
+        editor.apply_completion(*self);
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct CompletionJob {

@@ -1,7 +1,7 @@
 //! Background jobs for git status/diff, following the `DirectoryListJob` template (`job_manager::jobs::explorer`): construct with a `doc_id`, `run()` shells out and sends a `Custom` payload back.
 
 use crate::document::DocumentId;
-use crate::job_manager::{CancellationSignal, Job, JobMessage};
+use crate::job_manager::{CancellationSignal, Job, JobMessage, JobPayload, JobRef, JobTarget};
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 
@@ -14,7 +14,11 @@ pub struct GitStatusResult {
     /// HEAD's subject line, for the status header's `HEAD <sha> <subject>` summary (Enter on it opens the Log browser). `None` on an unborn branch with no commits yet.
     pub(crate) head_subject: Option<String>,
 }
-crate::job_manager::impl_job_payload!(GitStatusResult);
+impl JobPayload for GitStatusResult {
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
+        editor.apply_git_status(job.id, job.token, *self);
+    }
+}
 
 /// Runs `git status --porcelain=v2 --branch --untracked-files=all` and parses it.
 #[derive(Debug)]
@@ -104,7 +108,11 @@ pub struct GitDiffResult {
     pub(crate) staged_side: bool,
     pub(crate) hunks: Vec<crate::git::diff::Hunk>,
 }
-crate::job_manager::impl_job_payload!(GitDiffResult);
+impl JobPayload for GitDiffResult {
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
+        editor.apply_git_diff(job.id, job.token, *self);
+    }
+}
 
 /// Runs `git diff --no-ext-diff [--cached] -- <path>` scoped to one file and
 /// parses it, for status-buffer hunk expansion (`=`).
@@ -223,7 +231,11 @@ pub struct GitBlameResult {
     pub(crate) doc_id: DocumentId,
     pub(crate) lines: Vec<crate::git::blame::BlameLine>,
 }
-crate::job_manager::impl_job_payload!(GitBlameResult);
+impl JobPayload for GitBlameResult {
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
+        editor.apply_git_blame(job.id, job.token, *self);
+    }
+}
 
 /// Runs `git blame --porcelain [<commit>] -- <path>` and parses it.
 #[derive(Debug)]
@@ -312,7 +324,11 @@ pub struct GitLogResult {
     pub(crate) doc_id: DocumentId,
     pub(crate) commits: Vec<crate::git::log::CommitSummary>,
 }
-crate::job_manager::impl_job_payload!(GitLogResult);
+impl JobPayload for GitLogResult {
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
+        editor.apply_git_log(job.id, job.token, *self);
+    }
+}
 
 /// Runs `git log --format=<LOG_FORMAT> [-- <path>]` and parses it.
 #[derive(Debug)]
@@ -395,7 +411,11 @@ pub struct GitShowResult {
     pub(crate) sha: String,
     pub(crate) body: String,
 }
-crate::job_manager::impl_job_payload!(GitShowResult);
+impl JobPayload for GitShowResult {
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
+        editor.apply_git_show(job.id, job.token, *self);
+    }
+}
 
 /// Runs `git show <sha>` for view-only output and honors a configured `diff.external`.
 #[derive(Debug)]
@@ -477,7 +497,11 @@ pub struct GitCommandResult {
     pub(crate) output: String,
     pub(crate) success: bool,
 }
-crate::job_manager::impl_job_payload!(GitCommandResult);
+impl JobPayload for GitCommandResult {
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
+        editor.apply_git_command(job.id, *self);
+    }
+}
 
 /// Runs `git <args>` with whitespace splitting and captures stdout plus stderr for display.
 #[derive(Debug)]
@@ -538,7 +562,11 @@ pub struct GitGutterDiffResult {
     pub(crate) revision: u64,
     pub(crate) signs: Vec<(usize, crate::git::diff::GutterSignKind)>,
 }
-crate::job_manager::impl_job_payload!(GitGutterDiffResult);
+impl JobPayload for GitGutterDiffResult {
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
+        editor.apply_git_gutter(job.id, job.token, *self);
+    }
+}
 
 /// Diffs a `File` buffer's live (possibly unsaved) content against its git index version, for gutter-diff signs. Writes both sides to temp files and shells `git diff --no-ext-diff --no-index -U0`, since there's no `git` plumbing that diffs an index blob against arbitrary in-memory text directly..
 #[derive(Debug)]

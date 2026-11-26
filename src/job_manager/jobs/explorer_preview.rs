@@ -1,5 +1,5 @@
 use crate::document::{DirEntry, DocumentId};
-use crate::job_manager::{CancellationSignal, Job, JobMessage};
+use crate::job_manager::{CancellationSignal, Job, JobMessage, JobPayload, JobRef, JobTarget};
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 
@@ -13,7 +13,11 @@ pub struct ExplorerPreviewResult {
     pub(crate) image: Option<std::sync::Arc<crate::image_view::DecodedImage>>,
 }
 
-crate::job_manager::impl_job_payload!(ExplorerPreviewResult);
+impl JobPayload for ExplorerPreviewResult {
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
+        editor.apply_explorer_preview(job.id, job.token, *self);
+    }
+}
 
 const FILE_PREVIEW_BYTES: usize = 8 * 1024; // 8 KiB
 const CUSTOM_PREVIEW_BYTES: usize = 4 * 1024 * 1024; // 4 MiB

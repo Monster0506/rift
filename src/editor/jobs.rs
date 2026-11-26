@@ -418,178 +418,6 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.update_and_render();
     }
 
-    fn handle_custom_job_payload(
-        &mut self,
-        id: usize,
-        token: Option<AsyncToken>,
-        payload: Box<dyn std::any::Any>,
-    ) {
-        #[cfg(feature = "treesitter")]
-        let payload =
-            match payload.downcast::<crate::job_manager::jobs::syntax::SyntaxParseResult>() {
-                Ok(result) => {
-                    self.apply_syntax_parse(id, token, *result);
-                    return;
-                }
-                Err(p) => p,
-            };
-        self.apply_custom_payload(id, token, payload);
-    }
-
-    fn apply_custom_payload(
-        &mut self,
-        id: usize,
-        token: Option<AsyncToken>,
-        any_payload: Box<dyn std::any::Any>,
-    ) {
-        let any_payload = match any_payload
-            .downcast::<crate::job_manager::jobs::plugin_process::PluginJobPayload>(
-        ) {
-            Ok(payload) => {
-                self.deliver_plugin_job_payload(*payload);
-                return;
-            }
-            Err(p) => p,
-        };
-
-        let any_payload =
-            match any_payload.downcast::<crate::job_manager::jobs::explorer::DirectoryListing>() {
-                Ok(listing) => {
-                    self.apply_directory_listing(id, token, *listing);
-                    return;
-                }
-                Err(p) => p,
-            };
-
-        let any_payload =
-            match any_payload.downcast::<crate::job_manager::jobs::git::GitStatusResult>() {
-                Ok(result) => {
-                    self.apply_git_status(id, token, *result);
-                    return;
-                }
-                Err(p) => p,
-            };
-
-        let any_payload =
-            match any_payload.downcast::<crate::job_manager::jobs::git::GitDiffResult>() {
-                Ok(result) => {
-                    self.apply_git_diff(id, token, *result);
-                    return;
-                }
-                Err(p) => p,
-            };
-
-        let any_payload =
-            match any_payload.downcast::<crate::job_manager::jobs::git::GitBlameResult>() {
-                Ok(result) => {
-                    self.apply_git_blame(id, token, *result);
-                    return;
-                }
-                Err(p) => p,
-            };
-
-        let any_payload =
-            match any_payload.downcast::<crate::job_manager::jobs::git::GitLogResult>() {
-                Ok(result) => {
-                    self.apply_git_log(id, token, *result);
-                    return;
-                }
-                Err(p) => p,
-            };
-
-        let any_payload =
-            match any_payload.downcast::<crate::job_manager::jobs::git::GitShowResult>() {
-                Ok(result) => {
-                    self.apply_git_show(id, token, *result);
-                    return;
-                }
-                Err(p) => p,
-            };
-
-        let any_payload =
-            match any_payload.downcast::<crate::job_manager::jobs::git::GitCommandResult>() {
-                Ok(result) => {
-                    self.apply_git_command(id, *result);
-                    return;
-                }
-                Err(p) => p,
-            };
-
-        let any_payload =
-            match any_payload.downcast::<crate::job_manager::jobs::git::GitGutterDiffResult>() {
-                Ok(result) => {
-                    self.apply_git_gutter(id, token, *result);
-                    return;
-                }
-                Err(p) => p,
-            };
-
-        self.handle_buffer_payload(id, token, any_payload);
-    }
-
-    fn handle_buffer_payload(
-        &mut self,
-        id: usize,
-        token: Option<AsyncToken>,
-        any_payload: Box<dyn std::any::Any>,
-    ) {
-        let any_payload = match any_payload
-            .downcast::<crate::job_manager::jobs::undotree::UndoTreeRenderResult>()
-        {
-            Ok(res) => {
-                self.apply_undo_tree(id, token, *res);
-                return;
-            }
-            Err(p) => p,
-        };
-
-        let any_payload = match any_payload
-            .downcast::<crate::job_manager::jobs::explorer_preview::ExplorerPreviewResult>(
-        ) {
-            Ok(res) => {
-                self.apply_explorer_preview(id, token, *res);
-                return;
-            }
-            Err(p) => p,
-        };
-
-        let any_payload = match any_payload
-            .downcast::<crate::job_manager::jobs::file_operations::FileSaveResult>()
-        {
-            Ok(res) => {
-                self.apply_file_save(id, token, *res);
-                return;
-            }
-            Err(p) => p,
-        };
-
-        let any_payload = match any_payload
-            .downcast::<crate::job_manager::jobs::file_operations::FileLoadResult>()
-        {
-            Ok(res) => {
-                self.apply_file_load(id, token, *res);
-                return;
-            }
-            Err(p) => p,
-        };
-
-        let any_payload = match any_payload
-            .downcast::<crate::job_manager::jobs::file_operations::ImageLoadResult>(
-        ) {
-            Ok(res) => {
-                self.apply_image_load(id, token, *res);
-                return;
-            }
-            Err(p) => p,
-        };
-
-        if let Ok(payload) =
-            any_payload.downcast::<crate::job_manager::jobs::completion::CompletionPayload>()
-        {
-            self.handle_completion_result(*payload);
-        }
-    }
-
     #[cfg(feature = "treesitter")]
     fn attach_preview_syntax(
         &mut self,
@@ -649,8 +477,18 @@ impl<T: TerminalBackend> Editor<T> {
 }
 
 impl<T: TerminalBackend> JobTarget for Editor<T> {
-    fn apply_downcast(&mut self, job: JobRef, payload: Box<dyn std::any::Any>) {
-        self.handle_custom_job_payload(job.id, job.token, payload);
+    fn apply_plugin_job(
+        &mut self,
+        payload: crate::job_manager::jobs::plugin_process::PluginJobPayload,
+    ) {
+        self.deliver_plugin_job_payload(payload);
+    }
+
+    fn apply_completion(
+        &mut self,
+        payload: crate::job_manager::jobs::completion::CompletionPayload,
+    ) {
+        self.handle_completion_result(payload);
     }
 
     fn apply_directory_listing(

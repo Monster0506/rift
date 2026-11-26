@@ -1,26 +1,9 @@
 use super::*;
-use crate::job_manager::{CancellationSignal, JobMessage, JobPayload};
+use crate::job_manager::{CancellationSignal, JobMessage};
 use std::sync::mpsc;
 
 fn make_signal(cancelled: bool) -> CancellationSignal {
     CancellationSignal::new(cancelled)
-}
-
-#[test]
-fn test_explorer_preview_result_job_payload() {
-    let r = ExplorerPreviewResult {
-        right_doc_id: crate::document::DocumentId::new(5),
-        path: PathBuf::from("/tmp"),
-        dir_entries: Some(vec![]),
-        file_text: None,
-        undo_file: None,
-        image: None,
-    };
-    let boxed: Box<dyn JobPayload> = Box::new(r);
-    assert!(boxed
-        .as_any()
-        .downcast_ref::<ExplorerPreviewResult>()
-        .is_some());
 }
 
 #[test]

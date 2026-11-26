@@ -1,5 +1,5 @@
 use crate::document::DocumentId;
-use crate::job_manager::{CancellationSignal, Job, JobMessage};
+use crate::job_manager::{CancellationSignal, Job, JobMessage, JobPayload, JobRef, JobTarget};
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 
@@ -17,7 +17,11 @@ pub struct DirectoryListing {
     pub(crate) entries: Vec<FileEntry>,
 }
 
-crate::job_manager::impl_job_payload!(DirectoryListing);
+impl JobPayload for DirectoryListing {
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
+        editor.apply_directory_listing(job.id, job.token, *self);
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct DirectoryListJob {

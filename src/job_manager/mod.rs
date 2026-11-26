@@ -51,12 +51,7 @@ impl Semaphore {
 
 /// Sealed trait for job payloads to ensure type safety.
 pub trait JobPayload: Any + Send + std::fmt::Debug + 'static {
-    fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-    fn into_any(self: Box<Self>) -> Box<dyn Any>;
-    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
-        editor.apply_downcast(job, self.into_any());
-    }
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef);
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -66,7 +61,8 @@ pub struct JobRef {
 }
 
 pub trait JobTarget {
-    fn apply_downcast(&mut self, job: JobRef, payload: Box<dyn Any>);
+    fn apply_plugin_job(&mut self, payload: jobs::plugin_process::PluginJobPayload);
+    fn apply_completion(&mut self, payload: jobs::completion::CompletionPayload);
     #[cfg(feature = "treesitter")]
     fn apply_syntax_parse(
         &mut self,
@@ -149,24 +145,6 @@ pub trait JobTarget {
     );
 }
 
-/// Implements `JobPayload`'s downcasting boilerplate for a concrete type.
-/// Not a blanket impl: that also matches `Box<dyn JobPayload>`, silently breaking every downcast.
-macro_rules! impl_job_payload {
-    ($t:ty) => {
-        impl $crate::job_manager::JobPayload for $t {
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
-            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-                self
-            }
-            fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
-                self
-            }
-        }
-    };
-}
-pub(crate) use impl_job_payload;
 /// Async operation domain for request epoch tracking and validation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AsyncOpDomain {

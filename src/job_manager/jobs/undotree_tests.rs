@@ -1,6 +1,5 @@
 use super::*;
 use crate::history::UndoTree;
-use crate::job_manager::JobPayload;
 
 fn make_test_tree() -> UndoTree {
     use crate::history::{EditNode, EditTransaction};
@@ -14,22 +13,6 @@ fn make_test_tree() -> UndoTree {
     tree.nodes.get_mut(&0).unwrap().children.push(1);
     tree.current = 1;
     tree
-}
-
-#[test]
-fn test_undotree_render_result_implements_job_payload() {
-    let result = UndoTreeRenderResult {
-        ut_doc_id: crate::document::DocumentId::new(1),
-        text: "* [1] edit1\n* [0] root".to_string(),
-        sequences: vec![1, 0],
-        highlights: vec![(0..1, Color::Magenta)],
-    };
-    // JobPayload::as_any downcasting round-trip
-    let boxed: Box<dyn JobPayload> = Box::new(result);
-    assert!(boxed
-        .as_any()
-        .downcast_ref::<UndoTreeRenderResult>()
-        .is_some());
 }
 
 #[test]

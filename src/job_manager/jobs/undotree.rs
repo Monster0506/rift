@@ -1,7 +1,7 @@
 use crate::color::Color;
 use crate::document::DocumentId;
 use crate::history::{EditSeq, UndoTree};
-use crate::job_manager::{CancellationSignal, Job, JobMessage};
+use crate::job_manager::{CancellationSignal, Job, JobMessage, JobPayload, JobRef, JobTarget};
 use std::ops::Range;
 use std::sync::mpsc::Sender;
 
@@ -18,7 +18,11 @@ pub struct UndoTreeRenderResult {
     pub(crate) highlights: Vec<(Range<usize>, Color)>,
 }
 
-crate::job_manager::impl_job_payload!(UndoTreeRenderResult);
+impl JobPayload for UndoTreeRenderResult {
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
+        editor.apply_undo_tree(job.id, job.token, *self);
+    }
+}
 
 /// Job that renders an undo-tree to text in a background thread, on a cloned
 /// snapshot so the expensive `render_tree_to_text` call never blocks the main thread.

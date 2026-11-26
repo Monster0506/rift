@@ -4,7 +4,7 @@ use crate::character::Character;
 use crate::document::DocumentId;
 use crate::document::LineEnding;
 use crate::history::EditSeq;
-use crate::job_manager::{CancellationSignal, Job, JobMessage};
+use crate::job_manager::{CancellationSignal, Job, JobMessage, JobPayload, JobRef, JobTarget};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -17,7 +17,11 @@ pub struct FileSaveResult {
     pub(crate) content_hash: crate::history::persist::Sha256Digest,
 }
 
-crate::job_manager::impl_job_payload!(FileSaveResult);
+impl JobPayload for FileSaveResult {
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
+        editor.apply_file_save(job.id, job.token, *self);
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct FileSaveJob {
@@ -171,7 +175,11 @@ pub struct FileLoadResult {
     pub(crate) content_hash: crate::history::persist::Sha256Digest,
 }
 
-crate::job_manager::impl_job_payload!(FileLoadResult);
+impl JobPayload for FileLoadResult {
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
+        editor.apply_file_load(job.id, job.token, *self);
+    }
+}
 
 /// A file opened as an image buffer instead of text.
 #[derive(Debug)]
@@ -181,7 +189,11 @@ pub struct ImageLoadResult {
     pub(crate) is_reload: bool,
 }
 
-crate::job_manager::impl_job_payload!(ImageLoadResult);
+impl JobPayload for ImageLoadResult {
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
+        editor.apply_image_load(job.id, job.token, *self);
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct FileLoadJob {

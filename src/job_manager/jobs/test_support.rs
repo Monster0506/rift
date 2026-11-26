@@ -4,7 +4,7 @@ use std::sync::mpsc::Receiver;
 /// The first `Custom` payload of type `T` received, downcast and unboxed.
 pub(super) fn recv_custom_payload<T: JobPayload>(rx: &Receiver<JobMessage>) -> Option<Box<T>> {
     rx.try_iter().find_map(|m| match m {
-        JobMessage::Custom(_, payload) => payload.into_any().downcast::<T>().ok(),
+        JobMessage::Custom(_, payload) => (payload as Box<dyn std::any::Any>).downcast::<T>().ok(),
         _ => None,
     })
 }

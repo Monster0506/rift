@@ -1,6 +1,6 @@
 use crate::buffer::TextBuffer;
 use crate::document::DocumentId;
-use crate::job_manager::{CancellationSignal, Job, JobMessage};
+use crate::job_manager::{CancellationSignal, Job, JobMessage, JobPayload, JobRef, JobTarget};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use tree_sitter::{Parser, Tree};
@@ -15,7 +15,11 @@ pub struct SyntaxParseResult {
     pub(crate) revision: u64,
 }
 
-crate::job_manager::impl_job_payload!(SyntaxParseResult);
+impl JobPayload for SyntaxParseResult {
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
+        editor.apply_syntax_parse(job.id, job.token, *self);
+    }
+}
 
 // Manual Debug because Parser and TextBuffer might not impl Debug
 pub(crate) struct SyntaxParseJob {
