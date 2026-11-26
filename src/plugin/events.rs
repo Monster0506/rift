@@ -222,8 +222,8 @@ impl EventPayload {
                 t.set("col", lua_int(*col))?;
             }
             Self::ModeChanged { from, to } => {
-                t.set("from", format!("{from:?}").to_lowercase())?;
-                t.set("to", format!("{to:?}").to_lowercase())?;
+                t.set("from", from.as_str())?;
+                t.set("to", to.as_str())?;
             }
             Self::WindowResized { rows, cols } => {
                 t.set("rows", i64::from(*rows))?;

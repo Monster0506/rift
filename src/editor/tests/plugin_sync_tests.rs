@@ -38,6 +38,24 @@ fn mode_changed_handler_can_start_an_operator() {
 }
 
 #[test]
+fn mode_changed_and_get_mode_use_the_same_visual_mode_name() {
+    let mut editor = lua_editor("one two\n");
+    lua_ok(
+        &editor,
+        "rift.on('ModeChanged', function(ev) \
+           _G.mode_names = ev.from .. ':' .. ev.to .. ':' .. rift.get_mode() \
+         end)",
+    );
+
+    editor.set_mode(crate::mode::Mode::VisualLine);
+
+    lua_ok(
+        &editor,
+        "assert(_G.mode_names == 'normal:visual:visual', _G.mode_names)",
+    );
+}
+
+#[test]
 fn global_setting_change_reaches_get_option() {
     let mut editor = lua_editor("hello\n");
     lua_ok(&editor, "assert(rift.get_option('clipboard.size') ~= 42)");
