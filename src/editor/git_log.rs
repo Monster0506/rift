@@ -37,11 +37,10 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
         self.open_buffer(doc, crate::document::manager::Placement::Focused);
-        if let Err(e) = self.document_manager.switch_to_document(id) {
+        if let Err(e) = self.focus_document(id) {
             self.state.handle_error(e);
             return None;
         }
-        self.split_tree.set_focused_document(id);
 
         let job = crate::job_manager::jobs::git::GitLogJob::new(id, repo_root, path);
         self.job_manager.spawn(job);

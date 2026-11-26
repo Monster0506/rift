@@ -725,12 +725,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             PluginMutation::SwitchToBuffer(id) => {
                 if self.document_manager.get_document(id).is_some() {
-                    self.save_current_view_state();
-                    if self.document_manager.switch_to_document(id).is_ok() {
-                        self.split_tree.set_focused_document(id);
-                        self.restore_view_state();
-                        self.sync_state_with_active_document();
-                    }
+                    let _ = self.focus_document(id);
                 }
             }
             PluginMutation::OpenFile { path, force } => {
@@ -880,8 +875,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
         let id = self.open_buffer(draft, crate::document::manager::Placement::Focused);
-        self.split_tree.set_focused_document(id);
-        self.sync_state_with_active_document();
+        let _ = self.focus_document(id);
         let _ = self.force_full_redraw();
         self.call_plugins(|editor| {
             editor

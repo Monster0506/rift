@@ -521,7 +521,8 @@ impl DocumentManager {
         Ok(())
     }
 
-    pub(crate) fn switch_next_tab(&mut self) {
+    #[must_use]
+    pub(crate) fn neighbor_tab(&self, forward: bool) -> Option<DocumentId> {
         let public_tabs: Vec<usize> = self
             .tab_order
             .iter()
@@ -529,44 +530,20 @@ impl DocumentManager {
             .filter(|(_, id)| !self.private_document_ids.contains(*id))
             .map(|(i, _)| i)
             .collect();
-        if public_tabs.is_empty() {
-            return;
-        }
-        let current_pos = public_tabs.iter().position(|&i| i == self.current_tab);
-        match current_pos {
-            None => self.current_tab = public_tabs[0],
-            Some(pos) if public_tabs.len() > 1 => {
-                let next_pos = (pos + 1) % public_tabs.len();
-                self.current_tab = public_tabs[next_pos];
-            }
-            Some(_) => {}
-        }
-    }
-
-    pub(crate) fn switch_prev_tab(&mut self) {
-        let public_tabs: Vec<usize> = self
-            .tab_order
-            .iter()
-            .enumerate()
-            .filter(|(_, id)| !self.private_document_ids.contains(*id))
-            .map(|(i, _)| i)
-            .collect();
-        if public_tabs.is_empty() {
-            return;
-        }
-        let current_pos = public_tabs.iter().position(|&i| i == self.current_tab);
-        match current_pos {
-            None => self.current_tab = public_tabs[0],
-            Some(pos) if public_tabs.len() > 1 => {
-                let prev_pos = if pos == 0 {
-                    public_tabs.len() - 1
+        let first = *public_tabs.first()?;
+        let index = match public_tabs.iter().position(|&i| i == self.current_tab) {
+            None => first,
+            Some(pos) => {
+                let len = public_tabs.len();
+                let target = if forward {
+                    (pos + 1) % len
                 } else {
-                    pos - 1
+                    (pos + len - 1) % len
                 };
-                self.current_tab = public_tabs[prev_pos];
+                public_tabs[target]
             }
-            Some(_) => {}
-        }
+        };
+        Some(self.tab_order[index])
     }
 
     #[must_use]

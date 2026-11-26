@@ -283,13 +283,6 @@ impl<T: TerminalBackend> Editor<T> {
         });
     }
 
-    pub(super) fn save_current_view_state(&mut self) {
-        let (top_line, left_col) = self.render_system.viewport.get_scroll();
-        if let Some(doc) = self.document_manager.active_document_mut() {
-            doc.save_view_state(top_line, left_col);
-        }
-    }
-
     pub(super) fn restore_view_state(&mut self) {
         if let Some(doc) = self.document_manager.active_document() {
             let view_state = doc.get_view_state();

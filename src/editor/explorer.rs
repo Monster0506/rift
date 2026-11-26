@@ -303,11 +303,10 @@ impl<T: TerminalBackend> Editor<T> {
         );
 
         self.open_buffer(doc, crate::document::manager::Placement::Focused);
-        if let Err(e) = self.document_manager.switch_to_document(id) {
+        if let Err(e) = self.focus_document(id) {
             self.state.handle_error(e);
             return;
         }
-        self.split_tree.set_focused_document(id);
 
         self.last_notification_generation = self.state.error_manager.notifications().generation;
 
@@ -531,9 +530,7 @@ impl<T: TerminalBackend> Editor<T> {
         let target_exists = self.document_manager.get_document(target_id).is_some();
         self.close_split_panel();
         if target_exists {
-            let _ = self.document_manager.switch_to_document(target_id);
-            self.split_tree.set_focused_document(target_id);
-            self.sync_state_with_active_document();
+            let _ = self.focus_document(target_id);
             let _ = self.force_full_redraw();
         }
     }

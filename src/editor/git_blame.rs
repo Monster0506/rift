@@ -240,7 +240,7 @@ impl<T: TerminalBackend> Editor<T> {
                     self.close_buffer(old_doc_id, crate::document::manager::RemovalIntent::Force);
             }
         }
-        let _ = self.document_manager.switch_to_document(active_doc_id);
+        let _ = self.focus_document(active_doc_id);
         true
     }
 
@@ -348,8 +348,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
         if self.document_manager.get_document(linked_doc_id).is_some() {
-            self.split_tree.set_focused_document(linked_doc_id);
-            let _ = self.document_manager.switch_to_document(linked_doc_id);
+            let _ = self.focus_document(linked_doc_id);
         }
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();

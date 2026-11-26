@@ -50,60 +50,52 @@ impl<T: TerminalBackend> Editor<T> {
         file_path: Option<String>,
         force: bool,
     ) -> Result<(), RiftError> {
-        if let Some(path_str) = file_path {
-            let path_str = self.resolve_link_path(path_str);
-            let path = std::path::PathBuf::from(&path_str);
-            if let Some(existing) = self.document_manager.find_open_document_id(&path) {
-                self.save_current_view_state();
-                self.document_manager.switch_to_document(existing)?;
-                self.restore_view_state();
-            } else if path.exists() {
-                self.save_current_view_state();
-                let id = self.document_manager.next_id();
-                match crate::document::Document::try_open_undo_file(id, &path) {
-                    Some(Ok(doc)) => {
-                        self.open_buffer(doc, crate::document::manager::Placement::Focused);
-                    }
-                    Some(Err(e)) => return Err(e),
-                    None => {
-                        let doc_id = self.open_placeholder(&path_str)?;
-                        let job = crate::job_manager::jobs::file_operations::FileLoadJob::new(
-                            doc_id,
-                            path.clone(),
-                        );
-                        let job_id = self.job_manager.spawn(job);
-                        self.file_load_jobs.insert(job_id, doc_id);
-                    }
-                }
-            } else if crate::document::manager::parent_dir_missing(&path) {
+        let Some(path_str) = file_path else {
+            let Some(buf) = self.document_manager.active_document_id() else {
                 return Err(RiftError::new(
-                    ErrorType::Io,
-                    crate::constants::errors::PARENT_DIR_MISSING,
-                    crate::constants::errors::MSG_PARENT_DIR_MISSING,
+                    ErrorType::Internal,
+                    crate::constants::errors::INTERNAL_ERROR,
+                    "No active document",
                 ));
-            } else {
-                self.save_current_view_state();
-                let doc_id = self.open_placeholder(&path_str)?;
-                #[cfg(feature = "lsp")]
-                self.lsp_notify_open(doc_id);
-                #[cfg(not(feature = "lsp"))]
-                let _ = doc_id;
-            }
-        } else if let Some(buf) = self.document_manager.active_document_id() {
+            };
             self.reload_document(buf, force)?;
-        } else {
+            return self.focus_document(buf);
+        };
+        let path_str = self.resolve_link_path(path_str);
+        let path = std::path::PathBuf::from(&path_str);
+        let target = if let Some(existing) = self.document_manager.find_open_document_id(&path) {
+            existing
+        } else if path.exists() {
+            let id = self.document_manager.next_id();
+            match crate::document::Document::try_open_undo_file(id, &path) {
+                Some(Ok(doc)) => {
+                    self.open_buffer(doc, crate::document::manager::Placement::Background)
+                }
+                Some(Err(e)) => return Err(e),
+                None => {
+                    let doc_id = self.open_placeholder(&path_str)?;
+                    let job = crate::job_manager::jobs::file_operations::FileLoadJob::new(
+                        doc_id,
+                        path.clone(),
+                    );
+                    let job_id = self.job_manager.spawn(job);
+                    self.file_load_jobs.insert(job_id, doc_id);
+                    doc_id
+                }
+            }
+        } else if crate::document::manager::parent_dir_missing(&path) {
             return Err(RiftError::new(
-                ErrorType::Internal,
-                crate::constants::errors::INTERNAL_ERROR,
-                "No active document",
+                ErrorType::Io,
+                crate::constants::errors::PARENT_DIR_MISSING,
+                crate::constants::errors::MSG_PARENT_DIR_MISSING,
             ));
-        }
-
-        if let Some(doc_id) = self.document_manager.active_document_id() {
-            self.split_tree.set_focused_document(doc_id);
-        }
-        self.sync_state_with_active_document();
-        Ok(())
+        } else {
+            let doc_id = self.open_placeholder(&path_str)?;
+            #[cfg(feature = "lsp")]
+            self.lsp_notify_open(doc_id);
+            doc_id
+        };
+        self.focus_document(target)
     }
 
     pub(super) fn with_document_target<R>(
@@ -224,8 +216,7 @@ impl<T: TerminalBackend> Editor<T> {
         doc.set_handle(reservation.handle());
         let draft = crate::document::manager::DocumentDraft::new(reservation, doc)?;
         self.open_buffer(draft, crate::document::manager::Placement::Focused);
-        self.split_tree.set_focused_document(id);
-        self.sync_state_with_active_document();
+        self.focus_document(id)?;
         let _ = self.force_full_redraw();
         self.call_plugins(|editor| {
             editor
@@ -270,10 +261,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.open_buffer(doc, crate::document::manager::Placement::Focused);
 
-        self.document_manager.switch_to_document(id)?;
-        self.split_tree.set_focused_document(id);
-
-        self.sync_state_with_active_document();
+        self.focus_document(id)?;
         let _ = self.force_full_redraw();
 
         #[cfg(feature = "terminal_emulation")]

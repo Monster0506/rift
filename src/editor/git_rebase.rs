@@ -296,12 +296,10 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
         self.open_buffer(doc, crate::document::manager::Placement::Focused);
-        if let Err(e) = self.document_manager.switch_to_document(id) {
+        if let Err(e) = self.focus_document(id) {
             self.state.handle_error(e);
             return;
         }
-        self.split_tree.set_focused_document(id);
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
 
@@ -678,12 +676,10 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = self.document_manager.get_document_mut(rebase_doc_id) {
             doc.set_git_rebase_message_override(sha, message);
         }
-        if let Err(e) = self.document_manager.switch_to_document(rebase_doc_id) {
+        if let Err(e) = self.focus_document(rebase_doc_id) {
             self.state.handle_error(e);
             return;
         }
-        self.split_tree.set_focused_document(rebase_doc_id);
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
 }

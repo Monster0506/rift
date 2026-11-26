@@ -27,8 +27,26 @@ impl<T: TerminalBackend> Editor<T> {
     ) -> Result<DocumentId, crate::error::RiftError> {
         let mut doc = crate::document::Document::new(self.document_manager.next_id())?;
         doc.set_path(path.as_ref());
-        Ok(self.open_buffer(doc, Placement::Focused))
+        Ok(self.open_buffer(doc, Placement::Background))
     }
+
+    pub(crate) fn focus_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
+        let previous = self.split_tree.focused_window().document_id;
+        if previous != id {
+            let (top_line, left_col) = self.render_system.viewport.get_scroll();
+            if let Some(doc) = self.document_manager.get_document_mut(previous) {
+                doc.save_view_state(top_line, left_col);
+            }
+        }
+        self.document_manager.switch_to_document(id)?;
+        self.split_tree.set_focused_document(id);
+        if previous != id {
+            self.restore_view_state();
+        }
+        self.sync_state_with_active_document();
+        Ok(())
+    }
+
     pub(crate) fn close_buffer(
         &mut self,
         id: DocumentId,

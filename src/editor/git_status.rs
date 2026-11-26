@@ -173,11 +173,10 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
         self.open_buffer(doc, crate::document::manager::Placement::Focused);
-        if let Err(e) = self.document_manager.switch_to_document(id) {
+        if let Err(e) = self.focus_document(id) {
             self.state.handle_error(e);
             return None;
         }
-        self.split_tree.set_focused_document(id);
 
         let job = crate::job_manager::jobs::git::GitStatusJob::new(id, repo_root);
         self.job_manager.spawn(job);
@@ -572,12 +571,10 @@ impl<T: TerminalBackend> Editor<T> {
             initial_message,
         );
         self.open_buffer(doc, crate::document::manager::Placement::Focused);
-        if let Err(e) = self.document_manager.switch_to_document(id) {
+        if let Err(e) = self.focus_document(id) {
             self.state.handle_error(e);
             return;
         }
-        self.split_tree.set_focused_document(id);
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
 
@@ -834,12 +831,10 @@ impl<T: TerminalBackend> Editor<T> {
         let mut doc = crate::document::Document::new_scratch(id, format!("[Git: {args}]"), &lines);
         doc.set_read_only(true);
         self.open_buffer(doc, crate::document::manager::Placement::Focused);
-        if let Err(e) = self.document_manager.switch_to_document(id) {
+        if let Err(e) = self.focus_document(id) {
             self.state.handle_error(e);
             return;
         }
-        self.split_tree.set_focused_document(id);
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
 
@@ -853,12 +848,10 @@ impl<T: TerminalBackend> Editor<T> {
         let mut doc = crate::document::Document::new_scratch(id, "[Git Help]".to_string(), &lines);
         doc.set_read_only(true);
         self.open_buffer(doc, crate::document::manager::Placement::Focused);
-        if let Err(e) = self.document_manager.switch_to_document(id) {
+        if let Err(e) = self.focus_document(id) {
             self.state.handle_error(e);
             return;
         }
-        self.split_tree.set_focused_document(id);
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
 }

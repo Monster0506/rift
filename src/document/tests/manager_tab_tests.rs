@@ -128,25 +128,33 @@ fn test_switching_tabs() {
         Some(crate::document::DocumentId::new(3))
     );
 
-    manager.switch_prev_tab();
+    manager
+        .switch_to_document(manager.neighbor_tab(false).unwrap())
+        .unwrap();
     assert_eq!(
         manager.active_document_id(),
         Some(crate::document::DocumentId::new(2))
     );
 
-    manager.switch_prev_tab();
+    manager
+        .switch_to_document(manager.neighbor_tab(false).unwrap())
+        .unwrap();
     assert_eq!(
         manager.active_document_id(),
         Some(crate::document::DocumentId::new(1))
     );
 
-    manager.switch_prev_tab(); // Wrap around
+    manager
+        .switch_to_document(manager.neighbor_tab(false).unwrap())
+        .unwrap(); // Wrap around
     assert_eq!(
         manager.active_document_id(),
         Some(crate::document::DocumentId::new(3))
     );
 
-    manager.switch_next_tab(); // Wrap around
+    manager
+        .switch_to_document(manager.neighbor_tab(true).unwrap())
+        .unwrap(); // Wrap around
     assert_eq!(
         manager.active_document_id(),
         Some(crate::document::DocumentId::new(1))
@@ -174,7 +182,9 @@ fn test_switching_tabs_from_private_document_lands_on_first_public_tab() {
         Some(crate::document::DocumentId::new(3))
     );
 
-    manager.switch_next_tab();
+    manager
+        .switch_to_document(manager.neighbor_tab(true).unwrap())
+        .unwrap();
     assert_eq!(
         manager.active_document_id(),
         Some(crate::document::DocumentId::new(1)),
@@ -185,7 +195,9 @@ fn test_switching_tabs_from_private_document_lands_on_first_public_tab() {
         Document::new(crate::document::DocumentId::new(4)).unwrap(),
         crate::document::manager::Placement::Private,
     );
-    manager.switch_prev_tab();
+    manager
+        .switch_to_document(manager.neighbor_tab(false).unwrap())
+        .unwrap();
     assert_eq!(
         manager.active_document_id(),
         Some(crate::document::DocumentId::new(1)),

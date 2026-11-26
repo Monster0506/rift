@@ -552,8 +552,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.handle_error(e);
             } else {
                 if let Some(new_doc_id) = self.document_manager.active_document_id() {
-                    self.split_tree.set_focused_document(new_doc_id);
-                    self.sync_state_with_active_document();
+                    let _ = self.focus_document(new_doc_id);
                     self.call_plugins(|editor| {
                         editor.plugin_host.dispatch(
                             &crate::plugin::events::EditorEvent::BufEnter { buf: new_doc_id },
@@ -569,53 +568,29 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn do_buffer_next(&mut self) {
-        let old_buf = self.active_document_id();
-        self.save_current_view_state();
-        self.document_manager.switch_next_tab();
-        if let Some(doc_id) = self.document_manager.active_document_id() {
-            self.split_tree.set_focused_document(doc_id);
-        }
-        self.restore_view_state();
-        self.sync_state_with_active_document();
-        self.state.clear_command_line();
-        if let Some(new_buf) = self.document_manager.active_document_id() {
-            if new_buf != old_buf {
-                self.call_plugins(|editor| {
-                    editor
-                        .plugin_host
-                        .dispatch(&crate::plugin::events::EditorEvent::BufLeave { buf: old_buf });
-                    editor
-                        .plugin_host
-                        .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: new_buf });
-                });
-            }
-        }
-        if let Err(e) = self.force_full_redraw() {
-            self.state.handle_error(e);
-        }
+        self.do_buffer_cycle(true);
     }
 
     pub(super) fn do_buffer_prev(&mut self) {
+        self.do_buffer_cycle(false);
+    }
+
+    fn do_buffer_cycle(&mut self, forward: bool) {
         let old_buf = self.active_document_id();
-        self.save_current_view_state();
-        self.document_manager.switch_prev_tab();
-        if let Some(doc_id) = self.document_manager.active_document_id() {
-            self.split_tree.set_focused_document(doc_id);
+        if let Some(target) = self.document_manager.neighbor_tab(forward) {
+            let _ = self.focus_document(target);
         }
-        self.restore_view_state();
-        self.sync_state_with_active_document();
         self.state.clear_command_line();
-        if let Some(new_buf) = self.document_manager.active_document_id() {
-            if new_buf != old_buf {
-                self.call_plugins(|editor| {
-                    editor
-                        .plugin_host
-                        .dispatch(&crate::plugin::events::EditorEvent::BufLeave { buf: old_buf });
-                    editor
-                        .plugin_host
-                        .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: new_buf });
-                });
-            }
+        let new_buf = self.active_document_id();
+        if new_buf != old_buf {
+            self.call_plugins(|editor| {
+                editor
+                    .plugin_host
+                    .dispatch(&crate::plugin::events::EditorEvent::BufLeave { buf: old_buf });
+                editor
+                    .plugin_host
+                    .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: new_buf });
+            });
         }
         if let Err(e) = self.force_full_redraw() {
             self.state.handle_error(e);
@@ -639,14 +614,10 @@ impl<T: TerminalBackend> Editor<T> {
             self.state.clear_command_line();
             return;
         }
-        self.save_current_view_state();
-        if let Err(e) = self.document_manager.switch_to_document(target) {
+        if let Err(e) = self.focus_document(target) {
             self.state.handle_error(e);
             return;
         }
-        self.split_tree.set_focused_document(target);
-        self.restore_view_state();
-        self.sync_state_with_active_document();
         self.state.clear_command_line();
         self.call_plugins(|editor| {
             editor
