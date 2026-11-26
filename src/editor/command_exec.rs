@@ -116,6 +116,11 @@ impl<T: TerminalBackend> Editor<T> {
                 crate::perf::PerfFields::default()
             );
             for &(buf, changes) in &drained {
+                if changes.opened {
+                    if let Some(event) = editor.open_event(buf) {
+                        editor.plugin_host.dispatch(&event);
+                    }
+                }
                 if changes.text {
                     editor
                         .plugin_host

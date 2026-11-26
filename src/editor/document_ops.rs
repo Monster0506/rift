@@ -91,8 +91,7 @@ impl<T: TerminalBackend> Editor<T> {
             ));
         } else {
             let doc_id = self.open_placeholder(&path_str)?;
-            #[cfg(feature = "lsp")]
-            self.lsp_notify_open(doc_id);
+            self.announce_buffer(doc_id);
             doc_id
         };
         self.focus_document(target)
@@ -184,15 +183,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.open_buffer(draft, crate::document::manager::Placement::Focused);
         self.focus_document(id)?;
         let _ = self.force_full_redraw();
-        self.call_plugins(|editor| {
-            editor
-                .plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::BufOpen {
-                    buf: id,
-                    path: None,
-                    filetype: None,
-                });
-        });
         Ok(id)
     }
 

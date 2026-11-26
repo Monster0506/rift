@@ -1131,35 +1131,21 @@ impl<T: TerminalBackend> Editor<T> {
         if res.is_reload {
             doc.mark_lsp_full_sync();
         }
-        let path = doc.path().map(std::path::Path::to_path_buf);
-        let filetype = doc.syntax.as_ref().map(|s| s.language_name.clone());
         self.restore_persisted_undo(res.document_id, res.content_hash);
 
-        #[cfg(feature = "treesitter")]
-        self.attach_syntax_for_document(res.document_id);
-        self.spawn_syntax_parse_job(res.document_id);
-
-        self.call_plugins(|editor| {
-            if res.is_reload {
+        if res.is_reload {
+            #[cfg(feature = "treesitter")]
+            self.attach_syntax_for_document(res.document_id);
+            self.spawn_syntax_parse_job(res.document_id);
+            self.call_plugins(|editor| {
                 editor
                     .plugin_host
                     .dispatch(&crate::plugin::events::EditorEvent::BufReload {
                         buf: res.document_id,
                     });
-            } else {
-                editor
-                    .plugin_host
-                    .dispatch(&crate::plugin::events::EditorEvent::BufOpen {
-                        buf: res.document_id,
-                        path,
-                        filetype,
-                    });
-            }
-        });
-
-        #[cfg(feature = "lsp")]
-        if !res.is_reload {
-            self.lsp_notify_open(res.document_id);
+            });
+        } else {
+            self.announce_buffer(res.document_id);
         }
         #[cfg(feature = "lsp")]
         self.apply_pending_goto(&token, res.document_id);
@@ -1207,26 +1193,24 @@ impl<T: TerminalBackend> Editor<T> {
                 self.scheduler.goto_after_load = None;
             }
         }
-        let path = self
+        if let Some(doc) = self
             .document_manager
             .get_document_by_handle_mut(token.handle)
-            .and_then(|doc| {
-                doc.convert_to_image_view(res.image);
-                doc.path().map(std::path::Path::to_path_buf)
-            });
+        {
+            doc.convert_to_image_view(res.image);
+        }
 
-        let event = if res.is_reload {
-            crate::plugin::events::EditorEvent::BufReload {
-                buf: res.document_id,
-            }
+        if res.is_reload {
+            self.call_plugins(|editor| {
+                editor
+                    .plugin_host
+                    .dispatch(&crate::plugin::events::EditorEvent::BufReload {
+                        buf: res.document_id,
+                    });
+            });
         } else {
-            crate::plugin::events::EditorEvent::BufOpen {
-                buf: res.document_id,
-                path,
-                filetype: None,
-            }
-        };
-        self.call_plugins(|editor| editor.plugin_host.dispatch(&event));
+            self.announce_buffer(res.document_id);
+        }
 
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();

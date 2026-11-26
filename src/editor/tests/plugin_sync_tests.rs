@@ -546,6 +546,47 @@ fn buf_open_from_scratch_buffer_sees_the_new_buffer_in_the_list() {
 }
 
 #[test]
+fn buf_open_after_a_file_load_carries_the_filetype() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("main.rs");
+    std::fs::write(&path, "fn main() {}\n").unwrap();
+    let mut editor = lua_editor("");
+    lua_ok(
+        &editor,
+        "rift.on('BufOpen', function(ev) _G.ft = ev.filetype end)",
+    );
+
+    open_and_load(&mut editor, &path);
+    let _ = editor.update_and_render();
+
+    lua_ok(&editor, "assert(_G.ft == 'rust', tostring(_G.ft))");
+}
+
+#[test]
+fn opening_the_explorer_raises_buf_open_for_its_buffers() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.txt"), "a\n").unwrap();
+    let mut editor = lua_editor("hello\n");
+    lua_ok(
+        &editor,
+        "_G.opened = {} rift.on('BufOpen', function(ev) table.insert(_G.opened, ev.buf) end)",
+    );
+
+    editor.open_explorer(dir.path().to_path_buf());
+    let _ = editor.update_and_render();
+
+    let dir_buf = editor.panel_layout.as_ref().unwrap().dir_doc_id.get();
+    lua_ok(
+        &editor,
+        &format!(
+            "local found = false \
+             for _, b in ipairs(_G.opened) do if b == {dir_buf} then found = true end end \
+             assert(found, #_G.opened)"
+        ),
+    );
+}
+
+#[test]
 fn editor_quit_reads_the_final_cursor() {
     let mut editor = lua_editor("one\ntwo\nthree\n");
     lua_ok(

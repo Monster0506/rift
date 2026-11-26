@@ -42,6 +42,16 @@ impl<T: TerminalBackend> Editor<T> {
         new: impl Into<NewDocument>,
         placement: Placement,
     ) -> DocumentId {
+        let id = self.insert_buffer(new, placement);
+        self.announce_buffer(id);
+        id
+    }
+
+    pub(crate) fn insert_buffer(
+        &mut self,
+        new: impl Into<NewDocument>,
+        placement: Placement,
+    ) -> DocumentId {
         let handle = self.document_manager.insert(new, placement);
         if let Some(kind) = self
             .document_manager
@@ -53,13 +63,57 @@ impl<T: TerminalBackend> Editor<T> {
         handle.doc_id()
     }
 
+    pub(crate) fn announce_buffer(&mut self, id: DocumentId) {
+        let Some(kind) = self
+            .document_manager
+            .get_document(id)
+            .map(crate::document::Document::buffer_kind_id)
+        else {
+            return;
+        };
+        if kind == crate::document::runtime::BufferKindId::FILE {
+            #[cfg(feature = "treesitter")]
+            self.attach_syntax_for_document(id);
+            if self
+                .document_manager
+                .get_document(id)
+                .is_some_and(|d| d.syntax.is_some())
+            {
+                self.spawn_syntax_parse_job(id);
+            }
+            #[cfg(feature = "lsp")]
+            self.lsp_notify_open(id);
+        }
+        if let Some(doc) = self.document_manager.get_document_mut(id) {
+            doc.record_open();
+        }
+    }
+
+    pub(crate) fn open_event(&self, buf: DocumentId) -> Option<crate::plugin::events::EditorEvent> {
+        let doc = self.document_manager.get_document(buf)?;
+        let path = doc.path().map(std::path::Path::to_path_buf);
+        let filetype = doc
+            .syntax
+            .as_ref()
+            .map(|s| s.language_name.clone())
+            .or_else(|| {
+                path.as_deref()
+                    .and_then(|p| self.language_loader.language_name_for_file(p))
+            });
+        Some(crate::plugin::events::EditorEvent::BufOpen {
+            buf,
+            path,
+            filetype,
+        })
+    }
+
     pub(crate) fn open_placeholder(
         &mut self,
         path: impl AsRef<std::path::Path>,
     ) -> Result<DocumentId, crate::error::RiftError> {
         let mut doc = crate::document::Document::new(self.document_manager.next_id())?;
         doc.set_path(path.as_ref());
-        Ok(self.open_buffer(doc, Placement::Background))
+        Ok(self.insert_buffer(doc, Placement::Background))
     }
 
     pub(crate) fn with_document_target<R>(

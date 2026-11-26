@@ -153,7 +153,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         crate::keymap::defaults::register_defaults(&mut editor.keymap);
-        editor.open_buffer(startup_doc, crate::document::manager::Placement::Focused);
+        editor.insert_buffer(startup_doc, crate::document::manager::Placement::Focused);
         editor.load_plugins();
         if effective_file_path.is_some() {
             editor.restore_startup_undo(initial_doc_id);
@@ -178,37 +178,8 @@ impl<T: TerminalBackend> Editor<T> {
         self.startup_first_paint = Some(crate::time::Instant::now());
 
         if let Some(doc_id) = self.document_manager.active_document_id() {
-            #[cfg(feature = "treesitter")]
-            self.attach_syntax_for_document(doc_id);
-            if self
-                .document_manager
-                .get_document(doc_id)
-                .is_some_and(|d| d.syntax.is_some())
-            {
-                self.spawn_syntax_parse_job(doc_id);
-            }
-        }
-
-        {
-            let buf_info = self.document_manager.active_document().map(|doc| {
-                let buf = doc.id;
-                let path = doc.path().map(std::path::Path::to_path_buf);
-                let filetype = doc.syntax.as_ref().map(|s| s.language_name.clone());
-                (buf, path, filetype)
-            });
-            if let Some((buf, path, filetype)) = buf_info {
-                self.call_plugins(|editor| {
-                    editor
-                        .plugin_host
-                        .dispatch(&crate::plugin::events::EditorEvent::BufOpen {
-                            buf,
-                            path,
-                            filetype,
-                        });
-                });
-                #[cfg(feature = "lsp")]
-                self.lsp_notify_open(buf);
-            }
+            self.announce_buffer(doc_id);
+            self.deliver_document_changes();
         }
 
         self.call_plugins(|editor| {

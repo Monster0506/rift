@@ -837,13 +837,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.call_plugins(|editor| {
             editor
                 .plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::BufOpen {
-                    buf: id,
-                    path: None,
-                    filetype: None,
-                });
-            editor
-                .plugin_host
                 .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: id });
         });
     }
