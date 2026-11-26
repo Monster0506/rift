@@ -850,3 +850,27 @@ fn modifiers_on_characters_do_not_fall_back_to_the_bare_character() {
         MatchResult::None
     );
 }
+
+#[test]
+fn every_default_binding_row_parses() {
+    for &(contexts, keys, action, description) in crate::keymap::defaults::DEFAULT_BINDINGS {
+        assert!(!contexts.is_empty(), "{keys} has no context");
+        assert!(
+            crate::key::notation::parse_key_sequence(keys).is_some(),
+            "bad keys {keys}"
+        );
+        assert!(action.parse::<Action>().is_ok(), "bad action {action}");
+        assert!(!description.is_empty(), "{keys} has no description");
+    }
+}
+
+#[test]
+fn default_rows_register_every_binding() {
+    let mut map = KeyMap::new();
+    register_defaults(&mut map);
+    let expected: usize = crate::keymap::defaults::DEFAULT_BINDINGS
+        .iter()
+        .map(|(contexts, ..)| contexts.len())
+        .sum();
+    assert_eq!(map.layers.len(), expected);
+}

@@ -73,17 +73,23 @@ impl Key {
     pub(crate) const ENTER: Self = Self::plain(KeyCode::Enter);
     pub(crate) const ESC: Self = Self::plain(KeyCode::Esc);
     pub(crate) const TAB: Self = Self::plain(KeyCode::Tab);
+    #[cfg(test)]
     pub(crate) const BACKSPACE: Self = Self::plain(KeyCode::Backspace);
+    #[cfg(test)]
     pub(crate) const DELETE: Self = Self::plain(KeyCode::Delete);
     #[cfg(test)]
     pub(crate) const INSERT: Self = Self::plain(KeyCode::Insert);
+    #[cfg(test)]
     pub(crate) const HOME: Self = Self::plain(KeyCode::Home);
+    #[cfg(test)]
     pub(crate) const END: Self = Self::plain(KeyCode::End);
     pub(crate) const PAGE_UP: Self = Self::plain(KeyCode::PageUp);
     pub(crate) const PAGE_DOWN: Self = Self::plain(KeyCode::PageDown);
     pub(crate) const UP: Self = Self::plain(KeyCode::Up);
     pub(crate) const DOWN: Self = Self::plain(KeyCode::Down);
+    #[cfg(test)]
     pub(crate) const LEFT: Self = Self::plain(KeyCode::Left);
+    #[cfg(test)]
     pub(crate) const RIGHT: Self = Self::plain(KeyCode::Right);
     #[cfg(test)]
     pub(crate) const SPACE: Self = Self::char(' ');
@@ -91,6 +97,7 @@ impl Key {
         code: KeyCode::Tab,
         mods: Mods::SHIFT,
     };
+    #[cfg(test)]
     pub(crate) const SHIFT_SPACE: Self = Self {
         code: KeyCode::Char(' '),
         mods: Mods::SHIFT,
@@ -109,6 +116,7 @@ impl Key {
         Self::plain(KeyCode::Char(c))
     }
 
+    #[cfg(test)]
     #[must_use]
     pub(crate) fn ctrl(c: char) -> Self {
         Self::new(KeyCode::Char(c), Mods::CTRL)
@@ -157,6 +165,7 @@ impl Key {
         }
     }
 
+    #[cfg(test)]
     /// The same key with extra modifiers, re-canonicalized.
     #[must_use]
     pub(crate) fn with(self, mods: Mods) -> Self {
