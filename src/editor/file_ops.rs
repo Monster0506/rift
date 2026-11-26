@@ -263,7 +263,7 @@ impl<T: TerminalBackend> Editor<T> {
                 crate::document::runtime::SaveResult::Rejected
             }
             crate::document::runtime::SaveDispatch::Reject => {
-                self.state.handle_error(RiftError::new(
+                self.notify_error(RiftError::new(
                     ErrorType::Io,
                     "CANT_SAVE",
                     format!(
@@ -331,7 +331,7 @@ impl<T: TerminalBackend> Editor<T> {
                         });
                 });
                 let Some(document) = self.document_manager.get_document_mut(buf_id) else {
-                    self.state.handle_error(RiftError::new(
+                    self.notify_error(RiftError::new(
                         ErrorType::Io,
                         "SAVE_TARGET_CLOSED",
                         "Buffer was closed by a plugin hook before it could be saved",
@@ -349,11 +349,7 @@ impl<T: TerminalBackend> Editor<T> {
                 );
                 self.job_manager.spawn(job);
             } else {
-                self.state.handle_error(RiftError::new(
-                    ErrorType::Io,
-                    "NO_FILENAME",
-                    "No file name",
-                ));
+                self.notify_error(RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"));
             }
             self.state.clear_command_line();
         } else {
@@ -416,12 +412,12 @@ impl<T: TerminalBackend> Editor<T> {
                     );
                     let id = self.job_manager.spawn(job);
                     self.pending_quit_job_id = Some(id);
-                    self.state.notify(
+                    self.notify(
                         crate::notification::NotificationType::Info,
                         format!("Saving {} and quitting...", path.display()),
                     );
                 }
-                Err(e) => self.state.handle_error(e),
+                Err(e) => self.notify_error(e),
             }
             self.state.clear_command_line();
             return;
@@ -460,7 +456,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         if self.document_manager.has_unsaved_changes() {
-            self.state.handle_error(RiftError::warning(
+            self.notify_error(RiftError::warning(
                 ErrorType::Execution,
                 crate::constants::errors::UNSAVED_CHANGES,
                 crate::constants::errors::MSG_UNSAVED_CHANGES,
@@ -478,7 +474,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .get_document(doc_id)
                 .is_some_and(|doc| !doc.is_dirty());
         if !unchanged {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Warning,
                 "Quit aborted: buffer changed during save".to_string(),
             );
@@ -516,7 +512,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: new_doc_id });
             });
             if let Err(e) = self.force_full_redraw() {
-                self.state.handle_error(e);
+                self.notify_error(e);
             }
         } else if self.document_manager.tab_count() <= 1 {
             if !force {
@@ -525,7 +521,7 @@ impl<T: TerminalBackend> Editor<T> {
                     let confirm_dirty = doc.kind.descriptor.policies.close
                         == crate::document::runtime::ClosePolicy::ConfirmDirty;
                     if doc.is_dirty() && (confirm_dirty || !doc.is_special()) {
-                        self.state.handle_error(RiftError::warning(
+                        self.notify_error(RiftError::warning(
                             ErrorType::Execution,
                             crate::constants::errors::UNSAVED_CHANGES,
                             crate::constants::errors::MSG_UNSAVED_CHANGES,
@@ -543,7 +539,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Normal)
             };
             if let Err(e) = result {
-                self.state.handle_error(e);
+                self.notify_error(e);
             } else {
                 if let Some(new_doc_id) = self.document_manager.active_document_id() {
                     let _ = self.focus_document(new_doc_id);
@@ -555,7 +551,7 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 self.sync_state_with_active_document();
                 if let Err(e) = self.force_full_redraw() {
-                    self.state.handle_error(e);
+                    self.notify_error(e);
                 }
             }
         }
@@ -587,7 +583,7 @@ impl<T: TerminalBackend> Editor<T> {
             });
         }
         if let Err(e) = self.force_full_redraw() {
-            self.state.handle_error(e);
+            self.notify_error(e);
         }
     }
 
@@ -596,7 +592,7 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .get_document_id_at(index.saturating_sub(1))
         else {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Warning,
                 format!("Buffer {index} does not exist"),
             );
@@ -609,7 +605,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
         if let Err(e) = self.focus_document(target) {
-            self.state.handle_error(e);
+            self.notify_error(e);
             return;
         }
         self.state.clear_command_line();
@@ -622,7 +618,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: target });
         });
         if let Err(e) = self.force_full_redraw() {
-            self.state.handle_error(e);
+            self.notify_error(e);
         }
     }
 
@@ -635,7 +631,7 @@ impl<T: TerminalBackend> Editor<T> {
                 {
                     id
                 } else {
-                    self.state.notify(
+                    self.notify(
                         crate::notification::NotificationType::Warning,
                         format!("Buffer {i} does not exist"),
                     );
@@ -647,7 +643,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         if self.document_manager.is_private(target) {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Warning,
                 "Cannot delete a panel buffer; close its panel instead".to_string(),
             );
@@ -662,11 +658,11 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         if let Err(e) = result {
-            self.state.handle_error(e);
+            self.notify_error(e);
         } else {
             self.state.clear_command_line();
             if let Err(e) = self.force_full_redraw() {
-                self.state.handle_error(e);
+                self.notify_error(e);
             }
         }
     }
@@ -694,16 +690,15 @@ impl<T: TerminalBackend> Editor<T> {
                 special,
             );
         }
-        self.state
-            .notify(crate::notification::NotificationType::Info, message);
+        self.notify(crate::notification::NotificationType::Info, message);
         self.state.clear_command_line();
     }
 
     pub(super) fn do_notification_clear(&mut self, all: bool) {
         if all {
-            self.state.error_manager.notifications_mut().clear_all();
+            self.state.notifications.clear_all();
         } else {
-            self.state.error_manager.notifications_mut().clear_last();
+            self.state.notifications.clear_last();
         }
         self.state.clear_command_line();
     }
@@ -737,7 +732,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn split_file_window(&mut self, direction: crate::split::tree::SplitDirection, path: &str) {
         let path_buf = std::path::PathBuf::from(path);
         if !path_buf.exists() {
-            self.state.handle_error(crate::error::RiftError::new(
+            self.notify_error(crate::error::RiftError::new(
                 crate::error::ErrorType::Io,
                 "FILE_NOT_FOUND",
                 format!("No such file: {path}"),
@@ -755,7 +750,7 @@ impl<T: TerminalBackend> Editor<T> {
                     id
                 }
                 Err(e) => {
-                    self.state.handle_error(e);
+                    self.notify_error(e);
                     return;
                 }
             }

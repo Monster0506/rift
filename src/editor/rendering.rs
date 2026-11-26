@@ -100,7 +100,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.update_cursor(cursor_line, cursor_col);
 
         self.sync_state_with_active_document();
-        self.state.error_manager.notifications_mut().prune_expired();
+        self.state.notifications.prune_expired();
         let gutter_width = self.active_gutter_cols(doc_id);
 
         let cursor_char = self

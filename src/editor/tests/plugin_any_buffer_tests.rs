@@ -360,7 +360,7 @@ fn highlight_queued_for_a_closed_buffer_logs_the_drop() {
     );
     editor.apply_plugin_mutations();
     let expected = format!("plugin highlight.add skipped: buffer {first} is closed");
-    assert!(editor.state.error_manager.notifications().message_log().iter().any(
+    assert!(editor.state.notifications.message_log().iter().any(
         |entry| matches!(entry, crate::notification::MessageEntry::Notification { message, .. } if message == &expected)
     ));
 }

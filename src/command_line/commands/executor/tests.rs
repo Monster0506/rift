@@ -230,7 +230,7 @@ fn test_execute_set_min_width_zero_error() {
     assert_eq!(result, ExecutionResult::Failure);
 
     // Check if error was reported to manager
-    let notifications: Vec<_> = state.error_manager.notifications().iter_active().collect();
+    let notifications: Vec<_> = state.notifications.iter_active().collect();
     assert_eq!(notifications.len(), 1);
     assert!(notifications[0].message.contains("is below minimum"));
 
@@ -261,7 +261,7 @@ fn test_execute_set_min_width_invalid_number() {
     );
     assert_eq!(result, ExecutionResult::Failure);
 
-    let notifications: Vec<_> = state.error_manager.notifications().iter_active().collect();
+    let notifications: Vec<_> = state.notifications.iter_active().collect();
     assert_eq!(notifications.len(), 1);
     assert!(
         notifications[0].message.contains("Invalid integer")
@@ -296,7 +296,7 @@ fn test_execute_set_number_invalid_boolean() {
     );
     assert_eq!(result, ExecutionResult::Failure);
 
-    let notifications: Vec<_> = state.error_manager.notifications().iter_active().collect();
+    let notifications: Vec<_> = state.notifications.iter_active().collect();
     assert_eq!(notifications.len(), 1);
     assert!(notifications[0].message.contains("Invalid boolean value"));
 
@@ -328,8 +328,7 @@ fn test_execute_set_number_missing_value() {
     match result {
         ExecutionResult::Failure => {
             assert!(state
-                .error_manager
-                .notifications()
+                .notifications
                 .iter_active()
                 .any(|n| n.message.contains("Missing value")));
         }
@@ -363,13 +362,11 @@ fn test_execute_set_unknown_option() {
     match result {
         ExecutionResult::Failure => {
             assert!(state
-                .error_manager
-                .notifications()
+                .notifications
                 .iter_active()
                 .any(|n| n.message.contains("Unknown option")));
             assert!(state
-                .error_manager
-                .notifications()
+                .notifications
                 .iter_active()
                 .any(|n| n.message.contains("unknownoption")));
         }
@@ -429,23 +426,19 @@ fn test_execute_ambiguous_command() {
     match result {
         ExecutionResult::Failure => {
             assert!(state
-                .error_manager
-                .notifications()
+                .notifications
                 .iter_active()
                 .any(|n| n.message.contains("Ambiguous command")));
             assert!(state
-                .error_manager
-                .notifications()
+                .notifications
                 .iter_active()
                 .any(|n| n.message.contains("se")));
             assert!(state
-                .error_manager
-                .notifications()
+                .notifications
                 .iter_active()
                 .any(|n| n.message.contains("setup")));
             assert!(state
-                .error_manager
-                .notifications()
+                .notifications
                 .iter_active()
                 .any(|n| n.message.contains("settings")));
         }
@@ -569,18 +562,15 @@ fn test_execute_set_min_width_negative_error() {
         ExecutionResult::Failure => {
             assert!(
                 state
-                    .error_manager
-                    .notifications()
+                    .notifications
                     .iter_active()
                     .any(|n| n.message.contains("Invalid integer"))
                     || state
-                        .error_manager
-                        .notifications()
+                        .notifications
                         .iter_active()
                         .any(|n| n.message.contains("Parse error"))
                     || state
-                        .error_manager
-                        .notifications()
+                        .notifications
                         .iter_active()
                         .any(|n| n.message.contains("Invalid numeric"))
             );
@@ -616,8 +606,7 @@ fn test_execute_set_number_empty_string() {
     match result {
         ExecutionResult::Failure => {
             assert!(state
-                .error_manager
-                .notifications()
+                .notifications
                 .iter_active()
                 .any(|n| n.message.contains("Invalid boolean value")));
         }
@@ -697,18 +686,15 @@ fn test_execute_set_min_width_float_error() {
         ExecutionResult::Failure => {
             assert!(
                 state
-                    .error_manager
-                    .notifications()
+                    .notifications
                     .iter_active()
                     .any(|n| n.message.contains("Invalid integer"))
                     || state
-                        .error_manager
-                        .notifications()
+                        .notifications
                         .iter_active()
                         .any(|n| n.message.contains("Parse error"))
                     || state
-                        .error_manager
-                        .notifications()
+                        .notifications
                         .iter_active()
                         .any(|n| n.message.contains("Invalid numeric"))
             );
@@ -1021,8 +1007,7 @@ fn test_substitute_no_match() {
     assert_eq!(result, ExecutionResult::Failure);
     assert_eq!(document.buffer().revision(), 1); // Only insert incremented it
     assert!(state
-        .error_manager
-        .notifications()
+        .notifications
         .iter_active()
         .any(|n| n.message.contains("Pattern not found")));
 }
@@ -1341,8 +1326,7 @@ fn test_execute_edit_directory_fails() {
 
     assert_eq!(result, ExecutionResult::Failure);
     assert!(state
-        .error_manager
-        .notifications()
+        .notifications
         .iter_active()
         .any(|n| n.message.contains("Cannot edit a directory")));
 }
@@ -1370,8 +1354,7 @@ fn test_execute_edit_missing_parent_dir_fails() {
 
     assert_eq!(result, ExecutionResult::Failure);
     assert!(state
-        .error_manager
-        .notifications()
+        .notifications
         .iter_active()
         .any(|n| n.message.contains("parent directory")));
 }
@@ -1450,8 +1433,7 @@ fn test_execute_file_path_fails() {
 
     assert_eq!(result, ExecutionResult::Failure);
     assert!(state
-        .error_manager
-        .notifications()
+        .notifications
         .iter_active()
         .any(|n| n.message.contains("Not a directory")));
 }

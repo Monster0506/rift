@@ -231,63 +231,6 @@ fn test_set_default_border_chars() {
     assert_eq!(state.settings.default_border_chars, None);
 }
 #[test]
-fn test_handle_error() {
-    use crate::error::{ErrorType, RiftError};
-    use crate::notification::NotificationType;
-
-    let mut state = State::new();
-    let err = RiftError::new(ErrorType::Io, "E1", "io failure");
-
-    state.handle_error(err);
-
-    // Verify notification is added
-    let notifications: Vec<_> = state.error_manager.notifications().iter_active().collect();
-    assert_eq!(notifications.len(), 1);
-    assert_eq!(notifications[0].message, "io failure");
-    assert_eq!(notifications[0].kind, NotificationType::Error);
-}
-
-#[test]
-fn test_handle_error_severity_mapping() {
-    use crate::error::{ErrorSeverity, ErrorType, RiftError};
-    use crate::notification::NotificationType;
-
-    let mut state = State::new();
-
-    // Warning
-    let warn = RiftError::warning(ErrorType::Other, "W1", "low disk");
-    state.handle_error(warn);
-    assert_eq!(
-        state
-            .error_manager
-            .notifications()
-            .iter_active()
-            .last()
-            .unwrap()
-            .kind,
-        NotificationType::Warning
-    );
-
-    let info = RiftError {
-        severity: ErrorSeverity::Info,
-        kind: ErrorType::Other,
-        code: "I1".to_string(),
-        message: "info msg".to_string(),
-    };
-    state.handle_error(info);
-    assert_eq!(
-        state
-            .error_manager
-            .notifications()
-            .iter_active()
-            .last()
-            .unwrap()
-            .kind,
-        NotificationType::Info
-    );
-}
-
-#[test]
 fn test_command_line_cursor_tracks_multibyte_char_byte_length() {
     let mut state = State::new();
     state.append_to_command_line('a');

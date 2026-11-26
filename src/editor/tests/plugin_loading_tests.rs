@@ -30,8 +30,7 @@ fn load_plugins_keeps_going_after_a_broken_plugin() {
     assert!(!editor.state.settings.editing.ghost_cut);
     assert!(editor
         .state
-        .error_manager
-        .notifications()
+        .notifications
         .iter_active()
         .any(|n| n.message == "init ran"));
 }

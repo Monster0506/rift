@@ -123,7 +123,7 @@ impl<T: TerminalBackend> Editor<T> {
         match lang {
             Some(lang) => {
                 let Ok(loaded) = self.language_loader.load_language(lang) else {
-                    self.state.notify(
+                    self.notify(
                         crate::notification::NotificationType::Error,
                         format!("treesitter: unknown language '{lang}'"),
                     );
@@ -143,7 +143,7 @@ impl<T: TerminalBackend> Editor<T> {
         {
             self.reparse_syntax(doc_id);
         } else {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Warning,
                 "treesitter: no grammar matches this buffer".to_string(),
             );
@@ -255,7 +255,7 @@ impl<T: TerminalBackend> Editor<T> {
         match msg {
             JobMessage::Started(id, silent) => {
                 let name = self.job_manager.job_name(id);
-                self.state.error_manager.notifications_mut().log_job_event(
+                self.state.notifications.log_job_event(
                     id,
                     crate::notification::JobEventKind::Started,
                     silent,
@@ -265,7 +265,7 @@ impl<T: TerminalBackend> Editor<T> {
             JobMessage::Progress(id, percentage, msg) => {
                 let silent = self.job_manager.is_job_silent(id);
                 let name = self.job_manager.job_name(id);
-                self.state.error_manager.notifications_mut().log_job_event(
+                self.state.notifications.log_job_event(
                     id,
                     crate::notification::JobEventKind::Progress(percentage),
                     silent,
@@ -274,7 +274,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             JobMessage::Finished(id, silent) => {
                 let name = self.job_manager.job_name(id);
-                self.state.error_manager.notifications_mut().log_job_event(
+                self.state.notifications.log_job_event(
                     id,
                     crate::notification::JobEventKind::Finished,
                     silent,
@@ -333,13 +333,13 @@ impl<T: TerminalBackend> Editor<T> {
         self.on_file_load_failed(id);
         let silent = self.job_manager.is_job_silent(id);
         let name = self.job_manager.job_name(id);
-        self.state.error_manager.notifications_mut().log_job_event(
+        self.state.notifications.log_job_event(
             id,
             crate::notification::JobEventKind::Error,
             silent,
             format!("{name}: {err}"),
         );
-        self.state.notify(
+        self.notify(
             crate::notification::NotificationType::Error,
             format!("{name} failed: {err}"),
         );
@@ -348,13 +348,13 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_job_cancelled(&mut self, id: usize) {
         let silent = self.job_manager.is_job_silent(id);
         let name = self.job_manager.job_name(id);
-        self.state.error_manager.notifications_mut().log_job_event(
+        self.state.notifications.log_job_event(
             id,
             crate::notification::JobEventKind::Cancelled,
             silent,
             format!("{name}: cancelled"),
         );
-        self.state.notify(
+        self.notify(
             crate::notification::NotificationType::Warning,
             format!("{name} cancelled"),
         );
@@ -362,7 +362,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         if self.pending_quit_job_id == Some(id) {
             self.pending_quit_job_id = None;
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Warning,
                 "Quit aborted: save was cancelled".to_string(),
             );
@@ -392,12 +392,9 @@ impl<T: TerminalBackend> Editor<T> {
             self.set_mode(Mode::Normal);
         }
         if let Err(e) = self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Force) {
-            self.state.notify(
-                crate::notification::NotificationType::Error,
-                format!("Failed to close terminal: {e}"),
-            );
+            self.notify(crate::notification::NotificationType::Error, format!("Failed to close terminal: {e}"));
         } else {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Info,
                 "Terminal closed".to_string(),
             );
@@ -418,7 +415,7 @@ impl<T: TerminalBackend> Editor<T> {
             match any_payload.downcast::<crate::job_manager::jobs::syntax::SyntaxParseResult>() {
                 Ok(result) => {
                     if let Err(err) = self.apply_syntax_parse(id, token, *result) {
-                        self.state.handle_error(err);
+                        self.notify_error(err);
                     }
                     return;
                 }
@@ -1064,7 +1061,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.persist_undo_after_save(res.document_id, res.content_hash);
         self.state.update_filename(display_name);
 
-        self.state.notify(
+        self.notify(
             crate::notification::NotificationType::Success,
             format!("Written to {}", res.path.display()),
         );

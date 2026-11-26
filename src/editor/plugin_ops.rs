@@ -388,11 +388,11 @@ impl<T: TerminalBackend> Editor<T> {
             && self.plugin_mutation_rounds.take() == Some(PLUGIN_MUTATION_ROUNDS)
             && self.plugin_host.has_queued_mutations()
         {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Error,
                 format!(
-                    "plugin mutations kept re-queuing; stopped after {PLUGIN_MUTATION_ROUNDS} rounds"
-                ),
+                "plugin mutations kept re-queuing; stopped after {PLUGIN_MUTATION_ROUNDS} rounds"
+            ),
             );
         }
     }
@@ -484,14 +484,14 @@ impl<T: TerminalBackend> Editor<T> {
 
     // Reached only if apply_plugin_mutation routes a variant to the wrong group.
     pub(super) fn report_misrouted(&mut self) {
-        self.state.notify(
+        self.notify(
             crate::notification::NotificationType::Error,
             "internal error: plugin mutation misrouted".to_string(),
         );
     }
 
     fn drop_plugin_write(&mut self, buf: crate::document::DocumentId, write: &str) {
-        self.state.error_manager.notifications_mut().log(
+        self.state.notifications.log(
             crate::notification::NotificationType::Info,
             format!("plugin {write} skipped: buffer {} is closed", buf.get()),
         );
@@ -500,7 +500,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn apply_ui_mutation(&mut self, mutation: PluginMutation) {
         match mutation {
             PluginMutation::Notify { message, level } => {
-                self.state.notify(level, message);
+                self.notify(level, message);
             }
             PluginMutation::OpenFloat(_) | PluginMutation::CloseFloat => {
                 self.plugin_host.apply_mutation(mutation);
@@ -545,7 +545,7 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
                 for err in errors {
-                    self.state.handle_error(err);
+                    self.notify_error(err);
                 }
             }
             _ => self.report_misrouted(),
@@ -690,7 +690,7 @@ impl<T: TerminalBackend> Editor<T> {
                 if !force {
                     if let Some(doc) = self.document_manager.active_document() {
                         if doc.is_dirty() {
-                            self.state.notify(
+                            self.notify(
                                 crate::notification::NotificationType::Warning,
                                 "unsaved changes — use force=true to discard",
                             );
@@ -712,7 +712,7 @@ impl<T: TerminalBackend> Editor<T> {
                         self.close_buffer(buf, crate::document::manager::RemovalIntent::Normal)
                     };
                     if let Err(error) = result {
-                        self.state.handle_error(error);
+                        self.notify_error(error);
                     }
                 }
             }
@@ -723,7 +723,7 @@ impl<T: TerminalBackend> Editor<T> {
                 if self.document_manager.get_document(buf).is_none() {
                     self.drop_plugin_write(buf, "reload_buf");
                 } else if let Err(error) = self.reload_document(buf, force) {
-                    self.state.handle_error(error);
+                    self.notify_error(error);
                 }
             }
             PluginMutation::CreateBuffer {
@@ -775,7 +775,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
         if let Err(error) = self.create_scratch_buffer(reservation, name, lines) {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Error,
                 format!("create_scratch_buf failed: {}", error.message),
             );
@@ -792,7 +792,7 @@ impl<T: TerminalBackend> Editor<T> {
     ) {
         let Some(descriptor) = self.buffer_kinds.get_by_name(kind) else {
             self.document_manager.release_plugin_ids([id.get()]);
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Error,
                 format!("unknown buffer kind '{kind}'"),
             );
@@ -804,7 +804,7 @@ impl<T: TerminalBackend> Editor<T> {
         let mut document = match crate::document::Document::new(reservation.id()) {
             Ok(document) => document,
             Err(error) => {
-                self.state.handle_error(error);
+                self.notify_error(error);
                 return;
             }
         };
@@ -828,7 +828,7 @@ impl<T: TerminalBackend> Editor<T> {
         let draft = match crate::document::manager::DocumentDraft::new(reservation, document) {
             Ok(draft) => draft,
             Err(error) => {
-                self.state.handle_error(error);
+                self.notify_error(error);
                 return;
             }
         };
@@ -862,7 +862,7 @@ impl<T: TerminalBackend> Editor<T> {
             has_on_save,
         } = spec;
         if !has_on_close {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Error,
                 format!("buffer kind '{name}' requires on_close"),
             );
@@ -874,7 +874,7 @@ impl<T: TerminalBackend> Editor<T> {
         let read_only_policy = match parse_read_only_policy(read_only.as_deref()) {
             Ok(policy) => policy,
             Err(invalid) => {
-                self.state.notify(
+                self.notify(
                     crate::notification::NotificationType::Error,
                     format!("buffer kind '{name}' has invalid read_only policy: '{invalid}'"),
                 );
@@ -884,7 +884,7 @@ impl<T: TerminalBackend> Editor<T> {
         let close_policy = match parse_close_policy(close.as_deref()) {
             Ok(policy) => policy,
             Err(invalid) => {
-                self.state.notify(
+                self.notify(
                     crate::notification::NotificationType::Error,
                     format!("buffer kind '{name}' has invalid close policy: '{invalid}'"),
                 );
@@ -894,7 +894,7 @@ impl<T: TerminalBackend> Editor<T> {
         let key_fallback_policy = match parse_key_fallback_policy(key_fallback.as_deref()) {
             Ok(policy) => policy,
             Err(invalid) => {
-                self.state.notify(
+                self.notify(
                     crate::notification::NotificationType::Error,
                     format!("buffer kind '{name}' has invalid key_fallback policy: '{invalid}'"),
                 );
@@ -936,7 +936,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
         });
         if let Err(error) = result {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Error,
                 error.to_string(),
             );
@@ -956,7 +956,7 @@ impl<T: TerminalBackend> Editor<T> {
                 ))
             }
             _ => {
-                self.state.notify(
+                self.notify(
                     crate::notification::NotificationType::Error,
                     format!("cannot register buffer kind '{name}': no active plugin generation"),
                 );
@@ -1078,7 +1078,7 @@ impl<T: TerminalBackend> Editor<T> {
             .language_loader
             .register_grammar(lang_name, so_path, fn_name)
         {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Error,
                 format!("register_grammar '{lang_name}': {e}"),
             );
@@ -1087,12 +1087,10 @@ impl<T: TerminalBackend> Editor<T> {
 
     #[cfg(not(feature = "treesitter"))]
     fn register_grammar(&mut self, lang_name: &str, so_path: &str, fn_name: &str) {
-        self.state.notify(
-            crate::notification::NotificationType::Error,
-            format!(
-                "register_grammar '{lang_name}' ({so_path}:{fn_name}): tree-sitter support is not compiled in"
-            ),
-        );
+        self.notify(crate::notification::NotificationType::Error,
+        format!(
+            "register_grammar '{lang_name}' ({so_path}:{fn_name}): tree-sitter support is not compiled in"
+        ),);
     }
 
     fn apply_lsp_mutation(&mut self, mutation: PluginMutation) {
@@ -1129,7 +1127,7 @@ impl<T: TerminalBackend> Editor<T> {
                             self.notify_no_lsp_server();
                         }
                     }
-                    None => self.state.notify(
+                    None => self.notify(
                         crate::notification::NotificationType::Warning,
                         "LSP rename: no file open".to_string(),
                     ),

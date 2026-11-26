@@ -25,7 +25,7 @@ impl<T: TerminalBackend> Editor<T> {
             id
         } else {
             if let Err(e) = self.open_file(Some(path.display().to_string()), false) {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return;
             }
             self.active_document_id()
@@ -41,7 +41,7 @@ impl<T: TerminalBackend> Editor<T> {
         ) {
             Ok(d) => d,
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return;
             }
         };
@@ -98,7 +98,7 @@ impl<T: TerminalBackend> Editor<T> {
         )
         .is_ok_and(|out| out.success)
         {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Info,
                 "This commit introduced the line — nothing earlier to walk back to".to_string(),
             );
@@ -196,7 +196,7 @@ impl<T: TerminalBackend> Editor<T> {
             let content = match crate::git::run_checked(repo_root, &["cat-file", "blob", &spec]) {
                 Ok(content) => content,
                 Err(error) => {
-                    self.state.handle_error(error);
+                    self.notify_error(error);
                     return false;
                 }
             };
@@ -204,7 +204,7 @@ impl<T: TerminalBackend> Editor<T> {
             let mut doc = match crate::document::Document::from_file(id, path) {
                 Ok(doc) => doc,
                 Err(error) => {
-                    self.state.handle_error(error);
+                    self.notify_error(error);
                     return false;
                 }
             };
@@ -332,7 +332,7 @@ impl<T: TerminalBackend> Editor<T> {
             None,
         );
         if let Err(e) = self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Normal) {
-            self.state.handle_error(e);
+            self.notify_error(e);
             return;
         }
         if self.document_manager.get_document(linked_doc_id).is_some() {

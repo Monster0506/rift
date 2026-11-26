@@ -157,7 +157,7 @@ impl<T: TerminalBackend> Editor<T> {
             return false;
         };
         if doc.selections().is_empty() {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Info,
                 "No regions banked".to_string(),
             );
@@ -658,7 +658,7 @@ impl<T: TerminalBackend> Editor<T> {
             .active_document()
             .map_or_default(|d| d.selections().sorted());
         if regions.is_empty() {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Info,
                 "No regions banked".to_string(),
             );
@@ -669,7 +669,7 @@ impl<T: TerminalBackend> Editor<T> {
         let mut doc = match crate::document::Document::new(list_doc_id) {
             Ok(d) => d,
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return;
             }
         };

@@ -47,7 +47,7 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let diff = doc.parse_directory_diff();
             if !diff.renames.is_empty() || !diff.deletes.is_empty() || !diff.creates.is_empty() {
-                self.state.notify(
+                self.notify(
                     crate::notification::NotificationType::Warning,
                     "Unsaved changes — write with :w first".to_string(),
                 );
@@ -83,11 +83,11 @@ impl<T: TerminalBackend> Editor<T> {
         if crate::fs_backend::backend().is_dir(&target_path) {
             self.reload_directory_buffer(doc_id, target_path);
         } else if let Err(e) = self.open_file(Some(target_path.display().to_string()), false) {
-            self.state.handle_error(e);
+            self.notify_error(e);
         } else {
             self.state.clear_command_line();
             if let Err(e) = self.force_full_redraw() {
-                self.state.handle_error(e);
+                self.notify_error(e);
             }
         }
     }
@@ -138,7 +138,7 @@ impl<T: TerminalBackend> Editor<T> {
         let dir_doc = match crate::document::Document::new_directory(dir_doc_id, dir.clone()) {
             Ok(d) => d,
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return;
             }
         };
@@ -151,7 +151,7 @@ impl<T: TerminalBackend> Editor<T> {
         ) {
             Ok(d) => d,
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return;
             }
         };
@@ -199,7 +199,7 @@ impl<T: TerminalBackend> Editor<T> {
                             .is_some_and(crate::document::Document::is_dirty)
                     })
         }) {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Error,
                 "Clipboard has unsaved edits; save or undo them before closing".to_string(),
             );
@@ -263,12 +263,12 @@ impl<T: TerminalBackend> Editor<T> {
         let mut doc = match crate::document::Document::new_messages(id, show_all) {
             Ok(d) => d,
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return;
             }
         };
 
-        let log = self.state.error_manager.notifications().message_log();
+        let log = self.state.notifications.message_log();
         doc.populate_messages_buffer(&log);
         let len = doc.buffer().len();
         let _ = doc.set_cursor(
@@ -278,11 +278,11 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.open_buffer(doc, crate::document::manager::Placement::Focused);
         if let Err(e) = self.focus_document(id) {
-            self.state.handle_error(e);
+            self.notify_error(e);
             return;
         }
 
-        self.last_notification_generation = self.state.error_manager.notifications().generation;
+        self.last_notification_generation = self.state.notifications.generation;
 
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
@@ -300,7 +300,7 @@ impl<T: TerminalBackend> Editor<T> {
         let mut index_doc = match crate::document::Document::new_clipboard(index_doc_id) {
             Ok(d) => d,
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return;
             }
         };
@@ -360,7 +360,7 @@ impl<T: TerminalBackend> Editor<T> {
         let mut dir_doc = match crate::document::Document::new_buffer_list(dir_doc_id) {
             Ok(d) => d,
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return;
             }
         };
@@ -533,7 +533,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .get_document(layout.preview_doc_id)
                     .is_some_and(|preview| preview.is_clipboard_entry() && preview.is_dirty())
         }) {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Error,
                 "Save clipboard entry edits before changing stack order".to_string(),
             );
@@ -550,7 +550,7 @@ impl<T: TerminalBackend> Editor<T> {
         let capacity = self.clipboard_ring.capacity();
         let Some(entries) = parsed.filter(|entries| snapshot_matches && entries.len() <= capacity)
         else {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Error,
                 "Clipboard index is invalid, stale, or exceeds capacity; nothing changed"
                     .to_string(),
@@ -571,7 +571,7 @@ impl<T: TerminalBackend> Editor<T> {
             let _ = doc.set_cursor(cursor, crate::document::ops::CursorCause::User);
         }
 
-        self.state.notify(
+        self.notify(
             crate::notification::NotificationType::Info,
             format!("{} clipboard entries", self.clipboard_ring.len()),
         );
@@ -594,7 +594,7 @@ impl<T: TerminalBackend> Editor<T> {
         let ut_doc = match crate::document::Document::new_undotree(ut_id, linked_id) {
             Ok(d) => d,
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return;
             }
         };
@@ -777,7 +777,7 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let diff = doc.parse_directory_diff();
             if !diff.renames.is_empty() || !diff.deletes.is_empty() || !diff.creates.is_empty() {
-                self.state.notify(
+                self.notify(
                     crate::notification::NotificationType::Warning,
                     "Unsaved changes — write with :w first".to_string(),
                 );
@@ -814,11 +814,11 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             self.close_split_panel();
             if let Err(e) = self.open_file(Some(target_path.display().to_string()), false) {
-                self.state.handle_error(e);
+                self.notify_error(e);
             } else {
                 self.state.clear_command_line();
                 if let Err(e) = self.force_full_redraw() {
-                    self.state.handle_error(e);
+                    self.notify_error(e);
                 }
             }
         }
@@ -945,7 +945,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = self.document_manager.get_document(dir_doc_id) {
             let diff = doc.parse_directory_diff();
             if !diff.renames.is_empty() || !diff.deletes.is_empty() || !diff.creates.is_empty() {
-                self.state.notify(
+                self.notify(
                     crate::notification::NotificationType::Warning,
                     "Unsaved changes — write with :w first".to_string(),
                 );
@@ -994,7 +994,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = self.document_manager.get_document(dir_doc_id) {
             let diff = doc.parse_directory_diff();
             if !diff.renames.is_empty() || !diff.deletes.is_empty() || !diff.creates.is_empty() {
-                self.state.notify(
+                self.notify(
                     crate::notification::NotificationType::Warning,
                     "Unsaved changes — write with :w first".to_string(),
                 );
@@ -1044,8 +1044,7 @@ impl<T: TerminalBackend> Editor<T> {
         let errors = apply_directory_diff_to_fs(&dir_path, &diff);
 
         for err in errors {
-            self.state
-                .notify(crate::notification::NotificationType::Error, err);
+            self.notify(crate::notification::NotificationType::Error, err);
         }
 
         let reload = crate::job_manager::jobs::explorer::DirectoryListJob::new(

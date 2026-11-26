@@ -1,4 +1,4 @@
-use crate::command_line::commands::executor::ExecutionResult;
+use crate::command_line::commands::executor::{notify_error, ExecutionResult};
 use crate::command_line::commands::types::ParsedCommand;
 use crate::command_line::settings::registry::SettingsRegistry;
 use crate::document::definitions::DocumentOptions;
@@ -27,7 +27,7 @@ pub(super) fn execute_local_command(
                 &mut error_handler,
             );
             for err in errors {
-                state.handle_error(err);
+                notify_error(state, err);
             }
             result
         }

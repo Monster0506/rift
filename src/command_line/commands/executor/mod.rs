@@ -201,7 +201,7 @@ impl CommandExecutor {
                     &mut error_handler,
                 );
                 for err in errors {
-                    state.handle_error(err);
+                    notify_error(state, err);
                 }
                 result
             }
@@ -285,9 +285,13 @@ impl CommandExecutor {
     }
 }
 
+fn notify_error(state: &mut State, err: RiftError) {
+    state.notifications.notify(err.severity.into(), err.message);
+}
+
 fn create_checkpoint(state: &mut State, document: &mut Document) -> ExecutionResult {
     document.checkpoint();
-    state.notify(
+    state.notifications.notify(
         crate::notification::NotificationType::Info,
         "Checkpoint created".to_string(),
     );
@@ -330,21 +334,27 @@ fn overwrite_refused(
         return false;
     }
 
-    state.handle_error(RiftError::new(
-        ErrorType::Execution,
-        crate::constants::errors::FILE_EXISTS,
-        crate::constants::errors::MSG_FILE_EXISTS.to_string(),
-    ));
+    notify_error(
+        state,
+        RiftError::new(
+            ErrorType::Execution,
+            crate::constants::errors::FILE_EXISTS,
+            crate::constants::errors::MSG_FILE_EXISTS.to_string(),
+        ),
+    );
     true
 }
 
 fn report_ambiguous(state: &mut State, prefix: &str, matches: &[String]) -> ExecutionResult {
     let matches_str = matches.join(", ");
-    state.handle_error(RiftError::new(
-        ErrorType::Parse,
-        "AMBIGUOUS_COMMAND",
-        format!("Ambiguous command '{prefix}': matches {matches_str}"),
-    ));
+    notify_error(
+        state,
+        RiftError::new(
+            ErrorType::Parse,
+            "AMBIGUOUS_COMMAND",
+            format!("Ambiguous command '{prefix}': matches {matches_str}"),
+        ),
+    );
     ExecutionResult::Failure
 }
 
@@ -352,11 +362,14 @@ fn execute_file(state: &mut State, document: &Document, path: Option<String>) ->
     let initial_path = if let Some(p) = path {
         let path_buf = std::path::PathBuf::from(p);
         if path_buf.exists() && path_buf.is_file() {
-            state.handle_error(RiftError::new(
-                ErrorType::Execution,
-                crate::constants::errors::NOT_A_DIRECTORY,
-                crate::constants::errors::MSG_NOT_A_DIRECTORY.to_string(),
-            ));
+            notify_error(
+                state,
+                RiftError::new(
+                    ErrorType::Execution,
+                    crate::constants::errors::NOT_A_DIRECTORY,
+                    crate::constants::errors::MSG_NOT_A_DIRECTORY.to_string(),
+                ),
+            );
             return ExecutionResult::Failure;
         }
         path_buf
@@ -384,16 +397,19 @@ fn execute_notify(state: &mut State, kind: &str, message: String, bangs: usize) 
         "error" => NotificationType::Error,
         "success" => NotificationType::Success,
         _ => {
-            state.handle_error(RiftError::new(
-                ErrorType::Execution,
-                "INVALID_NOTIFY_TYPE",
-                format!("Unknown notification type: {kind}"),
-            ));
+            notify_error(
+                state,
+                RiftError::new(
+                    ErrorType::Execution,
+                    "INVALID_NOTIFY_TYPE",
+                    format!("Unknown notification type: {kind}"),
+                ),
+            );
             return ExecutionResult::Failure;
         }
     };
 
-    state.notify(notification_kind, message);
+    state.notifications.notify(notification_kind, message);
     ExecutionResult::Success
 }
 
@@ -401,19 +417,25 @@ fn execute_edit(state: &mut State, path: Option<String>, bangs: usize) -> Execut
     if let Some(ref p) = path {
         let path_buf = std::path::Path::new(p);
         if path_buf.exists() && path_buf.is_dir() {
-            state.handle_error(RiftError::new(
-                ErrorType::Execution,
-                crate::constants::errors::NOT_A_FILE,
-                crate::constants::errors::MSG_NOT_A_FILE.to_string(),
-            ));
+            notify_error(
+                state,
+                RiftError::new(
+                    ErrorType::Execution,
+                    crate::constants::errors::NOT_A_FILE,
+                    crate::constants::errors::MSG_NOT_A_FILE.to_string(),
+                ),
+            );
             return ExecutionResult::Failure;
         }
         if !path_buf.exists() && crate::document::manager::parent_dir_missing(path_buf) {
-            state.handle_error(RiftError::new(
-                ErrorType::Execution,
-                crate::constants::errors::PARENT_DIR_MISSING,
-                crate::constants::errors::MSG_PARENT_DIR_MISSING.to_string(),
-            ));
+            notify_error(
+                state,
+                RiftError::new(
+                    ErrorType::Execution,
+                    crate::constants::errors::PARENT_DIR_MISSING,
+                    crate::constants::errors::MSG_PARENT_DIR_MISSING.to_string(),
+                ),
+            );
             return ExecutionResult::Failure;
         }
     }
@@ -462,11 +484,14 @@ fn execute_substitute(
             }
 
             if matches.is_empty() {
-                state.handle_error(RiftError::new(
-                    ErrorType::Execution,
-                    "PATTERN_NOT_FOUND",
-                    format!("Pattern not found: {pattern}"),
-                ));
+                notify_error(
+                    state,
+                    RiftError::new(
+                        ErrorType::Execution,
+                        "PATTERN_NOT_FOUND",
+                        format!("Pattern not found: {pattern}"),
+                    ),
+                );
                 return ExecutionResult::Failure;
             }
 
@@ -485,11 +510,14 @@ fn execute_substitute(
             }
 
             if valid_matches.is_empty() {
-                state.handle_error(RiftError::new(
-                    ErrorType::Execution,
-                    "PATTERN_NOT_FOUND",
-                    format!("Pattern not found: {pattern}"),
-                ));
+                notify_error(
+                    state,
+                    RiftError::new(
+                        ErrorType::Execution,
+                        "PATTERN_NOT_FOUND",
+                        format!("Pattern not found: {pattern}"),
+                    ),
+                );
                 return ExecutionResult::Failure;
             }
 
@@ -502,7 +530,7 @@ fn execute_substitute(
                 match replace_match(document, m.range.start..m.range.end, replacement) {
                     Ok(true) => changes_made += 1,
                     Ok(false) => {}
-                    Err(e) => state.handle_error(e),
+                    Err(e) => notify_error(state, e),
                 }
             }
 
@@ -520,14 +548,14 @@ fn execute_substitute(
                 }
             }
 
-            state.notify(
+            state.notifications.notify(
                 crate::notification::NotificationType::Info,
                 format!("{changes_made} substitutions"),
             );
             ExecutionResult::Redraw
         }
         Err(e) => {
-            state.handle_error(e);
+            notify_error(state, e);
             ExecutionResult::Failure
         }
     }

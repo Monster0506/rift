@@ -32,13 +32,13 @@ impl<T: TerminalBackend> Editor<T> {
         {
             Ok(d) => d,
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return None;
             }
         };
         self.open_buffer(doc, crate::document::manager::Placement::Focused);
         if let Err(e) = self.focus_document(id) {
-            self.state.handle_error(e);
+            self.notify_error(e);
             return None;
         }
 

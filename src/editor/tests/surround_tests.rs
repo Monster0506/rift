@@ -24,7 +24,7 @@ fn treesitter_object_without_parse_tree_silently_no_ops() {
     editor.advance_pending_grammar(grammar, Key::char('f'));
 
     assert_eq!(editor.active_document().buffer().to_string(), "foo(a, b)");
-    assert!(editor.state.error_manager.notifications().is_empty());
+    assert!(editor.state.notifications.is_empty());
 }
 
 #[test]

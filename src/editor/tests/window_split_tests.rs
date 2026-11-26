@@ -189,5 +189,5 @@ fn test_split_file_not_found_emits_error() {
     );
 
     assert_eq!(editor.split_tree.window_count(), 1);
-    assert!(!editor.state.error_manager.notifications().is_empty());
+    assert!(!editor.state.notifications.is_empty());
 }

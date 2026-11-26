@@ -74,7 +74,7 @@ fn editor() -> Editor<FrameTerminal> {
     };
     let mut editor = Editor::new(terminal).unwrap();
     editor.state.settings.poll_timeout_ms = 1000;
-    editor.last_notification_generation = editor.state.error_manager.notifications().generation;
+    editor.last_notification_generation = editor.state.notifications.generation;
     editor.term.inner.clear();
     editor.term.polls.clear();
     editor
@@ -204,7 +204,7 @@ fn terminal_output_batch_drains_past_ten_without_bypassing_frame_deadline() {
     let started = editor.job_manager.receiver().recv().unwrap();
     editor.handle_job_message(started);
     editor.update_and_render().unwrap();
-    editor.last_notification_generation = editor.state.error_manager.notifications().generation;
+    editor.last_notification_generation = editor.state.notifications.generation;
     editor.term.inner.clear();
     editor.last_frame_at = Some(crate::time::Instant::now() + Duration::from_secs(60));
 
@@ -308,9 +308,7 @@ fn poll_timeout_shrinks_to_the_next_notification_expiry() {
     let mut editor = editor();
     editor.state.settings.poll_timeout_ms = 60_000;
     editor.plugin_host.set_cursor_hold_delay_ms(60_000);
-    editor
-        .state
-        .notify(crate::notification::NotificationType::Success, "saved");
+    editor.notify(crate::notification::NotificationType::Success, "saved");
 
     editor.tick().unwrap();
 

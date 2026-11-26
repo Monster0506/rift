@@ -159,7 +159,7 @@ impl<T: TerminalBackend> Editor<T> {
         let repo_root = match self.resolve_git_repo_root() {
             Ok(root) => root,
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return None;
             }
         };
@@ -168,13 +168,13 @@ impl<T: TerminalBackend> Editor<T> {
         let doc = match crate::document::Document::new_git_status(id, repo_root.clone()) {
             Ok(d) => d,
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return None;
             }
         };
         self.open_buffer(doc, crate::document::manager::Placement::Focused);
         if let Err(e) = self.focus_document(id) {
-            self.state.handle_error(e);
+            self.notify_error(e);
             return None;
         }
 
@@ -324,16 +324,13 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         if discard_untracked_hunk_blocked {
-            self.state.notify(
-                crate::notification::NotificationType::Info,
-                "Discarding part of an untracked file isn't supported yet — X the whole file instead".to_string(),
-            );
+            self.notify(crate::notification::NotificationType::Info,
+            "Discarding part of an untracked file isn't supported yet — X the whole file instead".to_string(),);
         }
         let Some(action) = action else { return };
         let errors = execute_git_status_actions(&repo_root, std::slice::from_ref(&action));
         for err in errors {
-            self.state
-                .notify(crate::notification::NotificationType::Error, err);
+            self.notify(crate::notification::NotificationType::Error, err);
         }
         self.refresh_git_status_buffers_for(&repo_root);
     }
@@ -362,7 +359,7 @@ impl<T: TerminalBackend> Editor<T> {
                     "unstaged" => Some((PathBuf::from(path), false, false)),
                     "untracked" => Some((PathBuf::from(path), false, true)),
                     _ => {
-                        self.state.notify(
+                        self.notify(
                             crate::notification::NotificationType::Info,
                             "Only staged/unstaged/untracked entries can be expanded".to_string(),
                         );
@@ -468,7 +465,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             Some(Selection::File(path)) => {
                 if let Err(e) = self.open_file(Some(path.display().to_string()), false) {
-                    self.state.handle_error(e);
+                    self.notify_error(e);
                 }
             }
             None => {}
@@ -520,7 +517,7 @@ impl<T: TerminalBackend> Editor<T> {
         let repo_root = match self.resolve_git_repo_root() {
             Ok(root) => root,
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return;
             }
         };
@@ -535,18 +532,18 @@ impl<T: TerminalBackend> Editor<T> {
         let repo_root = match self.resolve_git_repo_root() {
             Ok(root) => root,
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return;
             }
         };
         match crate::git::run_checked(&repo_root, &["commit", "--fixup=HEAD", "--quiet"]) {
             Ok(_) => {
-                self.state.notify(
+                self.notify(
                     crate::notification::NotificationType::Info,
                     "Committed fixup! HEAD".to_string(),
                 );
             }
-            Err(e) => self.state.handle_error(e),
+            Err(e) => self.notify_error(e),
         }
         self.refresh_git_status_buffers_for(&repo_root);
     }
@@ -559,7 +556,7 @@ impl<T: TerminalBackend> Editor<T> {
         let repo_root = match self.resolve_git_repo_root() {
             Ok(root) => root,
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return;
             }
         };
@@ -572,7 +569,7 @@ impl<T: TerminalBackend> Editor<T> {
         );
         self.open_buffer(doc, crate::document::manager::Placement::Focused);
         if let Err(e) = self.focus_document(id) {
-            self.state.handle_error(e);
+            self.notify_error(e);
             return;
         }
         let _ = self.force_full_redraw();
@@ -610,14 +607,14 @@ impl<T: TerminalBackend> Editor<T> {
             if let Err(e) =
                 self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Normal)
             {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return;
             }
             self.apply_rebase_plan_reword(rebase_doc_id, &sha, message);
             return;
         }
         if message.trim().is_empty() {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Error,
                 "Aborting commit due to empty commit message".to_string(),
             );
@@ -627,12 +624,12 @@ impl<T: TerminalBackend> Editor<T> {
         let tmp_path = match crate::git::git_dir(&repo_root) {
             Ok(dir) => dir.join("RIFT_COMMIT_EDITMSG"),
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return;
             }
         };
         if let Err(e) = std::fs::write(&tmp_path, &message) {
-            self.state.handle_error(RiftError::new(
+            self.notify_error(RiftError::new(
                 ErrorType::Io,
                 "GIT_COMMIT_MSG_WRITE_FAILED",
                 e.to_string(),
@@ -656,7 +653,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         match result {
             Ok(_) => self.finish_commit(doc_id, &target, &repo_root),
-            Err(e) => self.state.handle_error(e),
+            Err(e) => self.notify_error(e),
         }
     }
 
@@ -671,7 +668,7 @@ impl<T: TerminalBackend> Editor<T> {
             doc.history.mark_saved();
         }
         if let Err(e) = self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Normal) {
-            self.state.handle_error(e);
+            self.notify_error(e);
             return;
         }
         #[cfg(test)]
@@ -685,13 +682,13 @@ impl<T: TerminalBackend> Editor<T> {
             None
         };
         if let Some((rebase_doc_id, remaining)) = paused_edit_rebase {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Info,
                 "Amended — resuming rebase".to_string(),
             );
             self.resume_rebase_after_edit_amend(rebase_doc_id, repo_root, remaining);
         } else {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Info,
                 "Committed".to_string(),
             );
@@ -710,7 +707,7 @@ impl<T: TerminalBackend> Editor<T> {
             let repo_root = match self.resolve_git_repo_root() {
                 Ok(root) => root,
                 Err(e) => {
-                    self.state.handle_error(e);
+                    self.notify_error(e);
                     return;
                 }
             };
@@ -744,7 +741,7 @@ impl<T: TerminalBackend> Editor<T> {
             let repo_root = match self.resolve_git_repo_root() {
                 Ok(root) => root,
                 Err(e) => {
-                    self.state.handle_error(e);
+                    self.notify_error(e);
                     return;
                 }
             };
@@ -754,7 +751,7 @@ impl<T: TerminalBackend> Editor<T> {
         let repo_root = match self.resolve_git_repo_root() {
             Ok(root) => root,
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return;
             }
         };
@@ -768,7 +765,7 @@ impl<T: TerminalBackend> Editor<T> {
             let repo_root = match self.resolve_git_repo_root() {
                 Ok(root) => root,
                 Err(e) => {
-                    self.state.handle_error(e);
+                    self.notify_error(e);
                     return None;
                 }
             };
@@ -790,12 +787,12 @@ impl<T: TerminalBackend> Editor<T> {
             return match crate::git::discover_repo(&base_dir) {
                 Ok(r) => Some((path, r.root)),
                 Err(e) => {
-                    self.state.handle_error(e);
+                    self.notify_error(e);
                     None
                 }
             };
         }
-        self.state.notify(
+        self.notify(
             crate::notification::NotificationType::Error,
             "No file to blame".to_string(),
         );
@@ -812,7 +809,7 @@ impl<T: TerminalBackend> Editor<T> {
             } else {
                 crate::notification::NotificationType::Error
             };
-            self.state.notify(
+            self.notify(
                 kind,
                 if trimmed.is_empty() {
                     format!("git {args}: done")
@@ -832,7 +829,7 @@ impl<T: TerminalBackend> Editor<T> {
         doc.set_read_only(true);
         self.open_buffer(doc, crate::document::manager::Placement::Focused);
         if let Err(e) = self.focus_document(id) {
-            self.state.handle_error(e);
+            self.notify_error(e);
             return;
         }
         let _ = self.force_full_redraw();
@@ -849,7 +846,7 @@ impl<T: TerminalBackend> Editor<T> {
         doc.set_read_only(true);
         self.open_buffer(doc, crate::document::manager::Placement::Focused);
         if let Err(e) = self.focus_document(id) {
-            self.state.handle_error(e);
+            self.notify_error(e);
             return;
         }
         let _ = self.force_full_redraw();

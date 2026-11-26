@@ -17,7 +17,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
         if undone == 0 {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Info,
                 "Already at oldest change".to_string(),
             );
@@ -43,7 +43,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
         if redone == 0 {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Info,
                 "Already at newest change".to_string(),
             );
@@ -60,7 +60,7 @@ impl<T: TerminalBackend> Editor<T> {
         let doc = self.document_manager.active_document_mut().unwrap();
         match doc.goto_seq(seq) {
             Ok(()) => {
-                self.state.notify(
+                self.notify(
                     crate::notification::NotificationType::Info,
                     format!("Jumped to edit #{seq}"),
                 );
@@ -70,7 +70,7 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             Err(e) => {
-                self.state.handle_error(RiftError::new(
+                self.notify_error(RiftError::new(
                     ErrorType::Execution,
                     "UNDO_ERROR",
                     e.to_string(),

@@ -3,11 +3,9 @@ use crate::color::Color;
 use crate::command::Command;
 use crate::command_line::commands::completion::CompletionCandidate;
 use crate::document::LineEnding;
-use crate::error::manager::ErrorManager;
-use crate::error::RiftError;
 use crate::floating_window::BorderChars;
 use crate::key::Key;
-use crate::notification::NotificationType;
+use crate::notification::NotificationManager;
 use crate::search::SearchMatch;
 
 #[derive(Debug, Clone)]
@@ -370,7 +368,7 @@ pub struct State {
     pub(crate) command_line_cursor: usize,
     pub(crate) is_dirty: bool,
     line_ending: LineEnding,
-    pub(crate) error_manager: ErrorManager,
+    pub(crate) notifications: NotificationManager,
     pub(crate) last_find_char: Option<(char, bool, bool)>,
     pub(crate) last_search_query: Option<String>,
     pub(crate) search_matches: Vec<SearchMatch>,
@@ -411,7 +409,7 @@ impl State {
             command_line_cursor: 0,
             is_dirty: false,
             line_ending: LineEnding::LF,
-            error_manager: ErrorManager::new(),
+            notifications: NotificationManager::new(),
             last_find_char: None,
             last_search_query: None,
             search_matches: Vec::new(),
@@ -441,7 +439,7 @@ impl State {
             command_line_cursor: 0,
             is_dirty: false,
             line_ending: LineEnding::LF,
-            error_manager: ErrorManager::new(),
+            notifications: NotificationManager::new(),
             last_find_char: None,
             last_search_query: None,
             search_matches: Vec::new(),
@@ -612,24 +610,8 @@ impl State {
         self.command_line_cursor = self.command_line.len();
     }
 
-    pub(crate) fn handle_error(&mut self, err: RiftError) {
-        self.error_manager.handle(err);
-    }
-
     pub(crate) fn update_filename(&mut self, filename: String) {
         self.file_name = filename;
-    }
-
-    pub(crate) fn notify(&mut self, kind: NotificationType, message: impl Into<String>) {
-        let ttl = match kind {
-            NotificationType::Error => Some(std::time::Duration::from_secs(10)),
-            NotificationType::Warning => Some(std::time::Duration::from_secs(8)),
-            NotificationType::Info => Some(std::time::Duration::from_secs(5)),
-            NotificationType::Success => Some(std::time::Duration::from_secs(3)),
-        };
-        self.error_manager
-            .notifications_mut()
-            .add(kind, message, ttl);
     }
 
     pub(crate) const fn update_dirty(&mut self, is_dirty: bool) {

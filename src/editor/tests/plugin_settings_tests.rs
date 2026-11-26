@@ -51,7 +51,7 @@ fn plugin_set_option_unknown_name_reports_error_without_panicking() {
         });
     editor.apply_plugin_mutations();
 
-    assert!(!editor.state.error_manager.notifications().is_empty());
+    assert!(!editor.state.notifications.is_empty());
 }
 
 #[test]

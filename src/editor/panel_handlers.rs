@@ -65,7 +65,7 @@ impl<T: TerminalBackend> Editor<T> {
             .get_document(layout.dir_doc_id)
             .is_some_and(crate::document::Document::is_dirty)
         {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Error,
                 "Clipboard index has unsaved edits; save it before refreshing".to_string(),
             );
@@ -163,7 +163,7 @@ impl<T: TerminalBackend> Editor<T> {
             .get_document(doc_id)
             .is_some_and(crate::document::Document::is_dirty)
         {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Error,
                 "Clipboard entry has unsaved edits; save it before replacing it".to_string(),
             );
@@ -199,7 +199,7 @@ impl<T: TerminalBackend> Editor<T> {
             return SaveResult::Failed;
         };
         if !snapshot.iter().eq(self.clipboard_ring.entries().iter()) {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Error,
                 "Clipboard changed since this index was opened; entry was not saved".to_string(),
             );
@@ -207,14 +207,14 @@ impl<T: TerminalBackend> Editor<T> {
         }
         let index_dirty = index_doc.is_dirty();
         if index_dirty && (entry_index.is_none() || new_text.text().is_empty()) {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Error,
                 "Save clipboard index edits before adding or deleting an entry".to_string(),
             );
             return SaveResult::Failed;
         }
         if entry_index.is_some_and(|index| index >= snapshot.len()) {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Error,
                 "Clipboard entry no longer exists; entry was not saved".to_string(),
             );
@@ -264,7 +264,7 @@ impl<T: TerminalBackend> Editor<T> {
             doc.history.mark_saved();
         }
 
-        self.state.notify(
+        self.notify(
             crate::notification::NotificationType::Info,
             "Clipboard entry saved".to_string(),
         );
@@ -280,7 +280,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
 
-        let log = self.state.error_manager.notifications().message_log();
+        let log = self.state.notifications.message_log();
 
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             let cursor = doc.buffer().cursor();
@@ -394,7 +394,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         if self.lsp_manager.is_indexing_path(&path) {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Warning,
                 "LSP: still indexing, please wait...".to_string(),
             );
@@ -417,7 +417,7 @@ impl<T: TerminalBackend> Editor<T> {
             .code_action(&path, entry.line, entry.col, diagnostics)
             .is_none()
         {
-            self.state.notify(
+            self.notify(
                 crate::notification::NotificationType::Warning,
                 "LSP: no server for this file".to_string(),
             );

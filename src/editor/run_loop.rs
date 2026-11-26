@@ -68,7 +68,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.poll_lsp();
         }
 
-        let current_gen = self.state.error_manager.notifications().generation;
+        let current_gen = self.state.notifications.generation;
         let notif_changed = current_gen != self.last_notification_generation;
         if notif_changed {
             self.refresh_messages_buffer_if_open();
@@ -96,7 +96,7 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             self.flush_pending_keys_on_timeout()?;
 
-            let notif_tick = self.state.error_manager.notifications().tick(timeout);
+            let notif_tick = self.state.notifications.tick(timeout);
 
             if jobs_changed
                 || notif_changed
@@ -105,7 +105,7 @@ impl<T: TerminalBackend> Editor<T> {
                 || self.render_system.needs_animation_frame()
             {
                 self.update_and_render()?;
-                self.state.error_manager.notifications_mut().mark_rendered();
+                self.state.notifications.mark_rendered();
             }
         }
 
@@ -137,7 +137,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.git_gutter_diff.deadline(self.active_document_id()),
             self.pending_keys_started_at
                 .map(|started_at| started_at + key_sequence_timeout),
-            self.state.error_manager.notifications().next_expiry(),
+            self.state.notifications.next_expiry(),
         ]
         .into_iter()
         .flatten()

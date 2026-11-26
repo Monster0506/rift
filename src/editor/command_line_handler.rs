@@ -118,7 +118,7 @@ impl<T: TerminalBackend> Editor<T> {
             ExecutionResult::Failure => return false, // keep command line visible for editing
             ExecutionResult::OpenTerminal { cmd, .. } => {
                 if let Err(e) = self.open_terminal(cmd) {
-                    self.state.handle_error(e);
+                    self.notify_error(e);
                 } else {
                     self.state.clear_command_line();
                     self.set_mode(Mode::Insert);
@@ -143,11 +143,11 @@ impl<T: TerminalBackend> Editor<T> {
             ExecutionResult::Reload => self.load_plugins(),
             ExecutionResult::Edit { path, bangs } => {
                 if let Err(e) = self.open_file(path, bangs > 0) {
-                    self.state.handle_error(e);
+                    self.notify_error(e);
                 } else {
                     self.state.clear_command_line();
                     if let Err(e) = self.force_full_redraw() {
-                        self.state.handle_error(e);
+                        self.notify_error(e);
                     }
                 }
             }
@@ -211,7 +211,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn redraw_from_command(&mut self) {
         self.state.clear_command_line();
         if let Err(e) = self.force_full_redraw() {
-            self.state.handle_error(e);
+            self.notify_error(e);
         }
     }
 
@@ -224,13 +224,11 @@ impl<T: TerminalBackend> Editor<T> {
             self.plugin_host.mark_lua_used();
             self.call_plugins(|editor| {
                 if let Some(err) = editor.plugin_host.lua_exec(code) {
-                    editor
-                        .state
-                        .notify(crate::notification::NotificationType::Error, err);
+                    editor.notify(crate::notification::NotificationType::Error, err);
                 }
             });
         } else if !self.call_plugins(|editor| editor.plugin_host.execute_command(name, args)) {
-            self.state.handle_error(crate::error::RiftError::new(
+            self.notify_error(crate::error::RiftError::new(
                 crate::error::ErrorType::Parse,
                 "UNKNOWN_COMMAND",
                 format!("Unknown command: {name}"),

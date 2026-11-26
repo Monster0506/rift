@@ -23,7 +23,7 @@ fn test_job_event_kind_debug() {
 fn test_message_entry_notification_time() {
     let before = SystemTime::now();
     let mut mgr = NotificationManager::new();
-    mgr.info("hello");
+    mgr.notify(NotificationType::Info, "hello");
     let after = SystemTime::now();
 
     let log = mgr.message_log();
@@ -95,9 +95,9 @@ fn test_log_job_event_silent_flag() {
 #[test]
 fn test_log_mixes_notifications_and_job_events() {
     let mut mgr = NotificationManager::new();
-    mgr.info("File saved");
+    mgr.notify(NotificationType::Info, "File saved");
     mgr.log_job_event(2, JobEventKind::Started, false, "file-save: started");
-    mgr.warn("Disk almost full");
+    mgr.notify(NotificationType::Warning, "Disk almost full");
     mgr.log_job_event(2, JobEventKind::Finished, false, "file-save: finished");
 
     let log = mgr.message_log();
@@ -111,8 +111,8 @@ fn test_log_mixes_notifications_and_job_events() {
 #[test]
 fn test_notification_add_also_logs() {
     let mut mgr = NotificationManager::new();
-    mgr.info("Test");
-    mgr.error("Oops");
+    mgr.notify(NotificationType::Info, "Test");
+    mgr.notify(NotificationType::Error, "Oops");
 
     let log = mgr.message_log();
     assert_eq!(log.len(), 2);
@@ -164,8 +164,8 @@ fn test_message_log_never_pruned_by_prune_expired() {
 #[test]
 fn test_message_log_clear_all_does_not_affect_log() {
     let mut mgr = NotificationManager::new();
-    mgr.info("msg1");
-    mgr.info("msg2");
+    mgr.notify(NotificationType::Info, "msg1");
+    mgr.notify(NotificationType::Info, "msg2");
     mgr.clear_all();
 
     assert_eq!(mgr.notifications.len(), 0);
@@ -271,10 +271,10 @@ fn test_notification_creation() {
 fn test_manager_add_convenience_methods() {
     let mut manager = NotificationManager::new();
 
-    manager.info("Info");
-    manager.warn("Warn");
-    manager.error("Error");
-    manager.success("Success");
+    manager.notify(NotificationType::Info, "Info");
+    manager.notify(NotificationType::Warning, "Warn");
+    manager.notify(NotificationType::Error, "Error");
+    manager.notify(NotificationType::Success, "Success");
 
     assert_eq!(manager.notifications.len(), 4);
 
@@ -359,8 +359,8 @@ fn test_prune_expired() {
 #[test]
 fn test_iter_active() {
     let mut manager = NotificationManager::new();
-    manager.info("1");
-    manager.info("2");
+    manager.notify(NotificationType::Info, "1");
+    manager.notify(NotificationType::Info, "2");
 
     let messages: Vec<&str> = manager.iter_active().map(|n| n.message.as_str()).collect();
     assert_eq!(messages, vec!["1", "2"]);
@@ -369,10 +369,10 @@ fn test_iter_active() {
 #[test]
 fn test_default_ttls() {
     let mut manager = NotificationManager::new();
-    manager.info("Info");
-    manager.success("Success");
-    manager.warn("Warn");
-    manager.error("Error");
+    manager.notify(NotificationType::Info, "Info");
+    manager.notify(NotificationType::Success, "Success");
+    manager.notify(NotificationType::Warning, "Warn");
+    manager.notify(NotificationType::Error, "Error");
 
     // Verify default TTLs relative durations
     let info_ttl = manager.notifications[0].ttl.unwrap();
@@ -389,9 +389,9 @@ fn test_default_ttls() {
 #[test]
 fn test_clear_last() {
     let mut manager = NotificationManager::new();
-    manager.info("1");
-    manager.info("2");
-    manager.info("3");
+    manager.notify(NotificationType::Info, "1");
+    manager.notify(NotificationType::Info, "2");
+    manager.notify(NotificationType::Info, "3");
 
     manager.clear_last();
     assert_eq!(manager.notifications.len(), 2);
@@ -412,9 +412,9 @@ fn test_clear_last() {
 #[test]
 fn test_clear_all() {
     let mut manager = NotificationManager::new();
-    manager.info("1");
-    manager.info("2");
-    manager.info("3");
+    manager.notify(NotificationType::Info, "1");
+    manager.notify(NotificationType::Info, "2");
+    manager.notify(NotificationType::Info, "3");
 
     manager.clear_all();
     assert!(manager.notifications.is_empty());

@@ -26,7 +26,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn reject_read_only_edit(&mut self) {
-        self.state.notify(
+        self.notify(
             crate::notification::NotificationType::Warning,
             "Cannot make changes: buffer is read-only".to_string(),
         );
@@ -304,7 +304,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             Ok((None, _stats)) => false,
             Err(e) => {
-                self.state.notify(
+                self.notify(
                     crate::notification::NotificationType::Error,
                     format!("Search error: {e}"),
                 );

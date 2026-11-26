@@ -43,7 +43,7 @@ fn open_file_on_nonexistent_path_opens_empty_buffer_with_no_error() {
     assert_eq!(doc.buffer().len(), 0);
     assert!(!path.exists(), "opening must not touch disk");
     assert!(
-        editor.state.error_manager.notifications().is_empty(),
+        editor.state.notifications.is_empty(),
         "opening a brand-new file should not raise an error notification"
     );
 }

@@ -219,8 +219,7 @@ fn git_status_buffer_is_read_only_and_wq_reports_cannot_be_saved() {
     assert!(
         editor
             .state
-            .error_manager
-            .notifications()
+            .notifications
             .iter_active()
             .any(|n| n.message.contains("cannot be saved")),
         "wq on the status buffer must report it cannot be saved, not silently reconcile edits"

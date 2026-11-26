@@ -472,7 +472,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             EditorAction::Redraw => {
                 if let Err(e) = self.force_full_redraw() {
-                    self.state.handle_error(e);
+                    self.notify_error(e);
                 }
                 true
             }
@@ -610,13 +610,13 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::ClearNotifications => {
-                self.state.error_manager.notifications_mut().clear_all();
+                self.state.notifications.clear_all();
                 self.state.clear_command_line();
                 self.force_full_redraw().ok();
                 true
             }
             EditorAction::ClearLastNotification => {
-                self.state.error_manager.notifications_mut().clear_last();
+                self.state.notifications.clear_last();
                 self.state.clear_command_line();
                 self.force_full_redraw().ok();
                 true
@@ -624,7 +624,7 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::Checkpoint => {
                 if let Some(doc) = self.document_manager.active_document_mut() {
                     doc.checkpoint();
-                    self.state.notify(
+                    self.notify(
                         crate::notification::NotificationType::Info,
                         "Checkpoint created".to_string(),
                     );
@@ -821,11 +821,11 @@ impl<T: TerminalBackend> Editor<T> {
                 let path = path.clone();
                 let force = *force;
                 if let Err(e) = self.open_file(path, force) {
-                    self.state.handle_error(e);
+                    self.notify_error(e);
                 } else {
                     self.state.clear_command_line();
                     if let Err(e) = self.force_full_redraw() {
-                        self.state.handle_error(e);
+                        self.notify_error(e);
                     }
                 }
                 true
@@ -838,7 +838,7 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::OpenTerminal(cmd) => {
                 let cmd = cmd.clone();
                 if let Err(e) = self.open_terminal(cmd) {
-                    self.state.handle_error(e);
+                    self.notify_error(e);
                 } else {
                     self.state.clear_command_line();
                     self.set_mode(Mode::Insert);
@@ -867,7 +867,7 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::NotificationClearAll => {
-                self.state.error_manager.notifications_mut().clear_all();
+                self.state.notifications.clear_all();
                 self.state.clear_command_line();
                 true
             }
@@ -1165,7 +1165,7 @@ impl<T: TerminalBackend> Editor<T> {
                         self.state.clear_command_line();
                         self.set_mode(Mode::Rename);
                     } else {
-                        self.state.notify(
+                        self.notify(
                             crate::notification::NotificationType::Warning,
                             "LSP rename: no file open".to_string(),
                         );
@@ -1215,7 +1215,7 @@ impl<T: TerminalBackend> Editor<T> {
                     });
                     if let Some((path, tab_size, insert_spaces)) = info {
                         if self.lsp_manager.is_indexing_path(&path) {
-                            self.state.notify(
+                            self.notify(
                                 crate::notification::NotificationType::Info,
                                 "LSP: still indexing, please wait...".to_string(),
                             );
@@ -1395,7 +1395,7 @@ impl<T: TerminalBackend> Editor<T> {
                     return false;
                 };
                 if doc.selections().regions.is_empty() {
-                    self.state.notify(
+                    self.notify(
                         crate::notification::NotificationType::Info,
                         "Bank a region first (v + Esc)".to_string(),
                     );
@@ -1404,13 +1404,13 @@ impl<T: TerminalBackend> Editor<T> {
                 if let Some((region, needle)) = doc.bank_occurrence(forward) {
                     let (start, _) = region.span();
                     let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
-                    self.state.notify(
+                    self.notify(
                         crate::notification::NotificationType::Info,
                         format!("Banked occurrence of \"{needle}\""),
                     );
                     true
                 } else {
-                    self.state.notify(
+                    self.notify(
                         crate::notification::NotificationType::Info,
                         "No further occurrence to bank".to_string(),
                     );
@@ -1421,7 +1421,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.try_run_set_aware_add_surround(*ch, *delim_count)
             }
             _ => {
-                self.state.notify(
+                self.notify(
                     crate::notification::NotificationType::Error,
                     "internal error: unhandled editor action".to_string(),
                 );

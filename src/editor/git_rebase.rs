@@ -194,11 +194,9 @@ impl<T: TerminalBackend> Editor<T> {
         ) {
             u.trim().to_string()
         } else {
-            self.state.notify(
-                NotificationType::Error,
-                "No upstream configured for this branch; set one with `git branch --set-upstream-to=<ref>`"
-                    .to_string(),
-            );
+            self.notify(NotificationType::Error,
+            "No upstream configured for this branch; set one with `git branch --set-upstream-to=<ref>`"
+                .to_string(),);
             return;
         };
         self.start_rebase_from_base(repo_root, branch, base);
@@ -228,7 +226,7 @@ impl<T: TerminalBackend> Editor<T> {
         )
         .is_err()
         {
-            self.state.notify(
+            self.notify(
                 NotificationType::Error,
                 "Cannot rebase from the root commit — it has no parent".to_string(),
             );
@@ -244,12 +242,12 @@ impl<T: TerminalBackend> Editor<T> {
             match crate::git::run_checked(repo_root, &["rev-parse", "--abbrev-ref", "HEAD"]) {
                 Ok(b) => b.trim().to_string(),
                 Err(e) => {
-                    self.state.handle_error(e);
+                    self.notify_error(e);
                     return None;
                 }
             };
         if branch == "HEAD" {
-            self.state.notify(
+            self.notify(
                 NotificationType::Error,
                 "Cannot rebase: HEAD is detached".to_string(),
             );
@@ -271,13 +269,13 @@ impl<T: TerminalBackend> Editor<T> {
         ) {
             Ok(o) => o,
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return;
             }
         };
         let commits = crate::git::log::parse_log(&log_out);
         if commits.is_empty() {
-            self.state.notify(
+            self.notify(
                 NotificationType::Info,
                 format!("Already up to date with {base}"),
             );
@@ -291,13 +289,13 @@ impl<T: TerminalBackend> Editor<T> {
         ) {
             Ok(d) => d,
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return;
             }
         };
         self.open_buffer(doc, crate::document::manager::Placement::Focused);
         if let Err(e) = self.focus_document(id) {
-            self.state.handle_error(e);
+            self.notify_error(e);
             return;
         }
         let _ = self.force_full_redraw();
@@ -330,7 +328,7 @@ impl<T: TerminalBackend> Editor<T> {
         match pause {
             None => {
                 if steps.is_empty() {
-                    self.state.notify(
+                    self.notify(
                         NotificationType::Info,
                         "Nothing to rebase (empty todo)".to_string(),
                     );
@@ -339,7 +337,7 @@ impl<T: TerminalBackend> Editor<T> {
                 if let Err(e) =
                     crate::git::run_checked(&repo_root, &["checkout", "--detach", &base])
                 {
-                    self.state.handle_error(e);
+                    self.notify_error(e);
                     return;
                 }
                 self.run_rebase_steps(doc_id, &repo_root, &branch, steps, &message_overrides);
@@ -359,25 +357,23 @@ impl<T: TerminalBackend> Editor<T> {
                         );
                     }
                     _ if cherry_pick_in_progress(&repo_root) => {
-                        self.state.notify(
-                            NotificationType::Warning,
-                            "Still conflicted — resolve remaining conflicts (see <Space>gs), stage them, then :w again"
-                                .to_string(),
-                        );
+                        self.notify(NotificationType::Warning,
+                        "Still conflicted — resolve remaining conflicts (see <Space>gs), stage them, then :w again"
+                            .to_string(),);
                     }
                     Ok(out) => {
-                        self.state.handle_error(RiftError::new(
+                        self.notify_error(RiftError::new(
                             ErrorType::Execution,
                             "CHERRY_PICK_CONTINUE_FAILED",
                             out.stderr,
                         ));
                     }
-                    Err(e) => self.state.handle_error(e),
+                    Err(e) => self.notify_error(e),
                 }
             }
             #[cfg(test)]
             Some(RebasePause::AwaitingReword { .. }) => {
-                self.state.notify(
+                self.notify(
                     NotificationType::Info,
                     "Finish the reword commit message buffer first".to_string(),
                 );
@@ -482,14 +478,14 @@ impl<T: TerminalBackend> Editor<T> {
                 if let Err(e) =
                     crate::git::run_checked(repo_root, &["update-ref", &branch_ref, &new_tip])
                 {
-                    self.state.handle_error(e);
+                    self.notify_error(e);
                     return;
                 }
                 if let Err(e) = crate::git::run_checked(repo_root, &["checkout", branch]) {
-                    self.state.handle_error(e);
+                    self.notify_error(e);
                     return;
                 }
-                self.state.notify(
+                self.notify(
                     NotificationType::Info,
                     format!(
                         "Rebase onto {branch} complete at {}",
@@ -499,7 +495,7 @@ impl<T: TerminalBackend> Editor<T> {
                 if let Err(e) =
                     self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Force)
                 {
-                    self.state.handle_error(e);
+                    self.notify_error(e);
                 }
                 self.refresh_git_status_buffers_for(repo_root);
             }
@@ -511,8 +507,7 @@ impl<T: TerminalBackend> Editor<T> {
                     },
                     "Paused for edit. Edit files normally, stage with <Space>gs, then ca/cw to amend and resume (or :w here to continue without amending).",
                 );
-                self.state
-                    .notify(NotificationType::Info, "Rebase paused for edit".to_string());
+                self.notify(NotificationType::Info, "Rebase paused for edit".to_string());
             }
             #[cfg(test)]
             RebaseAdvance::PausedForReword { message, remaining } => {
@@ -536,13 +531,13 @@ impl<T: TerminalBackend> Editor<T> {
                     },
                     "Conflict — resolve via <Space>gs, stage the fix, then :w this buffer to continue.",
                 );
-                self.state.notify(
+                self.notify(
                     NotificationType::Warning,
                     "Rebase paused: conflict".to_string(),
                 );
             }
             RebaseAdvance::Error(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
             }
         }
     }
@@ -578,13 +573,12 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let _ = crate::git::run(&repo_root, &["cherry-pick", "--abort"]);
         if let Err(e) = crate::git::run_checked(&repo_root, &["checkout", &branch]) {
-            self.state.handle_error(e);
+            self.notify_error(e);
             return;
         }
-        self.state
-            .notify(NotificationType::Warning, "Rebase aborted".to_string());
+        self.notify(NotificationType::Warning, "Rebase aborted".to_string());
         if let Err(e) = self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Force) {
-            self.state.handle_error(e);
+            self.notify_error(e);
         }
         self.refresh_git_status_buffers_for(&repo_root);
     }
@@ -677,7 +671,7 @@ impl<T: TerminalBackend> Editor<T> {
             doc.set_git_rebase_message_override(sha, message);
         }
         if let Err(e) = self.focus_document(rebase_doc_id) {
-            self.state.handle_error(e);
+            self.notify_error(e);
             return;
         }
         let _ = self.force_full_redraw();

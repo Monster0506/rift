@@ -238,13 +238,8 @@ impl RenderSystem {
         let notification_entity = self.notification_entity.unwrap();
 
         let notification_state = NotificationDrawState {
-            generation: ctx.state.error_manager.notifications().generation,
-            count: ctx
-                .state
-                .error_manager
-                .notifications()
-                .iter_active()
-                .count(),
+            generation: ctx.state.notifications.generation,
+            count: ctx.state.notifications.iter_active().count(),
         };
 
         self.world.add_renderable(

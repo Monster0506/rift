@@ -159,8 +159,6 @@ impl From<std::io::Error> for RiftError {
 /// Result alias for Rift operations
 type Result<T> = std::result::Result<T, RiftError>;
 
-pub(crate) mod manager;
-
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;

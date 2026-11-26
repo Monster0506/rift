@@ -23,6 +23,18 @@ pub(crate) enum NotificationType {
     Success,
 }
 
+impl NotificationType {
+    #[must_use]
+    pub(crate) const fn ttl(self) -> Duration {
+        match self {
+            Self::Error => Duration::from_secs(10),
+            Self::Warning => Duration::from_secs(8),
+            Self::Info => Duration::from_secs(5),
+            Self::Success => Duration::from_secs(3),
+        }
+    }
+}
+
 impl From<ErrorSeverity> for NotificationType {
     fn from(severity: ErrorSeverity) -> Self {
         match severity {
@@ -131,13 +143,11 @@ impl NotificationManager {
         }
     }
 
-    /// Add a notification
-    pub(crate) fn add(
-        &mut self,
-        kind: NotificationType,
-        message: impl Into<String>,
-        ttl: Option<Duration>,
-    ) {
+    pub(crate) fn notify(&mut self, kind: NotificationType, message: impl Into<String>) {
+        self.add(kind, message, Some(kind.ttl()));
+    }
+
+    fn add(&mut self, kind: NotificationType, message: impl Into<String>, ttl: Option<Duration>) {
         let message: String = message.into();
         self.push_log_entry(MessageEntry::Notification {
             time: SystemTime::now(),
@@ -202,44 +212,6 @@ impl NotificationManager {
     #[must_use]
     pub(crate) fn message_log(&self) -> Vec<MessageEntry> {
         self.message_log.iter().cloned().collect()
-    }
-
-    /// Add an info notification (convenience)
-    #[cfg(test)]
-    pub(crate) fn info(&mut self, message: impl Into<String>) {
-        self.add(
-            NotificationType::Info,
-            message,
-            Some(Duration::from_secs(5)),
-        );
-    }
-
-    /// Add a warning notification (convenience)
-    pub(crate) fn warn(&mut self, message: impl Into<String>) {
-        self.add(
-            NotificationType::Warning,
-            message,
-            Some(Duration::from_secs(8)),
-        );
-    }
-
-    /// Add an error notification (convenience)
-    pub(crate) fn error(&mut self, message: impl Into<String>) {
-        self.add(
-            NotificationType::Error,
-            message,
-            Some(Duration::from_secs(10)),
-        );
-    }
-
-    #[cfg(test)]
-    /// Add a success notification (convenience)
-    fn success(&mut self, message: impl Into<String>) {
-        self.add(
-            NotificationType::Success,
-            message,
-            Some(Duration::from_secs(3)),
-        );
     }
 
     /// Check if there are any notifications

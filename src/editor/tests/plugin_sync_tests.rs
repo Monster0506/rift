@@ -188,8 +188,7 @@ fn registered_command_is_listed_before_any_sync() {
 fn notification_count(editor: &Editor<MockTerminal>, message: &str) -> usize {
     editor
         .state
-        .error_manager
-        .notifications()
+        .notifications
         .iter_active()
         .filter(|n| n.message == message)
         .count()

@@ -332,8 +332,7 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn load_plugins(&mut self) {
         let init_lua = user_config_dir().join("init.lua");
         for err in self.load_plugins_from(&plugin_dirs(), &init_lua) {
-            self.state
-                .notify(crate::notification::NotificationType::Error, err);
+            self.notify(crate::notification::NotificationType::Error, err);
         }
     }
 

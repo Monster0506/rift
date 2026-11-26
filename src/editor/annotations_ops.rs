@@ -148,7 +148,7 @@ impl<T: TerminalBackend> Editor<T> {
         if is_dir {
             self.reload_directory_buffer(doc_id, target);
         } else if let Err(e) = self.open_file(Some(target.display().to_string()), false) {
-            self.state.handle_error(e);
+            self.notify_error(e);
         } else {
             self.state.clear_command_line();
         }

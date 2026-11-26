@@ -1044,8 +1044,7 @@ fn editor_with_failing_plugin(src: &str) -> Editor<MockTerminal> {
 #[cfg(feature = "plugins")]
 fn has_notification(e: &Editor<MockTerminal>, prefix: &str) -> bool {
     e.state
-        .error_manager
-        .notifications()
+        .notifications
         .iter_active()
         .any(|n| n.message.starts_with(prefix) && n.message.contains("boom"))
 }

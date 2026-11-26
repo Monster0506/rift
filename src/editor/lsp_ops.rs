@@ -37,7 +37,7 @@ impl<T: TerminalBackend> Editor<T> {
             LspMessage::ServerExited { language } => self.lsp_server_exited(&language),
             LspMessage::CodeActionResolved { action } => self.lsp_action_resolved(&action),
             LspMessage::Error { method, message } => {
-                self.state.notify(
+                self.notify(
                     NotificationType::Error,
                     format!("LSP [{method}]: {message}"),
                 );
@@ -49,7 +49,7 @@ impl<T: TerminalBackend> Editor<T> {
             LspMessage::ServerReady { language } => self.lsp_server_ready(language),
             LspMessage::Log { message } => {
                 if self.state.settings.lsp.debug_log {
-                    self.state.notify(NotificationType::Info, message);
+                    self.notify(NotificationType::Info, message);
                 }
             }
             LspMessage::Progress { language, .. } => self.lsp_progress(language),
@@ -93,7 +93,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn lsp_applied_edit(&mut self, edit: &serde_json::Value) {
         let applied = self.apply_workspace_edit(edit);
-        self.state.notify(
+        self.notify(
             NotificationType::Info,
             format!("LSP: server edit applied to {applied} file(s)"),
         );
@@ -106,7 +106,7 @@ impl<T: TerminalBackend> Editor<T> {
             _ => NotificationType::Info,
         };
         if kind != 4 || self.state.settings.lsp.debug_log {
-            self.state.notify(notif_type, format!("LSP: {message}"));
+            self.notify(notif_type, format!("LSP: {message}"));
         }
     }
 
@@ -118,7 +118,7 @@ impl<T: TerminalBackend> Editor<T> {
             .unwrap_or(language)
             .to_string();
         self.state.lsp_status = Some(format!("{name}: exited"));
-        self.state.notify(
+        self.notify(
             NotificationType::Warning,
             format!("LSP: {name} exited; reopening documents"),
         );
@@ -130,7 +130,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(edit) = action.get("edit").cloned() {
             self.apply_code_action_edit(&edit);
         } else {
-            self.state.notify(
+            self.notify(
                 NotificationType::Warning,
                 "LSP: server returned no edit for this action".to_string(),
             );
@@ -200,7 +200,7 @@ impl<T: TerminalBackend> Editor<T> {
             return true;
         }
         if self.state.settings.lsp.debug_log {
-            self.state.notify(
+            self.notify(
                 NotificationType::Info,
                 format!("LSP: dropped stale {what} result for {uri}"),
             );
@@ -226,7 +226,7 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn lsp_request_position(&mut self) -> Option<(std::path::PathBuf, u32, u32)> {
         let pos = self.cursor_lsp_position()?;
         if self.lsp_manager.is_indexing_path(&pos.0) {
-            self.state.notify(
+            self.notify(
                 NotificationType::Info,
                 "LSP: still indexing, please wait...".to_string(),
             );
@@ -236,7 +236,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn notify_no_lsp_server(&mut self) {
-        self.state.notify(
+        self.notify(
             NotificationType::Warning,
             "LSP: no server available for this file".to_string(),
         );
@@ -342,7 +342,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn handle_goto_result(&mut self, locations: &[LspLocation]) {
         if locations.is_empty() {
-            self.state.notify(
+            self.notify(
                 NotificationType::Info,
                 "LSP: no definition found".to_string(),
             );
@@ -356,7 +356,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let loc = &locations[0];
         let Some(path) = crate::lsp::protocol::uri_to_path(&loc.uri) else {
-            self.state.notify(
+            self.notify(
                 NotificationType::Error,
                 "LSP: invalid URI in definition".to_string(),
             );
@@ -377,7 +377,7 @@ impl<T: TerminalBackend> Editor<T> {
         let loads_async = !already_open && path.exists();
 
         if let Err(e) = self.open_file(Some(path.to_string_lossy().into_owned()), false) {
-            self.state.handle_error(e);
+            self.notify_error(e);
             return;
         }
 
@@ -427,7 +427,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_references_result(&mut self, locations: &[LspLocation]) {
         if locations.is_empty() {
-            self.state.notify(
+            self.notify(
                 NotificationType::Info,
                 "LSP: no references found".to_string(),
             );
@@ -439,8 +439,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_hover_result(&mut self, contents: &str) {
         if contents.trim().is_empty() {
-            self.state
-                .notify(NotificationType::Info, "LSP: no hover info".to_string());
+            self.notify(NotificationType::Info, "LSP: no hover info".to_string());
             return;
         }
 
@@ -478,7 +477,7 @@ impl<T: TerminalBackend> Editor<T> {
             );
 
         if !had_changes {
-            self.state.notify(
+            self.notify(
                 NotificationType::Warning,
                 "LSP: rename produced no changes".to_string(),
             );
@@ -486,7 +485,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let applied = self.apply_workspace_edit(workspace_edit);
-        self.state.notify(
+        self.notify(
             NotificationType::Info,
             format!("LSP: rename applied to {applied} file(s)"),
         );
@@ -494,8 +493,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_formatting_result(&mut self, uri: &str, edits: Vec<LspTextEdit>) {
         if edits.is_empty() {
-            self.state
-                .notify(NotificationType::Info, "LSP: already formatted".to_string());
+            self.notify(NotificationType::Info, "LSP: already formatted".to_string());
             return;
         }
 
@@ -511,13 +509,12 @@ impl<T: TerminalBackend> Editor<T> {
             let _ = self.force_full_redraw();
         }
 
-        self.state
-            .notify(NotificationType::Success, "LSP: formatted".to_string());
+        self.notify(NotificationType::Success, "LSP: formatted".to_string());
     }
 
     fn handle_code_action_result(&mut self, actions: Vec<serde_json::Value>) {
         if actions.is_empty() {
-            self.state.notify(
+            self.notify(
                 NotificationType::Info,
                 "LSP: no code actions available".to_string(),
             );
@@ -607,7 +604,7 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some(lang) = language {
                 self.lsp_manager.resolve_code_action(&lang, action);
             } else {
-                self.state.notify(
+                self.notify(
                     NotificationType::Warning,
                     "LSP: cannot resolve action: no server for this file".to_string(),
                 );
@@ -617,7 +614,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn apply_code_action_edit(&mut self, edit: &serde_json::Value) {
         let applied = self.apply_workspace_edit(edit);
-        self.state.notify(
+        self.notify(
             NotificationType::Info,
             format!("LSP: code action applied to {applied} file(s)"),
         );
@@ -640,7 +637,7 @@ impl<T: TerminalBackend> Editor<T> {
                         .or_else(|| change.get("newUri"))
                         .and_then(|u| u.as_str())
                         .unwrap_or("?");
-                    self.state.notify(
+                    self.notify(
                         NotificationType::Warning,
                         format!("LSP: unsupported '{kind}' file operation skipped: {target}"),
                     );
@@ -705,7 +702,7 @@ impl<T: TerminalBackend> Editor<T> {
         match serde_json::from_value::<Vec<LspTextEdit>>(edits.clone()) {
             Ok(edits) => Some(edits),
             Err(e) => {
-                self.state.notify(
+                self.notify(
                     NotificationType::Warning,
                     format!("LSP: malformed edit for {uri} skipped: {e}"),
                 );
@@ -730,7 +727,7 @@ impl<T: TerminalBackend> Editor<T> {
                 if let Some(id) = self.open_document_in_background(&path) {
                     id
                 } else {
-                    self.state.notify(
+                    self.notify(
                         NotificationType::Warning,
                         format!("LSP: could not open {} to apply edits", path.display()),
                     );
@@ -837,8 +834,7 @@ impl<T: TerminalBackend> Editor<T> {
             .map(std::path::Path::to_path_buf);
 
         let Some(path) = path else {
-            self.state
-                .notify(NotificationType::Info, "LSP: no file path".to_string());
+            self.notify(NotificationType::Info, "LSP: no file path".to_string());
             return;
         };
 
@@ -850,8 +846,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .collect()
         });
         if diags.is_empty() {
-            self.state
-                .notify(NotificationType::Info, "LSP: no diagnostics".to_string());
+            self.notify(NotificationType::Info, "LSP: no diagnostics".to_string());
             return;
         }
 
@@ -897,8 +892,7 @@ impl<T: TerminalBackend> Editor<T> {
             Some(3) => (NotificationType::Info, "info"),
             _ => (NotificationType::Info, "hint"),
         };
-        self.state
-            .notify(notif_type, format!("[{}] {}", prefix, diag.message));
+        self.notify(notif_type, format!("[{}] {}", prefix, diag.message));
 
         let _ = self.update_and_render();
     }
@@ -1009,8 +1003,7 @@ impl<T: TerminalBackend> Editor<T> {
             .and_then(|doc| doc.path().map(std::path::Path::to_path_buf));
 
         let Some(path) = info else {
-            self.state
-                .notify(NotificationType::Info, "LSP: no file open".to_string());
+            self.notify(NotificationType::Info, "LSP: no file open".to_string());
             return;
         };
 
@@ -1018,8 +1011,7 @@ impl<T: TerminalBackend> Editor<T> {
         let mut diags = match self.lsp_diagnostics.get(&uri) {
             Some(d) if !d.is_empty() => d.clone(),
             _ => {
-                self.state
-                    .notify(NotificationType::Info, "LSP: no diagnostics".to_string());
+                self.notify(NotificationType::Info, "LSP: no diagnostics".to_string());
                 return;
             }
         };
@@ -1076,7 +1068,7 @@ impl<T: TerminalBackend> Editor<T> {
         let mut doc = match crate::document::Document::new(loc_doc_id) {
             Ok(d) => d,
             Err(e) => {
-                self.state.handle_error(e);
+                self.notify_error(e);
                 return;
             }
         };

@@ -1325,7 +1325,7 @@ fn render_notifications_to_paint_frame(
 ) {
     use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-    let notifications = state.error_manager.notifications();
+    let notifications = &state.notifications;
     if notifications.is_empty() {
         return;
     }

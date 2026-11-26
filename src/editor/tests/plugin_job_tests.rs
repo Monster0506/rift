@@ -67,8 +67,7 @@ fn only_probe(editor: &Editor<MockTerminal>) -> ExitProbe {
 fn notification_count(editor: &Editor<MockTerminal>, needle: &str) -> usize {
     editor
         .state
-        .error_manager
-        .notifications()
+        .notifications
         .iter_active()
         .filter(|n| n.message.contains(needle))
         .count()

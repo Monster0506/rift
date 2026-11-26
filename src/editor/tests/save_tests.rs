@@ -91,7 +91,7 @@ fn bug_w_existing_other_path_overwrites() {
 
     assert_eq!(std::fs::read_to_string(&b).unwrap(), "b");
     assert_eq!(active_path(&mut editor), before);
-    assert!(!editor.state.error_manager.notifications().is_empty());
+    assert!(!editor.state.notifications.is_empty());
 }
 
 #[test]
