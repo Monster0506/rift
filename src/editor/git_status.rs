@@ -400,7 +400,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// `]c`/`[c`: move the cursor to the next/previous expanded hunk header.
-    fn git_status_navigate_hunk(&mut self, forward: bool) {
+    pub(super) fn git_status_navigate_hunk(&mut self, forward: bool) {
         let doc = self.active_document();
         let cursor = doc.buffer().cursor();
         let current_line = doc.buffer().line_index.get_line_at(cursor);
@@ -489,21 +489,8 @@ impl<T: TerminalBackend> Editor<T> {
         self.open_git_rebase(repo_root);
     }
 
-    /// Dispatches a `git_status:*` `Action::Buffer` id.
     pub(super) fn handle_git_status_buffer_action(&mut self, id: &str) {
-        match id {
-            "git_status:stage" => self.git_status_cursor_action("stage"),
-            "git_status:unstage" => self.git_status_cursor_action("unstage"),
-            "git_status:toggle_stage" => self.git_status_cursor_action("toggle"),
-            "git_status:discard" => self.git_status_cursor_action("discard"),
-            "git_status:toggle_expand" => self.git_status_toggle_expand(),
-            "git_status:next_hunk" => self.git_status_navigate_hunk(true),
-            "git_status:prev_hunk" => self.git_status_navigate_hunk(false),
-            "git_status:select" => self.git_status_select(),
-            "git_status:blame" => self.git_status_blame_cursor(),
-            "git_status:rebase" => self.git_status_rebase_cursor(),
-            _ => {}
-        }
+        self.run_kind_action(crate::action::table::GIT_STATUS_ACTIONS, id);
     }
 
     /// `cc` in the status buffer: open an empty commit message buffer.

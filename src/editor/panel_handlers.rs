@@ -1,50 +1,73 @@
 use super::Editor;
 use super::PanelKind;
+use crate::action::table::{self, KindActionSpec, KindOp};
 use crate::buffer::api::BufferView;
 use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
-    pub(super) fn handle_directory_buffer_action(&mut self, id: &str) {
-        match id {
-            "explorer:select" => self.handle_explorer_select(),
-            "explorer:parent" => self.handle_explorer_parent(),
-            "explorer:close" => self.close_split_panel(),
-            "explorer:refresh" => self.handle_explorer_refresh(),
-            _ => {}
+    pub(super) fn run_kind_action(&mut self, actions: &[KindActionSpec], id: &str) {
+        if let Some(op) = table::kind_op(actions, id) {
+            self.run_kind_op(op);
         }
+    }
+
+    fn run_kind_op(&mut self, op: KindOp) {
+        match op {
+            KindOp::ClosePanel => self.close_split_panel(),
+            KindOp::ExplorerSelect => self.handle_explorer_select(),
+            KindOp::ExplorerParent => self.handle_explorer_parent(),
+            KindOp::ExplorerRefresh => self.handle_explorer_refresh(),
+            KindOp::UndoTreeSelect => self.handle_undotree_select(),
+            KindOp::UndoTreeRefresh => self.handle_undotree_refresh(),
+            KindOp::UndoTreeNext => self.handle_undotree_move(1),
+            KindOp::UndoTreePrev => self.handle_undotree_move(-1),
+            KindOp::MessagesRefresh => self.refresh_messages_buffer_if_open(),
+            KindOp::ClipboardSelect => self.handle_clipboard_select(),
+            KindOp::ClipboardNew => self.handle_clipboard_new(),
+            KindOp::ClipboardRefresh => self.refresh_clipboard_buffer_if_open(),
+            KindOp::ClipboardEntryClose => self.handle_clipboard_entry_close(),
+            #[cfg(feature = "lsp")]
+            KindOp::LocationListSelect => self.handle_location_list_select(),
+            #[cfg(feature = "lsp")]
+            KindOp::LocationListCodeAction => self.handle_location_list_code_action(),
+            #[cfg(not(feature = "lsp"))]
+            KindOp::LocationListSelect | KindOp::LocationListCodeAction => {}
+            KindOp::BufferListSelect => self.handle_buffer_list_select(),
+            KindOp::GitStatusSelect => self.git_status_select(),
+            KindOp::GitStatusStage => self.git_status_cursor_action("stage"),
+            KindOp::GitStatusUnstage => self.git_status_cursor_action("unstage"),
+            KindOp::GitStatusToggleStage => self.git_status_cursor_action("toggle"),
+            KindOp::GitStatusDiscard => self.git_status_cursor_action("discard"),
+            KindOp::GitStatusToggleExpand => self.git_status_toggle_expand(),
+            KindOp::GitStatusNextHunk => self.git_status_navigate_hunk(true),
+            KindOp::GitStatusPrevHunk => self.git_status_navigate_hunk(false),
+            KindOp::GitStatusBlame => self.git_status_blame_cursor(),
+            KindOp::GitStatusRebase => self.git_status_rebase_cursor(),
+            KindOp::GitBlameWalkBack => self.git_blame_walk_back(),
+            KindOp::GitBlameWalkForward => self.git_blame_walk_forward(),
+            KindOp::GitBlameClose => self.close_git_blame(),
+            KindOp::GitLogToggleExpand => self.git_log_toggle_expand(),
+        }
+    }
+
+    pub(super) fn handle_directory_buffer_action(&mut self, id: &str) {
+        self.run_kind_action(table::DIRECTORY_ACTIONS, id);
     }
 
     pub(super) fn handle_undotree_buffer_action(&mut self, id: &str) {
-        match id {
-            "undotree:select" => self.handle_undotree_select(),
-            "undotree:close" => self.close_split_panel(),
-            "undotree:refresh" => self.handle_undotree_refresh(),
-            "undotree:next" => self.handle_undotree_move(1),
-            "undotree:prev" => self.handle_undotree_move(-1),
-            _ => {}
-        }
+        self.run_kind_action(table::UNDOTREE_ACTIONS, id);
     }
 
     pub(super) fn handle_messages_buffer_action(&mut self, id: &str) {
-        if id == "messages:refresh" {
-            self.refresh_messages_buffer_if_open();
-        }
+        self.run_kind_action(table::MESSAGES_ACTIONS, id);
     }
 
     pub(super) fn handle_clipboard_buffer_action(&mut self, id: &str) {
-        match id {
-            "clipboard:select" => self.handle_clipboard_select(),
-            "clipboard:new" => self.handle_clipboard_new(),
-            "clipboard:refresh" => self.refresh_clipboard_buffer_if_open(),
-            "clipboard:close" => self.close_split_panel(),
-            _ => {}
-        }
+        self.run_kind_action(table::CLIPBOARD_ACTIONS, id);
     }
 
     pub(super) fn handle_clipboard_entry_action(&mut self, id: &str) {
-        if id == "clipboard:entry:close" {
-            self.handle_clipboard_entry_close();
-        }
+        self.run_kind_action(table::CLIPBOARD_ENTRY_ACTIONS, id);
     }
 
     pub(super) fn handle_clipboard_entry_close(&mut self) {
@@ -298,14 +321,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn handle_location_list_action(&mut self, id: &str) {
-        match id {
-            #[cfg(feature = "lsp")]
-            "location_list:select" => self.handle_location_list_select(),
-            #[cfg(feature = "lsp")]
-            "location_list:code_action" => self.handle_location_list_code_action(),
-            "location_list:close" => self.close_split_panel(),
-            _ => {}
-        }
+        self.run_kind_action(table::LOCATION_LIST_ACTIONS, id);
     }
 
     #[cfg(feature = "lsp")]
@@ -345,17 +361,11 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn handle_regions_buffer_action(&mut self, id: &str) {
-        if id == "regions:close" {
-            self.close_split_panel();
-        }
+        self.run_kind_action(table::REGIONS_ACTIONS, id);
     }
 
     pub(super) fn handle_buffer_list_action(&mut self, id: &str) {
-        match id {
-            "buffer_list:select" => self.handle_buffer_list_select(),
-            "buffer_list:close" => self.close_split_panel(),
-            _ => {}
-        }
+        self.run_kind_action(table::BUFFER_LIST_ACTIONS, id);
     }
 
     /// Space on a diagnostic entry: send a code action request scoped to that diagnostic.

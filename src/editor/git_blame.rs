@@ -71,7 +71,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    fn git_blame_walk_back(&mut self) {
+    pub(super) fn git_blame_walk_back(&mut self) {
         let (repo_root, path, sha, linked_doc_id, linked_window_id) = {
             let doc = self.active_document();
             if doc.buffer_kind_id() != BufferKindId::GIT_BLAME {
@@ -130,7 +130,7 @@ impl<T: TerminalBackend> Editor<T> {
             ));
     }
 
-    fn git_blame_walk_forward(&mut self) {
+    pub(super) fn git_blame_walk_forward(&mut self) {
         let (repo_root, path, linked_doc_id, linked_window_id, previous) = {
             let doc = self.active_document();
             if doc.buffer_kind_id() != BufferKindId::GIT_BLAME {
@@ -305,7 +305,7 @@ impl<T: TerminalBackend> Editor<T> {
             })
     }
     /// `Escape` in a blame buffer: close it and return focus to the linked file.
-    fn close_git_blame(&mut self) {
+    pub(super) fn close_git_blame(&mut self) {
         let (doc_id, linked_doc_id, linked_window_id) = {
             let doc = self.active_document();
             if doc.buffer_kind_id() != BufferKindId::GIT_BLAME {
@@ -337,13 +337,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    /// Dispatch a `git_blame:*` `Action::Buffer` id.
     pub(super) fn handle_git_blame_buffer_action(&mut self, id: &str) {
-        match id {
-            "git_blame:walk_back" => self.git_blame_walk_back(),
-            "git_blame:walk_forward" => self.git_blame_walk_forward(),
-            "git_blame:close" => self.close_git_blame(),
-            _ => {}
-        }
+        self.run_kind_action(crate::action::table::GIT_BLAME_ACTIONS, id);
     }
 }

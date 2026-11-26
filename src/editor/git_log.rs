@@ -84,11 +84,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.job_manager.spawn(job);
     }
 
-    /// Dispatch a `git_log:*` `Action::Buffer` id.
     pub(super) fn handle_git_log_buffer_action(&mut self, id: &str) {
-        match id {
-            "git_log:toggle_expand" | "git_log:select" => self.git_log_toggle_expand(),
-            _ => {}
-        }
+        self.run_kind_action(crate::action::table::GIT_LOG_ACTIONS, id);
     }
 }

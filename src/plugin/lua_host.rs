@@ -2212,14 +2212,16 @@ impl LuaHost {
                 entry.set("description", spec.doc)?;
                 result.push(entry)?;
             }
-            for spec in crate::action::table::KIND_ACTIONS {
-                let entry = lua.create_table()?;
-                entry.set("id", spec.id)?;
-                entry.set("args", lua.create_table()?)?;
-                entry.set("kind", spec.kind)?;
-                entry.set("operation", spec.op)?;
-                entry.set("description", spec.doc)?;
-                result.push(entry)?;
+            for (kind, actions) in crate::action::table::KIND_ACTIONS {
+                for spec in *actions {
+                    let entry = lua.create_table()?;
+                    entry.set("id", spec.id)?;
+                    entry.set("args", lua.create_table()?)?;
+                    entry.set("kind", *kind)?;
+                    entry.set("operation", spec.op)?;
+                    entry.set("description", spec.doc)?;
+                    result.push(entry)?;
+                }
             }
             Ok(result)
         })?;

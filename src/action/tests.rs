@@ -272,7 +272,7 @@ fn builtin_namespaces_only_accept_table_ids() {
 
 #[test]
 fn kind_action_ids_parse_to_buffer_actions() {
-    for spec in table::KIND_ACTIONS {
+    for spec in table::KIND_ACTIONS.iter().flat_map(|(_, actions)| *actions) {
         assert_eq!(
             Action::from_str(spec.id).unwrap(),
             Action::Buffer(spec.id.to_string())
