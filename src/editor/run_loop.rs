@@ -77,10 +77,7 @@ impl<T: TerminalBackend> Editor<T> {
         // Poll for input
         let now = crate::time::Instant::now();
         let mut timeout = std::time::Duration::from_millis(self.state.settings.poll_timeout_ms);
-        if let Some(delay) = self.terminal_frame_delay(now) {
-            timeout = timeout.min(delay);
-        }
-        if let Some(deadline) = self.plugin_host.next_timer_deadline() {
+        if let Some(deadline) = self.next_deadline(now) {
             timeout = timeout.min(deadline.saturating_duration_since(now));
         }
         let input_ready = self.term.poll(timeout).map_err(|e| {
@@ -128,6 +125,23 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         Ok(())
+    }
+
+    fn next_deadline(&self, now: crate::time::Instant) -> Option<crate::time::Instant> {
+        let key_sequence_timeout = std::time::Duration::from_millis(KEY_SEQUENCE_TIMEOUT_MS);
+        [
+            self.terminal_frame_delay(now).map(|delay| now + delay),
+            self.plugin_host.next_timer_deadline(),
+            self.syntax_reparse.next_deadline(),
+            self.search_refresh.next_deadline(),
+            self.git_gutter_diff.deadline(self.active_document_id()),
+            self.pending_keys_started_at
+                .map(|started_at| started_at + key_sequence_timeout),
+            self.state.error_manager.notifications().next_expiry(),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 
     fn terminal_frame_delay(&self, now: crate::time::Instant) -> Option<std::time::Duration> {

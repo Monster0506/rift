@@ -276,6 +276,14 @@ impl NotificationManager {
         false
     }
 
+    #[must_use]
+    pub(crate) fn next_expiry(&self) -> Option<Instant> {
+        self.notifications
+            .iter()
+            .filter_map(|n| n.ttl.map(|ttl| n.timestamp + ttl))
+            .min()
+    }
+
     /// Record that a render has completed.
     pub(crate) fn mark_rendered(&mut self) {
         self.last_render_time = Some(Instant::now());

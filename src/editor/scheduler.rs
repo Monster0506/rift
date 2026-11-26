@@ -50,6 +50,10 @@ impl<K: Copy + Eq + Hash> Debounced<K> {
             .collect()
     }
 
+    pub(super) fn next_deadline(&self) -> Option<Instant> {
+        self.slots.values().filter_map(|slot| slot.deadline).min()
+    }
+
     pub(super) fn start(&mut self, key: K, job: usize) {
         let slot = self.slots.entry(key).or_default();
         slot.deadline = None;

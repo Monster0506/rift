@@ -27,6 +27,7 @@ fn due_lists_only_elapsed_keys() {
     debounced.arm(2, start + DELAY);
 
     assert_eq!(debounced.due(start + DELAY), vec![1]);
+    assert_eq!(debounced.next_deadline(), Some(start + DELAY));
 }
 
 #[test]
@@ -37,7 +38,7 @@ fn starting_a_job_disarms_and_cancel_returns_it() {
     debounced.start(1, 7);
 
     assert!(!debounced.is_armed(1));
-    assert_eq!(debounced.deadline(1), None);
+    assert_eq!(debounced.next_deadline(), None);
     assert_eq!(debounced.cancel(1), Some(7));
     assert_eq!(debounced.cancel(1), None);
 }

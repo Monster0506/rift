@@ -268,3 +268,52 @@ fn poll_timeout_shrinks_to_the_cursor_hold_deadline() {
     assert!(editor.term.polls[0] <= Duration::from_millis(400));
     assert!(editor.term.polls[0] > Duration::from_millis(300));
 }
+
+#[test]
+fn poll_timeout_shrinks_to_the_search_refresh_deadline() {
+    let mut editor = editor();
+    editor.state.last_search_query = Some("x".to_string());
+    editor.schedule_search_refresh();
+
+    editor.tick().unwrap();
+
+    assert!(editor.term.polls[0] <= super::super::scheduler::SEARCH_REFRESH_DEBOUNCE);
+}
+
+#[test]
+fn poll_timeout_shrinks_to_the_syntax_reparse_deadline() {
+    let mut editor = editor();
+    let doc_id = editor.active_document_id();
+    editor.debounce_syntax_reparse(doc_id);
+
+    editor.tick().unwrap();
+
+    assert!(editor.term.polls[0] <= super::super::scheduler::SYNTAX_REPARSE_DEBOUNCE);
+}
+
+#[test]
+fn poll_timeout_shrinks_to_the_key_sequence_timeout() {
+    let mut editor = editor();
+    editor.pending_keys.push(Key::char('g'));
+    editor.pending_keys_started_at = crate::time::Instant::now()
+        .checked_sub(Duration::from_millis(KEY_SEQUENCE_TIMEOUT_MS - 50));
+
+    editor.tick().unwrap();
+
+    assert!(editor.term.polls[0] <= Duration::from_millis(50));
+}
+
+#[test]
+fn poll_timeout_shrinks_to_the_next_notification_expiry() {
+    let mut editor = editor();
+    editor.state.settings.poll_timeout_ms = 60_000;
+    editor.plugin_host.set_cursor_hold_delay_ms(60_000);
+    editor
+        .state
+        .notify(crate::notification::NotificationType::Success, "saved");
+
+    editor.tick().unwrap();
+
+    assert!(editor.term.polls[0] <= Duration::from_secs(3));
+    assert!(editor.term.polls[0] > Duration::from_secs(2));
+}
