@@ -293,7 +293,7 @@ impl RenderSystem {
                 .syntax_colors
                 .as_ref()
                 .map_or(0, |colors| {
-                    let highlights = ctx.highlights.unwrap_or(&[]);
+                    let highlights = ctx.intrinsic.syntax.unwrap_or(&[]);
                     let mut hash: u64 =
                         (highlights.len() as u64) ^ colors.revision().rotate_left(32);
                     for (range, capture) in highlights {
@@ -551,15 +551,12 @@ impl RenderSystem {
             state: state.state,
             needs_clear: state.needs_clear,
             tab_width: state.tab_width,
-            highlights: state.highlights,
-            capture_map: state.capture_map,
-            injection_highlights: state.injection_highlights,
+            intrinsic: state.intrinsic,
             git_gutter_colors: state.git_gutter_colors,
             annotation_styles: state.annotation_styles,
             annotation_adornments: state.annotation_adornments,
             annotation_inline: state.annotation_inline,
             annotation_concealed: state.annotation_concealed,
-            terminal_cell_colors: state.terminal_cell_colors,
             show_line_numbers: state.show_line_numbers,
             display_map: state.display_map,
             gutter_width_override: None,

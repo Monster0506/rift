@@ -641,9 +641,14 @@ impl<T: TerminalBackend> Editor<T> {
             pending_count: *pending_count,
             needs_clear,
             tab_width: doc.options.tab_width,
-            highlights: highlights.as_deref(),
-            capture_map: capture_names,
-            injection_highlights: injection_hl.as_deref(),
+            intrinsic: render::IntrinsicLayers {
+                syntax: highlights.as_deref(),
+                capture_map: capture_names,
+                injections: injection_hl.as_deref(),
+                terminal_cells: doc
+                    .terminal_cell_colors()
+                    .filter(|colors| !colors.is_empty()),
+            },
             skip_content: false,
             cursor_row_offset: 0,
             cursor_col_offset: 0,
@@ -657,9 +662,6 @@ impl<T: TerminalBackend> Editor<T> {
             annotation_inline: (!annotation_inline.is_empty()).then_some(&annotation_inline),
             annotation_concealed: (!annotation_concealed.is_empty())
                 .then_some(&annotation_concealed),
-            terminal_cell_colors: doc
-                .terminal_cell_colors()
-                .filter(|colors| !colors.is_empty()),
             show_line_numbers: doc.options.show_line_numbers,
             display_map,
             scroll_hints: scroll_hint.as_slice(),
@@ -1231,9 +1233,14 @@ impl<T: TerminalBackend> Editor<T> {
             state,
             needs_clear,
             tab_width,
-            highlights: highlights.as_deref(),
-            capture_map: capture_names,
-            injection_highlights: injection_hl.as_deref(),
+            intrinsic: render::IntrinsicLayers {
+                syntax: highlights.as_deref(),
+                capture_map: capture_names,
+                injections: injection_hl.as_deref(),
+                terminal_cells: doc
+                    .terminal_cell_colors()
+                    .filter(|colors| !colors.is_empty()),
+            },
             git_gutter_colors: (!git_gutter_colors_data.is_empty())
                 .then_some(&git_gutter_colors_data),
             annotation_styles: (!annotation_styles.is_empty()).then_some(&annotation_styles),
@@ -1242,9 +1249,6 @@ impl<T: TerminalBackend> Editor<T> {
             annotation_inline: (!annotation_inline.is_empty()).then_some(&annotation_inline),
             annotation_concealed: (!annotation_concealed.is_empty())
                 .then_some(&annotation_concealed),
-            terminal_cell_colors: doc
-                .terminal_cell_colors()
-                .filter(|colors| !colors.is_empty()),
             show_line_numbers: doc.options.show_line_numbers,
             display_map,
             gutter_width_override: Some(gutter_width),
@@ -1415,9 +1419,12 @@ impl<T: TerminalBackend> Editor<T> {
             pending_count: *pending_count,
             needs_clear,
             tab_width: focused_tab_width,
-            highlights: None,
-            capture_map: None,
-            injection_highlights: None,
+            intrinsic: render::IntrinsicLayers {
+                terminal_cells: focused_doc
+                    .terminal_cell_colors()
+                    .filter(|colors| !colors.is_empty()),
+                ..render::IntrinsicLayers::default()
+            },
             skip_content: true,
             cursor_row_offset: row_off,
             cursor_col_offset: col_off,
@@ -1428,9 +1435,6 @@ impl<T: TerminalBackend> Editor<T> {
             annotation_adornments: None,
             annotation_inline: None,
             annotation_concealed: None,
-            terminal_cell_colors: focused_doc
-                .terminal_cell_colors()
-                .filter(|colors| !colors.is_empty()),
             show_line_numbers: focused_doc.options.show_line_numbers,
             display_map: focused_display_map,
             scroll_hints,

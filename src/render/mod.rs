@@ -155,7 +155,7 @@ fn compute_content_blit_key(ctx: &DrawContext, visible_rows: usize) -> ContentBl
             .syntax_colors
             .as_ref()
             .map_or(0, crate::color::theme::SyntaxColors::revision),
-        terminal_colors_hash: hash_ranged_spans(ctx.terminal_cell_colors.unwrap_or(&[])),
+        terminal_colors_hash: hash_ranged_spans(ctx.intrinsic.terminal_cells.unwrap_or(&[])),
         search_matches_hash: hash_search_matches(ctx.search_matches()),
         annotation_presentation_generation,
         annotation_concealed_hash: hash_concealed_ranges(ctx.annotation_concealed.unwrap_or(&[])),
@@ -250,6 +250,75 @@ type InlineAdornment = (usize, usize, String, Color, bool);
 
 pub(crate) type LineAdornment<'a> = (usize, std::borrow::Cow<'a, str>, Color);
 
+#[derive(Clone, Copy, Default)]
+pub(crate) struct IntrinsicLayers<'a> {
+    pub(crate) syntax: Option<&'a [(std::ops::Range<usize>, u32)]>,
+    pub(crate) capture_map: Option<&'a [&'a str]>,
+    pub(crate) injections: Option<&'a [(std::ops::Range<usize>, String)]>,
+    pub(crate) terminal_cells: Option<&'a [crate::color::CellColorSpan]>,
+}
+
+#[derive(Clone, Copy, Default)]
+struct IntrinsicCursors {
+    syntax: usize,
+    injection: usize,
+    terminal: usize,
+}
+
+impl<'a> IntrinsicLayers<'a> {
+    fn advance_past(&self, cursors: &mut IntrinsicCursors, byte_boundary: usize) {
+        advance_idx_past(
+            self.syntax.unwrap_or(&[]),
+            &mut cursors.syntax,
+            byte_boundary,
+            |(r, _)| r.end,
+        );
+        advance_idx_past(
+            self.injections.unwrap_or(&[]),
+            &mut cursors.injection,
+            byte_boundary,
+            |(r, _)| r.end,
+        );
+        advance_idx_past(
+            self.terminal_cells.unwrap_or(&[]),
+            &mut cursors.terminal,
+            byte_boundary,
+            |(r, _)| r.end,
+        );
+    }
+
+    fn decorate(
+        self,
+        source: impl Iterator<Item = pipeline::RenderItem> + 'a,
+        cursors: &'a mut IntrinsicCursors,
+        syntax_colors: Option<&'a crate::color::theme::SyntaxColors>,
+    ) -> impl Iterator<Item = pipeline::RenderItem> + 'a {
+        let IntrinsicCursors {
+            syntax,
+            injection,
+            terminal,
+        } = cursors;
+        let highlighted = SyntaxDecorator::new(
+            source,
+            self.syntax.unwrap_or(&[]),
+            syntax,
+            syntax_colors,
+            self.capture_map,
+        );
+        let injected = pipeline::InjectionDecorator::new(
+            highlighted,
+            self.injections.unwrap_or(&[]),
+            injection,
+            syntax_colors,
+        );
+        pipeline::TerminalColorDecorator::new(
+            injected,
+            self.terminal_cells.unwrap_or(&[]),
+            terminal,
+        )
+    }
+}
+
 pub struct RenderState<'a> {
     pub(crate) buf: &'a TextBuffer,
     pub(crate) current_mode: Mode,
@@ -258,9 +327,7 @@ pub struct RenderState<'a> {
     pub(crate) state: &'a State,
     pub(crate) needs_clear: bool,
     pub(crate) tab_width: usize,
-    pub(crate) highlights: Option<&'a [(std::ops::Range<usize>, u32)]>,
-    pub(crate) capture_map: Option<&'a [&'a str]>,
-    pub(crate) injection_highlights: Option<&'a [(std::ops::Range<usize>, String)]>,
+    pub(crate) intrinsic: IntrinsicLayers<'a>,
     pub(crate) skip_content: bool,
     pub(crate) cursor_row_offset: usize,
     pub(crate) cursor_col_offset: usize,
@@ -271,7 +338,6 @@ pub struct RenderState<'a> {
     pub(crate) annotation_adornments: Option<&'a [LineAdornment<'a>]>,
     pub(crate) annotation_inline: Option<&'a [InlineAdornment]>,
     pub(crate) annotation_concealed: Option<&'a [(usize, usize)]>,
-    pub(crate) terminal_cell_colors: Option<&'a [crate::color::CellColorSpan]>,
     pub(crate) show_line_numbers: bool,
     pub(crate) display_map: Option<&'a DisplayMap>,
     pub(crate) scroll_hints: &'a [crate::layer::ScrollHint],
@@ -292,9 +358,7 @@ impl<'a> RenderState<'a> {
             state,
             needs_clear: false,
             tab_width: 4,
-            highlights: None,
-            capture_map: None,
-            injection_highlights: None,
+            intrinsic: IntrinsicLayers::default(),
             skip_content: false,
             cursor_row_offset: 0,
             cursor_col_offset: 0,
@@ -305,7 +369,6 @@ impl<'a> RenderState<'a> {
             annotation_adornments: None,
             annotation_inline: None,
             annotation_concealed: None,
-            terminal_cell_colors: None,
             show_line_numbers: true,
             display_map: None,
             scroll_hints: &[],
@@ -326,14 +389,11 @@ pub(crate) struct DrawContext<'a> {
     pub(crate) annotation_adornments: Option<&'a [LineAdornment<'a>]>,
     pub(crate) annotation_inline: Option<&'a [InlineAdornment]>,
     pub(crate) annotation_concealed: Option<&'a [(usize, usize)]>,
-    pub(crate) terminal_cell_colors: Option<&'a [crate::color::CellColorSpan]>,
+    pub(crate) intrinsic: IntrinsicLayers<'a>,
     pub(crate) pending_count: usize,
     pub(crate) state: &'a State,
     pub(crate) needs_clear: bool,
     pub(crate) tab_width: usize,
-    pub(crate) highlights: Option<&'a [(std::ops::Range<usize>, u32)]>,
-    pub(crate) capture_map: Option<&'a [&'a str]>,
-    pub(crate) injection_highlights: Option<&'a [(std::ops::Range<usize>, String)]>,
     pub(crate) show_line_numbers: bool,
     pub(crate) display_map: Option<&'a DisplayMap>,
     pub(crate) gutter_width_override: Option<usize>,
@@ -452,11 +512,9 @@ pub(crate) fn render_content_to_layer_offset(
 /// Per-span list positions, advanced monotonically as rows are painted.
 #[derive(Clone, Copy, Default)]
 struct RowCursors {
-    highlight: usize,
     search: usize,
     annotation: usize,
-    injection: usize,
-    terminal: usize,
+    intrinsic: IntrinsicCursors,
 }
 
 struct RowGeometry {
@@ -495,12 +553,8 @@ fn skip_row_cursors(
     char_boundary: usize,
     byte_boundary: usize,
 ) {
-    advance_idx_past(
-        ctx.highlights.unwrap_or(&[]),
-        &mut cursors.highlight,
-        byte_boundary,
-        |(r, _)| r.end,
-    );
+    ctx.intrinsic
+        .advance_past(&mut cursors.intrinsic, byte_boundary);
     advance_idx_past(
         ctx.search_matches(),
         &mut cursors.search,
@@ -510,18 +564,6 @@ fn skip_row_cursors(
     advance_idx_past(
         ctx.annotation_styles.unwrap_or(&[]),
         &mut cursors.annotation,
-        byte_boundary,
-        |(r, _)| r.end,
-    );
-    advance_idx_past(
-        ctx.injection_highlights.unwrap_or(&[]),
-        &mut cursors.injection,
-        byte_boundary,
-        |(r, _)| r.end,
-    );
-    advance_idx_past(
-        ctx.terminal_cell_colors.unwrap_or(&[]),
-        &mut cursors.terminal,
         byte_boundary,
         |(r, _)| r.end,
     );
@@ -911,10 +953,8 @@ fn render_line(
     let layout = layout_line(
         ctx,
         config.line_num,
-        &mut cursors.highlight,
+        &mut cursors.intrinsic,
         &mut cursors.annotation,
-        &mut cursors.injection,
-        &mut cursors.terminal,
     );
 
     let content_cols = line_content_cols(ctx, config);
@@ -1022,34 +1062,18 @@ fn render_line(
 fn layout_line<'a>(
     ctx: &DrawContext<'a>,
     line_num: usize,
-    highlight_idx: &'a mut usize,
+    intrinsic_cursors: &'a mut IntrinsicCursors,
     annotation_style_idx: &'a mut usize,
-    injection_idx: &'a mut usize,
-    terminal_color_idx: &'a mut usize,
 ) -> impl Iterator<Item = pipeline::LayoutItem> + 'a {
     let source = pipeline::new_line_source(ctx.buf, line_num);
-    let highlights = ctx.highlights.unwrap_or(&[]);
-    let terminal_cell_colors = ctx.terminal_cell_colors.unwrap_or(&[]);
-
-    let syntax = SyntaxDecorator::new(
+    let intrinsic = ctx.intrinsic.decorate(
         source,
-        highlights,
-        highlight_idx,
-        ctx.state.settings.syntax_colors.as_ref(),
-        ctx.capture_map,
-    );
-    let injection_highlights = ctx.injection_highlights.unwrap_or(&[]);
-    let injected = pipeline::InjectionDecorator::new(
-        syntax,
-        injection_highlights,
-        injection_idx,
+        intrinsic_cursors,
         ctx.state.settings.syntax_colors.as_ref(),
     );
-    let term_colored =
-        pipeline::TerminalColorDecorator::new(injected, terminal_cell_colors, terminal_color_idx);
     let annotation_styles = ctx.annotation_styles.unwrap_or(&[]);
     let presented =
-        pipeline::PresentationDecorator::new(term_colored, annotation_styles, annotation_style_idx);
+        pipeline::PresentationDecorator::new(intrinsic, annotation_styles, annotation_style_idx);
 
     TabLayout::new(presented, ctx.tab_width)
 }
