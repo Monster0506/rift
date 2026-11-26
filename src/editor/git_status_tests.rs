@@ -1079,7 +1079,7 @@ fn git_blame_walk_back_re_blames_at_the_parent_commit() {
         .git_blame_sha_at_line(0)
         .unwrap();
 
-    editor.handle_git_blame_buffer_action("git_blame:walk_back");
+    editor.handle_action(&crate::action::Action::Buffer("git_blame:walk_back".into()));
     drain_jobs(&mut editor);
 
     let doc = editor.document_manager.get_document(doc_id).unwrap();
@@ -1107,7 +1107,9 @@ fn git_blame_walk_back_re_blames_at_the_parent_commit() {
         "creating the historical source buffer must not steal focus from blame"
     );
 
-    editor.handle_git_blame_buffer_action("git_blame:walk_forward");
+    editor.handle_action(&crate::action::Action::Buffer(
+        "git_blame:walk_forward".into(),
+    ));
     drain_jobs(&mut editor);
     assert_eq!(
         editor
@@ -1138,7 +1140,7 @@ fn git_blame_walk_back_on_the_root_commit_shows_a_notice_instead_of_a_raw_git_er
         .git_blame_sha_at_line(0)
         .unwrap();
 
-    editor.handle_git_blame_buffer_action("git_blame:walk_back");
+    editor.handle_action(&crate::action::Action::Buffer("git_blame:walk_back".into()));
     drain_jobs(&mut editor);
 
     let doc = editor.document_manager.get_document(doc_id).unwrap();
@@ -1180,7 +1182,7 @@ fn git_blame_walk_back_from_a_middle_line_re_blames_that_lines_own_history() {
         let start = doc.buffer().line_index.get_start(1).unwrap();
         let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
-    editor.handle_git_blame_buffer_action("git_blame:walk_back");
+    editor.handle_action(&crate::action::Action::Buffer("git_blame:walk_back".into()));
     drain_jobs(&mut editor);
 
     let doc = editor.document_manager.get_document(doc_id).unwrap();

@@ -83,8 +83,4 @@ impl<T: TerminalBackend> Editor<T> {
         let job = crate::job_manager::jobs::git::GitShowJob::new(doc_id, repo_root, sha);
         self.job_manager.spawn(job);
     }
-
-    pub(super) fn handle_git_log_buffer_action(&mut self, id: &str) {
-        self.run_kind_action(crate::action::table::GIT_LOG_ACTIONS, id);
-    }
 }

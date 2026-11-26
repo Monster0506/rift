@@ -104,7 +104,6 @@ impl<T: TerminalBackend> Editor<T> {
             scheduler: super::scheduler::Scheduler::new(),
             keymap: KeyMap::new(),
             split_tree,
-            native_action_handlers: super::handle_action::native_action_handlers(),
             native_save_handlers: super::file_ops::native_save_handlers(),
             native_reload_handlers: super::file_ops::native_reload_handlers(),
             pending_keys: Vec::new(),

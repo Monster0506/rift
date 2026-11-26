@@ -16,58 +16,6 @@ enum PutRegister {
     Preserve,
 }
 
-pub(super) type NativeActionHandler<T> = fn(&mut Editor<T>, &str);
-
-pub(super) fn native_action_handlers<T: TerminalBackend>(
-) -> std::collections::HashMap<BufferKindId, NativeActionHandler<T>> {
-    let mut handlers = std::collections::HashMap::new();
-    handlers.insert(
-        BufferKindId::DIRECTORY,
-        Editor::handle_directory_buffer_action as NativeActionHandler<T>,
-    );
-    handlers.insert(
-        BufferKindId::GIT_STATUS,
-        Editor::handle_git_status_buffer_action as NativeActionHandler<T>,
-    );
-    handlers.insert(
-        BufferKindId::GIT_BLAME,
-        Editor::handle_git_blame_buffer_action as NativeActionHandler<T>,
-    );
-    handlers.insert(
-        BufferKindId::GIT_LOG,
-        Editor::handle_git_log_buffer_action as NativeActionHandler<T>,
-    );
-    handlers.insert(
-        BufferKindId::UNDO_TREE,
-        Editor::handle_undotree_buffer_action as NativeActionHandler<T>,
-    );
-    handlers.insert(
-        BufferKindId::MESSAGES,
-        Editor::handle_messages_buffer_action as NativeActionHandler<T>,
-    );
-    handlers.insert(
-        BufferKindId::CLIPBOARD,
-        Editor::handle_clipboard_buffer_action as NativeActionHandler<T>,
-    );
-    handlers.insert(
-        BufferKindId::CLIPBOARD_ENTRY,
-        Editor::handle_clipboard_entry_action as NativeActionHandler<T>,
-    );
-    handlers.insert(
-        BufferKindId::LOCATION_LIST,
-        Editor::handle_location_list_action as NativeActionHandler<T>,
-    );
-    handlers.insert(
-        BufferKindId::REGIONS,
-        Editor::handle_regions_buffer_action as NativeActionHandler<T>,
-    );
-    handlers.insert(
-        BufferKindId::BUFFER_LIST,
-        Editor::handle_buffer_list_action as NativeActionHandler<T>,
-    );
-    handlers
-}
-
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn handle_action(&mut self, action: &crate::action::Action) -> bool {
         let handled = self.handle_action_inner(action);
@@ -92,14 +40,12 @@ impl<T: TerminalBackend> Editor<T> {
         let editor_action = match action {
             Action::Editor(act) => act,
             Action::Buffer(id) => {
-                let Some((doc_id, kind_id, kind_name, action_dispatch, handle, is_tombstone)) =
+                let Some((doc_id, kind_name, action_dispatch, is_tombstone)) =
                     self.document_manager.active_document().map(|document| {
                         (
                             document.id,
-                            document.buffer_kind_id(),
                             document.descriptor().name().to_string(),
                             document.descriptor().action_dispatch,
-                            document.handle(),
                             document.descriptor().is_tombstone(),
                         )
                     })
@@ -112,12 +58,7 @@ impl<T: TerminalBackend> Editor<T> {
                 }
 
                 match action_dispatch {
-                    ActionDispatch::Native(handler) => {
-                        handler(handle);
-                        if let Some(handler) = self.native_action_handlers.get(&kind_id).copied() {
-                            handler(self, id);
-                        }
-                    }
+                    ActionDispatch::Native(actions) => self.run_kind_action(actions, id),
                     ActionDispatch::Lua => {
                         self.call_plugins(|editor| {
                             editor

@@ -103,7 +103,7 @@ fn clipboard_entry_save_rejects_changed_ring_without_marking_clean() {
 fn clipboard_new_entry_repeated_save_does_not_duplicate() {
     let mut editor = editor_with_text("");
     editor.handle_action(&Action::Editor(EditorAction::OpenClipboard));
-    editor.handle_clipboard_buffer_action("clipboard:new");
+    editor.handle_action(&Action::Buffer("clipboard:new".into()));
     press(&mut editor, &keys("fresh<Esc>:w<CR>:w<CR>"));
 
     assert_eq!(editor.clipboard_ring.len(), 1);

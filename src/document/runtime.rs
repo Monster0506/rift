@@ -1,4 +1,5 @@
 use super::{DirEntry, DocumentId, GitCommitTarget, LocationEntry};
+use crate::action::table::{self, KindActionSpec};
 use std::borrow::Cow;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
@@ -238,11 +239,9 @@ pub(crate) struct TombstoneMetadata {
     reason: String,
 }
 
-type NativeActionHandler = fn(DocumentHandle);
-
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ActionDispatch {
-    Native(NativeActionHandler),
+    Native(&'static [KindActionSpec]),
     Lua,
     Disabled,
 }
@@ -273,7 +272,6 @@ pub(crate) enum CloseHandler {
 }
 
 const fn noop_close(_handle: DocumentHandle) {}
-const fn builtin_action(_handle: DocumentHandle) {}
 
 const fn builtin_save(_handle: DocumentHandle) -> SaveResult {
     SaveResult::Rejected
@@ -918,7 +916,7 @@ impl BufferKindRegistry {
                 close: ClosePolicy::ConfirmDirty,
                 ..BufferPolicies::read_only_panel()
             },
-            action_dispatch: ActionDispatch::Native(builtin_action),
+            action_dispatch: ActionDispatch::Native(table::DIRECTORY_ACTIONS),
             save_dispatch: SaveDispatch::Native(builtin_save),
             display_name: DisplayNameStrategy::FileName,
             help_lines: None,
@@ -933,7 +931,7 @@ impl BufferKindRegistry {
             id: BufferKindId::UNDO_TREE,
             name: "undotree".into(),
             policies: BufferPolicies::read_only_panel(),
-            action_dispatch: ActionDispatch::Native(builtin_action),
+            action_dispatch: ActionDispatch::Native(table::UNDOTREE_ACTIONS),
             save_dispatch: SaveDispatch::Reject,
             display_name: DisplayNameStrategy::Label("[UndoTree]".into()),
             help_lines: None,
@@ -952,7 +950,7 @@ impl BufferKindRegistry {
                 ghost_cut: GhostCutPolicy::Deny,
                 ..BufferPolicies::writable_scratch_text()
             },
-            action_dispatch: ActionDispatch::Native(builtin_action),
+            action_dispatch: ActionDispatch::Native(table::MESSAGES_ACTIONS),
             save_dispatch: SaveDispatch::Reject,
             display_name: DisplayNameStrategy::Label("[Messages]".into()),
             help_lines: None,
@@ -974,7 +972,7 @@ impl BufferKindRegistry {
                 close: ClosePolicy::ConfirmDirty,
                 ..BufferPolicies::read_only_list()
             },
-            action_dispatch: ActionDispatch::Native(builtin_action),
+            action_dispatch: ActionDispatch::Native(table::CLIPBOARD_ACTIONS),
             save_dispatch: SaveDispatch::Native(builtin_save),
             display_name: DisplayNameStrategy::Label("[Clipboard]".into()),
             help_lines: None,
@@ -989,7 +987,7 @@ impl BufferKindRegistry {
             id: BufferKindId::CLIPBOARD_ENTRY,
             name: "clipboard_entry".into(),
             policies: BufferPolicies::writable_scratch_text(),
-            action_dispatch: ActionDispatch::Native(builtin_action),
+            action_dispatch: ActionDispatch::Native(table::CLIPBOARD_ENTRY_ACTIONS),
             save_dispatch: SaveDispatch::Native(builtin_save),
             display_name: DisplayNameStrategy::Label("[Clipboard:entry]".into()),
             help_lines: None,
@@ -1004,7 +1002,7 @@ impl BufferKindRegistry {
             id: BufferKindId::LOCATION_LIST,
             name: "location_list".into(),
             policies: BufferPolicies::read_only_list(),
-            action_dispatch: ActionDispatch::Native(builtin_action),
+            action_dispatch: ActionDispatch::Native(table::LOCATION_LIST_ACTIONS),
             save_dispatch: SaveDispatch::Reject,
             display_name: DisplayNameStrategy::Label("[Locations]".into()),
             help_lines: None,
@@ -1019,7 +1017,7 @@ impl BufferKindRegistry {
             id: BufferKindId::REGIONS,
             name: "regions".into(),
             policies: BufferPolicies::read_only_list(),
-            action_dispatch: ActionDispatch::Native(builtin_action),
+            action_dispatch: ActionDispatch::Native(table::REGIONS_ACTIONS),
             save_dispatch: SaveDispatch::Reject,
             display_name: DisplayNameStrategy::Label("[Regions]".into()),
             help_lines: None,
@@ -1074,7 +1072,7 @@ impl BufferKindRegistry {
             id: BufferKindId::GIT_STATUS,
             name: "git_status".into(),
             policies: BufferPolicies::read_only_panel(),
-            action_dispatch: ActionDispatch::Native(builtin_action),
+            action_dispatch: ActionDispatch::Native(table::GIT_STATUS_ACTIONS),
             save_dispatch: SaveDispatch::Reject,
             display_name: DisplayNameStrategy::Label("[Git Status]".into()),
             help_lines: Some(status_help.into()),
@@ -1115,7 +1113,7 @@ impl BufferKindRegistry {
             id: BufferKindId::GIT_BLAME,
             name: "git_blame".into(),
             policies: BufferPolicies::read_only_panel(),
-            action_dispatch: ActionDispatch::Native(builtin_action),
+            action_dispatch: ActionDispatch::Native(table::GIT_BLAME_ACTIONS),
             save_dispatch: SaveDispatch::Reject,
             display_name: DisplayNameStrategy::Label("[Git Blame]".into()),
             help_lines: Some(blame_help.into()),
@@ -1138,7 +1136,7 @@ impl BufferKindRegistry {
             id: BufferKindId::GIT_LOG,
             name: "git_log".into(),
             policies: BufferPolicies::read_only_panel(),
-            action_dispatch: ActionDispatch::Native(builtin_action),
+            action_dispatch: ActionDispatch::Native(table::GIT_LOG_ACTIONS),
             save_dispatch: SaveDispatch::Reject,
             display_name: DisplayNameStrategy::Label("[Git Log]".into()),
             help_lines: Some(log_help.into()),
@@ -1189,7 +1187,7 @@ impl BufferKindRegistry {
             id: BufferKindId::BUFFER_LIST,
             name: "buffer_list".into(),
             policies: BufferPolicies::read_only_panel(),
-            action_dispatch: ActionDispatch::Native(builtin_action),
+            action_dispatch: ActionDispatch::Native(table::BUFFER_LIST_ACTIONS),
             save_dispatch: SaveDispatch::Reject,
             display_name: DisplayNameStrategy::Label("[Buffers]".into()),
             help_lines: None,

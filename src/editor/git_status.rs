@@ -489,10 +489,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.open_git_rebase(repo_root);
     }
 
-    pub(super) fn handle_git_status_buffer_action(&mut self, id: &str) {
-        self.run_kind_action(crate::action::table::GIT_STATUS_ACTIONS, id);
-    }
-
     /// `cc` in the status buffer: open an empty commit message buffer.
     pub(super) fn open_git_commit_new(&mut self) {
         self.open_git_commit_message(GitCommitTarget::New, "");

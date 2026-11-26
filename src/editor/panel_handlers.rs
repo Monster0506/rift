@@ -50,26 +50,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(super) fn handle_directory_buffer_action(&mut self, id: &str) {
-        self.run_kind_action(table::DIRECTORY_ACTIONS, id);
-    }
-
-    pub(super) fn handle_undotree_buffer_action(&mut self, id: &str) {
-        self.run_kind_action(table::UNDOTREE_ACTIONS, id);
-    }
-
-    pub(super) fn handle_messages_buffer_action(&mut self, id: &str) {
-        self.run_kind_action(table::MESSAGES_ACTIONS, id);
-    }
-
-    pub(super) fn handle_clipboard_buffer_action(&mut self, id: &str) {
-        self.run_kind_action(table::CLIPBOARD_ACTIONS, id);
-    }
-
-    pub(super) fn handle_clipboard_entry_action(&mut self, id: &str) {
-        self.run_kind_action(table::CLIPBOARD_ENTRY_ACTIONS, id);
-    }
-
     pub(super) fn handle_clipboard_entry_close(&mut self) {
         let Some(layout) = self.panel_layout_of(PanelKind::Clipboard) else {
             return;
@@ -320,10 +300,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(super) fn handle_location_list_action(&mut self, id: &str) {
-        self.run_kind_action(table::LOCATION_LIST_ACTIONS, id);
-    }
-
     #[cfg(feature = "lsp")]
     fn handle_location_list_select(&mut self) {
         let Some(layout) = self.panel_layout_of(PanelKind::LocationList) else {
@@ -358,14 +334,6 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.close_split_panel();
         self.jump_to_location(&path, entry.line as usize, entry.col);
-    }
-
-    pub(super) fn handle_regions_buffer_action(&mut self, id: &str) {
-        self.run_kind_action(table::REGIONS_ACTIONS, id);
-    }
-
-    pub(super) fn handle_buffer_list_action(&mut self, id: &str) {
-        self.run_kind_action(table::BUFFER_LIST_ACTIONS, id);
     }
 
     /// Space on a diagnostic entry: send a code action request scoped to that diagnostic.
