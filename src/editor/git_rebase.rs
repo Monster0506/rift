@@ -295,7 +295,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
-        self.document_manager.add_document(doc);
+        self.open_buffer(doc, crate::document::manager::Placement::Focused);
         if let Err(e) = self.document_manager.switch_to_document(id) {
             self.state.handle_error(e);
             return;

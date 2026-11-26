@@ -879,24 +879,21 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
-        let handle = self.document_manager.commit_draft_active(draft);
-        self.buffer_kinds.increment_open_count(descriptor.id());
-        self.split_tree.set_focused_document(handle.doc_id());
+        let id = self.open_buffer(draft, crate::document::manager::Placement::Focused);
+        self.split_tree.set_focused_document(id);
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
         self.call_plugins(|editor| {
             editor
                 .plugin_host
                 .dispatch(&crate::plugin::events::EditorEvent::BufOpen {
-                    buf: handle.doc_id(),
+                    buf: id,
                     path: None,
                     filetype: None,
                 });
             editor
                 .plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::BufEnter {
-                    buf: handle.doc_id(),
-                });
+                .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: id });
         });
     }
 

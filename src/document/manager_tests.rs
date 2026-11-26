@@ -2,40 +2,39 @@ use super::*;
 use crate::document::ops::{Edit, EditSource};
 
 #[test]
-fn open_file_creates_empty_document_for_nonexistent_path_in_existing_dir() {
+fn open_path_creates_empty_document_for_nonexistent_path_in_existing_dir() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("brand_new.txt");
     let path_str = path.to_string_lossy().into_owned();
 
-    let mut mgr = DocumentManager::new();
-    mgr.open_file(Some(path_str), false).unwrap();
+    let doc = Document::open_path(DocumentId::new(1), &path_str).unwrap();
 
-    let doc = mgr.active_document().unwrap();
     assert_eq!(doc.path(), Some(path.as_path()));
     assert_eq!(doc.buffer.len(), 0);
     assert!(!path.exists(), "opening must not touch disk");
 }
 
 #[test]
-fn open_file_rejects_path_whose_parent_directory_is_missing() {
+fn open_path_rejects_path_whose_parent_directory_is_missing() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("no_such_subdir").join("file.txt");
     let path_str = path.to_string_lossy().into_owned();
 
-    let mut mgr = DocumentManager::new();
-    let err = mgr.open_file(Some(path_str), false).unwrap_err();
+    let Err(err) = Document::open_path(DocumentId::new(1), &path_str) else {
+        panic!("a missing parent directory must be rejected");
+    };
 
     assert_eq!(err.code, crate::constants::errors::PARENT_DIR_MISSING);
-    assert!(mgr.active_document().is_none());
 }
 
 #[test]
-fn open_file_rejects_existing_directory() {
+fn open_path_rejects_existing_directory() {
     let dir = tempfile::tempdir().unwrap();
     let path_str = dir.path().to_string_lossy().into_owned();
 
-    let mut mgr = DocumentManager::new();
-    let err = mgr.open_file(Some(path_str), false).unwrap_err();
+    let Err(err) = Document::open_path(DocumentId::new(1), &path_str) else {
+        panic!("a directory must be rejected");
+    };
 
     assert_eq!(err.code, crate::constants::errors::NOT_A_FILE);
 }
@@ -47,7 +46,7 @@ fn prepare_removal_normal_rejects_dirty_without_side_effects() {
     doc.edit(Edit::type_text("unsaved changes"), EditSource::User)
         .unwrap();
     let id = doc.id;
-    mgr.add_document(doc);
+    mgr.insert(doc, crate::document::manager::Placement::Focused);
 
     assert!(mgr.documents.get(&id).unwrap().is_dirty());
     let err = mgr.prepare_removal(id, RemovalIntent::Normal).unwrap_err();
@@ -65,35 +64,32 @@ fn prepare_removal_force_accepts_dirty() {
     let mut doc = Document::new(mgr.next_id()).unwrap();
     doc.buffer.insert_str("unsaved changes").unwrap();
     let id = doc.id;
-    mgr.add_document(doc);
+    mgr.insert(doc, crate::document::manager::Placement::Focused);
 
     let plan = mgr.prepare_removal(id, RemovalIntent::Force).unwrap();
     assert_eq!(plan.id(), id);
-    assert_eq!(plan.intent(), RemovalIntent::Force);
-    assert!(plan.has_replacement());
+    assert!(plan.needs_replacement());
 
     let removed = mgr.commit_removal(plan).unwrap();
     assert_eq!(removed.id, id);
-    assert_eq!(mgr.tab_order.len(), 1);
-    assert_ne!(mgr.active_document_id(), Some(id));
+    assert!(mgr.tab_order.is_empty());
 }
 
 #[test]
-fn prepare_removal_last_tab_prepares_replacement_before_commit() {
+fn removing_the_last_tab_leaves_a_fresh_replacement_active() {
     let mut mgr = DocumentManager::new();
     let doc = Document::new(mgr.next_id()).unwrap();
     let id = doc.id;
-    mgr.add_document(doc);
+    mgr.insert(doc, crate::document::manager::Placement::Focused);
 
-    let plan = mgr.prepare_removal(id, RemovalIntent::Normal).unwrap();
-    assert!(plan.replacement.is_some());
-    let repl_id = plan.replacement.as_ref().unwrap().id;
-    assert_ne!(repl_id, id);
+    assert!(mgr
+        .prepare_removal(id, RemovalIntent::Normal)
+        .unwrap()
+        .needs_replacement());
+    mgr.remove_document(id).unwrap();
 
-    let removed = mgr.commit_removal(plan).unwrap();
-    assert_eq!(removed.id, id);
     assert_eq!(mgr.tab_order.len(), 1);
-    assert_eq!(mgr.active_document_id(), Some(repl_id));
+    assert!(mgr.active_document_id().is_some_and(|active| active != id));
 }
 
 #[test]
@@ -108,7 +104,7 @@ fn creation_reservation_and_draft_commit() {
 
     assert!(mgr.get_document(res.id()).is_none());
 
-    let handle = mgr.commit_draft_active(draft);
+    let handle = mgr.insert(draft, crate::document::manager::Placement::Focused);
     assert_eq!(handle, res.handle());
     assert_eq!(mgr.active_document_id(), Some(res.id()));
     assert_eq!(mgr.active_document_handle(), Some(handle));

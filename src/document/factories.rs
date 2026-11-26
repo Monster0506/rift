@@ -166,6 +166,36 @@ impl Document {
         Self::from_bytes(id, Some(path), bytes)
     }
 
+    pub(crate) fn open_path(id: super::DocumentId, path_str: &str) -> Result<Self, RiftError> {
+        let path = Path::new(path_str);
+        if path.exists() {
+            if path.is_dir() {
+                return Err(RiftError::new(
+                    crate::error::ErrorType::Execution,
+                    crate::constants::errors::NOT_A_FILE,
+                    crate::constants::errors::MSG_NOT_A_FILE,
+                ));
+            }
+            return match Self::try_open_undo_file(id, path) {
+                Some(result) => result,
+                None => match Self::try_open_image(id, path) {
+                    Some(doc) => Ok(doc),
+                    None => Self::from_file(id, path_str),
+                },
+            };
+        }
+        if super::manager::parent_dir_missing(path) {
+            return Err(RiftError::new(
+                crate::error::ErrorType::Io,
+                crate::constants::errors::PARENT_DIR_MISSING,
+                crate::constants::errors::MSG_PARENT_DIR_MISSING,
+            ));
+        }
+        let mut doc = Self::new(id)?;
+        doc.set_path(path_str);
+        Ok(doc)
+    }
+
     /// # Errors
     /// Returns an error if the text buffer cannot be created.
     pub(super) fn from_bytes(

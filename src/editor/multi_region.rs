@@ -677,7 +677,7 @@ impl<T: TerminalBackend> Editor<T> {
             doc.populate_regions_buffer(source.buffer(), &regions);
         }
         doc.set_regions(source_doc_id);
-        self.document_manager.add_private_document(doc);
+        self.open_buffer(doc, crate::document::manager::Placement::Private);
 
         let size = self
             .term

@@ -17,7 +17,7 @@ fn save_does_not_write_another_buffers_content_when_a_bufsavepre_hook_closes_the
         "doc2".to_string(),
         &["doc two content".to_string()],
     );
-    editor.document_manager.add_document(doc2);
+    editor.open_buffer(doc2, crate::document::manager::Placement::Focused);
     let _ = editor.document_manager.switch_to_document(doc1_id);
     assert_eq!(editor.active_document().id, doc1_id);
 

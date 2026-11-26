@@ -34,34 +34,24 @@ fn startup_language_loader() -> Arc<crate::syntax::loader::LanguageLoader> {
     Arc::new(crate::syntax::loader::LanguageLoader::new(grammar_dir))
 }
 
-fn open_startup_documents(
-    effective_file_path: Option<&str>,
-) -> Result<crate::document::manager::DocumentManager, RiftError> {
-    let mut document_manager = crate::document::manager::DocumentManager::new();
-    if let Some(path) = effective_file_path {
-        document_manager.open_file(Some(path.to_string()), false)?;
-    } else {
-        let new_doc = Document::new(crate::document::DocumentId::new(1)).map_err(|e| {
+fn startup_document(effective_file_path: Option<&str>) -> Result<Document, RiftError> {
+    let id = crate::document::DocumentId::new(1);
+    match effective_file_path {
+        Some(path) => Document::open_path(id, path),
+        None => Document::new(id).map_err(|e| {
             RiftError::new(
                 ErrorType::Internal,
                 crate::constants::errors::INTERNAL_ERROR,
                 e.to_string(),
             )
-        })?;
-        document_manager.add_document(new_doc);
+        }),
     }
-    Ok(document_manager)
 }
 
-fn startup_state(
-    effective_file_path: Option<&str>,
-    document_manager: &crate::document::manager::DocumentManager,
-) -> State {
+fn startup_state(effective_file_path: Option<&str>, document: &Document) -> State {
     let mut state = State::new();
     state.set_file_path(effective_file_path.map(str::to_string));
-    if let Some(doc) = document_manager.active_document() {
-        state.update_filename(doc.display_name().to_string());
-    }
+    state.update_filename(document.display_name().to_string());
     state
 }
 
@@ -80,10 +70,8 @@ impl<T: TerminalBackend> Editor<T> {
     pub fn with_file(mut terminal: T, file_path: Option<&str>) -> Result<Self, RiftError> {
         let (target_dir, effective_file_path) = startup_target(file_path);
         let language_loader = startup_language_loader();
-        let document_manager = open_startup_documents(effective_file_path)?;
-
-        let mut buffer_kinds = crate::document::runtime::BufferKindRegistry::with_builtins();
-        buffer_kinds.increment_open_count(crate::document::runtime::BufferKindId::FILE);
+        let startup_doc = startup_document(effective_file_path)?;
+        let buffer_kinds = crate::document::runtime::BufferKindRegistry::with_builtins();
 
         terminal.init()?;
 
@@ -95,16 +83,14 @@ impl<T: TerminalBackend> Editor<T> {
         let settings_registry = create_settings_registry();
         let command_parser = CommandParser::new(settings_registry);
 
-        let state = startup_state(effective_file_path, &document_manager);
-        let initial_doc_id = document_manager
-            .active_document_id()
-            .expect("No active document after initialization");
+        let state = startup_state(effective_file_path, &startup_doc);
+        let initial_doc_id = startup_doc.id;
         let split_tree = SplitTree::new(initial_doc_id, size.rows as usize, size.cols as usize);
 
         let mut editor = Self {
             term: terminal,
             render_system,
-            document_manager,
+            document_manager: crate::document::manager::DocumentManager::new(),
             buffer_kinds,
             current_mode: Mode::Normal,
             should_quit: false,
@@ -177,6 +163,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         crate::keymap::defaults::register_defaults(&mut editor.keymap);
+        editor.open_buffer(startup_doc, crate::document::manager::Placement::Focused);
         editor.load_plugins();
         if effective_file_path.is_some() {
             editor.restore_startup_undo(initial_doc_id);

@@ -52,7 +52,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
-        self.document_manager.add_document(blame_doc);
+        self.open_buffer(blame_doc, crate::document::manager::Placement::Focused);
 
         let focused = self.split_tree.focused_window_id();
         let blame_win_id = self
@@ -226,7 +226,7 @@ impl<T: TerminalBackend> Editor<T> {
                 path.display(),
                 commit.get(..8).unwrap_or(commit)
             ));
-            self.document_manager.add_private_document(doc);
+            self.open_buffer(doc, crate::document::manager::Placement::Private);
             self.split_tree.set_window_document(linked_window_id, id);
             if let Some(old_doc_id) = old_doc_id.filter(|id| *id != linked_doc_id) {
                 let _ = self.remove_private_document(old_doc_id);

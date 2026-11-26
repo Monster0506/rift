@@ -172,7 +172,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return None;
             }
         };
-        self.document_manager.add_document(doc);
+        self.open_buffer(doc, crate::document::manager::Placement::Focused);
         if let Err(e) = self.document_manager.switch_to_document(id) {
             self.state.handle_error(e);
             return None;
@@ -571,7 +571,7 @@ impl<T: TerminalBackend> Editor<T> {
             target,
             initial_message,
         );
-        self.document_manager.add_document(doc);
+        self.open_buffer(doc, crate::document::manager::Placement::Focused);
         if let Err(e) = self.document_manager.switch_to_document(id) {
             self.state.handle_error(e);
             return;
@@ -831,7 +831,7 @@ impl<T: TerminalBackend> Editor<T> {
             .collect();
         let mut doc = crate::document::Document::new_scratch(id, format!("[Git: {args}]"), &lines);
         doc.set_read_only(true);
-        self.document_manager.add_document(doc);
+        self.open_buffer(doc, crate::document::manager::Placement::Focused);
         if let Err(e) = self.document_manager.switch_to_document(id) {
             self.state.handle_error(e);
             return;
@@ -850,7 +850,7 @@ impl<T: TerminalBackend> Editor<T> {
         let id = self.document_manager.next_id();
         let mut doc = crate::document::Document::new_scratch(id, "[Git Help]".to_string(), &lines);
         doc.set_read_only(true);
-        self.document_manager.add_document(doc);
+        self.open_buffer(doc, crate::document::manager::Placement::Focused);
         if let Err(e) = self.document_manager.switch_to_document(id) {
             self.state.handle_error(e);
             return;

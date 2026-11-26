@@ -109,13 +109,12 @@ impl<T: TerminalBackend> Editor<T> {
             self.search_highlights_synced = None;
         }
 
-        let has_replacement = plan.has_replacement();
+        if plan.needs_replacement() {
+            let replacement = crate::document::Document::new(self.document_manager.next_id())?;
+            self.open_buffer(replacement, crate::document::manager::Placement::Focused);
+        }
         self.document_manager.commit_removal(plan);
         self.buffer_kinds.decrement_open_count(kind_id);
-        if has_replacement {
-            self.buffer_kinds
-                .increment_open_count(crate::document::runtime::BufferKindId::FILE);
-        }
         if let Some(doc_id) = self.document_manager.active_document_id() {
             for win_id in self.split_tree.windows_for_document(id) {
                 self.split_tree.set_window_document(win_id, doc_id);
@@ -153,24 +152,20 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(path_str) = file_path {
             let path_str = self.resolve_link_path(path_str);
             let path = std::path::PathBuf::from(&path_str);
-            if self
-                .document_manager
-                .find_open_document_index(&path)
-                .is_some()
-            {
+            if let Some(existing) = self.document_manager.find_open_document_id(&path) {
                 self.save_current_view_state();
-                self.document_manager.open_file(Some(path_str), force)?;
+                self.document_manager.switch_to_document(existing)?;
                 self.restore_view_state();
             } else if path.exists() {
                 self.save_current_view_state();
                 let id = self.document_manager.next_id();
                 match crate::document::Document::try_open_undo_file(id, &path) {
                     Some(Ok(doc)) => {
-                        self.document_manager.add_document(doc);
+                        self.open_buffer(doc, crate::document::manager::Placement::Focused);
                     }
                     Some(Err(e)) => return Err(e),
                     None => {
-                        let doc_id = self.document_manager.create_placeholder(&path_str)?;
+                        let doc_id = self.open_placeholder(&path_str)?;
                         let job = crate::job_manager::jobs::file_operations::FileLoadJob::new(
                             doc_id,
                             path.clone(),
@@ -187,7 +182,7 @@ impl<T: TerminalBackend> Editor<T> {
                 ));
             } else {
                 self.save_current_view_state();
-                let doc_id = self.document_manager.create_placeholder(&path_str)?;
+                let doc_id = self.open_placeholder(&path_str)?;
                 #[cfg(feature = "lsp")]
                 self.lsp_notify_open(doc_id);
                 #[cfg(not(feature = "lsp"))]
@@ -327,7 +322,7 @@ impl<T: TerminalBackend> Editor<T> {
         let mut doc = crate::document::Document::new_scratch(id, title, lines);
         doc.set_handle(reservation.handle());
         let draft = crate::document::manager::DocumentDraft::new(reservation, doc)?;
-        self.document_manager.commit_draft_active(draft);
+        self.open_buffer(draft, crate::document::manager::Placement::Focused);
         self.split_tree.set_focused_document(id);
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
@@ -372,7 +367,7 @@ impl<T: TerminalBackend> Editor<T> {
             shell_cmd,
         )?;
 
-        self.document_manager.add_document(doc);
+        self.open_buffer(doc, crate::document::manager::Placement::Focused);
 
         self.document_manager.switch_to_document(id)?;
         self.split_tree.set_focused_document(id);

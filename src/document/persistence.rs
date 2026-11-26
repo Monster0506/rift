@@ -1,6 +1,7 @@
 //! Document persistence: save, load, path management, display name.
 
 use super::Document;
+#[cfg(test)]
 use crate::error::{ErrorType, RiftError};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
@@ -39,32 +40,10 @@ impl Document {
         Ok(())
     }
 
-    /// Reload document from disk
-    ///
-    /// # Errors
-    /// Returns an error if the document has no file path or the file cannot be loaded.
-    pub(super) fn reload_from_disk(&mut self) -> Result<(), RiftError> {
-        let path = self.file_path.clone().ok_or_else(|| {
-            RiftError::new(
-                ErrorType::Io,
-                crate::constants::errors::NO_PATH,
-                "No file path",
-            )
-        })?;
-        *self = Self::from_file(self.id, path)?;
-        Ok(())
-    }
-
     /// Check if document has unsaved changes
     #[must_use]
     pub(crate) const fn is_dirty(&self) -> bool {
         !self.history.is_at_saved()
-    }
-
-    /// Check if document has an associated file path
-    #[must_use]
-    pub(crate) const fn has_path(&self) -> bool {
-        self.file_path.is_some()
     }
 
     /// Set the file path (normalized to absolute path for consistent comparison)

@@ -1,8 +1,8 @@
 use crate::document::runtime::DocumentHandle;
 use crate::document::{Document, DocumentId};
-use crate::error::{ErrorSeverity, ErrorType, RiftError};
+use crate::error::{ErrorType, RiftError};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub(crate) fn parent_dir_missing(path: &Path) -> bool {
     crate::fs_backend::backend().parent_dir_missing(path)
@@ -87,21 +87,10 @@ impl DocumentDraft {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct PreparedRemoval {
     id: DocumentId,
-    intent: RemovalIntent,
-    replacement: Option<Document>,
-}
-
-impl std::fmt::Debug for PreparedRemoval {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("PreparedRemoval")
-            .field("id", &self.id)
-            .field("intent", &self.intent)
-            .field("has_replacement", &self.replacement.is_some())
-            .finish()
-    }
+    needs_replacement: bool,
 }
 
 impl PreparedRemoval {
@@ -110,13 +99,32 @@ impl PreparedRemoval {
         self.id
     }
 
-    #[cfg(test)]
-    const fn intent(&self) -> RemovalIntent {
-        self.intent
+    pub(crate) const fn needs_replacement(&self) -> bool {
+        self.needs_replacement
     }
+}
 
-    pub(crate) const fn has_replacement(&self) -> bool {
-        self.replacement.is_some()
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Placement {
+    Focused,
+    Background,
+    Private,
+}
+
+pub(crate) enum NewDocument {
+    Plain(Document),
+    Draft(DocumentDraft),
+}
+
+impl From<Document> for NewDocument {
+    fn from(document: Document) -> Self {
+        Self::Plain(document)
+    }
+}
+
+impl From<DocumentDraft> for NewDocument {
+    fn from(draft: DocumentDraft) -> Self {
+        Self::Draft(draft)
     }
 }
 
@@ -189,6 +197,7 @@ impl DocumentManager {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn reserve_creation(&mut self) -> CreationReservation {
         let id = self.next_id();
         self.next_document_id = id.next();
@@ -198,52 +207,44 @@ impl DocumentManager {
         CreationReservation::new(id, handle)
     }
 
-    pub(crate) fn commit_draft_active(&mut self, draft: DocumentDraft) -> DocumentHandle {
-        let handle = draft.reservation.handle();
-        let doc = draft.into_document();
-        let id = doc.id;
-        self.handles.insert(id, handle);
-        self.add_document(doc);
+    pub(crate) fn insert(
+        &mut self,
+        new: impl Into<NewDocument>,
+        placement: Placement,
+    ) -> DocumentHandle {
+        let mut document = match new.into() {
+            NewDocument::Plain(document) => document,
+            NewDocument::Draft(draft) => {
+                self.handles
+                    .insert(draft.document.id, draft.reservation.handle());
+                draft.into_document()
+            }
+        };
+        let id = document.id;
+        if id >= self.next_document_id {
+            self.next_document_id = id.next();
+        }
+        let handle = if let Some(&handle) = self.handles.get(&id) {
+            handle
+        } else {
+            let handle = DocumentHandle::new(id, self.next_instance);
+            self.next_instance += 1;
+            self.handles.insert(id, handle);
+            handle
+        };
+        document.set_handle(handle);
+
+        self.documents.insert(id, document);
+        self.tab_order.push(id);
+        match placement {
+            Placement::Focused => self.current_tab = self.tab_order.len() - 1,
+            Placement::Background => {}
+            Placement::Private => {
+                self.current_tab = self.tab_order.len() - 1;
+                self.private_document_ids.insert(id);
+            }
+        }
         handle
-    }
-
-    pub(crate) fn add_document(&mut self, mut document: Document) {
-        let id = document.id;
-        if id >= self.next_document_id {
-            self.next_document_id = id.next();
-        }
-        let handle = if let Some(&handle) = self.handles.get(&id) {
-            handle
-        } else {
-            let handle = DocumentHandle::new(id, self.next_instance);
-            self.next_instance += 1;
-            self.handles.insert(id, handle);
-            handle
-        };
-        document.set_handle(handle);
-
-        self.documents.insert(id, document);
-        self.tab_order.push(id);
-        self.current_tab = self.tab_order.len() - 1;
-    }
-
-    pub(crate) fn add_document_inactive(&mut self, mut document: Document) {
-        let id = document.id;
-        if id >= self.next_document_id {
-            self.next_document_id = id.next();
-        }
-        let handle = if let Some(&handle) = self.handles.get(&id) {
-            handle
-        } else {
-            let handle = DocumentHandle::new(id, self.next_instance);
-            self.next_instance += 1;
-            self.handles.insert(id, handle);
-            handle
-        };
-        document.set_handle(handle);
-
-        self.documents.insert(id, document);
-        self.tab_order.push(id);
     }
 
     #[must_use]
@@ -475,31 +476,13 @@ impl DocumentManager {
             ));
         }
 
-        let replacement = if self.tab_order.len() == 1 {
-            let new_doc = Document::new(self.next_id()).map_err(|e| {
-                RiftError::new(
-                    ErrorType::Internal,
-                    crate::constants::errors::INTERNAL_ERROR,
-                    e.to_string(),
-                )
-            })?;
-            Some(new_doc)
-        } else {
-            None
-        };
-
         Ok(PreparedRemoval {
             id,
-            intent,
-            replacement,
+            needs_replacement: self.tab_order.len() == 1,
         })
     }
 
     pub(crate) fn commit_removal(&mut self, plan: PreparedRemoval) -> Option<Document> {
-        if let Some(replacement) = plan.replacement {
-            self.add_document(replacement);
-        }
-
         if let Some(pos) = self.tab_order.iter().position(|&x| x == plan.id) {
             self.tab_order.remove(pos);
             if pos < self.current_tab {
@@ -530,6 +513,10 @@ impl DocumentManager {
             return Ok(());
         }
         let plan = self.prepare_removal(id, RemovalIntent::Normal)?;
+        if plan.needs_replacement() {
+            let replacement = Document::new(self.next_id())?;
+            self.insert(replacement, Placement::Focused);
+        }
         self.commit_removal(plan);
         Ok(())
     }
@@ -614,27 +601,6 @@ impl DocumentManager {
         }
     }
 
-    /// # Errors
-    /// Returns an error if the file cannot be opened or reloaded, including when the path is
-    /// a directory, its parent is missing, or there are unsaved changes without `force`.
-    pub(crate) fn open_file(
-        &mut self,
-        file_path: Option<String>,
-        force: bool,
-    ) -> Result<(), RiftError> {
-        if let Some(path_str) = file_path {
-            let path = PathBuf::from(&path_str);
-            if let Some(tab_idx) = self.find_open_document(&path) {
-                self.current_tab = tab_idx;
-                return Ok(());
-            }
-
-            self.open_existing_or_new_file(&path_str)
-        } else {
-            self.reload_current_file(force)
-        }
-    }
-
     fn find_open_document(&self, path: &Path) -> Option<usize> {
         let normalized_path = crate::fs_backend::backend().canonicalize(path);
 
@@ -648,72 +614,6 @@ impl DocumentManager {
         None
     }
 
-    fn open_existing_or_new_file(&mut self, path_str: &str) -> Result<(), RiftError> {
-        let path = Path::new(path_str);
-
-        let document = if path.exists() {
-            if path.is_dir() {
-                return Err(RiftError::new(
-                    ErrorType::Execution,
-                    crate::constants::errors::NOT_A_FILE,
-                    crate::constants::errors::MSG_NOT_A_FILE,
-                ));
-            }
-            match Document::try_open_undo_file(self.next_id(), path) {
-                Some(result) => result?,
-                None => match Document::try_open_image(self.next_id(), path) {
-                    Some(doc) => doc,
-                    None => Document::from_file(self.next_id(), path_str)?,
-                },
-            }
-        } else if parent_dir_missing(path) {
-            return Err(RiftError::new(
-                ErrorType::Io,
-                crate::constants::errors::PARENT_DIR_MISSING,
-                crate::constants::errors::MSG_PARENT_DIR_MISSING,
-            ));
-        } else {
-            let mut doc = Document::new(self.next_id())?;
-            doc.set_path(path_str);
-            doc
-        };
-
-        self.add_document(document);
-        Ok(())
-    }
-
-    fn reload_current_file(&mut self, force: bool) -> Result<(), RiftError> {
-        let (is_dirty, has_path) = {
-            let doc = self.active_document().ok_or_else(|| {
-                RiftError::new(
-                    ErrorType::Internal,
-                    crate::constants::errors::INTERNAL_ERROR,
-                    "No active document",
-                )
-            })?;
-            (doc.is_dirty(), doc.has_path())
-        };
-
-        if !force && is_dirty {
-            return Err(RiftError {
-                severity: ErrorSeverity::Warning,
-                kind: ErrorType::Execution,
-                code: crate::constants::errors::UNSAVED_CHANGES.to_string(),
-                message: crate::constants::errors::MSG_UNSAVED_CHANGES.to_string(),
-            });
-        }
-
-        if has_path {
-            self.active_document_mut().unwrap().reload_from_disk()?;
-        } else {
-            return Err(RiftError::new(
-                ErrorType::Execution,
-                crate::constants::errors::NO_PATH,
-                crate::constants::errors::MSG_NO_FILE_NAME,
-            ));
-        }
-        Ok(())
-    }
     /// # Panics
     /// Panics if a tab ID has no stored document, which the manager's invariants rule out.
     #[must_use]
@@ -763,54 +663,6 @@ impl DocumentManager {
     #[must_use]
     pub(crate) fn is_private(&self, id: DocumentId) -> bool {
         self.private_document_ids.contains(&id)
-    }
-
-    pub(crate) fn add_private_document(&mut self, mut doc: Document) -> DocumentId {
-        let id = doc.id;
-        if id >= self.next_document_id {
-            self.next_document_id = id.next();
-        }
-        let handle = if let Some(&handle) = self.handles.get(&id) {
-            handle
-        } else {
-            let handle = DocumentHandle::new(id, self.next_instance);
-            self.next_instance += 1;
-            self.handles.insert(id, handle);
-            handle
-        };
-        doc.set_handle(handle);
-        self.documents.insert(id, doc);
-        self.tab_order.push(id);
-        self.current_tab = self.tab_order.len() - 1;
-        self.private_document_ids.insert(id);
-        id
-    }
-
-    /// # Errors
-    /// Returns an error if the new document cannot be created.
-    pub(crate) fn create_placeholder(
-        &mut self,
-        path: impl AsRef<Path>,
-    ) -> Result<DocumentId, RiftError> {
-        let reservation = self.reserve_creation();
-        let mut doc = Document::new(reservation.id()).map_err(|e| {
-            RiftError::new(
-                ErrorType::Internal,
-                crate::constants::errors::INTERNAL_ERROR,
-                e.to_string(),
-            )
-        })?;
-        doc.set_path(path.as_ref());
-        let id = doc.id;
-        doc.set_handle(reservation.handle());
-        let draft = DocumentDraft::new(reservation, doc)?;
-        self.commit_draft_active(draft);
-        Ok(id)
-    }
-
-    #[must_use]
-    pub(crate) fn find_open_document_index(&self, path: &Path) -> Option<usize> {
-        self.find_open_document(path)
     }
 
     #[must_use]

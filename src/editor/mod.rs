@@ -26,6 +26,7 @@ mod lsp_ops;
 mod mode_mgmt;
 mod multi_region;
 mod operators;
+mod ops;
 mod panel_handlers;
 mod pending_grammar;
 mod plugin_jobs;

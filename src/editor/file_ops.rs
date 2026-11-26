@@ -841,7 +841,7 @@ impl<T: TerminalBackend> Editor<T> {
         let doc_id = if let Some(id) = self.document_manager.find_open_document_id(&path_buf) {
             id
         } else {
-            match self.document_manager.create_placeholder(path) {
+            match self.open_placeholder(path) {
                 Ok(id) => {
                     let job =
                         crate::job_manager::jobs::file_operations::FileLoadJob::new(id, path_buf);

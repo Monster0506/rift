@@ -813,7 +813,7 @@ impl<T: TerminalBackend> Editor<T> {
     ) -> Option<crate::document::DocumentId> {
         let id = self.document_manager.next_id();
         let doc = crate::document::Document::from_file(id, path).ok()?;
-        self.document_manager.add_document_inactive(doc);
+        self.open_buffer(doc, crate::document::manager::Placement::Background);
         #[cfg(feature = "treesitter")]
         self.attach_syntax_for_document(id);
         Some(id)
@@ -1088,7 +1088,7 @@ impl<T: TerminalBackend> Editor<T> {
         doc.replace_content(&content, crate::document::ops::ContentKind::Load);
         let _ = doc.set_cursor(0, crate::document::ops::CursorCause::Lsp);
         doc.set_location_list(entries);
-        self.document_manager.add_private_document(doc);
+        self.open_buffer(doc, crate::document::manager::Placement::Private);
 
         let size = self
             .term

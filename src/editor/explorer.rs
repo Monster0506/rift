@@ -143,7 +143,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
-        self.document_manager.add_private_document(dir_doc);
+        self.open_buffer(dir_doc, crate::document::manager::Placement::Private);
 
         let preview_doc_id = self.document_manager.next_id();
         let preview_doc = match crate::document::Document::new_directory(
@@ -156,7 +156,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
-        self.document_manager.add_private_document(preview_doc);
+        self.open_buffer(preview_doc, crate::document::manager::Placement::Private);
 
         let size = self
             .term
@@ -284,7 +284,7 @@ impl<T: TerminalBackend> Editor<T> {
             crate::document::ops::CursorCause::User,
         );
 
-        self.document_manager.add_document(doc);
+        self.open_buffer(doc, crate::document::manager::Placement::Focused);
         if let Err(e) = self.document_manager.switch_to_document(id) {
             self.state.handle_error(e);
             return;
@@ -315,11 +315,11 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
         index_doc.populate_clipboard_buffer(self.clipboard_ring.entries());
-        self.document_manager.add_private_document(index_doc);
+        self.open_buffer(index_doc, crate::document::manager::Placement::Private);
 
         let preview_doc_id = self.document_manager.next_id();
         let preview_doc = crate::document::Document::new_clipboard_preview(preview_doc_id);
-        self.document_manager.add_private_document(preview_doc);
+        self.open_buffer(preview_doc, crate::document::manager::Placement::Private);
 
         let size = self
             .term
@@ -388,7 +388,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let infos = self.document_manager.get_buffer_list();
         dir_doc.populate_buffer_list_buffer(&infos);
-        self.document_manager.add_private_document(dir_doc);
+        self.open_buffer(dir_doc, crate::document::manager::Placement::Private);
 
         let size = self
             .term
@@ -635,7 +635,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
-        self.document_manager.add_private_document(ut_doc);
+        self.open_buffer(ut_doc, crate::document::manager::Placement::Private);
 
         let preview_id = self.document_manager.next_id();
         let preview_doc = {
@@ -644,7 +644,7 @@ impl<T: TerminalBackend> Editor<T> {
             };
             crate::document::Document::new_undotree_preview(preview_id, linked)
         };
-        self.document_manager.add_private_document(preview_doc);
+        self.open_buffer(preview_doc, crate::document::manager::Placement::Private);
 
         let size = self
             .term

@@ -96,7 +96,7 @@ fn two_buffers_changed_in_one_frame_each_raise_text_changed() {
     second
         .edit(Edit::type_text("second"), EditSource::User)
         .unwrap();
-    editor.document_manager.add_document(second);
+    editor.open_buffer(second, crate::document::manager::Placement::Focused);
     editor.update_and_render().unwrap();
     let seen = record(&mut editor, "TextChangedCoarse");
 

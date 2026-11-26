@@ -104,7 +104,7 @@ fn test_remove_directory_buffer_without_dirty_check() {
         Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp"))
             .unwrap();
     let _ = doc.buffer.insert_str("some edit");
-    manager.add_document(doc);
+    manager.insert(doc, crate::document::manager::Placement::Focused);
 
     assert!(manager
         .remove_document(crate::document::DocumentId::new(1))
@@ -119,7 +119,7 @@ fn test_remove_undotree_buffer_without_dirty_check() {
         crate::document::DocumentId::new(1),
     )
     .unwrap();
-    manager.add_document(doc);
+    manager.insert(doc, crate::document::manager::Placement::Focused);
     assert!(manager
         .remove_document(crate::document::DocumentId::new(2))
         .is_ok());

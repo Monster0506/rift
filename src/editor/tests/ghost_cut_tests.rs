@@ -155,7 +155,7 @@ fn put_drains_every_documents_pending_ghost_but_inserts_only_the_most_recent() {
     let mut doc2 = crate::document::Document::new(editor.document_manager.next_id()).unwrap();
     doc2.replace_content("xyz", crate::document::ops::ContentKind::Render);
     doc2.move_cursor(crate::action::Motion::StartOfFile);
-    editor.document_manager.add_document(doc2);
+    editor.open_buffer(doc2, crate::document::manager::Placement::Focused);
     let doc2_id = editor.document_manager.active_document_id().unwrap();
     editor.split_tree.set_focused_document(doc2_id);
     assert_ne!(doc1_id, doc2_id);
