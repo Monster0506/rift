@@ -162,6 +162,48 @@ impl Annotation {
         }
     }
 
+    pub(crate) fn text_colors(
+        spans: impl IntoIterator<Item = (std::ops::Range<usize>, crate::color::Color)>,
+    ) -> impl Iterator<Item = Self> {
+        let kind = Kind::new(well_known::TEXT_COLOR);
+        spans.into_iter().map(move |(range, color)| {
+            Self::new(
+                kind.clone(),
+                Anchor::range(range.start, range.end),
+                AnnotationOwner::System,
+            )
+            .with_presentation(Presentation::with_style(presentation::StyleOverride {
+                fg: Some(color),
+                ..Default::default()
+            }))
+            .with_read_only(true)
+        })
+    }
+
+    fn same_except_id(&self, other: &Self) -> bool {
+        let Self {
+            id: _,
+            anchor,
+            kind,
+            owner,
+            payload,
+            presentation,
+            actions,
+            stickiness,
+            visible,
+            read_only,
+        } = self;
+        *anchor == other.anchor
+            && *kind == other.kind
+            && *owner == other.owner
+            && *payload == other.payload
+            && *presentation == other.presentation
+            && *actions == other.actions
+            && *stickiness == other.stickiness
+            && *visible == other.visible
+            && *read_only == other.read_only
+    }
+
     #[must_use]
     pub(crate) fn with_payload(mut self, payload: Value) -> Self {
         self.payload = payload;
@@ -412,6 +454,45 @@ impl AnnotationStore {
     pub(crate) fn clear_by_kind_prefix(&mut self, prefix: &str) {
         self.annotations.retain(|a| !a.kind.matches_prefix(prefix));
         self.invalidate_index();
+    }
+
+    pub(crate) fn replace_namespace(
+        &mut self,
+        namespace: &str,
+        annotations: impl IntoIterator<Item = Annotation>,
+    ) {
+        let fresh: Vec<Annotation> = annotations.into_iter().collect();
+        debug_assert!(fresh.iter().all(|a| a.kind.matches_prefix(namespace)));
+        let mut current = self
+            .annotations
+            .iter()
+            .filter(|a| a.kind.matches_prefix(namespace));
+        let unchanged = fresh
+            .iter()
+            .all(|f| current.next().is_some_and(|c| c.same_except_id(f)))
+            && current.next().is_none();
+        if unchanged {
+            return;
+        }
+        self.annotations
+            .retain(|a| !a.kind.matches_prefix(namespace));
+        self.annotations.reserve(fresh.len());
+        for mut annotation in fresh {
+            annotation.id = self.next_id;
+            self.next_id = self.next_id.next();
+            self.annotations.push(annotation);
+        }
+        self.invalidate_index();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn text_colors(&self) -> Vec<(std::ops::Range<usize>, crate::color::Color)> {
+        self.query_kind(well_known::TEXT_COLOR)
+            .filter_map(|a| match (a.anchor, &a.presentation) {
+                (Anchor::Range(s, e), Some(p)) => Some((s.offset..e.offset, p.style?.fg?)),
+                _ => None,
+            })
+            .collect()
     }
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = &Annotation> {
@@ -687,7 +768,15 @@ impl AnnotationStore {
         defaults: Option<&registry::KindRegistry>,
         range: std::ops::Range<usize>,
     ) -> Vec<(std::ops::Range<usize>, crate::layer::CellStyle)> {
-        type Cand = (usize, usize, crate::layer::CellStyle, i32, u8, AnnotationId);
+        type Cand = (
+            usize,
+            usize,
+            crate::layer::CellStyle,
+            i32,
+            u8,
+            AnnotationId,
+            bool,
+        );
         let mut cands: Vec<Cand> = Vec::new();
         for a in self.index_query(range) {
             if !a.visible {
@@ -716,7 +805,8 @@ impl AnnotationStore {
             let attrs = own.attrs.union(face.attrs);
             if fg.is_some() || bg.is_some() || !attrs.is_empty() {
                 let style = crate::layer::CellStyle { fg, bg, attrs };
-                cands.push((start, end, style, pres.priority, a.owner.rank(), a.id));
+                let base = a.kind.matches_prefix(well_known::TEXT_COLOR);
+                cands.push((start, end, style, pres.priority, a.owner.rank(), a.id, base));
             }
         }
         if cands.is_empty() {
@@ -734,19 +824,27 @@ impl AnnotationStore {
         let mut spans: Vec<(std::ops::Range<usize>, crate::layer::CellStyle)> = Vec::new();
         for w in bounds.windows(2) {
             let (seg_s, seg_e) = (w[0], w[1]);
-            let best = cands
-                .iter()
-                .filter(|c| c.0 <= seg_s && seg_e <= c.1)
-                .max_by(|a, b| a.3.cmp(&b.3).then(b.4.cmp(&a.4)).then(a.5.cmp(&b.5)));
-            if let Some(best) = best {
-                if let Some(last) = spans.last_mut() {
-                    if last.0.end == seg_s && last.1 == best.2 {
-                        last.0.end = seg_e;
-                        continue;
-                    }
+            let precedence =
+                |a: &&Cand, b: &&Cand| a.3.cmp(&b.3).then(b.4.cmp(&a.4)).then(a.5.cmp(&b.5));
+            let covering = cands.iter().filter(|c| c.0 <= seg_s && seg_e <= c.1);
+            let base = covering.clone().filter(|c| c.6).max_by(precedence);
+            let top = covering.filter(|c| !c.6).max_by(precedence);
+            let style = match (base, top) {
+                (Some(base), Some(top)) => crate::layer::CellStyle {
+                    fg: top.2.fg.or(base.2.fg),
+                    bg: top.2.bg.or(base.2.bg),
+                    attrs: top.2.attrs.union(base.2.attrs),
+                },
+                (Some(only), None) | (None, Some(only)) => only.2,
+                (None, None) => continue,
+            };
+            if let Some(last) = spans.last_mut() {
+                if last.0.end == seg_s && last.1 == style {
+                    last.0.end = seg_e;
+                    continue;
                 }
-                spans.push((seg_s..seg_e, best.2));
             }
+            spans.push((seg_s..seg_e, style));
         }
         spans
     }

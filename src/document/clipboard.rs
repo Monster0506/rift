@@ -38,7 +38,7 @@ impl Document {
             POSITION_KEY,
             Value::Int(i64::try_from(position).expect("clipboard position fits i64")),
         );
-        self.annotations.add(
+        self.annotate(
             Annotation::new(
                 Kind::new(ROW_KIND),
                 Anchor::Point(Marker::right(self.buffer.char_to_byte(closing))),

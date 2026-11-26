@@ -120,7 +120,6 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
         preview.replace_content(&entry_text, crate::document::ops::ContentKind::Load);
-        preview.custom_highlights.clear();
         preview.convert_to_clipboard_entry(Some(entry_index));
         preview.set_read_only(false);
 
@@ -147,7 +146,6 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
         preview.replace_content("", crate::document::ops::ContentKind::Load);
-        preview.custom_highlights.clear();
         preview.convert_to_clipboard_entry(None);
         preview.set_read_only(false);
 

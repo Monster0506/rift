@@ -424,6 +424,75 @@ fn test_presentation_spans_annotation_overrides_kind_default() {
 }
 
 #[test]
+fn test_presentation_spans_keep_text_color_under_a_background_only_style() {
+    use crate::color::Color;
+    let mut store = AnnotationStore::new();
+    store.replace_namespace(
+        well_known::TEXT_COLOR,
+        Annotation::text_colors([(0..4, Color::Cyan)]),
+    );
+    store.add(
+        Annotation::new(
+            Kind::new("ui.selection.active"),
+            Anchor::range(2, 6),
+            AnnotationOwner::System,
+        )
+        .with_presentation(Presentation::with_face(FaceRef::new("ui.selection.active"))),
+    );
+    let selection_bg =
+        presentation::resolve_face(&FaceRef::new("ui.selection.active"), None).and_then(|s| s.bg);
+    assert_eq!(
+        store.presentation_spans(None, None, 0..usize::MAX),
+        vec![
+            (0..2, fg_style(Color::Cyan)),
+            (
+                2..4,
+                crate::layer::CellStyle {
+                    fg: Some(Color::Cyan),
+                    bg: selection_bg,
+                    ..Default::default()
+                }
+            ),
+            (
+                4..6,
+                crate::layer::CellStyle {
+                    bg: selection_bg,
+                    ..Default::default()
+                }
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_replace_namespace_keeps_revision_when_unchanged() {
+    use crate::color::Color;
+    let mut store = AnnotationStore::new();
+    store.add(Annotation::new(
+        Kind::new("lsp.diagnostic"),
+        Anchor::range(0, 1),
+        AnnotationOwner::Lsp,
+    ));
+    store.replace_namespace(
+        well_known::TEXT_COLOR,
+        Annotation::text_colors([(0..2, Color::Red), (3..5, Color::Blue)]),
+    );
+    let revision = store.revision();
+    store.replace_namespace(
+        well_known::TEXT_COLOR,
+        Annotation::text_colors([(0..2, Color::Red), (3..5, Color::Blue)]),
+    );
+    assert_eq!(store.revision(), revision);
+    store.replace_namespace(
+        well_known::TEXT_COLOR,
+        Annotation::text_colors([(0..2, Color::Red)]),
+    );
+    assert_ne!(store.revision(), revision);
+    assert_eq!(store.text_colors(), vec![(0..2, Color::Red)]);
+    assert_eq!(store.iter().count(), 2);
+}
+
+#[test]
 fn test_presentation_spans_resolves_named_face() {
     use crate::color::Color;
     let mut store = AnnotationStore::new();

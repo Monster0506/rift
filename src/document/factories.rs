@@ -129,7 +129,6 @@ impl Document {
             kind: BufferKind::file(),
             state: StateSlot::new(FILE_STATE_KEY, FileState),
             vars: crate::tracked::Tracked::default(),
-            custom_highlights: Vec::new(),
             annotations: AnnotationStore::new(),
             selection_set: crate::selection::SelectionSet::default(),
             visual_anchor: None,

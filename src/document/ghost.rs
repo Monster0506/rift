@@ -102,7 +102,7 @@ impl Document {
 
             let byte_start = self.buffer.char_to_byte(insert_at);
             let byte_end = self.buffer.char_to_byte(insert_at + len);
-            let annotation_id = self.annotations.add(
+            let annotation_id = self.annotate(
                 Annotation::new(
                     Kind::new("ghostcut.pending"),
                     Anchor::range(byte_start, byte_end),
@@ -140,7 +140,7 @@ impl Document {
                 continue;
             };
             let len = self.pending_ghost[i].text.len();
-            self.annotations.remove(annotation_id);
+            self.unannotate(annotation_id);
             let _ = self.apply_resolved(
                 Resolved {
                     start: offset,

@@ -518,7 +518,6 @@ impl<T: TerminalBackend> Editor<T> {
             preview.convert_to_scratch("[Clipboard:preview]".to_string());
             preview.set_read_only(true);
             preview.replace_content(&entry_text, crate::document::ops::ContentKind::Load);
-            preview.custom_highlights.clear();
         }
 
         let _ = self.force_full_redraw();

@@ -1018,7 +1018,6 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
         doc.replace_content("", crate::document::ops::ContentKind::Load);
-        doc.custom_highlights.clear();
 
         if let Some(entries) = res.dir_entries {
             doc.convert_to_directory(res.path.clone());

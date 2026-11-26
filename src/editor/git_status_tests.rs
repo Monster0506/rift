@@ -692,8 +692,9 @@ fn open_git_blame_populates_one_line_per_source_line() {
             "blame must not duplicate source: {line}"
         );
     }
+    let colors = doc.annotations.text_colors();
     assert_eq!(
-        doc.custom_highlights.len(),
+        colors.len(),
         lines.len() * 3,
         "each blame row must color its SHA, author, and date"
     );
@@ -703,9 +704,7 @@ fn open_git_blame_populates_one_line_per_source_line() {
         crate::color::Color::DarkGrey,
     ] {
         assert!(
-            doc.custom_highlights
-                .iter()
-                .any(|(_, actual)| *actual == color),
+            colors.iter().any(|(_, actual)| *actual == color),
             "missing blame metadata color {color:?}"
         );
     }

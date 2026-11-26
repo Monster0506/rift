@@ -1,3 +1,4 @@
+mod annotate;
 mod cursor;
 #[cfg(test)]
 pub(in crate::document) use cursor::move_buffer;

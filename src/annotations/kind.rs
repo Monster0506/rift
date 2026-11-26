@@ -62,6 +62,7 @@ pub(crate) mod well_known {
     pub(in crate::annotations) const GIT_GUTTER: &str = "git.gutter";
     pub(in crate::annotations) const BUFFER_ENTRY: &str = "buffer.entry";
     pub(crate) const PLUGIN_HIGHLIGHT: &str = "plugin.highlight";
+    pub(crate) const TEXT_COLOR: &str = "ui.color";
 }
 
 #[cfg(test)]

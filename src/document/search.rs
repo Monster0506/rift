@@ -20,7 +20,6 @@ impl Document {
         use crate::annotations::presentation::{Presentation, StyleOverride};
         use crate::annotations::{Anchor, Annotation, AnnotationOwner};
         use crate::color::Color;
-        self.annotations.clear_by_kind_prefix("ui.search");
         let base = StyleOverride {
             fg: Some(Color::Black),
             bg: Some(Color::Yellow),
@@ -31,6 +30,8 @@ impl Document {
             bg: Some(Color::Cyan),
             ..Default::default()
         };
+        let kind = Kind::new("ui.search");
+        let mut highlights = Vec::new();
         for (i, m) in matches.iter().enumerate() {
             let is_current = current == Some(i);
             if i >= MAX_HIGHLIGHTED_MATCHES && !is_current {
@@ -42,9 +43,9 @@ impl Document {
                 continue;
             }
             let style = if is_current { current_style } else { base };
-            self.annotations.add(
+            highlights.push(
                 Annotation::new(
-                    Kind::new("ui.search"),
+                    kind.clone(),
                     Anchor::range(start, end),
                     AnnotationOwner::System,
                 )
@@ -53,11 +54,12 @@ impl Document {
                 ),
             );
         }
+        self.set_annotations("ui.search", highlights);
     }
 
     /// Remove all search-highlight annotations.
     pub(crate) fn clear_search_annotations(&mut self) {
-        self.annotations.clear_by_kind_prefix("ui.search");
+        self.set_annotations("ui.search", []);
     }
 
     /// Perform a search in the document.

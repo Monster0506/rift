@@ -37,9 +37,10 @@ fn test_populate_undotree_stores_highlights() {
     .unwrap();
     let highlights = vec![(0..2, Color::Magenta), (3..5, Color::Cyan)];
     doc.populate_undotree_buffer("ab cd", vec![], highlights);
-    assert_eq!(doc.custom_highlights.len(), 2);
-    assert_eq!(doc.custom_highlights[0].1, Color::Magenta);
-    assert_eq!(doc.custom_highlights[1].1, Color::Cyan);
+    let colors = doc.annotations.text_colors();
+    assert_eq!(colors.len(), 2);
+    assert_eq!(colors[0].1, Color::Magenta);
+    assert_eq!(colors[1].1, Color::Cyan);
 }
 
 #[test]
@@ -82,7 +83,7 @@ fn test_populate_undotree_replaces_old_highlights() {
     )
     .unwrap();
     doc.populate_undotree_buffer("ab", vec![], vec![(0..2, Color::Red)]);
-    assert_eq!(doc.custom_highlights.len(), 1);
+    assert_eq!(doc.annotations.text_colors().len(), 1);
 
     doc.populate_undotree_buffer(
         "xyz",
@@ -93,8 +94,9 @@ fn test_populate_undotree_replaces_old_highlights() {
             (2..3, Color::Yellow),
         ],
     );
-    assert_eq!(doc.custom_highlights.len(), 3);
-    assert_eq!(doc.custom_highlights[0].1, Color::Blue);
+    let colors = doc.annotations.text_colors();
+    assert_eq!(colors.len(), 3);
+    assert_eq!(colors[0].1, Color::Blue);
 }
 
 #[test]

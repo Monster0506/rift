@@ -554,7 +554,6 @@ impl RenderSystem {
             highlights: state.highlights,
             capture_map: state.capture_map,
             injection_highlights: state.injection_highlights,
-            custom_highlights: state.custom_highlights,
             git_gutter_colors: state.git_gutter_colors,
             annotation_styles: state.annotation_styles,
             annotation_adornments: state.annotation_adornments,

@@ -649,8 +649,6 @@ impl<T: TerminalBackend> Editor<T> {
             cursor_col_offset: 0,
             cursor_viewport: None,
             terminal_cursor: doc.terminal_cursor(),
-            custom_highlights: (!doc.custom_highlights.is_empty())
-                .then_some(&doc.custom_highlights),
             git_gutter_colors: (!git_gutter_colors_data.is_empty())
                 .then_some(&git_gutter_colors_data),
             annotation_styles: (!annotation_styles.is_empty()).then_some(&annotation_styles),
@@ -1236,8 +1234,6 @@ impl<T: TerminalBackend> Editor<T> {
             highlights: highlights.as_deref(),
             capture_map: capture_names,
             injection_highlights: injection_hl.as_deref(),
-            custom_highlights: (!doc.custom_highlights.is_empty())
-                .then_some(&doc.custom_highlights),
             git_gutter_colors: (!git_gutter_colors_data.is_empty())
                 .then_some(&git_gutter_colors_data),
             annotation_styles: (!annotation_styles.is_empty()).then_some(&annotation_styles),
@@ -1427,11 +1423,6 @@ impl<T: TerminalBackend> Editor<T> {
             cursor_col_offset: col_off,
             cursor_viewport: Some(focused_vp),
             terminal_cursor: focused_doc.terminal_cursor(),
-            custom_highlights: if focused_doc.custom_highlights.is_empty() {
-                None
-            } else {
-                Some(&focused_doc.custom_highlights)
-            },
             git_gutter_colors: None,
             annotation_styles: None,
             annotation_adornments: None,

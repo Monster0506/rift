@@ -225,6 +225,7 @@ impl Document {
             self.annotation_undo_stack.clear();
             self.annotation_redo_stack.clear();
             self.clear_selection();
+            self.set_annotations(crate::annotations::kind::well_known::TEXT_COLOR, []);
         }
         self.record_text_change();
         self.reparse_syntax();

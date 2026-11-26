@@ -115,7 +115,7 @@ fn test_populate_directory_highlights_non_empty() {
             .unwrap();
     let entries = make_dir_entries(&[("file.txt", false)], "/tmp");
     doc.populate_directory_buffer(entries);
-    assert!(!doc.custom_highlights.is_empty());
+    assert!(!doc.annotations.text_colors().is_empty());
 }
 
 #[test]
@@ -125,14 +125,11 @@ fn test_populate_directory_parent_nav_is_blue() {
             .unwrap();
     doc.populate_directory_buffer(vec![]);
     let parent_range = 0..3; // "../" is 3 bytes
-    let covered = doc.custom_highlights.iter().any(|(r, c)| {
+    let colors = doc.annotations.text_colors();
+    let covered = colors.iter().any(|(r, c)| {
         r.start <= parent_range.start && r.end >= parent_range.end && *c == Color::Blue
     });
-    assert!(
-        covered,
-        "parent nav line should be Blue: {:?}",
-        doc.custom_highlights
-    );
+    assert!(covered, "parent nav line should be Blue: {colors:?}");
 }
 
 #[test]
@@ -145,15 +142,11 @@ fn test_populate_directory_file_entry_is_white() {
     let _text = doc.buffer.to_string();
     let start = 4;
     let end = start + "readme.txt".len();
-    let covered = doc
-        .custom_highlights
+    let colors = doc.annotations.text_colors();
+    let covered = colors
         .iter()
         .any(|(r, c)| r.start <= start && r.end >= end && *c == Color::White);
-    assert!(
-        covered,
-        "file entry should be White: {:?}",
-        doc.custom_highlights
-    );
+    assert!(covered, "file entry should be White: {colors:?}");
 }
 
 #[test]
@@ -165,15 +158,11 @@ fn test_populate_directory_dir_entry_is_blue() {
     doc.populate_directory_buffer(entries);
     let start = 4;
     let end = start + "subdir/".len();
-    let covered = doc
-        .custom_highlights
+    let colors = doc.annotations.text_colors();
+    let covered = colors
         .iter()
         .any(|(r, c)| r.start <= start && r.end >= end && *c == Color::Blue);
-    assert!(
-        covered,
-        "dir entry should be Blue: {:?}",
-        doc.custom_highlights
-    );
+    assert!(covered, "dir entry should be Blue: {colors:?}");
 }
 
 #[test]
@@ -183,11 +172,11 @@ fn test_populate_directory_clears_old_highlights_on_repopulate() {
             .unwrap();
     let entries = make_dir_entries(&[("a.txt", false), ("b.txt", false)], "/tmp");
     doc.populate_directory_buffer(entries);
-    let first_count = doc.custom_highlights.len();
+    let first_count = doc.annotations.text_colors().len();
 
     let entries2 = make_dir_entries(&[("a.txt", false)], "/tmp");
     doc.populate_directory_buffer(entries2);
-    let second_count = doc.custom_highlights.len();
+    let second_count = doc.annotations.text_colors().len();
 
     assert!(
         second_count < first_count || second_count > 0,
@@ -202,7 +191,7 @@ fn test_populate_directory_no_overlapping_highlight_ranges() {
             .unwrap();
     let entries = make_dir_entries(&[("a.txt", false), ("b", true), ("c.rs", false)], "/tmp");
     doc.populate_directory_buffer(entries);
-    let highlights = &doc.custom_highlights;
+    let highlights = doc.annotations.text_colors();
     for i in 0..highlights.len().saturating_sub(1) {
         assert!(
             highlights[i].0.end <= highlights[i + 1].0.start,

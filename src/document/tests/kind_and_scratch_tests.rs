@@ -163,26 +163,26 @@ fn test_new_undotree_sequences_empty() {
 }
 
 #[test]
-fn test_custom_highlights_empty_for_new_file() {
+fn test_text_colors_empty_for_new_file() {
     let doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    assert!(doc.custom_highlights.is_empty());
+    assert!(doc.annotations.text_colors().is_empty());
 }
 
 #[test]
-fn test_custom_highlights_empty_for_new_directory() {
+fn test_text_colors_empty_for_new_directory() {
     let doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp"))
         .unwrap();
-    assert!(doc.custom_highlights.is_empty());
+    assert!(doc.annotations.text_colors().is_empty());
 }
 
 #[test]
-fn test_custom_highlights_empty_for_new_undotree() {
+fn test_text_colors_empty_for_new_undotree() {
     let doc = Document::new_undotree(
         crate::document::DocumentId::new(1),
         crate::document::DocumentId::new(2),
     )
     .unwrap();
-    assert!(doc.custom_highlights.is_empty());
+    assert!(doc.annotations.text_colors().is_empty());
 }
 
 #[test]

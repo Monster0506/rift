@@ -57,7 +57,6 @@ pub(crate) struct ContentBlitKey {
     editor_fg: Option<Color>,
     syntax_generation: u64,
     highlight_styles_revision: u64,
-    custom_highlights_hash: u64,
     terminal_colors_hash: u64,
     search_matches_hash: u64,
     annotation_presentation_generation: u64,
@@ -156,7 +155,6 @@ fn compute_content_blit_key(ctx: &DrawContext, visible_rows: usize) -> ContentBl
             .syntax_colors
             .as_ref()
             .map_or(0, crate::color::theme::SyntaxColors::revision),
-        custom_highlights_hash: hash_ranged_spans(ctx.custom_highlights.unwrap_or(&[])),
         terminal_colors_hash: hash_ranged_spans(ctx.terminal_cell_colors.unwrap_or(&[])),
         search_matches_hash: hash_search_matches(ctx.search_matches()),
         annotation_presentation_generation,
@@ -268,7 +266,6 @@ pub struct RenderState<'a> {
     pub(crate) cursor_col_offset: usize,
     pub(crate) cursor_viewport: Option<&'a Viewport>,
     pub(crate) terminal_cursor: Option<(usize, usize)>,
-    pub(crate) custom_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
     pub(crate) git_gutter_colors: Option<&'a [(usize, Color)]>,
     pub(crate) annotation_styles: Option<&'a [(std::ops::Range<usize>, crate::layer::CellStyle)]>,
     pub(crate) annotation_adornments: Option<&'a [LineAdornment<'a>]>,
@@ -303,7 +300,6 @@ impl<'a> RenderState<'a> {
             cursor_col_offset: 0,
             cursor_viewport: None,
             terminal_cursor: None,
-            custom_highlights: None,
             git_gutter_colors: None,
             annotation_styles: None,
             annotation_adornments: None,
@@ -325,7 +321,6 @@ pub(crate) struct DrawContext<'a> {
     pub(crate) viewport: &'a Viewport,
     pub(crate) current_mode: Mode,
     pub(crate) pending_key: Option<Key>,
-    pub(crate) custom_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
     pub(crate) git_gutter_colors: Option<&'a [(usize, Color)]>,
     pub(crate) annotation_styles: Option<&'a [(std::ops::Range<usize>, crate::layer::CellStyle)]>,
     pub(crate) annotation_adornments: Option<&'a [LineAdornment<'a>]>,
@@ -461,7 +456,6 @@ struct RowCursors {
     search: usize,
     annotation: usize,
     injection: usize,
-    custom: usize,
     terminal: usize,
 }
 
@@ -522,12 +516,6 @@ fn skip_row_cursors(
     advance_idx_past(
         ctx.injection_highlights.unwrap_or(&[]),
         &mut cursors.injection,
-        byte_boundary,
-        |(r, _)| r.end,
-    );
-    advance_idx_past(
-        ctx.custom_highlights.unwrap_or(&[]),
-        &mut cursors.custom,
         byte_boundary,
         |(r, _)| r.end,
     );
@@ -926,7 +914,6 @@ fn render_line(
         &mut cursors.highlight,
         &mut cursors.annotation,
         &mut cursors.injection,
-        &mut cursors.custom,
         &mut cursors.terminal,
     );
 
@@ -1038,12 +1025,10 @@ fn layout_line<'a>(
     highlight_idx: &'a mut usize,
     annotation_style_idx: &'a mut usize,
     injection_idx: &'a mut usize,
-    custom_color_idx: &'a mut usize,
     terminal_color_idx: &'a mut usize,
 ) -> impl Iterator<Item = pipeline::LayoutItem> + 'a {
     let source = pipeline::new_line_source(ctx.buf, line_num);
     let highlights = ctx.highlights.unwrap_or(&[]);
-    let custom_highlights = ctx.custom_highlights.unwrap_or(&[]);
     let terminal_cell_colors = ctx.terminal_cell_colors.unwrap_or(&[]);
 
     let syntax = SyntaxDecorator::new(
@@ -1060,9 +1045,8 @@ fn layout_line<'a>(
         injection_idx,
         ctx.state.settings.syntax_colors.as_ref(),
     );
-    let colored = pipeline::ColorDecorator::new(injected, custom_highlights, custom_color_idx);
     let term_colored =
-        pipeline::TerminalColorDecorator::new(colored, terminal_cell_colors, terminal_color_idx);
+        pipeline::TerminalColorDecorator::new(injected, terminal_cell_colors, terminal_color_idx);
     let annotation_styles = ctx.annotation_styles.unwrap_or(&[]);
     let presented =
         pipeline::PresentationDecorator::new(term_colored, annotation_styles, annotation_style_idx);

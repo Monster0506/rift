@@ -125,7 +125,7 @@ impl Document {
         }
 
         self.replace_content(&chars, crate::document::ops::ContentKind::Render);
-        self.custom_highlights = highlights;
+        self.set_text_colors(highlights);
         let Some(state) = self.state.try_get_mut(DIRECTORY_STATE_KEY) else {
             return;
         };
@@ -206,7 +206,7 @@ impl Document {
             highlights.push((line_start..byte_pos, color));
         }
 
-        self.custom_highlights = highlights;
+        self.set_text_colors(highlights);
     }
 
     pub(crate) fn populate_undotree_buffer(
@@ -221,7 +221,7 @@ impl Document {
         state.sequences = sequences;
 
         self.replace_content(text, crate::document::ops::ContentKind::Render);
-        self.custom_highlights = highlights;
+        self.set_text_colors(highlights);
         self.history.mark_saved();
     }
 
@@ -252,7 +252,7 @@ impl Document {
             .collect();
 
         self.replace_content(&content, crate::document::ops::ContentKind::Render);
-        self.custom_highlights = highlights;
+        self.set_text_colors(highlights);
         if let Some(state) = self.state.try_get_mut(UNDO_FILE_VIEW_STATE_KEY) {
             state.sequences = sequences;
         }
@@ -347,7 +347,7 @@ impl Document {
 
         self.replace_content(&content, ContentKind::Render);
         let _ = self.set_cursor(self.buffer.len(), crate::document::ops::CursorCause::User);
-        self.custom_highlights = highlights;
+        self.set_text_colors(highlights);
         self.history.mark_saved();
     }
 
@@ -372,7 +372,7 @@ impl Document {
         }
 
         self.replace_content(&content, crate::document::ops::ContentKind::Render);
-        self.custom_highlights = highlights;
+        self.set_text_colors(highlights);
         self.annotations
             .clear_by_kind_prefix(super::clipboard::ROW_KIND);
         for (source, closing) in closings.into_iter().enumerate() {
@@ -434,7 +434,7 @@ impl Document {
         }
 
         self.replace_content(&content, crate::document::ops::ContentKind::Render);
-        self.custom_highlights = highlights;
+        self.set_text_colors(highlights);
         let Some(state) = self.state.try_get_mut(BUFFER_LIST_STATE_KEY) else {
             return;
         };
@@ -717,7 +717,7 @@ impl Document {
         }
 
         self.replace_content(&r.chars, crate::document::ops::ContentKind::Render);
-        self.custom_highlights = r.highlights;
+        self.set_text_colors(r.highlights);
         let restore_line = r
             .exact_restore_line
             .or(r.hunk_restore_line)
@@ -1127,7 +1127,7 @@ impl Document {
         for (line, sha) in head_lines {
             self.annotations.create_git_rebase_step(line, &sha);
         }
-        self.custom_highlights = highlights;
+        self.set_text_colors(highlights);
         if let Some(line) = restore_line.or(if steps.is_empty() { None } else { Some(0) }) {
             if let Some(offset) = self.buffer.line_index.get_start(line) {
                 let _ = self.set_cursor(offset, crate::document::ops::CursorCause::User);
@@ -1163,7 +1163,7 @@ impl Document {
         for (line, sha) in head_lines {
             self.annotations.create_git_rebase_step(line, &sha);
         }
-        self.custom_highlights = highlights;
+        self.set_text_colors(highlights);
         self.history.mark_saved();
     }
 
@@ -1356,7 +1356,6 @@ impl Document {
         }
 
         self.replace_content(&text, crate::document::ops::ContentKind::Render);
-        self.custom_highlights = highlights;
         self.annotations.clear();
         for (source_line, (line, display_line)) in
             lines.iter().zip(annotation_lines.iter()).enumerate()
@@ -1364,6 +1363,7 @@ impl Document {
             self.annotations
                 .create_git_blame_line(*display_line, source_line, &line.commit.sha);
         }
+        self.set_text_colors(highlights);
         let selected_source_line = selected_source_line.min(lines.len().saturating_sub(1));
         if let Some(display_line) = annotation_lines.get(selected_source_line) {
             if let Some(cursor) = self.buffer.line_index.get_start(*display_line) {
@@ -1433,6 +1433,13 @@ impl Document {
         for (line, sha) in commit_annotations {
             self.annotations.create_git_log_commit(line, &sha);
         }
+    }
+
+    fn set_text_colors(&mut self, spans: Vec<(std::ops::Range<usize>, crate::color::Color)>) {
+        self.set_annotations(
+            crate::annotations::kind::well_known::TEXT_COLOR,
+            crate::annotations::Annotation::text_colors(spans),
+        );
     }
 }
 

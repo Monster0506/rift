@@ -203,7 +203,6 @@ pub(crate) struct Document {
     pub(crate) vars: crate::tracked::Tracked<
         std::collections::HashMap<String, crate::annotations::value::Value>,
     >,
-    pub(crate) custom_highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
     pub(crate) annotations: AnnotationStore,
     selection_set: crate::selection::SelectionSet,
     visual_anchor: Option<usize>,
@@ -707,7 +706,6 @@ impl Document {
     ) {
         self.kind = BufferKind::for_builtin(BufferKindId::IMAGE_VIEW);
         self.replace_content(image.summary(), crate::document::ops::ContentKind::Load);
-        self.custom_highlights.clear();
         self.state = StateSlot::new(IMAGE_VIEW_STATE_KEY, ImageViewState { image });
     }
 

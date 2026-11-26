@@ -199,50 +199,6 @@ impl<I: Iterator<Item = RenderItem>> Iterator for InjectionDecorator<'_, I> {
     }
 }
 
-pub(super) struct ColorDecorator<'a, I: Iterator<Item = RenderItem>> {
-    input: I,
-    highlights: &'a [(std::ops::Range<usize>, Color)],
-    idx: &'a mut usize,
-}
-
-impl<'a, I: Iterator<Item = RenderItem>> ColorDecorator<'a, I> {
-    pub(super) const fn new(
-        input: I,
-        highlights: &'a [(std::ops::Range<usize>, Color)],
-        idx: &'a mut usize,
-    ) -> Self {
-        Self {
-            input,
-            highlights,
-            idx,
-        }
-    }
-}
-
-impl<I: Iterator<Item = RenderItem>> Iterator for ColorDecorator<'_, I> {
-    type Item = RenderItem;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut item = self.input.next()?;
-
-        while *self.idx < self.highlights.len()
-            && self.highlights[*self.idx].0.end <= item.byte_offset
-        {
-            *self.idx += 1;
-            crate::perf_cursor_advance!();
-        }
-
-        if *self.idx < self.highlights.len() {
-            let (range, color) = &self.highlights[*self.idx];
-            if range.start <= item.byte_offset {
-                item.fg = Some(*color);
-            }
-        }
-
-        Some(item)
-    }
-}
-
 pub(super) struct PresentationDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     styles: &'a [(std::ops::Range<usize>, crate::layer::CellStyle)],

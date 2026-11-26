@@ -205,7 +205,6 @@ fn scroll_blit_delta_rejects_any_hash_or_structural_change() {
         Box::new(|k| k.editor_bg = Some(Color::Red)),
         Box::new(|k| k.editor_fg = Some(Color::Red)),
         Box::new(|k| k.syntax_generation += 1),
-        Box::new(|k| k.custom_highlights_hash += 1),
         Box::new(|k| k.terminal_colors_hash += 1),
         Box::new(|k| k.annotation_presentation_generation += 1),
         Box::new(|k| k.search_matches_hash += 1),
@@ -258,9 +257,17 @@ fn non_wrap_scroll_blit_with_left_col_tabs_and_multibyte_matches_fresh_render() 
     let mut buf = TextBuffer::new(text.len() + 16).unwrap();
     crate::document::ops::Edit::type_text(&text).apply_to(&mut buf);
 
-    let custom_highlights: Vec<(Range<usize>, Color)> = text
+    let text_colors: Vec<(Range<usize>, crate::layer::CellStyle)> = text
         .match_indices("line_")
-        .map(|(b, m)| (b..b + m.len(), Color::Red))
+        .map(|(b, m)| {
+            (
+                b..b + m.len(),
+                crate::layer::CellStyle {
+                    fg: Some(Color::Red),
+                    ..Default::default()
+                },
+            )
+        })
         .collect();
     let char_at = |end: usize| text.get(..end).expect("char boundary").chars().count();
     let search_matches: Vec<SearchMatch> = text
@@ -297,9 +304,8 @@ fn non_wrap_scroll_blit_with_left_col_tabs_and_multibyte_matches_fresh_render() 
                     cursor_col_offset: 0,
                     cursor_viewport: None,
                     terminal_cursor: None,
-                    custom_highlights: Some(&custom_highlights),
                     git_gutter_colors: None,
-                    annotation_styles: None,
+                    annotation_styles: Some(&text_colors),
                     annotation_adornments: None,
                     annotation_inline: None,
                     annotation_concealed: None,
@@ -384,7 +390,6 @@ fn cursor_snaps_instead_of_animating_across_a_viewport_jump() {
                     cursor_col_offset: 0,
                     cursor_viewport: None,
                     terminal_cursor: None,
-                    custom_highlights: None,
                     git_gutter_colors: None,
                     annotation_styles: None,
                     annotation_adornments: None,
@@ -454,7 +459,6 @@ fn needs_clear_forces_repaint_even_when_blit_key_is_unchanged() {
                     cursor_col_offset: 0,
                     cursor_viewport: None,
                     terminal_cursor: None,
-                    custom_highlights: None,
                     git_gutter_colors: None,
                     annotation_styles: None,
                     annotation_adornments: None,
