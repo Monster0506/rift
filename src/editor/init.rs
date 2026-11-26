@@ -1,13 +1,13 @@
 use super::Editor;
 use super::{plugin_dirs, user_config_dir};
 use crate::command_line::commands::parser::CommandParser;
-use crate::command_line::settings::definitions::create_settings_registry;
 use crate::document::{Document, DocumentId};
 use crate::dot_repeat::DotRepeat;
 use crate::error::{ErrorType, RiftError};
 use crate::keymap::KeyMap;
 use crate::mode::Mode;
 use crate::split::tree::SplitTree;
+use crate::state::definitions::create_settings_registry;
 use crate::state::State;
 use crate::term::TerminalBackend;
 use std::sync::Arc;
@@ -218,7 +218,7 @@ impl<T: TerminalBackend> Editor<T> {
                 doc.display_name().to_string(),
                 doc.path().map(|p| p.to_string_lossy().to_string()),
                 doc.is_dirty(),
-                doc.options.line_ending,
+                doc.options().line_ending(),
             )
         };
 

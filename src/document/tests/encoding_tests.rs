@@ -24,7 +24,7 @@ fn test_from_file_normalizes_crlf() {
         "buffer should not contain \\r after CRLF normalization"
     );
     assert_eq!(text, "line1\nline2\nline3");
-    assert_eq!(doc.options.line_ending, LineEnding::Crlf);
+    assert_eq!(doc.options.line_ending(), LineEnding::Crlf);
 }
 
 #[test]
@@ -40,8 +40,8 @@ fn test_from_bytes_matches_from_file() {
 
     assert_eq!(from_bytes.buffer.to_string(), from_file.buffer.to_string());
     assert_eq!(
-        from_bytes.options.line_ending,
-        from_file.options.line_ending
+        from_bytes.options.line_ending(),
+        from_file.options.line_ending()
     );
     assert_eq!(from_bytes.file_path, from_file.file_path);
 }
@@ -103,7 +103,7 @@ fn lone_cr_is_kept_as_control_char() {
 
     let doc = Document::from_file(crate::document::DocumentId::new(1), &path).unwrap();
     assert_eq!(doc.buffer.to_logical_bytes(), b"line1\rline2");
-    assert_eq!(doc.options.line_ending, LineEnding::LF);
+    assert_eq!(doc.options.line_ending(), LineEnding::LF);
 }
 
 #[test]
@@ -114,5 +114,5 @@ fn mixed_endings_load_as_lf() {
         b"a\r\nb\nc".to_vec(),
     )
     .unwrap();
-    assert_eq!(doc.options.line_ending, LineEnding::LF);
+    assert_eq!(doc.options.line_ending(), LineEnding::LF);
 }

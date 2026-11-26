@@ -286,7 +286,13 @@ fn published_diagnostic_underlines_exactly_its_range_and_keeps_the_eol_message()
     std::fs::write(&path, "let \u{1F980}x = 1;\nok\n").unwrap();
 
     let mut editor = create_editor_sized(6, 40);
-    editor.state.settings.show_line_numbers = false;
+    editor
+        .set_option(
+            "number",
+            Some("false"),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
     editor
         .open_file(Some(path.display().to_string()), false)
         .unwrap();

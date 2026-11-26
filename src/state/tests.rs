@@ -205,28 +205,6 @@ fn test_state_with_custom_settings() {
 }
 
 #[test]
-fn test_set_default_border_chars() {
-    use crate::floating_window::BorderChars;
-
-    let mut state = State::new();
-    assert_eq!(state.settings.default_border_chars, None);
-
-    let border_chars = BorderChars {
-        top_left: '+',
-        top_right: '+',
-        bottom_left: '+',
-        bottom_right: '+',
-        horizontal: '-',
-        vertical: '|',
-    };
-
-    state.set_default_border_chars(Some(border_chars));
-    assert!(state.settings.default_border_chars.is_some());
-
-    state.set_default_border_chars(None);
-    assert_eq!(state.settings.default_border_chars, None);
-}
-#[test]
 fn test_command_line_cursor_tracks_multibyte_char_byte_length() {
     let mut state = State::new();
     state.append_to_command_line('a');
@@ -307,4 +285,79 @@ fn test_gutter_cols_needs_the_document_and_the_global_setting() {
     state.settings.show_line_numbers = false;
     assert_eq!(state.gutter_cols(true), 0);
     assert_eq!(state.doc_gutter_cols(true, 9), 0);
+}
+
+fn selection_style(settings: &UserSettings) -> Option<crate::layer::CellStyle> {
+    settings
+        .syntax_colors
+        .as_ref()
+        .and_then(|c| c.exact_style("ui.selection"))
+}
+
+#[test]
+fn applying_a_theme_sets_its_name_and_colors() {
+    use crate::color::theme::Theme;
+    let mut settings = UserSettings::new();
+    for theme in [
+        Theme::dark(),
+        Theme::gruvbox(),
+        Theme::nordic(),
+        Theme::light(),
+    ] {
+        settings.apply_theme(&theme);
+        assert_eq!(settings.theme(), Some(theme.name()));
+        assert_eq!(settings.editor_bg(), Some(theme.background));
+        assert_eq!(settings.editor_fg(), Some(theme.foreground));
+    }
+}
+
+#[test]
+fn every_builtin_theme_gets_a_bg_only_selection_tint_from_its_editor_colors() {
+    use crate::color::theme::Theme;
+    use crate::color::Color;
+    let expected = [
+        (Theme::light(), (0xcc, 0xcc, 0xcc)),
+        (Theme::dark(), (0x45, 0x45, 0x45)),
+        (Theme::gruvbox(), (0x4f, 0x4c, 0x3d)),
+        (Theme::nordic(), (0x4a, 0x51, 0x5e)),
+    ];
+    let mut settings = UserSettings::new();
+    for (theme, (r, g, b)) in expected {
+        settings.apply_theme(&theme);
+        assert_eq!(
+            selection_style(&settings),
+            Some(crate::layer::CellStyle {
+                bg: Some(Color::Rgb { r, g, b }),
+                ..crate::layer::CellStyle::default()
+            }),
+            "theme {}",
+            theme.name()
+        );
+    }
+}
+
+#[test]
+fn switching_themes_clears_the_selection_options() {
+    use crate::color::theme::Theme;
+    use crate::color::Color;
+    let mut settings = UserSettings::new();
+    settings.selection_bg = Some(Color::Red);
+    settings.selection_fg = Some(Color::White);
+    settings.refresh_derived_highlights();
+
+    settings.apply_theme(&Theme::nordic());
+
+    assert_eq!(settings.selection_bg, None);
+    assert_eq!(settings.selection_fg, None);
+    assert_eq!(
+        selection_style(&settings).map(|s| (s.fg, s.bg)),
+        Some((
+            None,
+            Some(Color::Rgb {
+                r: 0x4a,
+                g: 0x51,
+                b: 0x5e
+            })
+        ))
+    );
 }

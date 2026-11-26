@@ -79,10 +79,10 @@ fn test_set_option_queues_mutation_with_string_value() {
 #[test]
 fn test_get_option_reads_document_local_setting_via_alias() {
     let host = make_host();
-    let doc_options = crate::document::definitions::DocumentOptions {
-        tab_width: 8,
-        ..Default::default()
-    };
+    let mut doc_options = crate::document::definitions::DocumentOptions::default();
+    crate::document::definitions::create_document_settings_registry()
+        .set("tabwidth", Some("8"), &mut doc_options)
+        .unwrap();
     host.update_state(StateUpdate {
         buf_id: 1,
         bufs: buf_1(BufUpdate {
@@ -109,7 +109,9 @@ fn test_get_option_reads_document_local_setting_via_alias() {
 fn test_get_option_falls_back_to_global_setting() {
     let host = make_host();
     let mut user_settings = crate::state::UserSettings::new();
-    user_settings.clipboard_ring_size = 42;
+    crate::state::definitions::create_settings_registry()
+        .set("clipboard.size", Some("42"), &mut user_settings)
+        .unwrap();
     host.update_state(StateUpdate {
         buf_id: 1,
         mode: "normal",

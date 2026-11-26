@@ -1,6 +1,6 @@
 use super::*;
-use crate::command_line::settings::definitions::create_settings_registry;
 use crate::document::definitions::{create_document_settings_registry, DocumentOptions};
+use crate::state::definitions::create_settings_registry;
 use crate::state::UserSettings;
 
 #[test]
@@ -530,7 +530,9 @@ fn test_complete_setting_value_color_no_current_is_empty() {
 fn test_complete_setting_value_color_shows_current_value() {
     let reg = create_settings_registry();
     let mut settings = UserSettings::new();
-    settings.editor_bg = None;
+    crate::state::definitions::create_settings_registry()
+        .set("appearance.background", Some("none"), &mut settings)
+        .unwrap();
     let result = complete_setting_value("appearance.background", &reg, Some(&settings));
     assert_eq!(result.candidates.len(), 1);
     assert_eq!(result.candidates[0].text, "none");

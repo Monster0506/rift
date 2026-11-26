@@ -131,7 +131,7 @@ fn compute_content_blit_key(ctx: &DrawContext, visible_rows: usize) -> ContentBl
     } else {
         ctx.viewport.top_line()
     };
-    let theme_hash = hash_bytes(ctx.state.settings.theme.as_deref().unwrap_or("").as_bytes());
+    let theme_hash = hash_bytes(ctx.state.settings.theme().unwrap_or("").as_bytes());
     let annotation_presentation_generation = mix_generation(
         mix_generation(ctx.annotations_revision, theme_hash),
         ctx.kind_registry_generation,
@@ -146,14 +146,13 @@ fn compute_content_blit_key(ctx: &DrawContext, visible_rows: usize) -> ContentBl
         visible_rows,
         visible_cols,
         has_display_map: ctx.display_map.is_some(),
-        editor_bg: ctx.state.settings.editor_bg,
-        editor_fg: ctx.state.settings.editor_fg,
+        editor_bg: ctx.state.settings.editor_bg(),
+        editor_fg: ctx.state.settings.editor_fg(),
         syntax_generation: ctx.syntax_generation,
         highlight_styles_revision: ctx
             .state
             .settings
-            .syntax_colors
-            .as_ref()
+            .syntax_colors()
             .map_or(0, crate::color::theme::SyntaxColors::revision),
         terminal_colors_hash: hash_ranged_spans(ctx.intrinsic.terminal_cells.unwrap_or(&[])),
         search_matches_hash: hash_search_matches(ctx.search_matches()),
@@ -537,8 +536,8 @@ fn render_content_to_paint_frame(
         visible_rows: ctx.viewport.visible_rows().saturating_sub(1),
         visible_cols: ctx.viewport.visible_cols(),
         numbered_lines: ctx.buf.last_real_line() + 1,
-        editor_fg: ctx.state.settings.editor_fg,
-        editor_bg: ctx.state.settings.editor_bg,
+        editor_fg: ctx.state.settings.editor_fg(),
+        editor_bg: ctx.state.settings.editor_bg(),
     };
 
     match ctx.display_map {
@@ -1069,7 +1068,7 @@ fn layout_line<'a>(
     let intrinsic = ctx.intrinsic.decorate(
         source,
         intrinsic_cursors,
-        ctx.state.settings.syntax_colors.as_ref(),
+        ctx.state.settings.syntax_colors(),
     );
     let annotation_styles = ctx.annotation_styles.unwrap_or(&[]);
     let presented =

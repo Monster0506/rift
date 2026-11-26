@@ -201,7 +201,7 @@ fn set_theme(settings: &mut UserSettings, value: &SettingValue) -> Result<(), Se
                     )))
                 },
                 |theme| {
-                    theme.apply_to_settings(settings);
+                    settings.apply_theme(&theme);
                     Ok(())
                 },
             ),

@@ -189,7 +189,7 @@ pub(crate) struct ViewState {
 pub(crate) struct Document {
     pub(crate) id: DocumentId,
     buffer: TextBuffer,
-    pub(crate) options: crate::tracked::Tracked<DocumentOptions>,
+    options: crate::tracked::Tracked<DocumentOptions>,
     file_path: Option<PathBuf>,
     readonly_override: bool,
     pub(crate) syntax: Option<Syntax>,

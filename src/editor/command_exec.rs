@@ -33,8 +33,8 @@ impl<T: TerminalBackend> Editor<T> {
                 self.resolve_display_map_cached(doc_id, content_width, cursor, viewport_height);
 
             let doc = self.document_manager.active_document_mut().unwrap();
-            let expand_tabs = doc.options.expand_tabs;
-            let tab_width = doc.options.tab_width;
+            let expand_tabs = doc.options().expand_tabs();
+            let tab_width = doc.options().tab_width();
 
             if is_mutating {
                 doc.clear_selection();
@@ -72,7 +72,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn command_content_geometry(&self) -> (crate::document::DocumentId, usize, usize) {
         let doc = self.document_manager.active_document().unwrap();
-        let gutter_width = self.state.gutter_cols(doc.options.show_line_numbers);
+        let gutter_width = self.state.gutter_cols(doc.options().show_line_numbers());
         let content_width = self
             .split_tree
             .focused_window()

@@ -10,7 +10,13 @@ enum GhostCut {
 fn run(text: &str, keys: &str, ghost_cut: GhostCut) -> (String, (usize, usize)) {
     let backend = ReplayBackend::new(std::io::sink(), 24, 80);
     let mut editor = Editor::new(backend).unwrap();
-    editor.state.settings.editing.ghost_cut = matches!(ghost_cut, GhostCut::On);
+    editor
+        .set_option(
+            "ghostcut",
+            Some(&(matches!(ghost_cut, GhostCut::On)).to_string()),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
 
     let doc = editor.active_document();
     doc.replace_content(text, crate::document::ops::ContentKind::Render);

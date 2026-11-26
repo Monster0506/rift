@@ -292,7 +292,10 @@ fn bug_replace_mode_backspace_restores_after_paste() {
 #[test]
 fn bug_replace_mode_tab_overwrites_one_char() {
     let mut editor = editor_with_text("abc");
-    editor.active_document().options.expand_tabs = false;
+    editor
+        .active_document()
+        .set_option("expandtabs", Some("false"))
+        .unwrap();
 
     press(&mut editor, &keys("R<Tab><Esc>"));
 
@@ -302,8 +305,14 @@ fn bug_replace_mode_tab_overwrites_one_char() {
 #[test]
 fn bug_replace_mode_expanded_tab_overwrites_spaces() {
     let mut editor = editor_with_text("abcdefgh");
-    editor.active_document().options.expand_tabs = true;
-    editor.active_document().options.tab_width = 4;
+    editor
+        .active_document()
+        .set_option("expandtabs", Some("true"))
+        .unwrap();
+    editor
+        .active_document()
+        .set_option("tabwidth", Some("4"))
+        .unwrap();
 
     press(&mut editor, &keys("R<Tab><BS><Esc>"));
 

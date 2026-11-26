@@ -272,7 +272,7 @@ fn set_noghostcut_makes_dw_delete_immediately() {
     let mut editor = create_editor();
     load_text(&mut editor, "abcdef");
     editor.execute_command_line("set noghostcut");
-    assert!(!editor.state.settings.editing.ghost_cut);
+    assert!(!editor.state.settings.editing().ghost_cut);
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
@@ -342,7 +342,7 @@ fn set_ghostcut_can_be_re_enabled() {
     load_text(&mut editor, "abcdef");
     editor.execute_command_line("set noghostcut");
     editor.execute_command_line("set ghostcut");
-    assert!(editor.state.settings.editing.ghost_cut);
+    assert!(editor.state.settings.editing().ghost_cut);
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,

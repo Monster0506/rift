@@ -162,7 +162,13 @@ fn non_wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
 
     let build_to = |n: usize| -> Editor<MockTerminal> {
         let mut editor = create_editor_sized(20, 80);
-        editor.state.settings.soft_wrap = false;
+        editor
+            .set_option(
+                "editor.soft_wrap",
+                Some("false"),
+                crate::command_line::settings::resolver::OptionScope::Global,
+            )
+            .unwrap();
         load_text(&mut editor, &text);
 
         let loader = editor.language_loader.clone();
@@ -359,7 +365,6 @@ fn scroll_blit_repaints_when_annotations_or_theme_change_mid_scroll() {
     use crate::annotations::kind::Kind;
     use crate::annotations::presentation::{Presentation, StyleOverride};
     use crate::annotations::{Anchor, Annotation, AnnotationOwner};
-    use crate::color::theme::SyntaxColors;
     use crate::color::Color;
     use crate::syntax::build_syntax;
     use std::sync::Arc;
@@ -403,9 +408,13 @@ fn scroll_blit_repaints_when_annotations_or_theme_change_mid_scroll() {
             );
         }
         Step::SwapTheme => {
-            editor.state.settings.theme = Some("mid-scroll-alt".to_string());
-            editor.state.settings.syntax_colors =
-                Some(SyntaxColors::from_base_colors(&[("comment", Color::Green)]));
+            editor
+                .set_option(
+                    "appearance.theme",
+                    Some("dark"),
+                    crate::command_line::settings::resolver::OptionScope::Global,
+                )
+                .unwrap();
         }
     };
 

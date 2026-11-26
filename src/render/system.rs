@@ -279,31 +279,25 @@ impl RenderSystem {
                 ctx.annotation_inline.unwrap_or(&[]),
                 ctx.annotation_adornments.unwrap_or(&[]),
             ),
-            editor_bg: ctx.state.settings.editor_bg,
-            editor_fg: ctx.state.settings.editor_fg,
-            theme: crate::perf_clone!(ctx.state.settings.theme.clone()),
-            highlights_hash: ctx
-                .state
-                .settings
-                .syntax_colors
-                .as_ref()
-                .map_or(0, |colors| {
-                    let highlights = ctx.intrinsic.syntax.unwrap_or(&[]);
-                    let mut hash: u64 =
-                        (highlights.len() as u64) ^ colors.revision().rotate_left(32);
-                    for (range, capture) in highlights {
-                        hash = hash
-                            .wrapping_mul(6_364_136_223_846_793_005)
-                            .wrapping_add(range.start as u64);
-                        hash = hash
-                            .wrapping_mul(6_364_136_223_846_793_005)
-                            .wrapping_add(range.end as u64 + 1);
-                        hash = hash
-                            .wrapping_mul(6_364_136_223_846_793_005)
-                            .wrapping_add(u64::from(*capture) + 1);
-                    }
-                    hash
-                }),
+            editor_bg: ctx.state.settings.editor_bg(),
+            editor_fg: ctx.state.settings.editor_fg(),
+            theme: crate::perf_clone!(ctx.state.settings.theme().map(str::to_owned)),
+            highlights_hash: ctx.state.settings.syntax_colors().map_or(0, |colors| {
+                let highlights = ctx.intrinsic.syntax.unwrap_or(&[]);
+                let mut hash: u64 = (highlights.len() as u64) ^ colors.revision().rotate_left(32);
+                for (range, capture) in highlights {
+                    hash = hash
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(range.start as u64);
+                    hash = hash
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(range.end as u64 + 1);
+                    hash = hash
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(u64::from(*capture) + 1);
+                }
+                hash
+            }),
         }
     }
 
@@ -333,27 +327,24 @@ impl RenderSystem {
             search_query: crate::perf_clone!(ctx.state.last_search_query.clone()),
             search_match_index,
             search_total_matches,
-            status_line: ctx.state.settings.status_line.clone(),
-            editor_bg: ctx.state.settings.editor_bg,
-            editor_fg: ctx.state.settings.editor_fg,
+            status_line: ctx.state.settings.status_line().clone(),
+            editor_bg: ctx.state.settings.editor_bg(),
+            editor_fg: ctx.state.settings.editor_fg(),
             lsp_status: crate::perf_clone!(ctx.state.lsp_status.clone()),
             lsp_ok_color: ctx
                 .state
                 .settings
-                .syntax_colors
-                .as_ref()
+                .syntax_colors()
                 .and_then(|c| c.get_color("ui.lsp.ok")),
             lsp_error_color: ctx
                 .state
                 .settings
-                .syntax_colors
-                .as_ref()
+                .syntax_colors()
                 .and_then(|c| c.get_color("ui.lsp.error")),
             lsp_warn_color: ctx
                 .state
                 .settings
-                .syntax_colors
-                .as_ref()
+                .syntax_colors()
                 .and_then(|c| c.get_color("ui.lsp.warn")),
             is_remote: ctx.state.is_remote,
         }
@@ -378,11 +369,11 @@ impl RenderSystem {
                     col: ctx.state.command_line_cursor,
                 },
                 width: ctx.viewport.visible_cols(),
-                height: ctx.state.settings.command_line_window.height,
-                has_border: ctx.state.settings.command_line_window.border,
-                reverse_video: ctx.state.settings.command_line_window.reverse_video,
-                editor_bg: ctx.state.settings.editor_bg,
-                editor_fg: ctx.state.settings.editor_fg,
+                height: ctx.state.settings.command_line_window().height,
+                has_border: ctx.state.settings.command_line_window().border,
+                reverse_video: ctx.state.settings.command_line_window().reverse_video,
+                editor_bg: ctx.state.settings.editor_bg(),
+                editor_fg: ctx.state.settings.editor_fg(),
             };
 
             self.world
@@ -420,11 +411,11 @@ impl RenderSystem {
                     .collect(),
                 selected: session.selected,
                 terminal_cols: ctx.viewport.visible_cols(),
-                cmd_width_ratio: ctx.state.settings.command_line_window.width_ratio,
-                cmd_min_width: ctx.state.settings.command_line_window.min_width,
-                cmd_height: ctx.state.settings.command_line_window.height,
-                editor_bg: ctx.state.settings.editor_bg,
-                editor_fg: ctx.state.settings.editor_fg,
+                cmd_width_ratio: ctx.state.settings.command_line_window().width_ratio,
+                cmd_min_width: ctx.state.settings.command_line_window().min_width,
+                cmd_height: ctx.state.settings.command_line_window().height,
+                editor_bg: ctx.state.settings.editor_bg(),
+                editor_fg: ctx.state.settings.editor_fg(),
                 scroll_offset: session.scroll_offset,
             };
 
@@ -492,7 +483,7 @@ impl RenderSystem {
         } else {
             self.cursor_animator.snap_to(cursor_row, cursor_col);
         }
-        self.cursor_animator.step(ctx.state.settings.cursor_speed);
+        self.cursor_animator.step(ctx.state.settings.cursor_speed());
         let (anim_row, anim_col) = self.cursor_animator.display_pos();
 
         if software {
@@ -657,7 +648,7 @@ impl RenderSystem {
         compositor.clear_layer(priority);
         let layer = compositor.get_layer_mut(priority);
         let default_border_chars =
-            crate::perf_clone!(ctx.state.settings.default_border_chars.clone());
+            crate::perf_clone!(ctx.state.settings.default_border_chars().cloned());
 
         let (window_row, window_col, _, offset) = CommandLine::render_to_layer(
             layer,
@@ -666,7 +657,7 @@ impl RenderSystem {
             state.cursor.col,
             crate::command_line::RenderOptions {
                 default_border_chars,
-                window_settings: &ctx.state.settings.command_line_window,
+                window_settings: ctx.state.settings.command_line_window(),
                 fg: state.editor_fg,
                 bg: state.editor_bg,
                 prompt: if ctx.current_mode == Mode::Search {
@@ -796,9 +787,9 @@ impl RenderSystem {
         let underlying = self.compositor.get_composited_cell(anim_row, anim_col);
         let cursor_cell = crate::cursor::SoftCursor::block_cell(
             underlying.as_ref(),
-            ctx.state.settings.cursor_color,
-            ctx.state.settings.editor_fg,
-            ctx.state.settings.editor_bg,
+            ctx.state.settings.cursor_color(),
+            ctx.state.settings.editor_fg(),
+            ctx.state.settings.editor_bg(),
         );
 
         self.compositor

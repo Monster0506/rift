@@ -393,7 +393,13 @@ fn single_space_keypress_with_release_moves_the_rendered_cursor() {
 fn single_up_keypress_on_soft_wrap_with_release_moves_the_rendered_cursor() {
     use crate::action::{Action, EditorAction};
     let mut editor = Editor::new(PressReleaseTerminal::new(24, 20, vec![])).unwrap();
-    editor.state.settings.soft_wrap = true;
+    editor
+        .set_option(
+            "editor.soft_wrap",
+            Some("true"),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
     editor.execute_buffer_command(crate::command::Command::InsertChar('x'));
     for _ in 0..30 {
         editor.execute_buffer_command(crate::command::Command::InsertChar('a'));

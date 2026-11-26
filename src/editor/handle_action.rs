@@ -1106,7 +1106,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn action_quit_key(&mut self) -> bool {
-        if self.state.settings.editing.quit_on_q {
+        if self.state.settings.editing().quit_on_q {
             self.should_quit = true;
         } else {
             self.do_quit(false);

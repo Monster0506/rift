@@ -91,8 +91,8 @@ fn test_resolve_display_map_cached_reuses_across_moves() {
     let fresh = super::resolve_display_map(
         doc,
         20,
-        editor.state.settings.soft_wrap,
-        editor.state.settings.wrap_width,
+        editor.state.settings.soft_wrap(),
+        editor.state.settings.wrap_width(),
     );
     assert_eq!(
         editor
@@ -120,8 +120,8 @@ fn test_resolve_display_map_cached_rebuilds_on_tab_width_change() {
         .document_manager
         .get_document_mut(doc_id)
         .unwrap()
-        .options
-        .tab_width = 8;
+        .set_option("tabwidth", Some("8"))
+        .unwrap();
     let after = editor
         .resolve_display_map_cached(doc_id, 20, 0, 100)
         .map(|m| m.tab_width);
@@ -192,8 +192,8 @@ fn test_resolve_display_map_cached_detects_placeholder_to_loaded_swap() {
     let fresh = super::resolve_display_map(
         doc,
         80,
-        editor.state.settings.soft_wrap,
-        editor.state.settings.wrap_width,
+        editor.state.settings.soft_wrap(),
+        editor.state.settings.wrap_width(),
     );
     assert_eq!(
         dm.total_visual_rows(),
@@ -284,8 +284,8 @@ fn test_lazy_display_map_extends_correctly_for_far_cursor_jump() {
     let reference = super::resolve_display_map(
         doc,
         content_width,
-        editor.state.settings.soft_wrap,
-        editor.state.settings.wrap_width,
+        editor.state.settings.soft_wrap(),
+        editor.state.settings.wrap_width(),
     )
     .unwrap();
     assert_eq!(
@@ -298,7 +298,13 @@ fn test_lazy_display_map_extends_correctly_for_far_cursor_jump() {
 #[test]
 fn test_edit_on_partial_display_map_stays_correct() {
     let mut editor = create_editor_sized(10, 30);
-    editor.state.settings.show_line_numbers = false;
+    editor
+        .set_option(
+            "number",
+            Some("false"),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
     let text = "the quick brown fox jumps over the lazy dog\n".repeat(800);
     set_content(&mut editor, &text);
     editor
@@ -322,8 +328,8 @@ fn test_edit_on_partial_display_map_stays_correct() {
     let mut reference = super::resolve_display_map(
         doc,
         content_width,
-        editor.state.settings.soft_wrap,
-        editor.state.settings.wrap_width,
+        editor.state.settings.soft_wrap(),
+        editor.state.settings.wrap_width(),
     )
     .unwrap();
     reference.extend_to_end(doc.buffer());
@@ -344,7 +350,13 @@ fn test_edit_on_partial_display_map_stays_correct() {
 #[test]
 fn test_large_count_down_motion_matches_full_build_reference() {
     let mut editor = create_editor_sized(10, 30);
-    editor.state.settings.show_line_numbers = false;
+    editor
+        .set_option(
+            "number",
+            Some("false"),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
     let text = "the quick brown fox jumps over the lazy dog\n".repeat(500);
     set_content(&mut editor, &text);
     editor
@@ -363,8 +375,8 @@ fn test_large_count_down_motion_matches_full_build_reference() {
         let reference = super::resolve_display_map(
             doc,
             content_width,
-            editor.state.settings.soft_wrap,
-            editor.state.settings.wrap_width,
+            editor.state.settings.soft_wrap(),
+            editor.state.settings.wrap_width(),
         )
         .unwrap();
         let mut pos = 0usize;
@@ -473,9 +485,18 @@ fn test_cursor_moved_fires_once_per_render_with_latest_position() {
 #[test]
 fn a_document_without_line_numbers_wraps_at_the_full_width() {
     let mut editor = create_editor_sized(8, 20);
-    editor.state.settings.soft_wrap = true;
+    editor
+        .set_option(
+            "editor.soft_wrap",
+            Some("true"),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
     load_text(&mut editor, "abcdefghijklmnopqrst\nnext");
-    editor.active_document().options.show_line_numbers = false;
+    editor
+        .active_document()
+        .set_option("number", Some("false"))
+        .unwrap();
 
     let screen = render_ascii(&mut editor);
     let rows: Vec<&str> = screen.lines().collect();
@@ -487,8 +508,20 @@ fn a_document_without_line_numbers_wraps_at_the_full_width() {
 #[test]
 fn exactly_full_wrapped_line_gets_an_eol_row_only_for_its_adornment() {
     let mut editor = create_editor_sized(8, 20);
-    editor.state.settings.soft_wrap = true;
-    editor.state.settings.show_line_numbers = false;
+    editor
+        .set_option(
+            "editor.soft_wrap",
+            Some("true"),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
+    editor
+        .set_option(
+            "number",
+            Some("false"),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
     load_text(&mut editor, "abcdefghijklmnopqrst\nnext");
 
     let screen = render_ascii(&mut editor);
@@ -514,11 +547,23 @@ fn exactly_full_wrapped_line_gets_an_eol_row_only_for_its_adornment() {
     );
     assert_eq!(rows[2].trim_end(), "next");
 
-    editor.state.settings.lsp.virtual_text = false;
+    editor
+        .set_option(
+            "lsp.virtual_text",
+            Some("false"),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
     editor.force_full_redraw().unwrap();
     let screen = render_ascii(&mut editor);
     assert_eq!(screen.lines().nth(1).unwrap().trim_end(), "next");
-    editor.state.settings.lsp.virtual_text = true;
+    editor
+        .set_option(
+            "lsp.virtual_text",
+            Some("true"),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
     editor.force_full_redraw().unwrap();
     let screen = render_ascii(&mut editor);
     let rows: Vec<&str> = screen.lines().collect();

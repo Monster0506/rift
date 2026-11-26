@@ -147,6 +147,15 @@ impl Document {
         }
     }
 
+    fn panel_skeleton(id: super::DocumentId, buffer: TextBuffer) -> Self {
+        Self {
+            options: crate::tracked::Tracked::new(
+                DocumentOptions::default().without_line_numbers(),
+            ),
+            ..Self::skeleton(id, buffer)
+        }
+    }
+
     /// # Errors
     /// Propagates the error from `TextBuffer::new`.
     pub(crate) fn new(id: super::DocumentId) -> Result<Self, RiftError> {
@@ -213,11 +222,10 @@ impl Document {
         buffer.move_to_start();
 
         Ok(Self {
-            options: crate::tracked::Tracked::new(DocumentOptions {
-                line_ending: decoded.line_ending,
-                has_bom: decoded.has_bom,
-                ..DocumentOptions::default()
-            }),
+            options: crate::tracked::Tracked::new(DocumentOptions::decoded(
+                decoded.line_ending,
+                decoded.has_bom,
+            )),
             file_path: path.map(Self::normalize_path),
             ..Self::skeleton(id, buffer)
         })
@@ -325,8 +333,7 @@ impl Document {
         let (terminal, rx) = Terminal::new(rows, cols, shell)
             .map_err(|e| RiftError::new(ErrorType::Internal, "TERMINAL_INIT", e.to_string()))?;
 
-        let mut doc = Self::skeleton(id, buffer);
-        doc.options.show_line_numbers = false;
+        let mut doc = Self::panel_skeleton(id, buffer);
         doc.kind = BufferKind::terminal();
         doc.state = StateSlot::new(
             TERMINAL_STATE_KEY,
@@ -343,8 +350,7 @@ impl Document {
     /// Propagates the error from `TextBuffer::new`.
     pub(crate) fn new_directory(id: super::DocumentId, path: PathBuf) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
-        let mut doc = Self::skeleton(id, buffer);
-        doc.options.show_line_numbers = false;
+        let mut doc = Self::panel_skeleton(id, buffer);
         doc.kind = BufferKind::directory();
         doc.state = StateSlot::new(
             DIRECTORY_STATE_KEY,
@@ -364,8 +370,7 @@ impl Document {
         linked_doc_id: super::DocumentId,
     ) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
-        let mut doc = Self::skeleton(id, buffer);
-        doc.options.show_line_numbers = false;
+        let mut doc = Self::panel_skeleton(id, buffer);
         doc.kind = BufferKind::undotree();
         doc.state = StateSlot::new(
             UNDO_TREE_STATE_KEY,
@@ -379,10 +384,9 @@ impl Document {
 
     pub(crate) fn new_undotree_preview(id: super::DocumentId, linked: &Self) -> Self {
         Self {
-            options: crate::tracked::Tracked::new(DocumentOptions {
-                show_line_numbers: false,
-                ..linked.options.clone()
-            }),
+            options: crate::tracked::Tracked::new(
+                DocumentOptions::clone(&linked.options).without_line_numbers(),
+            ),
             file_path: linked.file_path.clone(),
             readonly_override: true,
             history: linked.history.clone(),
@@ -394,8 +398,7 @@ impl Document {
     /// Propagates the error from `TextBuffer::new`.
     pub(crate) fn new_messages(id: super::DocumentId, show_all: bool) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
-        let mut doc = Self::skeleton(id, buffer);
-        doc.options.show_line_numbers = false;
+        let mut doc = Self::panel_skeleton(id, buffer);
         doc.kind = BufferKind::messages();
         doc.state = StateSlot::new(MESSAGES_STATE_KEY, MessagesState { show_all });
         Ok(doc)
@@ -414,16 +417,19 @@ impl Document {
     /// Propagates the error from `TextBuffer::new`.
     pub(crate) fn new_clipboard(id: super::DocumentId) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
-        let mut doc = Self::skeleton(id, buffer);
-        doc.options.show_line_numbers = false;
+        let mut doc = Self::panel_skeleton(id, buffer);
         doc.kind = BufferKind::clipboard();
         doc.state = StateSlot::new(CLIPBOARD_STATE_KEY, ClipboardState::default());
         Ok(doc)
     }
 
     pub(crate) fn new_clipboard_preview(id: super::DocumentId) -> Self {
-        let mut doc = Self::new_scratch(id, "[Clipboard:preview]".to_string(), &[]);
-        doc.options.show_line_numbers = false;
+        let mut doc = Self {
+            options: crate::tracked::Tracked::new(
+                DocumentOptions::default().without_line_numbers(),
+            ),
+            ..Self::new_scratch(id, "[Clipboard:preview]".to_string(), &[])
+        };
         doc.set_read_only(true);
         doc
     }
@@ -435,8 +441,7 @@ impl Document {
         repo_root: PathBuf,
     ) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
-        let mut doc = Self::skeleton(id, buffer);
-        doc.options.show_line_numbers = false;
+        let mut doc = Self::panel_skeleton(id, buffer);
         doc.kind = BufferKind::git_status();
         doc.state = StateSlot::new(
             GIT_STATUS_STATE_KEY,
@@ -476,9 +481,14 @@ impl Document {
         at_commit: Option<String>,
     ) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
-        let mut doc = Self::skeleton(id, buffer);
-        doc.options.show_line_numbers = false;
-        doc.options.wrap = Some(super::definitions::WrapMode::Off);
+        let mut doc = Self {
+            options: crate::tracked::Tracked::new(
+                DocumentOptions::default()
+                    .without_line_numbers()
+                    .without_wrap(),
+            ),
+            ..Self::skeleton(id, buffer)
+        };
         doc.kind = BufferKind::git_blame();
         doc.state = StateSlot::new(
             GIT_BLAME_STATE_KEY,
@@ -505,8 +515,7 @@ impl Document {
         path: Option<PathBuf>,
     ) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
-        let mut doc = Self::skeleton(id, buffer);
-        doc.options.show_line_numbers = false;
+        let mut doc = Self::panel_skeleton(id, buffer);
         doc.kind = BufferKind::git_log();
         doc.state = StateSlot::new(
             GIT_LOG_STATE_KEY,
@@ -531,8 +540,7 @@ impl Document {
         steps: &[crate::git::rebase::RebaseStep],
     ) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(64)?;
-        let mut doc = Self::skeleton(id, buffer);
-        doc.options.show_line_numbers = false;
+        let mut doc = Self::panel_skeleton(id, buffer);
         doc.kind = BufferKind::git_rebase_todo();
         doc.state = StateSlot::new(
             GIT_REBASE_TODO_STATE_KEY,
@@ -558,8 +566,7 @@ impl Document {
     /// Propagates the error from `TextBuffer::new`.
     pub(crate) fn new_buffer_list(id: super::DocumentId) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
-        let mut doc = Self::skeleton(id, buffer);
-        doc.options.show_line_numbers = false;
+        let mut doc = Self::panel_skeleton(id, buffer);
         doc.kind = BufferKind::buffer_list();
         doc.state = StateSlot::new(BUFFER_LIST_STATE_KEY, BufferListState::default());
         Ok(doc)

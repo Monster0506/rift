@@ -995,8 +995,8 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
         };
 
         doc.replace_content(res.line_index, crate::document::ops::ContentKind::Load);
-        doc.options.line_ending = res.line_ending;
-        doc.options.has_bom = res.has_bom;
+        let _ = doc.set_option("line_ending", Some(res.line_ending.name()));
+        let _ = doc.set_option("bomb", Some(if res.has_bom { "true" } else { "false" }));
         if res.is_reload {
             doc.mark_lsp_full_sync();
         }

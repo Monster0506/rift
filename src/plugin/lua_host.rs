@@ -1968,7 +1968,7 @@ impl LuaHost {
     ) -> LuaResult<()> {
         let resolver = crate::command_line::settings::resolver::SettingsResolver::new(
             crate::document::definitions::create_document_settings_registry(),
-            crate::command_line::settings::definitions::create_settings_registry(),
+            crate::state::definitions::create_settings_registry(),
         );
         {
             let sh = Rc::clone(shared);
@@ -1990,13 +1990,7 @@ impl LuaHost {
                         .bufs
                         .get_mut(&buf)
                         .map_or(&mut scratch, |snap| &mut snap.options);
-                    let _ = resolver.set(
-                        &name,
-                        Some(&value_str),
-                        options,
-                        &mut s.user_settings,
-                        &mut |_| {},
-                    );
+                    let _ = resolver.set(&name, Some(&value_str), options, &mut s.user_settings);
                     if local {
                         s.diverged.insert(buf);
                     } else {
@@ -2267,8 +2261,8 @@ impl LuaHost {
             let f = lua.create_function(move |_, ()| {
                 let s = sh.borrow();
                 Ok(lua_int(s.snapshot(s.current_id()).map_or(
-                    crate::document::definitions::DocumentOptions::default().tab_width,
-                    |snap| snap.options.tab_width,
+                    crate::document::definitions::DocumentOptions::default().tab_width(),
+                    |snap| snap.options.tab_width(),
                 )))
             })?;
             api.set("get_tab_width", f)?;
@@ -2280,8 +2274,8 @@ impl LuaHost {
             let f = lua.create_function(move |_, ()| {
                 let s = sh.borrow();
                 Ok(s.snapshot(s.current_id()).map_or(
-                    crate::document::definitions::DocumentOptions::default().expand_tabs,
-                    |snap| snap.options.expand_tabs,
+                    crate::document::definitions::DocumentOptions::default().expand_tabs(),
+                    |snap| snap.options.expand_tabs(),
                 ))
             })?;
             api.set("get_expand_tabs", f)?;
@@ -2380,7 +2374,7 @@ impl LuaHost {
                 Ok(sh
                     .borrow()
                     .snapshot(buf)
-                    .map_or("lf", |snap| snap.options.line_ending.name()))
+                    .map_or("lf", |snap| snap.options.line_ending().name()))
             })?;
             api.set("get_line_ending", f)?;
         }
@@ -2388,18 +2382,21 @@ impl LuaHost {
         // rift.set_line_ending(type) - "lf" | "crlf"
         {
             let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, (ending, opts): (String, Option<LuaTable>)| {
-                let buf = opts_target(&sh, opts.as_ref())?;
-                let mut s = sh.borrow_mut();
-                s.edit_local_snapshot(buf, |snap| {
-                    snap.options.line_ending = crate::document::LineEnding::from_name(&ending);
-                });
-                s.mutations.push(PluginMutation::SetLineEnding {
-                    buf: DocumentId::new(buf),
-                    ending,
-                });
-                Ok(())
-            })?;
+            let f =
+                lua.create_function(move |_, (ending, opts): (String, Option<LuaTable>)| {
+                    let buf = opts_target(&sh, opts.as_ref())?;
+                    let mut s = sh.borrow_mut();
+                    s.edit_local_snapshot(buf, |snap| {
+                        let ending = crate::document::LineEnding::from_name(&ending).name();
+                        let _ = crate::document::definitions::create_document_settings_registry()
+                            .set("line_ending", Some(ending), &mut snap.options);
+                    });
+                    s.mutations.push(PluginMutation::SetLineEnding {
+                        buf: DocumentId::new(buf),
+                        ending,
+                    });
+                    Ok(())
+                })?;
             api.set("set_line_ending", f)?;
         }
 

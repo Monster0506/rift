@@ -8,11 +8,11 @@ impl<T: TerminalBackend> Editor<T> {
         doc_id: DocumentId,
         content_hash: crate::history::persist::Sha256Digest,
     ) {
-        if !self.state.settings.undo.persistent {
+        if !self.state.settings.undo().persistent {
             return;
         }
         let undo_dir =
-            crate::history::persist::resolve_undo_dir(self.state.settings.undo.dir.as_deref());
+            crate::history::persist::resolve_undo_dir(self.state.settings.undo().dir.as_deref());
         let Some(doc) = self.document_manager.get_document_mut(doc_id) else {
             return;
         };
@@ -29,11 +29,11 @@ impl<T: TerminalBackend> Editor<T> {
         doc_id: DocumentId,
         content_hash: crate::history::persist::Sha256Digest,
     ) {
-        if !self.state.settings.undo.persistent {
+        if !self.state.settings.undo().persistent {
             return;
         }
         let undo_dir =
-            crate::history::persist::resolve_undo_dir(self.state.settings.undo.dir.as_deref());
+            crate::history::persist::resolve_undo_dir(self.state.settings.undo().dir.as_deref());
         let Some(doc) = self.document_manager.get_document(doc_id) else {
             return;
         };

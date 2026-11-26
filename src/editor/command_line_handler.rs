@@ -96,8 +96,6 @@ impl<T: TerminalBackend> Editor<T> {
             self.document_manager
                 .get_document_mut(active_id)
                 .expect("active document missing"),
-            &self.settings_registry,
-            &self.document_settings_registry,
         );
         if !self.apply_command_result(result, cmd) {
             return;
@@ -106,14 +104,30 @@ impl<T: TerminalBackend> Editor<T> {
             self.set_mode(Mode::Normal);
         }
         // Sync clipboard ring capacity in case clipboard.size was just changed
-        let desired = self.state.settings.clipboard_ring_size;
+        let desired = self.state.settings.clipboard_ring_size();
         if self.clipboard_ring.capacity() != desired {
             self.clipboard_ring.set_capacity(desired);
             self.refresh_clipboard_buffer_if_open();
         }
     }
 
-    /// Returns false when the command line must stay as-is (no mode reset or ring sync).
+    fn apply_ex_option(
+        &mut self,
+        name: &str,
+        value: Option<&str>,
+        scope: crate::command_line::settings::resolver::OptionScope,
+    ) -> bool {
+        match self.set_option(name, value, scope) {
+            Ok(true) => self.redraw_from_command(),
+            Ok(false) => {}
+            Err(e) => {
+                self.notify_error(e);
+                return false;
+            }
+        }
+        true
+    }
+
     fn apply_command_result(
         &mut self,
         result: crate::command_line::commands::executor::ExecutionResult,
@@ -146,6 +160,11 @@ impl<T: TerminalBackend> Editor<T> {
                 self.save_and_quit(path);
             }
             ExecutionResult::Redraw => self.redraw_from_command(),
+            ExecutionResult::SetOption { name, value, scope } => {
+                if !self.apply_ex_option(&name, value.as_deref(), scope) {
+                    return false;
+                }
+            }
             ExecutionResult::Reload => self.load_plugins(),
             ExecutionResult::Edit { path, bangs } => {
                 if let Err(e) = self.open_file(path, bangs > 0) {
@@ -251,7 +270,7 @@ impl<T: TerminalBackend> Editor<T> {
                 use crate::job_manager::jobs::completion::CompletionJob;
                 let current_settings = Some(self.state.settings.clone());
                 let doc = self.active_document();
-                let current_doc_options = Some(doc.options.clone());
+                let current_doc_options = Some((**doc.options()).clone());
                 let line_count = doc.buffer().get_total_lines();
                 let buf_text = doc.buffer().to_string();
                 let buf_words = {

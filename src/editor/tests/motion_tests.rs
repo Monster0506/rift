@@ -1071,7 +1071,13 @@ fn bug_dd_on_last_line_trailing_newline_deletes_newline_not_text() {
 #[test]
 fn bug_phantom_line_numbered_past_eof() {
     let mut editor = editor_with_line_text(LINE_TEXT);
-    editor.state.settings.show_line_numbers = true;
+    editor
+        .set_option(
+            "number",
+            Some("true"),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
 
     let screen = render_ascii(&mut editor);
     let numbered: Vec<usize> = screen

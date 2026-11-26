@@ -73,7 +73,13 @@ fn editor() -> Editor<FrameTerminal> {
         polls: Vec::new(),
     };
     let mut editor = Editor::new(terminal).unwrap();
-    editor.state.settings.poll_timeout_ms = 1000;
+    editor
+        .set_option(
+            "editor.poll_rate",
+            Some("1000"),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
     editor.last_notification_generation = editor.state.notifications.generation;
     editor.term.inner.clear();
     editor.term.polls.clear();
@@ -316,7 +322,13 @@ fn poll_timeout_shrinks_to_the_key_sequence_timeout() {
 #[test]
 fn poll_timeout_shrinks_to_the_next_notification_expiry() {
     let mut editor = editor();
-    editor.state.settings.poll_timeout_ms = 60_000;
+    editor
+        .set_option(
+            "editor.poll_rate",
+            Some("10000"),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
     editor.plugin_host.set_cursor_hold_delay_ms(60_000);
     editor.notify(crate::notification::NotificationType::Success, "saved");
 

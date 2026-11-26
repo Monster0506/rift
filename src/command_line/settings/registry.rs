@@ -1,5 +1,4 @@
 use super::descriptor::{SettingDescriptor, SettingError, SettingType, SettingValue};
-use crate::command_line::commands::executor::ExecutionResult;
 use crate::command_line::commands::registry::{CommandDef, CommandRegistry, MatchResult};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use std::collections::HashMap;
@@ -267,76 +266,44 @@ impl<T> SettingsRegistry<T> {
         Ok(SettingValue::Color(color))
     }
 
-    pub(crate) fn execute_setting(
+    pub(crate) fn set(
         &self,
         name: &str,
         value: Option<&str>,
         target: &mut T,
-        error_handler: &mut dyn FnMut(RiftError),
-    ) -> ExecutionResult {
+    ) -> Result<&'static SettingDescriptor<T>, RiftError> {
+        let unknown = || RiftError {
+            severity: ErrorSeverity::Error,
+            kind: ErrorType::Settings,
+            code: "UNKNOWN_SETTING".to_string(),
+            message: format!("Unknown option: {name}"),
+        };
         let matched_name = match self.cached_option_registry().match_command(name) {
             MatchResult::Exact(n) | MatchResult::Prefix(n) => n,
             MatchResult::Ambiguous { prefix, matches } => {
                 let matches_str = matches.join(", ");
-                error_handler(RiftError {
+                return Err(RiftError {
                     severity: ErrorSeverity::Error,
                     kind: ErrorType::Settings,
                     code: "AMBIGUOUS_SETTING".to_string(),
                     message: format!("Ambiguous option '{prefix}': matches {matches_str}"),
                 });
-                return ExecutionResult::Failure;
             }
-            MatchResult::Unknown(_) => {
-                error_handler(RiftError {
-                    severity: ErrorSeverity::Error,
-                    kind: ErrorType::Settings,
-                    code: "UNKNOWN_SETTING".to_string(),
-                    message: format!("Unknown option: {name}"),
-                });
-                return ExecutionResult::Failure;
-            }
+            MatchResult::Unknown(_) => return Err(unknown()),
         };
-
-        let Some(desc) = self.settings.iter().find(|d| d.name == matched_name) else {
-            error_handler(RiftError {
-                severity: ErrorSeverity::Error,
-                kind: ErrorType::Settings,
-                code: "UNKNOWN_SETTING".to_string(),
-                message: format!("Unknown option: {name}"),
-            });
-            return ExecutionResult::Failure;
-        };
-
-        let Some(value_str) = value else {
-            error_handler(RiftError {
-                severity: ErrorSeverity::Error,
-                kind: ErrorType::Settings,
-                code: "MISSING_SETTING_VALUE".to_string(),
-                message: "Missing value".to_string(),
-            });
-            return ExecutionResult::Failure;
-        };
-
-        let typed_value = match Self::parse_value(&desc.ty, value_str) {
-            Ok(v) => v,
-            Err(e) => {
-                error_handler(e.into());
-                return ExecutionResult::Failure;
-            }
-        };
-
-        match (desc.set)(target, &typed_value) {
-            Ok(()) => {
-                if desc.needs_full_redraw {
-                    ExecutionResult::Redraw
-                } else {
-                    ExecutionResult::Success
-                }
-            }
-            Err(e) => {
-                error_handler(e.into());
-                ExecutionResult::Failure
-            }
-        }
+        let settings: &'static [SettingDescriptor<T>] = self.settings;
+        let desc = settings
+            .iter()
+            .find(|d| d.name == matched_name)
+            .ok_or_else(unknown)?;
+        let value = value.ok_or_else(|| RiftError {
+            severity: ErrorSeverity::Error,
+            kind: ErrorType::Settings,
+            code: "MISSING_SETTING_VALUE".to_string(),
+            message: "Missing value".to_string(),
+        })?;
+        let typed_value = Self::parse_value(&desc.ty, value)?;
+        (desc.set)(target, &typed_value)?;
+        Ok(desc)
     }
 }

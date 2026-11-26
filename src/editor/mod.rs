@@ -111,7 +111,7 @@ fn resolve_wrap_params(
     if doc.projection() != crate::document::runtime::TextProjectionPolicy::PlainText {
         return None;
     }
-    let w = match &doc.options.wrap {
+    let w = match doc.options().wrap() {
         Some(WrapMode::Off) => return None,
         Some(mode) => mode.resolve(content_width),
         None => {
@@ -121,7 +121,7 @@ fn resolve_wrap_params(
             global_wrap_width.unwrap_or(content_width)
         }
     };
-    Some((w, doc.options.tab_width))
+    Some((w, doc.options().tab_width()))
 }
 
 #[derive(Clone)]

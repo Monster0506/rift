@@ -6,7 +6,9 @@ fn test_render_line_numbers_enabled() {
     let mut buf = TextBuffer::new(100).unwrap();
     crate::document::ops::Edit::type_text("line1\nline2").apply_to(&mut buf);
     let mut state = State::new();
-    state.settings.show_line_numbers = true;
+    crate::state::definitions::create_settings_registry()
+        .set("number", Some("true"), &mut state.settings)
+        .unwrap();
     state.update_buffer_stats(2, 11, crate::document::LineEnding::LF);
 
     let mut system = RenderSystem::new(10, 80);
@@ -68,7 +70,9 @@ fn test_render_line_numbers_disabled() {
     let mut buf = TextBuffer::new(100).unwrap();
     crate::document::ops::Edit::type_text("line1").apply_to(&mut buf);
     let mut state = State::new();
-    state.settings.show_line_numbers = false;
+    crate::state::definitions::create_settings_registry()
+        .set("number", Some("false"), &mut state.settings)
+        .unwrap();
     state.update_buffer_stats(1, 5, crate::document::LineEnding::LF);
 
     let mut system = RenderSystem::new(10, 80);
@@ -117,7 +121,9 @@ fn test_render_line_numbers_gutter_width() {
     let mut term = MockTerminal::new(10, 80);
     let buf = TextBuffer::new(100).unwrap();
     let mut state = State::new();
-    state.settings.show_line_numbers = true;
+    crate::state::definitions::create_settings_registry()
+        .set("number", Some("true"), &mut state.settings)
+        .unwrap();
     state.update_buffer_stats(100, 0, crate::document::LineEnding::LF);
 
     let mut system = RenderSystem::new(10, 80);
@@ -184,7 +190,9 @@ fn test_render_cursor_position_with_line_numbers() {
     crate::document::ops::Edit::type_text("test").apply_to(&mut buf);
     crate::document::ops::standalone::move_cursor(&mut buf, crate::action::Motion::StartOfFile);
     let mut state = State::new();
-    state.settings.show_line_numbers = true;
+    crate::state::definitions::create_settings_registry()
+        .set("number", Some("true"), &mut state.settings)
+        .unwrap();
     state.update_buffer_stats(10, 4, crate::document::LineEnding::LF); // 2 digits -> gutter 4
 
     let mut system = RenderSystem::new(10, 80);

@@ -32,19 +32,19 @@ impl WrapMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DocumentOptions {
     /// Line ending character(s) to use for this document
-    pub(crate) line_ending: LineEnding,
+    line_ending: LineEnding,
 
     /// Whether the file started with a UTF-8 BOM, written back on save
-    pub(crate) has_bom: bool,
+    has_bom: bool,
 
     /// Tab width in spaces (for display and expansion)
-    pub(crate) tab_width: usize,
+    tab_width: usize,
     /// Whether to expand tabs to spaces when inserting
-    pub(crate) expand_tabs: bool,
+    expand_tabs: bool,
     /// Whether to show line numbers for this document
-    pub(crate) show_line_numbers: bool,
+    show_line_numbers: bool,
     /// Per-document wrap setting: None = inherit global, Some(mode) = override
-    pub(crate) wrap: Option<WrapMode>,
+    wrap: Option<WrapMode>,
 }
 
 impl Default for DocumentOptions {
@@ -57,6 +57,63 @@ impl Default for DocumentOptions {
             show_line_numbers: true,
             wrap: Some(WrapMode::Expr("auto".to_string())),
         }
+    }
+}
+
+impl DocumentOptions {
+    #[must_use]
+    pub(in crate::document) fn decoded(line_ending: LineEnding, has_bom: bool) -> Self {
+        Self {
+            line_ending,
+            has_bom,
+            ..Self::default()
+        }
+    }
+
+    #[must_use]
+    pub(in crate::document) fn without_line_numbers(self) -> Self {
+        Self {
+            show_line_numbers: false,
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub(in crate::document) fn without_wrap(self) -> Self {
+        Self {
+            wrap: Some(WrapMode::Off),
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub(crate) const fn line_ending(&self) -> LineEnding {
+        self.line_ending
+    }
+
+    #[must_use]
+    pub(crate) const fn has_bom(&self) -> bool {
+        self.has_bom
+    }
+
+    #[must_use]
+    pub(crate) const fn tab_width(&self) -> usize {
+        self.tab_width
+    }
+
+    #[must_use]
+    pub(crate) const fn expand_tabs(&self) -> bool {
+        self.expand_tabs
+    }
+
+    #[must_use]
+    pub(crate) const fn show_line_numbers(&self) -> bool {
+        self.show_line_numbers
+    }
+
+    #[must_use]
+    pub(crate) const fn wrap(&self) -> Option<&WrapMode> {
+        self.wrap.as_ref()
     }
 }
 
@@ -172,6 +229,22 @@ fn set_wrap(options: &mut DocumentOptions, value: &SettingValue) -> Result<(), S
     Ok(())
 }
 
+fn set_bomb(options: &mut DocumentOptions, value: &SettingValue) -> Result<(), SettingError> {
+    match value {
+        &SettingValue::Bool(b) => {
+            options.has_bom = b;
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError(
+            "Expected boolean".to_string(),
+        )),
+    }
+}
+
+const fn get_bomb(options: &DocumentOptions) -> SettingValue {
+    SettingValue::Bool(options.has_bom)
+}
+
 /// Document-specific settings
 /// `LOCAL_SETTINGS`
 const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
@@ -228,6 +301,15 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
         set: set_wrap,
         get: get_wrap,
         needs_full_redraw: true,
+    },
+    SettingDescriptor {
+        name: "bomb",
+        aliases: &["bom"],
+        description: "Write a UTF-8 byte order mark when saving",
+        ty: SettingType::Boolean,
+        set: set_bomb,
+        get: get_bomb,
+        needs_full_redraw: false,
     },
 ];
 

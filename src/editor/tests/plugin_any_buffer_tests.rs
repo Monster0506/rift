@@ -71,8 +71,13 @@ fn reads_target_a_background_buffer() {
     first_doc
         .set_cursor(9, crate::document::ops::CursorCause::User)
         .unwrap();
-    first_doc.options.tab_width = 8;
-    first_doc.options.line_ending = crate::document::LineEnding::Crlf;
+    first_doc.set_option("tabwidth", Some("8")).unwrap();
+    first_doc
+        .set_option(
+            "line_ending",
+            Some(crate::document::LineEnding::Crlf.name()),
+        )
+        .unwrap();
     let mark = first_doc
         .annotations
         .add(Annotation::new(
@@ -86,8 +91,8 @@ fn reads_target_a_background_buffer() {
         second_doc.is_dirty(),
         second_doc.history.can_undo(),
         second_doc.kind.kind_str().to_string(),
-        second_doc.options.line_ending.name(),
-        second_doc.options.tab_width,
+        second_doc.options().line_ending().name(),
+        second_doc.options().tab_width(),
     );
     editor.update_lua_state();
 
@@ -131,8 +136,8 @@ fn reads_target_a_background_buffer() {
 fn writes_target_a_background_buffer_and_read_back_in_the_same_call() {
     let (_dir, mut editor, first, second) = background_file();
     let second_text = text(&editor, second);
-    let second_ending = doc(&editor, second).options.line_ending.name();
-    let second_tab = doc(&editor, second).options.tab_width;
+    let second_ending = doc(&editor, second).options().line_ending().name();
+    let second_tab = doc(&editor, second).options().tab_width();
 
     lua_ok(
         &editor,
@@ -184,8 +189,8 @@ fn writes_target_a_background_buffer_and_read_back_in_the_same_call() {
     assert_eq!(text(&editor, second), second_text);
     let first_doc = doc(&editor, first);
     assert_eq!(first_doc.buffer().cursor(), 0);
-    assert_eq!(first_doc.options.tab_width, 8);
-    assert_eq!(first_doc.options.line_ending.name(), "crlf");
+    assert_eq!(first_doc.options().tab_width(), 8);
+    assert_eq!(first_doc.options().line_ending().name(), "crlf");
     let probes = |id: u64| -> Vec<String> {
         doc(&editor, id)
             .annotations
@@ -196,7 +201,7 @@ fn writes_target_a_background_buffer_and_read_back_in_the_same_call() {
     };
     assert_eq!(probes(first), vec!["probe.mark".to_string()]);
     assert!(probes(second).is_empty());
-    assert_eq!(doc(&editor, second).options.tab_width, second_tab);
+    assert_eq!(doc(&editor, second).options().tab_width(), second_tab);
     lua_ok(
         &editor,
         &format!(

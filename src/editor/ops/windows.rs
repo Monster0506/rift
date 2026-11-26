@@ -177,7 +177,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(crate) fn equalize_windows(&mut self) {
-        let proportional = self.state.settings.equalize_proportional;
+        let proportional = self.state.settings.equalize_proportional();
         self.split_tree.equalize(proportional);
         self.render_system.viewport.mark_needs_full_redraw();
     }

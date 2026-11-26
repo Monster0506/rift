@@ -35,8 +35,20 @@ fn undo_history_survives_a_simulated_editor_restart_when_enabled() {
     let path_str = file_path.to_string_lossy().into_owned();
 
     let mut editor = create_editor();
-    editor.state.settings.undo.persistent = true;
-    editor.state.settings.undo.dir = Some(undo_dir.clone());
+    editor
+        .set_option(
+            "undofile",
+            Some("true"),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
+    editor
+        .set_option(
+            "undodir",
+            Some(undo_dir.to_str().unwrap()),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
     editor.open_file(Some(path_str.clone()), false).unwrap();
     drain_jobs(&mut editor);
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
@@ -51,8 +63,20 @@ fn undo_history_survives_a_simulated_editor_restart_when_enabled() {
     drop(editor);
 
     let mut editor2 = create_editor();
-    editor2.state.settings.undo.persistent = true;
-    editor2.state.settings.undo.dir = Some(undo_dir);
+    editor2
+        .set_option(
+            "undofile",
+            Some("true"),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
+    editor2
+        .set_option(
+            "undodir",
+            Some(undo_dir.to_str().unwrap()),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
     editor2.open_file(Some(path_str), false).unwrap();
     drain_jobs(&mut editor2);
 
@@ -73,8 +97,20 @@ fn undo_file_is_not_written_when_persistent_undo_is_explicitly_disabled() {
     let path_str = file_path.to_string_lossy().into_owned();
 
     let mut editor = create_editor();
-    editor.state.settings.undo.persistent = false; // undofile defaults to on; turn it off
-    editor.state.settings.undo.dir = Some(undo_dir.clone());
+    editor
+        .set_option(
+            "undofile",
+            Some("false"),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
+    editor
+        .set_option(
+            "undodir",
+            Some(undo_dir.to_str().unwrap()),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
     editor.open_file(Some(path_str), false).unwrap();
     drain_jobs(&mut editor);
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));

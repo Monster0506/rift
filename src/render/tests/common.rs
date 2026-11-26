@@ -201,10 +201,13 @@ pub(super) fn content_highlights_hash(system: &RenderSystem) -> u64 {
 
 pub(super) fn syntax_colors_state() -> State {
     let mut state = State::new();
-    state.settings.syntax_colors = Some(crate::color::theme::SyntaxColors::from_base_colors(&[(
+    state.settings.set_highlight_override(
         "function",
-        crate::color::Color::Red,
-    )]));
+        Some(crate::layer::CellStyle {
+            fg: Some(crate::color::Color::Red),
+            ..Default::default()
+        }),
+    );
     state
 }
 

@@ -8,6 +8,8 @@ use crate::key::Key;
 use crate::notification::NotificationManager;
 use crate::search::SearchMatch;
 
+pub(crate) mod definitions;
+
 #[derive(Debug, Clone)]
 pub(crate) struct CommandLineWindowSettings {
     pub(crate) width_ratio: f64,
@@ -111,27 +113,27 @@ impl Default for UndoSettings {
 
 #[derive(Debug, Clone)]
 pub(crate) struct UserSettings {
-    pub(crate) show_line_numbers: bool,
-    pub(crate) default_border_chars: Option<BorderChars>,
-    pub(crate) command_line_window: CommandLineWindowSettings,
-    pub(crate) status_line: StatusLineSettings,
-    pub(crate) editor_bg: Option<Color>,
-    pub(crate) editor_fg: Option<Color>,
-    pub(crate) theme: Option<String>,
-    pub(crate) poll_timeout_ms: u64,
-    pub(crate) editing: EditingSettings,
-    pub(crate) syntax_colors: Option<crate::color::theme::SyntaxColors>,
-    pub(crate) highlight_overrides: std::collections::BTreeMap<String, crate::layer::CellStyle>,
-    pub(crate) soft_wrap: bool,
-    pub(crate) wrap_width: Option<usize>,
-    pub(crate) clipboard_ring_size: usize,
-    pub(crate) equalize_proportional: bool,
-    pub(crate) selection_bg: Option<Color>,
-    pub(crate) selection_fg: Option<Color>,
-    pub(crate) cursor_color: Option<Color>,
-    pub(crate) cursor_speed: f64,
-    pub(crate) lsp: LspSettings,
-    pub(crate) undo: UndoSettings,
+    show_line_numbers: bool,
+    default_border_chars: Option<BorderChars>,
+    command_line_window: CommandLineWindowSettings,
+    status_line: StatusLineSettings,
+    editor_bg: Option<Color>,
+    editor_fg: Option<Color>,
+    theme: Option<String>,
+    poll_timeout_ms: u64,
+    editing: EditingSettings,
+    syntax_colors: Option<crate::color::theme::SyntaxColors>,
+    highlight_overrides: std::collections::BTreeMap<String, crate::layer::CellStyle>,
+    soft_wrap: bool,
+    wrap_width: Option<usize>,
+    clipboard_ring_size: usize,
+    equalize_proportional: bool,
+    selection_bg: Option<Color>,
+    selection_fg: Option<Color>,
+    cursor_color: Option<Color>,
+    cursor_speed: f64,
+    lsp: LspSettings,
+    undo: UndoSettings,
 }
 
 impl UserSettings {
@@ -168,7 +170,112 @@ impl UserSettings {
     }
 
     fn apply_theme(&mut self, theme: &Theme) {
-        theme.apply_to_settings(self);
+        self.theme = Some(theme.name().to_string());
+        self.editor_bg = Some(theme.background);
+        self.editor_fg = Some(theme.foreground);
+        self.syntax_colors = theme.syntax().cloned();
+        self.cursor_color = Some(theme.cursor_color());
+        self.selection_bg = None;
+        self.selection_fg = None;
+        if !self.highlight_overrides.is_empty() {
+            let colors = self
+                .syntax_colors
+                .get_or_insert_with(crate::color::theme::SyntaxColors::default);
+            for (name, style) in &self.highlight_overrides {
+                colors.set_style(name, *style);
+            }
+        }
+        self.refresh_derived_highlights();
+    }
+
+    #[must_use]
+    pub(crate) const fn show_line_numbers(&self) -> bool {
+        self.show_line_numbers
+    }
+
+    #[must_use]
+    pub(crate) const fn default_border_chars(&self) -> Option<&BorderChars> {
+        self.default_border_chars.as_ref()
+    }
+
+    #[must_use]
+    pub(crate) const fn command_line_window(&self) -> &CommandLineWindowSettings {
+        &self.command_line_window
+    }
+
+    #[must_use]
+    pub(crate) const fn status_line(&self) -> &StatusLineSettings {
+        &self.status_line
+    }
+
+    #[must_use]
+    pub(crate) const fn editor_bg(&self) -> Option<Color> {
+        self.editor_bg
+    }
+
+    #[must_use]
+    pub(crate) const fn editor_fg(&self) -> Option<Color> {
+        self.editor_fg
+    }
+
+    #[must_use]
+    pub(crate) fn theme(&self) -> Option<&str> {
+        self.theme.as_deref()
+    }
+
+    #[must_use]
+    pub(crate) const fn poll_timeout_ms(&self) -> u64 {
+        self.poll_timeout_ms
+    }
+
+    #[must_use]
+    pub(crate) const fn editing(&self) -> &EditingSettings {
+        &self.editing
+    }
+
+    #[must_use]
+    pub(crate) const fn syntax_colors(&self) -> Option<&crate::color::theme::SyntaxColors> {
+        self.syntax_colors.as_ref()
+    }
+
+    #[must_use]
+    pub(crate) const fn soft_wrap(&self) -> bool {
+        self.soft_wrap
+    }
+
+    #[must_use]
+    pub(crate) const fn wrap_width(&self) -> Option<usize> {
+        self.wrap_width
+    }
+
+    #[must_use]
+    pub(crate) const fn clipboard_ring_size(&self) -> usize {
+        self.clipboard_ring_size
+    }
+
+    #[must_use]
+    pub(crate) const fn equalize_proportional(&self) -> bool {
+        self.equalize_proportional
+    }
+
+    #[must_use]
+    pub(crate) const fn cursor_color(&self) -> Option<Color> {
+        self.cursor_color
+    }
+
+    #[must_use]
+    pub(crate) const fn cursor_speed(&self) -> f64 {
+        self.cursor_speed
+    }
+
+    #[must_use]
+    pub(crate) const fn lsp(&self) -> &LspSettings {
+        &self.lsp
+    }
+
+    #[must_use]
+    pub(crate) const fn undo(&self) -> &UndoSettings {
+        &self.undo
     }
 
     pub(crate) fn set_highlight_override(
@@ -208,7 +315,7 @@ impl UserSettings {
         }
     }
 
-    pub(crate) fn refresh_derived_highlights(&mut self) {
+    fn refresh_derived_highlights(&mut self) {
         if self.highlight_overrides.contains_key(SELECTION_GROUP) {
             return;
         }
@@ -443,11 +550,6 @@ impl State {
         }
     }
 
-    #[cfg(test)]
-    fn set_default_border_chars(&mut self, border_chars: Option<BorderChars>) {
-        self.settings.default_border_chars = border_chars;
-    }
-
     pub(crate) fn set_file_path(&mut self, path: Option<String>) {
         self.file_path = path;
     }
@@ -484,7 +586,7 @@ impl State {
     /// Line numbers draw only when both the document and the global setting allow them.
     #[must_use]
     pub(crate) fn line_numbers_on(&self, doc_enabled: bool) -> bool {
-        doc_enabled && self.settings.show_line_numbers
+        doc_enabled && self.settings.show_line_numbers()
     }
 
     /// Gutter columns of the active document, 0 when its line numbers are hidden.

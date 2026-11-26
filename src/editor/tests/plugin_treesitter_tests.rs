@@ -202,7 +202,7 @@ fn highlight_groups_restyle_rendered_captures_and_survive_a_theme_switch() {
     assert!(cell.attrs.is_bold() && cell.attrs.is_italic());
 
     editor.execute_command_line("set colorscheme dark");
-    assert_eq!(editor.state.settings.theme.as_deref(), Some("dark"));
+    assert_eq!(editor.state.settings.theme(), Some("dark"));
     assert_eq!(
         cell_of(&mut editor, 0, "fn").bg,
         navy,
@@ -215,8 +215,7 @@ fn highlight_groups_restyle_rendered_captures_and_survive_a_theme_switch() {
         editor
             .state
             .settings
-            .syntax_colors
-            .as_ref()
+            .syntax_colors()
             .unwrap()
             .exact_style("keyword"),
         dark
@@ -235,7 +234,7 @@ fn select_fn_main(editor: &mut Editor<MockTerminal>) {
 fn visual_selection_keeps_syntax_colors_under_the_ui_selection_tint() {
     let mut editor = editor_with(RUST, "rust");
     set_cursor(&mut editor, "answer");
-    let colors = editor.state.settings.syntax_colors.clone().unwrap();
+    let colors = editor.state.settings.syntax_colors().cloned().unwrap();
     let keyword = cell_of(&mut editor, 0, "fn").fg;
     let function = cell_of(&mut editor, 0, "main").fg;
     assert_eq!(keyword, colors.get_color("keyword"));

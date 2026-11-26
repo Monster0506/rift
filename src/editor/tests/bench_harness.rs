@@ -142,8 +142,8 @@ fn ttfp_open_huge_treesitter_annotation_doc() {
     let fresh_map = super::resolve_display_map(
         editor.document_manager.active_document().unwrap(),
         178,
-        editor.state.settings.soft_wrap,
-        editor.state.settings.wrap_width,
+        editor.state.settings.soft_wrap(),
+        editor.state.settings.wrap_width(),
     );
     let map_build = t.elapsed();
     drop(fresh_map);
@@ -274,7 +274,7 @@ fn scroll_latency_wrapped_markdown() {
         eprintln!(
             "pre: cursor={cursor} line={line} top_vr={} soft_wrap={}",
             editor.render_system.viewport.top_visual_row(),
-            editor.state.settings.soft_wrap
+            editor.state.settings.soft_wrap()
         );
     }
     measure_scroll(&mut editor, "j from top", crate::action::Motion::Down, 300);

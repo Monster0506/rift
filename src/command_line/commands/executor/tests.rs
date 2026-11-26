@@ -2,9 +2,8 @@
 
 use crate::command_line::commands::executor::{CommandExecutor, ExecutionResult};
 use crate::command_line::commands::types::ParsedCommand;
-use crate::command_line::settings::definitions::create_settings_registry;
-use crate::document::definitions::create_document_settings_registry;
 use crate::document::Document;
+use crate::state::definitions::create_settings_registry;
 use crate::state::State;
 
 #[test]
@@ -12,366 +11,9 @@ fn test_execute_quit() {
     let mut state = State::new();
     let command = ParsedCommand::Quit { bangs: 0 };
 
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
     assert_eq!(result, ExecutionResult::Quit { bangs: 0 });
-}
-
-#[test]
-fn test_execute_set_number_true() {
-    let mut state = State::new();
-    state.settings.show_line_numbers = false;
-
-    let command = ParsedCommand::Set {
-        option: "number".to_string(),
-        value: Some("true".to_string()),
-        bangs: 0,
-    };
-
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Redraw);
-    assert!(state.settings.show_line_numbers);
-}
-
-#[test]
-fn test_execute_set_number_false() {
-    let mut state = State::new();
-    assert!(state.settings.show_line_numbers); // Default
-
-    let command = ParsedCommand::Set {
-        option: "number".to_string(),
-        value: Some("false".to_string()),
-        bangs: 0,
-    };
-
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Redraw);
-    assert!(!state.settings.show_line_numbers);
-}
-
-#[test]
-fn test_execute_set_min_width_alias() {
-    let mut state = State::new();
-
-    let command = ParsedCommand::Set {
-        option: "command_line.min_width".to_string(),
-        value: Some("50".to_string()),
-        bangs: 0,
-    };
-
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Success);
-    assert_eq!(state.settings.command_line_window.min_width, 50);
-}
-
-#[test]
-fn test_execute_set_number_boolean_variants() {
-    let mut state = State::new();
-    let cases = [
-        ("on", true),
-        ("off", false),
-        ("yes", true),
-        ("no", false),
-        ("1", true),
-        ("0", false),
-    ];
-    for (value, expected) in cases {
-        let command = ParsedCommand::Set {
-            option: "number".to_string(),
-            value: Some(value.to_string()),
-            bangs: 0,
-        };
-        let settings_registry = create_settings_registry();
-        let document_settings_registry = create_document_settings_registry();
-        let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-        let result = CommandExecutor::execute(
-            command,
-            &mut state,
-            &mut document,
-            &settings_registry,
-            &document_settings_registry,
-        );
-        assert_eq!(result, ExecutionResult::Redraw);
-        assert_eq!(state.settings.show_line_numbers, expected);
-    }
-}
-
-#[test]
-fn test_execute_set_number_case_insensitive() {
-    let mut state = State::new();
-
-    let command = ParsedCommand::Set {
-        option: "NUMBER".to_string(),
-        value: Some("FALSE".to_string()),
-        bangs: 0,
-    };
-
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Redraw);
-    assert!(!state.settings.show_line_numbers);
-}
-
-#[test]
-fn test_execute_set_min_width() {
-    let mut state = State::new();
-
-    let command = ParsedCommand::Set {
-        option: "command_line.min_width".to_string(),
-        value: Some("60".to_string()),
-        bangs: 0,
-    };
-
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Success);
-    assert_eq!(state.settings.command_line_window.min_width, 60);
-}
-
-#[test]
-fn test_execute_set_min_width_various_values() {
-    let mut state = State::new();
-
-    // Test various widths
-    for width in &[10, 20, 40, 80, 100] {
-        let command = ParsedCommand::Set {
-            option: "command_line.min_width".to_string(),
-            value: Some(width.to_string()),
-            bangs: 0,
-        };
-
-        let settings_registry = create_settings_registry();
-        let document_settings_registry = create_document_settings_registry();
-        let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-        let result = CommandExecutor::execute(
-            command,
-            &mut state,
-            &mut document,
-            &settings_registry,
-            &document_settings_registry,
-        );
-        assert_eq!(result, ExecutionResult::Success);
-        assert_eq!(state.settings.command_line_window.min_width, *width);
-    }
-}
-
-#[test]
-fn test_execute_set_min_width_zero_error() {
-    let mut state = State::new();
-    let original_width = state.settings.command_line_window.min_width;
-
-    let command = ParsedCommand::Set {
-        option: "command_line.min_width".to_string(),
-        value: Some("0".to_string()),
-        bangs: 0,
-    };
-
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Failure);
-
-    // Check if error was reported to manager
-    let notifications: Vec<_> = state.notifications.iter_active().collect();
-    assert_eq!(notifications.len(), 1);
-    assert!(notifications[0].message.contains("is below minimum"));
-
-    // State should not be modified
-    assert_eq!(state.settings.command_line_window.min_width, original_width);
-}
-
-#[test]
-fn test_execute_set_min_width_invalid_number() {
-    let mut state = State::new();
-    let original_width = state.settings.command_line_window.min_width;
-
-    let command = ParsedCommand::Set {
-        option: "command_line.min_width".to_string(),
-        value: Some("invalid".to_string()),
-        bangs: 0,
-    };
-
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Failure);
-
-    let notifications: Vec<_> = state.notifications.iter_active().collect();
-    assert_eq!(notifications.len(), 1);
-    assert!(
-        notifications[0].message.contains("Invalid integer")
-            || notifications[0].message.contains("Parse error")
-            || notifications[0].message.contains("Invalid numeric")
-    );
-
-    // State should not be modified
-    assert_eq!(state.settings.command_line_window.min_width, original_width);
-}
-
-#[test]
-fn test_execute_set_number_invalid_boolean() {
-    let mut state = State::new();
-    let original_value = state.settings.show_line_numbers;
-
-    let command = ParsedCommand::Set {
-        option: "number".to_string(),
-        value: Some("maybe".to_string()),
-        bangs: 0,
-    };
-
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Failure);
-
-    let notifications: Vec<_> = state.notifications.iter_active().collect();
-    assert_eq!(notifications.len(), 1);
-    assert!(notifications[0].message.contains("Invalid boolean value"));
-
-    // State should not be modified
-    assert_eq!(state.settings.show_line_numbers, original_value);
-}
-
-#[test]
-fn test_execute_set_number_missing_value() {
-    let mut state = State::new();
-    let original_value = state.settings.show_line_numbers;
-
-    let command = ParsedCommand::Set {
-        option: "number".to_string(),
-        value: None,
-        bangs: 0,
-    };
-
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    match result {
-        ExecutionResult::Failure => {
-            assert!(state
-                .notifications
-                .iter_active()
-                .any(|n| n.message.contains("Missing value")));
-        }
-        _ => panic!("Expected error for missing value"),
-    }
-
-    // State should not be modified
-    assert_eq!(state.settings.show_line_numbers, original_value);
-}
-
-#[test]
-fn test_execute_set_unknown_option() {
-    let mut state = State::new();
-
-    let command = ParsedCommand::Set {
-        option: "unknownoption".to_string(),
-        value: Some("value".to_string()),
-        bangs: 0,
-    };
-
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    match result {
-        ExecutionResult::Failure => {
-            assert!(state
-                .notifications
-                .iter_active()
-                .any(|n| n.message.contains("Unknown option")));
-            assert!(state
-                .notifications
-                .iter_active()
-                .any(|n| n.message.contains("unknownoption")));
-        }
-        _ => panic!("Expected error for unknown option"),
-    }
 }
 
 #[test]
@@ -383,16 +25,8 @@ fn test_execute_unknown_command() {
         args: vec!["arg1".to_string()],
     };
 
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
     // Unknown commands are passed to the plugin host as PluginCommand.
     // The editor checks the plugin host before reporting an error.
     match result {
@@ -413,16 +47,8 @@ fn test_execute_ambiguous_command() {
         matches: vec!["setup".to_string(), "settings".to_string()],
     };
 
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
     match result {
         ExecutionResult::Failure => {
             assert!(state
@@ -447,266 +73,6 @@ fn test_execute_ambiguous_command() {
 }
 
 #[test]
-fn test_execute_set_multiple_options() {
-    let mut state = State::new();
-
-    // Set number to false
-    let command = ParsedCommand::Set {
-        option: "number".to_string(),
-        value: Some("false".to_string()),
-        bangs: 0,
-    };
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Redraw);
-    assert!(!state.settings.show_line_numbers);
-
-    // Set command_line.min_width to 50
-    let command = ParsedCommand::Set {
-        option: "command_line.min_width".to_string(),
-        value: Some("50".to_string()),
-        bangs: 0,
-    };
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Success);
-    assert_eq!(state.settings.command_line_window.min_width, 50);
-
-    // Set number back to true
-    let command = ParsedCommand::Set {
-        option: "number".to_string(),
-        value: Some("true".to_string()),
-        bangs: 0,
-    };
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Redraw);
-    assert!(state.settings.show_line_numbers);
-
-    // Verify both settings are correct
-    assert!(state.settings.show_line_numbers);
-    assert_eq!(state.settings.command_line_window.min_width, 50);
-}
-
-#[test]
-fn test_execute_set_min_width_large_value() {
-    let mut state = State::new();
-
-    let command = ParsedCommand::Set {
-        option: "command_line.min_width".to_string(),
-        value: Some("1000".to_string()),
-        bangs: 0,
-    };
-
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Success);
-    assert_eq!(state.settings.command_line_window.min_width, 1000);
-}
-
-#[test]
-fn test_execute_set_min_width_negative_error() {
-    let mut state = State::new();
-    let original_width = state.settings.command_line_window.min_width;
-
-    // Try to set negative value (will fail to parse as usize)
-    let command = ParsedCommand::Set {
-        option: "command_line.min_width".to_string(),
-        value: Some("-1".to_string()),
-        bangs: 0,
-    };
-
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    match result {
-        ExecutionResult::Failure => {
-            assert!(
-                state
-                    .notifications
-                    .iter_active()
-                    .any(|n| n.message.contains("Invalid integer"))
-                    || state
-                        .notifications
-                        .iter_active()
-                        .any(|n| n.message.contains("Parse error"))
-                    || state
-                        .notifications
-                        .iter_active()
-                        .any(|n| n.message.contains("Invalid numeric"))
-            );
-        }
-        _ => panic!("Expected error for negative number"),
-    }
-
-    // State should not be modified
-    assert_eq!(state.settings.command_line_window.min_width, original_width);
-}
-
-#[test]
-fn test_execute_set_number_empty_string() {
-    let mut state = State::new();
-    let original_value = state.settings.show_line_numbers;
-
-    let command = ParsedCommand::Set {
-        option: "number".to_string(),
-        value: Some(String::new()),
-        bangs: 0,
-    };
-
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    match result {
-        ExecutionResult::Failure => {
-            assert!(state
-                .notifications
-                .iter_active()
-                .any(|n| n.message.contains("Invalid boolean value")));
-        }
-        _ => panic!("Expected error for empty string"),
-    }
-
-    // State should not be modified
-    assert_eq!(state.settings.show_line_numbers, original_value);
-}
-
-#[test]
-fn test_execute_set_case_insensitive_option_names() {
-    let mut state = State::new();
-
-    // Test various case combinations (canonical names)
-    let cases = vec![
-        ("NUMBER", "false"),
-        ("NumBer", "true"),
-        ("numBER", "false"),
-        ("COMMAND_LINE.MIN_WIDTH", "16"),
-        ("Command_Line.Min_Width", "4"),
-        ("command_line.MIN_WIDTH", "8"),
-    ];
-
-    for (option, value) in cases {
-        let command = ParsedCommand::Set {
-            option: option.to_string(),
-            value: Some(value.to_string()),
-            bangs: 0,
-        };
-
-        let settings_registry = create_settings_registry();
-        let document_settings_registry = create_document_settings_registry();
-        let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-        let result = CommandExecutor::execute(
-            command,
-            &mut state,
-            &mut document,
-            &settings_registry,
-            &document_settings_registry,
-        );
-        // number returns Redraw, command_line.min_width returns Success
-        if option.to_lowercase() == "number" {
-            assert_eq!(result, ExecutionResult::Redraw);
-        } else {
-            assert_eq!(result, ExecutionResult::Success);
-        }
-    }
-
-    // Final state
-    assert!(!state.settings.show_line_numbers);
-    assert_eq!(state.settings.command_line_window.min_width, 8);
-}
-
-#[test]
-fn test_execute_set_min_width_float_error() {
-    let mut state = State::new();
-    let original_width = state.settings.command_line_window.min_width;
-
-    let command = ParsedCommand::Set {
-        option: "command_line.min_width".to_string(),
-        value: Some("4.5".to_string()),
-        bangs: 0,
-    };
-
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    match result {
-        ExecutionResult::Failure => {
-            assert!(
-                state
-                    .notifications
-                    .iter_active()
-                    .any(|n| n.message.contains("Invalid integer"))
-                    || state
-                        .notifications
-                        .iter_active()
-                        .any(|n| n.message.contains("Parse error"))
-                    || state
-                        .notifications
-                        .iter_active()
-                        .any(|n| n.message.contains("Invalid numeric"))
-            );
-        }
-        _ => panic!("Expected error for float"),
-    }
-
-    // State should not be modified
-    assert_eq!(state.settings.command_line_window.min_width, original_width);
-}
-
-#[test]
 fn test_execute_write_no_path() {
     let mut state = State::new();
     let command = ParsedCommand::Write {
@@ -714,16 +80,8 @@ fn test_execute_write_no_path() {
         bangs: 0,
     };
 
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
     assert_eq!(result, ExecutionResult::Write { path: None });
     assert!(state.file_path.is_none());
 }
@@ -736,16 +94,8 @@ fn test_execute_write_with_path() {
         bangs: 0,
     };
 
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
     let ExecutionResult::Write { path: Some(path) } = result else {
         panic!("expected Write with path, got {result:?}");
     };
@@ -763,17 +113,9 @@ fn test_execute_write_keeps_path_until_saved() {
         bangs: 0,
     };
 
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.set_path("old.txt");
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
     assert!(matches!(result, ExecutionResult::Write { path: Some(_) }));
     assert!(document.path().unwrap().ends_with("old.txt"));
 }
@@ -786,16 +128,8 @@ fn test_execute_write_quit_no_path() {
         bangs: 0,
     };
 
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
     assert_eq!(result, ExecutionResult::WriteAndQuit { path: None });
     assert!(state.file_path.is_none());
 }
@@ -808,16 +142,8 @@ fn test_execute_write_quit_with_path() {
         bangs: 0,
     };
 
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
     let ExecutionResult::WriteAndQuit { path: Some(path) } = result else {
         panic!("expected WriteAndQuit with path, got {result:?}");
     };
@@ -835,17 +161,9 @@ fn test_execute_write_quit_keeps_path_until_saved() {
         bangs: 0,
     };
 
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.set_path("old.txt");
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
     assert!(matches!(
         result,
         ExecutionResult::WriteAndQuit { path: Some(_) }
@@ -856,8 +174,7 @@ fn test_execute_write_quit_keeps_path_until_saved() {
 #[test]
 fn test_substitute_current_line() {
     let mut state = State::new();
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
+
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.replace_content("foo bar foo", crate::document::ops::ContentKind::Render);
     // Cursor at 0
@@ -873,13 +190,7 @@ fn test_substitute_current_line() {
         bangs: 0,
     };
 
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
 
     assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(document.buffer().to_string(), "baz bar foo");
@@ -888,8 +199,7 @@ fn test_substitute_current_line() {
 #[test]
 fn test_substitute_global_line() {
     let mut state = State::new();
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
+
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.replace_content("foo bar foo", crate::document::ops::ContentKind::Render);
     document
@@ -904,13 +214,7 @@ fn test_substitute_global_line() {
         bangs: 0,
     };
 
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
 
     assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(document.buffer().to_string(), "baz bar baz");
@@ -919,8 +223,7 @@ fn test_substitute_global_line() {
 #[test]
 fn test_substitute_whole_file() {
     let mut state = State::new();
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
+
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.replace_content("foo\nbar\nfoo", crate::document::ops::ContentKind::Render);
     document
@@ -936,13 +239,7 @@ fn test_substitute_whole_file() {
         bangs: 0,
     };
 
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
 
     assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(document.buffer().to_string(), "baz\nbar\nbaz");
@@ -951,8 +248,7 @@ fn test_substitute_whole_file() {
 #[test]
 fn test_substitute_case_insensitive() {
     let mut state = State::new();
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
+
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.replace_content("Foo bar foo", crate::document::ops::ContentKind::Render);
     document
@@ -968,13 +264,7 @@ fn test_substitute_case_insensitive() {
         bangs: 0,
     };
 
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
 
     assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(document.buffer().to_string(), "baz bar foo"); // First match only (no 'g' flag)
@@ -983,8 +273,7 @@ fn test_substitute_case_insensitive() {
 #[test]
 fn test_substitute_no_match() {
     let mut state = State::new();
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
+
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.replace_content("hello world", crate::document::ops::ContentKind::Render);
 
@@ -996,13 +285,7 @@ fn test_substitute_no_match() {
         bangs: 0,
     };
 
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
 
     assert_eq!(result, ExecutionResult::Failure);
     assert_eq!(document.buffer().revision(), 1); // Only insert incremented it
@@ -1106,8 +389,7 @@ fn test_substitute_parsing_weird_behavior_percent() {
 #[test]
 fn test_substitute_undo_redo() {
     let mut state = State::new();
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
+
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
 
     // Initial content
@@ -1126,13 +408,7 @@ fn test_substitute_undo_redo() {
         bangs: 0,
     };
 
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
 
     assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(document.buffer().to_string(), "baz bar baz");
@@ -1153,8 +429,7 @@ fn test_substitute_undo_redo() {
 #[test]
 fn test_substitute_whole_file_undo() {
     let mut state = State::new();
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
+
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
 
     // Initial content with multiple lines
@@ -1176,13 +451,7 @@ fn test_substitute_whole_file_undo() {
         bangs: 0,
     };
 
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
 
     assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(document.buffer().to_string(), "qux\nbar\nqux\nbaz\nqux");
@@ -1201,8 +470,7 @@ fn substitute_with_nonempty_set_scopes_to_banked_regions_only() {
     use crate::wrap::RangeKind;
 
     let mut state = State::new();
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
+
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.replace_content(
         "foo bar foo baz foo",
@@ -1221,13 +489,7 @@ fn substitute_with_nonempty_set_scopes_to_banked_regions_only() {
         bangs: 0,
     };
 
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
 
     assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(
@@ -1240,8 +502,7 @@ fn substitute_with_nonempty_set_scopes_to_banked_regions_only() {
 
 fn substitute_at_cursor(text: &str, cursor: usize, pattern: &str, replacement: &str) -> String {
     let mut state = State::new();
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
+
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.replace_content(text, crate::document::ops::ContentKind::Render);
     document
@@ -1256,13 +517,7 @@ fn substitute_at_cursor(text: &str, cursor: usize, pattern: &str, replacement: &
         bangs: 0,
     };
 
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
 
     assert_eq!(result, ExecutionResult::Redraw);
     document.buffer().to_string()
@@ -1283,16 +538,8 @@ fn test_execute_undotree() {
     let mut state = State::new();
     let command = ParsedCommand::UndoTree { bangs: 0 };
 
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
 
     assert_eq!(
         result,
@@ -1313,16 +560,8 @@ fn test_execute_edit_directory_fails() {
         bangs: 0,
     };
 
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
 
     assert_eq!(result, ExecutionResult::Failure);
     assert!(state
@@ -1341,16 +580,8 @@ fn test_execute_edit_missing_parent_dir_fails() {
         bangs: 0,
     };
 
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
 
     assert_eq!(result, ExecutionResult::Failure);
     assert!(state
@@ -1369,16 +600,8 @@ fn test_execute_edit_nonexistent_file_in_existing_dir_succeeds() {
         bangs: 0,
     };
 
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
 
     assert!(matches!(result, ExecutionResult::Edit { .. }));
 }
@@ -1391,16 +614,8 @@ fn test_execute_file() {
         bangs: 0,
     };
 
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
 
     assert!(
         matches!(result, ExecutionResult::OpenDirectory { .. }),
@@ -1420,16 +635,8 @@ fn test_execute_file_path_fails() {
         bangs: 0,
     };
 
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
+    let result = CommandExecutor::execute(command, &mut state, &mut document);
 
     assert_eq!(result, ExecutionResult::Failure);
     assert!(state
@@ -1444,8 +651,7 @@ fn test_execute_split() {
     use crate::split::tree::SplitDirection;
 
     let mut state = State::new();
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
+
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
 
     let result = CommandExecutor::execute(
@@ -1455,8 +661,6 @@ fn test_execute_split() {
         },
         &mut state,
         &mut document,
-        &settings_registry,
-        &document_settings_registry,
     );
     assert_eq!(
         result,
@@ -1473,8 +677,7 @@ fn test_execute_vsplit_file() {
     use crate::split::tree::SplitDirection;
 
     let mut state = State::new();
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
+
     let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
 
     let result = CommandExecutor::execute(
@@ -1484,8 +687,6 @@ fn test_execute_vsplit_file() {
         },
         &mut state,
         &mut document,
-        &settings_registry,
-        &document_settings_registry,
     );
     assert_eq!(
         result,

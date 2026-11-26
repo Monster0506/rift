@@ -16,14 +16,14 @@ fn plugin_set_option_document_local_setting_updates_active_document() {
         });
     editor.apply_plugin_mutations();
 
-    assert_eq!(editor.active_document().options.tab_width, 8);
+    assert_eq!(editor.active_document().options().tab_width(), 8);
 }
 
 #[test]
 fn plugin_set_option_global_setting_updates_user_settings() {
     let mut editor = create_editor();
     load_text(&mut editor, "hello\n");
-    assert!(editor.state.settings.editing.ghost_cut);
+    assert!(editor.state.settings.editing().ghost_cut);
 
     editor
         .plugin_host
@@ -34,7 +34,7 @@ fn plugin_set_option_global_setting_updates_user_settings() {
         });
     editor.apply_plugin_mutations();
 
-    assert!(!editor.state.settings.editing.ghost_cut);
+    assert!(!editor.state.settings.editing().ghost_cut);
 }
 
 #[test]

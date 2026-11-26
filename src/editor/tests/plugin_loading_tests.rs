@@ -4,7 +4,7 @@ use super::common::*;
 fn load_plugins_keeps_going_after_a_broken_plugin() {
     let mut editor = create_editor();
     load_text(&mut editor, "hello\n");
-    assert!(editor.state.settings.editing.ghost_cut);
+    assert!(editor.state.settings.editing().ghost_cut);
 
     let first = tempfile::tempdir().unwrap();
     let second = tempfile::tempdir().unwrap();
@@ -27,7 +27,7 @@ fn load_plugins_keeps_going_after_a_broken_plugin() {
     assert_eq!(errors.len(), 2, "{errors:?}");
     assert!(errors[0].contains("broken.lua"), "{errors:?}");
     assert!(errors[1].contains("also_broken.lua"), "{errors:?}");
-    assert!(!editor.state.settings.editing.ghost_cut);
+    assert!(!editor.state.settings.editing().ghost_cut);
     assert!(editor
         .state
         .notifications

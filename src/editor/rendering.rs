@@ -85,7 +85,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let (cursor_line, cursor_col, total_lines, is_terminal) = {
             let doc = self.document_manager.get_document(doc_id)?;
-            let tw = doc.options.tab_width;
+            let tw = doc.options().tab_width();
             let line = doc.buffer().get_line();
             let cursor = doc.buffer().cursor();
             let line_start = doc.buffer().line_index.get_start(line).unwrap_or(0);
@@ -318,7 +318,7 @@ impl<T: TerminalBackend> Editor<T> {
             )]
         };
 
-        let soft_wrap = self.state.settings.soft_wrap;
+        let soft_wrap = self.state.settings.soft_wrap();
         let mut placements = Vec::new();
         for (doc_id, layout) in windows {
             let Some(doc) = self.document_manager.get_document(doc_id) else {
@@ -413,9 +413,9 @@ impl<T: TerminalBackend> Editor<T> {
     ) -> Option<std::sync::Arc<crate::wrap::DisplayMap>> {
         use std::sync::Arc;
         const CACHE_CAP: usize = 8;
-        let soft_wrap = self.state.settings.soft_wrap;
-        let wrap_width = self.state.settings.wrap_width;
-        let include_lsp = self.state.settings.lsp.virtual_text;
+        let soft_wrap = self.state.settings.soft_wrap();
+        let wrap_width = self.state.settings.wrap_width();
+        let include_lsp = self.state.settings.lsp().virtual_text;
         let doc = self.document_manager.get_document_mut(doc_id)?;
         let revision = doc.buffer().revision();
         let buf_len = doc.buffer().len();
@@ -521,8 +521,8 @@ impl<T: TerminalBackend> Editor<T> {
             crate::perf::PerfFields::default()
         );
         let selected = self.post_paste_state.as_ref().map_or(0, |s| s.ring_index);
-        let foreground = self.state.settings.editor_fg;
-        let background = self.state.settings.editor_bg;
+        let foreground = self.state.settings.editor_fg();
+        let background = self.state.settings.editor_bg();
         self.system_clipboard_cache.refresh_if_stale();
         let layer = self
             .render_system
@@ -600,16 +600,16 @@ impl<T: TerminalBackend> Editor<T> {
             .map(crate::syntax::Syntax::capture_names);
 
         let annotation_styles = doc.annotations.presentation_spans(
-            state.settings.syntax_colors.as_ref(),
+            state.settings.syntax_colors(),
             Some(kind_registry),
             start_byte..end_byte,
         );
         let annotation_adornments = doc.annotations.line_adornments(
-            state.settings.syntax_colors.as_ref(),
+            state.settings.syntax_colors(),
             Some(kind_registry),
             start_byte..end_byte,
             start_logical..end_logical,
-            state.settings.lsp.virtual_text,
+            state.settings.lsp().virtual_text,
             |b| {
                 doc.buffer()
                     .line_index
@@ -617,7 +617,7 @@ impl<T: TerminalBackend> Editor<T> {
             },
         );
         let annotation_inline = doc.annotations.inline_adornments(
-            state.settings.syntax_colors.as_ref(),
+            state.settings.syntax_colors(),
             Some(kind_registry),
             start_byte..end_byte,
         );
@@ -635,7 +635,7 @@ impl<T: TerminalBackend> Editor<T> {
             pending_key: pending_keys.last().copied(),
             pending_count: *pending_count,
             needs_clear,
-            tab_width: doc.options.tab_width,
+            tab_width: doc.options().tab_width(),
             intrinsic: render::IntrinsicLayers {
                 syntax: highlights.as_deref(),
                 capture_map: capture_names,
@@ -657,7 +657,7 @@ impl<T: TerminalBackend> Editor<T> {
             annotation_inline: (!annotation_inline.is_empty()).then_some(&annotation_inline),
             annotation_concealed: (!annotation_concealed.is_empty())
                 .then_some(&annotation_concealed),
-            show_line_numbers: doc.options.show_line_numbers,
+            show_line_numbers: doc.options().show_line_numbers(),
             display_map,
             scroll_hints: scroll_hint.as_slice(),
             syntax_generation,
@@ -724,8 +724,8 @@ impl<T: TerminalBackend> Editor<T> {
                 .compositor
                 .get_layer_mut(crate::layer::LayerPriority::POPUP);
             layer.clear();
-            let fg = self.state.settings.editor_fg;
-            let bg = self.state.settings.editor_bg;
+            let fg = self.state.settings.editor_fg();
+            let bg = self.state.settings.editor_bg();
             self.plugin_host.render_float_into_layer(layer, fg, bg);
         } else if self.plugin_host.take_float_closed() {
             self.render_system
@@ -740,7 +740,7 @@ impl<T: TerminalBackend> Editor<T> {
             "update_window_viewports",
             crate::perf::PerfFields::default()
         );
-        let soft_wrap = self.state.settings.soft_wrap;
+        let soft_wrap = self.state.settings.soft_wrap();
 
         let Ok(size) = self.term.get_size() else {
             return;
@@ -801,10 +801,10 @@ impl<T: TerminalBackend> Editor<T> {
                         source_doc,
                         content_width,
                         soft_wrap,
-                        self.state.settings.wrap_width,
+                        self.state.settings.wrap_width(),
                     );
                     let (wrap_width, tab_width) =
-                        params.unwrap_or((0, source_doc.options.tab_width));
+                        params.unwrap_or((0, source_doc.options().tab_width()));
                     (
                         (
                             source_doc_id,
@@ -873,7 +873,7 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.get_document(doc_id) else {
                 return;
             };
-            let tab_width = doc.options.tab_width;
+            let tab_width = doc.options().tab_width();
             let cursor_line = doc.buffer().line_index.get_line_at(cursor_pos);
             let line_start = doc.buffer().line_index.get_start(cursor_line).unwrap_or(0);
             let cursor_col = render::calculate_cursor_column_at(
@@ -1171,7 +1171,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         doc.recompute_directory_highlights();
 
-        let tab_width = doc.options.tab_width;
+        let tab_width = doc.options().tab_width();
         let gutter_width = Self::line_number_gutter_width(doc, state);
         let (start_line, end_line, start_byte, end_byte) =
             Self::visible_span(doc, &window.viewport, display_map);
@@ -1185,16 +1185,16 @@ impl<T: TerminalBackend> Editor<T> {
             .as_ref()
             .map(crate::syntax::Syntax::capture_names);
         let annotation_styles = doc.annotations.presentation_spans(
-            state.settings.syntax_colors.as_ref(),
+            state.settings.syntax_colors(),
             Some(kind_registry),
             start_byte..end_byte,
         );
         let annotation_adornments = doc.annotations.line_adornments(
-            state.settings.syntax_colors.as_ref(),
+            state.settings.syntax_colors(),
             Some(kind_registry),
             start_byte..end_byte,
             start_line..end_line,
-            state.settings.lsp.virtual_text,
+            state.settings.lsp().virtual_text,
             |b| {
                 doc.buffer()
                     .line_index
@@ -1202,7 +1202,7 @@ impl<T: TerminalBackend> Editor<T> {
             },
         );
         let annotation_inline = doc.annotations.inline_adornments(
-            state.settings.syntax_colors.as_ref(),
+            state.settings.syntax_colors(),
             Some(kind_registry),
             start_byte..end_byte,
         );
@@ -1235,7 +1235,7 @@ impl<T: TerminalBackend> Editor<T> {
             annotation_inline: (!annotation_inline.is_empty()).then_some(&annotation_inline),
             annotation_concealed: (!annotation_concealed.is_empty())
                 .then_some(&annotation_concealed),
-            show_line_numbers: doc.options.show_line_numbers,
+            show_line_numbers: doc.options().show_line_numbers(),
             display_map,
             gutter_width_override: Some(gutter_width),
             search_matches_override: if window.document_id == focused_doc_id {
@@ -1254,7 +1254,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn active_gutter_cols(&self, doc_id: crate::document::DocumentId) -> usize {
         self.document_manager.get_document(doc_id).map_or(0, |doc| {
-            self.state.gutter_cols(doc.options.show_line_numbers)
+            self.state.gutter_cols(doc.options().show_line_numbers())
         })
     }
 
@@ -1263,7 +1263,7 @@ impl<T: TerminalBackend> Editor<T> {
         state: &crate::state::State,
     ) -> usize {
         let lines = doc.buffer().last_real_line() + 1;
-        state.doc_gutter_cols(doc.options.show_line_numbers, lines)
+        state.doc_gutter_cols(doc.options().show_line_numbers(), lines)
     }
 
     fn concealed_outside_cursor_line(
@@ -1348,10 +1348,9 @@ impl<T: TerminalBackend> Editor<T> {
         let focused_id = split_tree.focused_window_id();
         let divider_fg = state
             .settings
-            .syntax_colors
-            .as_ref()
+            .syntax_colors()
             .and_then(|sc| sc.get_color("comment"))
-            .or(state.settings.editor_fg);
+            .or(state.settings.editor_fg());
         let content_layer = render_system
             .compositor
             .get_layer_mut(LayerPriority::CONTENT);
@@ -1361,14 +1360,14 @@ impl<T: TerminalBackend> Editor<T> {
             content_rows,
             total_cols,
             divider_fg,
-            state.settings.editor_bg,
+            state.settings.editor_bg(),
         );
 
         if layouts.len() > 1 {
             if let Some(fl) = layouts.iter().find(|l| l.window_id == focused_id) {
                 let focused_border_fg = state
                     .settings
-                    .editor_fg
+                    .editor_fg()
                     .or(Some(crate::color::Color::White));
                 let content_layer = render_system
                     .compositor
@@ -1379,7 +1378,7 @@ impl<T: TerminalBackend> Editor<T> {
                     content_rows,
                     total_cols,
                     focused_border_fg,
-                    state.settings.editor_bg,
+                    state.settings.editor_bg(),
                 );
             }
         }
@@ -1394,7 +1393,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let (row_off, col_off) = focused_layout.as_ref().map_or((0, 0), |l| (l.row, l.col));
 
-        let focused_tab_width = focused_doc.options.tab_width;
+        let focused_tab_width = focused_doc.options().tab_width();
 
         let focused_vp = &split_tree.focused_window().viewport;
         let render_state = render::RenderState {
@@ -1421,7 +1420,7 @@ impl<T: TerminalBackend> Editor<T> {
             annotation_adornments: None,
             annotation_inline: None,
             annotation_concealed: None,
-            show_line_numbers: focused_doc.options.show_line_numbers,
+            show_line_numbers: focused_doc.options().show_line_numbers(),
             display_map: focused_display_map,
             scroll_hints,
             syntax_generation: 0,
@@ -1446,7 +1445,7 @@ impl<T: TerminalBackend> Editor<T> {
         );
 
         let kind_registry = &self.kind_registry;
-        let include_lsp = self.state.settings.lsp.diagnostic_tooltip;
+        let include_lsp = self.state.settings.lsp().diagnostic_tooltip;
         let (tip, affordance) =
             self.document_manager
                 .active_document_mut()
@@ -1521,8 +1520,8 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             WindowPosition::Bottom
         };
-        let foreground = self.state.settings.editor_fg;
-        let background = self.state.settings.editor_bg;
+        let foreground = self.state.settings.editor_fg();
+        let background = self.state.settings.editor_bg();
         let window = FloatingWindow::with_style(
             position,
             width,
@@ -1603,8 +1602,8 @@ impl<T: TerminalBackend> Editor<T> {
             rows.push(row);
         }
 
-        let foreground = self.state.settings.editor_fg;
-        let background = self.state.settings.editor_bg;
+        let foreground = self.state.settings.editor_fg();
+        let background = self.state.settings.editor_bg();
 
         let window = FloatingWindow::with_style(
             WindowPosition::Top,

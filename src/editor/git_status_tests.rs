@@ -914,7 +914,13 @@ fn git_blame_keeps_source_scrolled_to_its_logical_line() {
     crate::git::run_checked(dir.path(), &["commit", "-am", "add lines", "--quiet"]).unwrap();
 
     let mut editor = create_editor();
-    editor.state.settings.soft_wrap = false;
+    editor
+        .set_option(
+            "editor.soft_wrap",
+            Some("false"),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
     open_and_load(&mut editor, &path);
     let source_window_id = editor.split_tree.focused_window_id();
     editor.open_git_blame(path, dir.path().to_path_buf());

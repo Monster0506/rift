@@ -131,12 +131,12 @@ impl<T: TerminalBackend> Editor<T> {
             Command::Change(_, _) | Command::ChangeLine(_) => {
                 let (expand_tabs, tab_width) = {
                     let doc = self.document_manager.active_document().unwrap();
-                    (doc.options.expand_tabs, doc.options.tab_width)
+                    (doc.options().expand_tabs(), doc.options().tab_width())
                 };
                 let viewport_height = self.render_system.viewport.visible_rows();
                 let mut display_map = {
                     let doc = self.document_manager.active_document().unwrap();
-                    let gutter_width = self.state.gutter_cols(doc.options.show_line_numbers);
+                    let gutter_width = self.state.gutter_cols(doc.options().show_line_numbers());
                     let content_width = self
                         .split_tree
                         .focused_window()
@@ -147,8 +147,8 @@ impl<T: TerminalBackend> Editor<T> {
                     resolve_display_map(
                         doc,
                         content_width,
-                        self.state.settings.soft_wrap,
-                        self.state.settings.wrap_width,
+                        self.state.settings.soft_wrap(),
+                        self.state.settings.wrap_width(),
                     )
                 };
                 self.document_manager

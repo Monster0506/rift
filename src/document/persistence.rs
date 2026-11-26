@@ -111,10 +111,10 @@ impl Document {
     /// implementation is registered for this target.
     fn write_to_file(&self, path: &Path) -> Result<(), RiftError> {
         let mut content = Vec::new();
-        if self.options.has_bom {
+        if self.options.has_bom() {
             content.extend_from_slice(&super::factories::UTF8_BOM);
         }
-        let line_ending_bytes = self.options.line_ending.as_bytes();
+        let line_ending_bytes = self.options.line_ending().as_bytes();
         let total_lines = self.buffer.get_total_lines();
         for i in 0..total_lines {
             content.extend_from_slice(&self.buffer.get_line_bytes(i));

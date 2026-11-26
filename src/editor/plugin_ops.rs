@@ -1,4 +1,5 @@
 use super::Editor;
+use crate::command_line::settings::resolver::OptionScope;
 use crate::document::ops::{Edit, EditSource};
 use crate::plugin::lua_host::{
     BufAnnotations, BufEntry, BufMeta, BufUpdate, HistoryAvailability, SyncKeys,
@@ -61,7 +62,7 @@ fn lua_buf_sync_key(doc: &crate::document::Document) -> BufSyncKey {
             doc.history.can_redo(),
             doc.is_dirty(),
         )]),
-        options: doc.options.revision(),
+        options: doc.options().revision(),
         annotations: doc.annotations.revision(),
     }
 }
@@ -268,7 +269,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let update = BufUpdate {
                     text: changed(|k| k.text).then(|| doc.buffer().clone()),
                     meta: changed(|k| k.meta).then(|| lua_buf_meta(doc)),
-                    options: changed(|k| k.options).then(|| (*doc.options).clone()),
+                    options: changed(|k| k.options).then(|| (**doc.options()).clone()),
                     annotations: changed(|k| k.annotations).then(|| lua_annotations(doc)),
                 };
                 (id, update)
@@ -513,37 +514,14 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             PluginMutation::SetOption { buf, name, value } => {
-                let mut errors = Vec::new();
-                let mut error_handler = |e: crate::error::RiftError| errors.push(e);
-                match buf {
-                    Some(buf) => {
-                        let Some(doc) = self.document_manager.get_document_mut(buf) else {
-                            self.drop_plugin_write(buf, "set_option");
-                            return;
-                        };
-                        let resolver =
-                            crate::command_line::settings::resolver::SettingsResolver::new(
-                                self.document_settings_registry,
-                                self.settings_registry,
-                            );
-                        resolver.set(
-                            &name,
-                            Some(value.as_str()),
-                            &mut doc.options,
-                            &mut self.state.settings,
-                            &mut error_handler,
-                        );
-                    }
-                    None => {
-                        self.settings_registry.execute_setting(
-                            &name,
-                            Some(value.as_str()),
-                            &mut self.state.settings,
-                            &mut error_handler,
-                        );
+                if let Some(buf) = buf {
+                    if self.document_manager.get_document(buf).is_none() {
+                        self.drop_plugin_write(buf, "set_option");
+                        return;
                     }
                 }
-                for err in errors {
+                let scope = buf.map_or(OptionScope::Global, OptionScope::Resolve);
+                if let Err(err) = self.set_option(&name, Some(&value), scope) {
                     self.notify_error(err);
                 }
             }
@@ -637,11 +615,16 @@ impl<T: TerminalBackend> Editor<T> {
                 self.render_system.viewport.set_scroll(top, left);
             }
             PluginMutation::SetLineEnding { buf, ending } => {
-                let Some(doc) = self.document_manager.get_document_mut(buf) else {
+                if self.document_manager.get_document(buf).is_none() {
                     self.drop_plugin_write(buf, "set_line_ending");
                     return;
-                };
-                doc.options.line_ending = crate::document::LineEnding::from_name(&ending);
+                }
+                let ending = crate::document::LineEnding::from_name(&ending).name();
+                if let Err(err) =
+                    self.set_option("line_ending", Some(ending), OptionScope::Local(buf))
+                {
+                    self.notify_error(err);
+                }
             }
             PluginMutation::SetBufferVar { buf, key, value } => {
                 let Some(doc) = self.document_manager.get_document_mut(buf) else {

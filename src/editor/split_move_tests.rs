@@ -478,7 +478,7 @@ fn active_window_border_is_highlighted() {
     editor.focus_window(win_b);
     editor.update_and_render().unwrap();
 
-    let highlight = editor.state.settings.editor_fg.or(Some(Color::White));
+    let highlight = editor.state.settings.editor_fg().or(Some(Color::White));
     let vert_fg = compositor_cell_fg(&mut editor, 5, 40);
     let right_divider_fg = compositor_cell_fg(&mut editor, 24, 60);
     let left_divider_fg = compositor_cell_fg(&mut editor, 24, 10);
@@ -504,7 +504,7 @@ fn active_window_border_follows_focus() {
 
     editor.focus_window(win_b);
     editor.update_and_render().unwrap();
-    let highlight = editor.state.settings.editor_fg.or(Some(Color::White));
+    let highlight = editor.state.settings.editor_fg().or(Some(Color::White));
     let b_focused_left = compositor_cell_fg(&mut editor, 24, 10);
     let b_focused_right = compositor_cell_fg(&mut editor, 24, 60);
 

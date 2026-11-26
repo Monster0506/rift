@@ -212,8 +212,8 @@ fn test_directory_path_returns_path_for_directory() {
 fn wrap_default_is_auto() {
     let doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     assert_eq!(
-        doc.options.wrap,
-        Some(definitions::WrapMode::Expr("auto".to_string()))
+        doc.options.wrap(),
+        Some(&definitions::WrapMode::Expr("auto".to_string()))
     );
 }
 

@@ -20,7 +20,7 @@ impl<T: TerminalBackend> LspTarget for Editor<T> {
     }
 
     fn lsp_log_msg(&mut self, message: String) {
-        if self.state.settings.lsp.debug_log {
+        if self.state.settings.lsp().debug_log {
             self.notify(NotificationType::Info, message);
         }
     }
@@ -124,7 +124,7 @@ impl<T: TerminalBackend> LspTarget for Editor<T> {
             2 => NotificationType::Warning,
             _ => NotificationType::Info,
         };
-        if kind != 4 || self.state.settings.lsp.debug_log {
+        if kind != 4 || self.state.settings.lsp().debug_log {
             self.notify(notif_type, format!("LSP: {message}"));
         }
     }
@@ -208,7 +208,7 @@ impl<T: TerminalBackend> Editor<T> {
         if active.as_deref() == Some(uri) {
             return true;
         }
-        if self.state.settings.lsp.debug_log {
+        if self.state.settings.lsp().debug_log {
             self.notify(
                 NotificationType::Info,
                 format!("LSP: dropped stale {what} result for {uri}"),
@@ -452,7 +452,7 @@ impl<T: TerminalBackend> Editor<T> {
         let wrap_width = self
             .state
             .settings
-            .wrap_width
+            .wrap_width()
             .unwrap_or(term_cols)
             .saturating_sub(4)
             .max(20);

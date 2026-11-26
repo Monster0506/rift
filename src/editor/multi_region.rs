@@ -433,7 +433,7 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .active_document()
             .is_some_and(super::super::document::Document::ghost_cut_allowed);
-        let ghost_cut = self.state.settings.editing.ghost_cut && ghost_allowed;
+        let ghost_cut = self.state.settings.editing().ghost_cut && ghost_allowed;
         let ghost_clip = clips.last().filter(|_| ghost_cut).cloned();
         for clip in clips {
             self.yank(clip);

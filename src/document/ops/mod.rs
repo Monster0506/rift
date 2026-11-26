@@ -4,6 +4,7 @@ mod cursor;
 pub(in crate::document) use cursor::move_buffer;
 mod history;
 mod journal;
+mod options;
 mod put;
 mod selection;
 pub(crate) mod standalone;

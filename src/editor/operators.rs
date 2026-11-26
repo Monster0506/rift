@@ -179,7 +179,7 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .active_document()
             .is_some_and(super::super::document::Document::ghost_cut_allowed);
-        let result = if self.state.settings.editing.ghost_cut && ghost_allowed {
+        let result = if self.state.settings.editing().ghost_cut && ghost_allowed {
             let mut ghosted_doc = None;
             if let Some((range, clip)) = cut {
                 if let Some(doc) = self.document_manager.active_document_mut() {
@@ -234,7 +234,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .document_manager
                     .active_document()
                     .is_some_and(super::super::document::Document::ghost_cut_allowed);
-                let result = if self.state.settings.editing.ghost_cut && ghost_allowed {
+                let result = if self.state.settings.editing().ghost_cut && ghost_allowed {
                     let mut ghosted_doc = None;
                     if let Some((doc, clip)) = self.document_manager.active_document_mut().zip(cut)
                     {

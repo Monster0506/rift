@@ -4,6 +4,7 @@ pub(crate) use events::EditorEvent;
 mod files;
 mod lsp;
 mod notify;
+mod options;
 mod save;
 mod search;
 pub(crate) mod windows;

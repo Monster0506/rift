@@ -144,10 +144,10 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(doc) = self.document_manager.active_document() else {
             return (ch, 1);
         };
-        if ch != '\t' || !doc.options.expand_tabs {
+        if ch != '\t' || !doc.options().expand_tabs() {
             return (ch, 1);
         }
-        let width = crate::executor::tab_fill_width(doc.buffer(), doc.options.tab_width);
+        let width = crate::executor::tab_fill_width(doc.buffer(), doc.options().tab_width());
         (' ', width)
     }
 

@@ -530,7 +530,9 @@ fn test_no_redraw_on_noop() {
     let mut buf = TextBuffer::new(100).unwrap();
     crate::document::ops::Edit::type_text("test").apply_to(&mut buf);
     let mut state = State::new();
-    state.settings.show_line_numbers = false;
+    crate::state::definitions::create_settings_registry()
+        .set("number", Some("false"), &mut state.settings)
+        .unwrap();
     let mut system = RenderSystem::new(10, 80);
 
     system

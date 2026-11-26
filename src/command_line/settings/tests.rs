@@ -1,9 +1,8 @@
-use crate::command_line::settings::definitions::create_settings_registry;
 use crate::command_line::settings::descriptor::{
     SettingDescriptor, SettingError, SettingType, SettingValue,
 };
 use crate::command_line::settings::registry::SettingsRegistry;
-use crate::error::RiftError;
+use crate::state::definitions::create_settings_registry;
 use crate::state::{State, UserSettings};
 
 #[derive(Debug, Clone, Default)]
@@ -392,36 +391,16 @@ fn test_execute_setting_boolean() {
     let registry = create_test_registry();
     let mut settings = TestSettings::default();
 
-    let mut error_handler = |_: RiftError| {};
-    let result = registry.execute_setting(
-        "expandtabs",
-        Some("false"),
-        &mut settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Success
-    ));
+    let result = registry.set("expandtabs", Some("false"), &mut settings);
+    assert!(!result.unwrap().needs_full_redraw);
     assert!(!settings.expand_tabs);
 
-    let result = registry.execute_setting(
-        "expandtabs",
-        Some("true"),
-        &mut settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Success
-    ));
+    let result = registry.set("expandtabs", Some("true"), &mut settings);
+    assert!(!result.unwrap().needs_full_redraw);
     assert!(settings.expand_tabs);
 
-    let result = registry.execute_setting("et", Some("false"), &mut settings, &mut error_handler);
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Success
-    ));
+    let result = registry.set("et", Some("false"), &mut settings);
+    assert!(!result.unwrap().needs_full_redraw);
     assert!(!settings.expand_tabs);
 }
 
@@ -430,26 +409,16 @@ fn test_execute_setting_integer() {
     let registry = create_test_registry();
     let mut settings = TestSettings::default();
 
-    let mut error_handler = |_: RiftError| {};
-    let result = registry.execute_setting("tabwidth", Some("4"), &mut settings, &mut error_handler);
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Success
-    ));
+    let result = registry.set("tabwidth", Some("4"), &mut settings);
+    assert!(!result.unwrap().needs_full_redraw);
     assert_eq!(settings.tab_width, 4);
 
-    let result = registry.execute_setting("tw", Some("8"), &mut settings, &mut error_handler);
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Success
-    ));
+    let result = registry.set("tw", Some("8"), &mut settings);
+    assert!(!result.unwrap().needs_full_redraw);
     assert_eq!(settings.tab_width, 8);
 
-    let result = registry.execute_setting("tabw", Some("2"), &mut settings, &mut error_handler);
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Success
-    ));
+    let result = registry.set("tabw", Some("2"), &mut settings);
+    assert!(!result.unwrap().needs_full_redraw);
     assert_eq!(settings.tab_width, 2);
 }
 
@@ -458,25 +427,16 @@ fn test_execute_setting_float() {
     let registry = create_test_registry();
     let mut settings = TestSettings::default();
 
-    let mut error_handler = |_: RiftError| {};
-    let result = registry.execute_setting(
+    let result = registry.set(
         "command_line_window.width_ratio",
         Some("0.6"),
         &mut settings,
-        &mut error_handler,
     );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Success
-    ));
+    assert!(!result.unwrap().needs_full_redraw);
     assert!((settings.width_ratio - 0.6).abs() < f64::EPSILON);
 
-    let result =
-        registry.execute_setting("cmdwidth", Some("0.8"), &mut settings, &mut error_handler);
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Success
-    ));
+    let result = registry.set("cmdwidth", Some("0.8"), &mut settings);
+    assert!(!result.unwrap().needs_full_redraw);
     assert!((settings.width_ratio - 0.8).abs() < f64::EPSILON);
 }
 
@@ -485,34 +445,14 @@ fn test_execute_setting_enum() {
     let registry = create_test_registry();
     let mut settings = TestSettings::default();
 
-    let mut error_handler = |_: RiftError| {};
-    let result = registry.execute_setting(
-        "borderstyle",
-        Some("unicode"),
-        &mut settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Success
-    ));
+    let result = registry.set("borderstyle", Some("unicode"), &mut settings);
+    assert!(!result.unwrap().needs_full_redraw);
 
-    let result = registry.execute_setting(
-        "borderstyle",
-        Some("ASCII"),
-        &mut settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Success
-    ));
+    let result = registry.set("borderstyle", Some("ASCII"), &mut settings);
+    assert!(!result.unwrap().needs_full_redraw);
 
-    let result = registry.execute_setting("bs", Some("none"), &mut settings, &mut error_handler);
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Success
-    ));
+    let result = registry.set("bs", Some("none"), &mut settings);
+    assert!(!result.unwrap().needs_full_redraw);
 }
 
 #[test]
@@ -520,12 +460,8 @@ fn test_execute_setting_missing_value() {
     let registry = create_test_registry();
     let mut settings = TestSettings::default();
 
-    let mut error_handler = |_: RiftError| {};
-    let result = registry.execute_setting("expandtabs", None, &mut settings, &mut error_handler);
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Failure
-    ));
+    let result = registry.set("expandtabs", None, &mut settings);
+    assert!(result.is_err());
 }
 
 #[test]
@@ -533,17 +469,8 @@ fn test_execute_setting_unknown_option() {
     let registry = create_test_registry();
     let mut settings = TestSettings::default();
 
-    let mut error_handler = |_: RiftError| {};
-    let result = registry.execute_setting(
-        "unknown_option",
-        Some("value"),
-        &mut settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Failure
-    ));
+    let result = registry.set("unknown_option", Some("value"), &mut settings);
+    assert!(result.is_err());
 }
 
 #[test]
@@ -551,40 +478,14 @@ fn test_execute_setting_invalid_value() {
     let registry = create_test_registry();
     let mut settings = TestSettings::default();
 
-    let mut error_handler = |_: RiftError| {};
+    let result = registry.set("expandtabs", Some("maybe"), &mut settings);
+    assert!(result.is_err());
 
-    let result = registry.execute_setting(
-        "expandtabs",
-        Some("maybe"),
-        &mut settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Failure
-    ));
+    let result = registry.set("tabwidth", Some("not_a_number"), &mut settings);
+    assert!(result.is_err());
 
-    let result = registry.execute_setting(
-        "tabwidth",
-        Some("not_a_number"),
-        &mut settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Failure
-    ));
-
-    let result = registry.execute_setting(
-        "borderstyle",
-        Some("invalid"),
-        &mut settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Failure
-    ));
+    let result = registry.set("borderstyle", Some("invalid"), &mut settings);
+    assert!(result.is_err());
 }
 
 #[test]
@@ -592,35 +493,22 @@ fn test_execute_setting_validation_error() {
     let registry = create_test_registry();
     let mut settings = TestSettings::default();
 
-    let mut error_handler = |_: RiftError| {};
+    let result = registry.set("tabwidth", Some("0"), &mut settings);
+    assert!(result.is_err());
 
-    let result = registry.execute_setting("tabwidth", Some("0"), &mut settings, &mut error_handler);
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Failure
-    ));
-
-    let result = registry.execute_setting(
+    let result = registry.set(
         "command_line_window.width_ratio",
         Some("1.5"),
         &mut settings,
-        &mut error_handler,
     );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Failure
-    ));
+    assert!(result.is_err());
 
-    let result = registry.execute_setting(
+    let result = registry.set(
         "command_line_window.width_ratio",
         Some("-0.1"),
         &mut settings,
-        &mut error_handler,
     );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Failure
-    ));
+    assert!(result.is_err());
 }
 
 #[test]
@@ -649,24 +537,11 @@ fn test_execute_setting_ambiguous() {
     let registry = SettingsRegistry::new(AMBIGUOUS_SETTINGS);
     let mut settings = TestSettings::default();
 
-    let mut error_handler = |_: RiftError| {};
+    let result = registry.set("expa", Some("true"), &mut settings);
+    assert!(result.is_err());
 
-    let result = registry.execute_setting("expa", Some("true"), &mut settings, &mut error_handler);
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Failure
-    ));
-
-    let result = registry.execute_setting(
-        "expandtabs",
-        Some("true"),
-        &mut settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Success
-    ));
+    let result = registry.set("expandtabs", Some("true"), &mut settings);
+    assert!(!result.unwrap().needs_full_redraw);
 }
 
 #[test]
@@ -675,25 +550,16 @@ fn test_execute_setting_theme_light() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let mut error_handler = |_: RiftError| {};
-    let result = registry.execute_setting(
-        "appearance.theme",
-        Some("light"),
-        &mut state.settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Redraw
-    ));
+    let result = registry.set("appearance.theme", Some("light"), &mut state.settings);
+    assert!(result.unwrap().needs_full_redraw);
     settings = state.settings.clone();
-    assert_eq!(settings.theme, Some("light".to_string()));
+    assert_eq!(settings.theme(), Some("light"));
     assert_eq!(
-        settings.editor_bg,
+        settings.editor_bg(),
         Some(crate::color::theme::Theme::light().background)
     );
     assert_eq!(
-        settings.editor_fg,
+        settings.editor_fg(),
         Some(crate::color::theme::Theme::light().foreground)
     );
 }
@@ -704,25 +570,16 @@ fn test_execute_setting_theme_dark() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let mut error_handler = |_: RiftError| {};
-    let result = registry.execute_setting(
-        "appearance.theme",
-        Some("dark"),
-        &mut state.settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Redraw
-    ));
+    let result = registry.set("appearance.theme", Some("dark"), &mut state.settings);
+    assert!(result.unwrap().needs_full_redraw);
     settings = state.settings.clone();
-    assert_eq!(settings.theme, Some("dark".to_string()));
+    assert_eq!(settings.theme(), Some("dark"));
     assert_eq!(
-        settings.editor_bg,
+        settings.editor_bg(),
         Some(crate::color::theme::Theme::dark().background)
     );
     assert_eq!(
-        settings.editor_fg,
+        settings.editor_fg(),
         Some(crate::color::theme::Theme::dark().foreground)
     );
 }
@@ -733,25 +590,16 @@ fn test_execute_setting_theme_gruvbox() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let mut error_handler = |_: RiftError| {};
-    let result = registry.execute_setting(
-        "appearance.theme",
-        Some("gruvbox"),
-        &mut state.settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Redraw
-    ));
+    let result = registry.set("appearance.theme", Some("gruvbox"), &mut state.settings);
+    assert!(result.unwrap().needs_full_redraw);
     settings = state.settings.clone();
-    assert_eq!(settings.theme, Some("gruvbox".to_string()));
+    assert_eq!(settings.theme(), Some("gruvbox"));
     assert_eq!(
-        settings.editor_bg,
+        settings.editor_bg(),
         Some(crate::color::theme::Theme::gruvbox().background)
     );
     assert_eq!(
-        settings.editor_fg,
+        settings.editor_fg(),
         Some(crate::color::theme::Theme::gruvbox().foreground)
     );
 }
@@ -762,25 +610,16 @@ fn test_execute_setting_theme_nordic() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let mut error_handler = |_: RiftError| {};
-    let result = registry.execute_setting(
-        "appearance.theme",
-        Some("nordic"),
-        &mut state.settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Redraw
-    ));
+    let result = registry.set("appearance.theme", Some("nordic"), &mut state.settings);
+    assert!(result.unwrap().needs_full_redraw);
     settings = state.settings.clone();
-    assert_eq!(settings.theme, Some("nordic".to_string()));
+    assert_eq!(settings.theme(), Some("nordic"));
     assert_eq!(
-        settings.editor_bg,
+        settings.editor_bg(),
         Some(crate::color::theme::Theme::nordic().background)
     );
     assert_eq!(
-        settings.editor_fg,
+        settings.editor_fg(),
         Some(crate::color::theme::Theme::nordic().foreground)
     );
 }
@@ -791,32 +630,15 @@ fn test_execute_setting_theme_case_insensitive() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let mut error_handler = |_: RiftError| {};
-    let result = registry.execute_setting(
-        "appearance.theme",
-        Some("LIGHT"),
-        &mut state.settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Redraw
-    ));
+    let result = registry.set("appearance.theme", Some("LIGHT"), &mut state.settings);
+    assert!(result.unwrap().needs_full_redraw);
     settings = state.settings.clone();
-    assert_eq!(settings.theme, Some("light".to_string()));
+    assert_eq!(settings.theme(), Some("light"));
 
-    let result = registry.execute_setting(
-        "appearance.theme",
-        Some("Dark"),
-        &mut state.settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Redraw
-    ));
+    let result = registry.set("appearance.theme", Some("Dark"), &mut state.settings);
+    assert!(result.unwrap().needs_full_redraw);
     settings = state.settings.clone();
-    assert_eq!(settings.theme, Some("dark".to_string()));
+    assert_eq!(settings.theme(), Some("dark"));
 }
 
 #[test]
@@ -825,17 +647,12 @@ fn test_execute_setting_theme_unknown() {
     let settings = UserSettings::new();
     let mut state = State::with_settings(settings);
 
-    let mut error_handler = |_: RiftError| {};
-    let result = registry.execute_setting(
+    let result = registry.set(
         "appearance.theme",
         Some("unknown_theme"),
         &mut state.settings,
-        &mut error_handler,
     );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Failure
-    ));
+    assert!(result.is_err());
 }
 
 #[test]
@@ -844,36 +661,19 @@ fn test_execute_setting_theme_overwrites_previous() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let mut error_handler = |_: RiftError| {};
-    let result = registry.execute_setting(
-        "appearance.theme",
-        Some("light"),
-        &mut state.settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Redraw
-    ));
+    let result = registry.set("appearance.theme", Some("light"), &mut state.settings);
+    assert!(result.unwrap().needs_full_redraw);
     settings = state.settings.clone();
-    assert_eq!(settings.theme, Some("light".to_string()));
-    let light_bg = settings.editor_bg;
+    assert_eq!(settings.theme(), Some("light"));
+    let light_bg = settings.editor_bg();
 
-    let result = registry.execute_setting(
-        "appearance.theme",
-        Some("dark"),
-        &mut state.settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Redraw
-    ));
+    let result = registry.set("appearance.theme", Some("dark"), &mut state.settings);
+    assert!(result.unwrap().needs_full_redraw);
     settings = state.settings.clone();
-    assert_eq!(settings.theme, Some("dark".to_string()));
-    assert_ne!(settings.editor_bg, light_bg);
+    assert_eq!(settings.theme(), Some("dark"));
+    assert_ne!(settings.editor_bg(), light_bg);
     assert_eq!(
-        settings.editor_bg,
+        settings.editor_bg(),
         Some(crate::color::theme::Theme::dark().background)
     );
 }
@@ -884,19 +684,10 @@ fn test_execute_setting_theme_alias_colorscheme() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let mut error_handler = |_: RiftError| {};
-    let result = registry.execute_setting(
-        "colorscheme",
-        Some("light"),
-        &mut state.settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Redraw
-    ));
+    let result = registry.set("colorscheme", Some("light"), &mut state.settings);
+    assert!(result.unwrap().needs_full_redraw);
     settings = state.settings.clone();
-    assert_eq!(settings.theme, Some("light".to_string()));
+    assert_eq!(settings.theme(), Some("light"));
 }
 
 #[test]
@@ -905,19 +696,10 @@ fn test_execute_setting_theme_canonical_name() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let mut error_handler = |_: RiftError| {};
-    let result = registry.execute_setting(
-        "appearance.theme",
-        Some("dark"),
-        &mut state.settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Redraw
-    ));
+    let result = registry.set("appearance.theme", Some("dark"), &mut state.settings);
+    assert!(result.unwrap().needs_full_redraw);
     settings = state.settings.clone();
-    assert_eq!(settings.theme, Some("dark".to_string()));
+    assert_eq!(settings.theme(), Some("dark"));
 }
 
 #[test]
@@ -925,32 +707,17 @@ fn test_execute_setting_undofile_toggles_persistent_undo() {
     let registry = create_settings_registry();
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
-    assert!(state.settings.undo.persistent, "undofile defaults to on");
+    assert!(state.settings.undo().persistent, "undofile defaults to on");
 
-    let mut errors = Vec::new();
-    let mut error_handler = |e: RiftError| errors.push(e);
-    let result = registry.execute_setting(
-        "undofile",
-        Some("false"),
-        &mut state.settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Success
-    ));
+    let result = registry.set("undofile", Some("false"), &mut state.settings);
+    assert!(!result.unwrap().needs_full_redraw);
     settings = state.settings.clone();
-    assert!(!settings.undo.persistent);
+    assert!(!settings.undo().persistent);
 
-    let result =
-        registry.execute_setting("udf", Some("true"), &mut state.settings, &mut error_handler);
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Success
-    ));
+    let result = registry.set("udf", Some("true"), &mut state.settings);
+    assert!(!result.unwrap().needs_full_redraw);
     settings = state.settings.clone();
-    assert!(settings.undo.persistent);
-    assert!(errors.is_empty());
+    assert!(settings.undo().persistent);
 }
 
 #[test]
@@ -958,41 +725,24 @@ fn test_execute_setting_undodir_sets_and_expands_path() {
     let registry = create_settings_registry();
     let settings = UserSettings::new();
     let mut state = State::with_settings(settings);
-    assert_eq!(state.settings.undo.dir, None);
+    assert_eq!(state.settings.undo().dir, None);
 
-    let mut errors = Vec::new();
-    let mut error_handler = |e: RiftError| errors.push(e);
-    let result = registry.execute_setting(
-        "undodir",
-        Some("/tmp/my-rift-undo"),
-        &mut state.settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Success
-    ));
+    let result = registry.set("undodir", Some("/tmp/my-rift-undo"), &mut state.settings);
+    assert!(!result.unwrap().needs_full_redraw);
     assert_eq!(
-        state.settings.undo.dir,
+        state.settings.undo().dir,
         Some(std::path::PathBuf::from("/tmp/my-rift-undo"))
     );
 
-    let result =
-        registry.execute_setting("udir", Some(""), &mut state.settings, &mut error_handler);
-    assert!(matches!(
-        result,
-        crate::command_line::commands::executor::ExecutionResult::Success
-    ));
-    assert_eq!(state.settings.undo.dir, None);
-    assert!(errors.is_empty());
+    let result = registry.set("udir", Some(""), &mut state.settings);
+    assert!(!result.unwrap().needs_full_redraw);
+    assert_eq!(state.settings.undo().dir, None);
 }
 
 fn set(settings: &mut UserSettings, name: &str, value: &str) {
-    let mut errors = Vec::new();
-    create_settings_registry().execute_setting(name, Some(value), settings, &mut |e| {
-        errors.push(e);
-    });
-    assert!(errors.is_empty(), "set {name} {value}: {errors:?}");
+    create_settings_registry()
+        .set(name, Some(value), settings)
+        .unwrap();
 }
 
 fn get(settings: &UserSettings, name: &str) -> String {
@@ -1004,8 +754,7 @@ fn get(settings: &UserSettings, name: &str) -> String {
 
 fn selection(settings: &UserSettings) -> Option<crate::layer::CellStyle> {
     settings
-        .syntax_colors
-        .as_ref()
+        .syntax_colors()
         .and_then(|c| c.exact_style("ui.selection"))
 }
 
@@ -1112,13 +861,8 @@ fn border_chars_take_exactly_six_characters() {
     set(&mut settings, "command_line.border_chars", "++++-|");
     assert_eq!(get(&settings, "command_line.border_chars"), "++++-|");
 
-    let mut errors = Vec::new();
-    create_settings_registry().execute_setting(
-        "command_line.border_chars",
-        Some("+-|"),
-        &mut settings,
-        &mut |e| errors.push(e),
-    );
-    assert_eq!(errors.len(), 1);
+    assert!(create_settings_registry()
+        .set("command_line.border_chars", Some("+-|"), &mut settings)
+        .is_err());
     assert_eq!(get(&settings, "command_line.border_chars"), "++++-|");
 }

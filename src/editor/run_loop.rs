@@ -72,7 +72,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Poll for input
         let now = crate::time::Instant::now();
-        let mut timeout = std::time::Duration::from_millis(self.state.settings.poll_timeout_ms);
+        let mut timeout = std::time::Duration::from_millis(self.state.settings.poll_timeout_ms());
         if let Some(deadline) = self.next_deadline(now) {
             timeout = timeout.min(deadline.saturating_duration_since(now));
         }

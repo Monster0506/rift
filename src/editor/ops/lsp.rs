@@ -80,8 +80,8 @@ impl<T: TerminalBackend> Editor<T> {
         {
             let info = self.document_manager.active_document().and_then(|doc| {
                 let path = doc.path()?.to_path_buf();
-                let tab_size = u32::try_from(doc.options.tab_width).unwrap_or(u32::MAX);
-                let insert_spaces = doc.options.expand_tabs;
+                let tab_size = u32::try_from(doc.options().tab_width()).unwrap_or(u32::MAX);
+                let insert_spaces = doc.options().expand_tabs();
                 Some((path, tab_size, insert_spaces))
             });
             if let Some((path, tab_size, insert_spaces)) = info {

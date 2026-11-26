@@ -5,10 +5,10 @@ use crate::command_line::commands::completion::{
     complete_command_name, complete_setting_name, complete_setting_value, complete_subcommand,
     parse_context, CompletionCandidate, CompletionContext, CompletionResult, PathFilter,
 };
-use crate::command_line::settings::definitions::create_settings_registry;
 use crate::command_line::settings::registry::SettingsRegistry;
 use crate::document::definitions::{create_document_settings_registry, DocumentOptions};
 use crate::job_manager::{CancellationSignal, Job, JobMessage, JobPayload, JobRef, JobTarget};
+use crate::state::definitions::create_settings_registry;
 use crate::state::UserSettings;
 use std::sync::{mpsc::Sender, LazyLock};
 

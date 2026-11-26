@@ -2,8 +2,8 @@ use crate::command_line::commands::definitions::{CommandDescriptor, CompletionHi
 use crate::command_line::commands::parser::CommandParser;
 use crate::command_line::commands::registry::MatchResult;
 use crate::command_line::commands::types::ParsedCommand;
-use crate::command_line::settings::definitions::create_settings_registry;
 use crate::command_line::settings::registry::SettingsRegistry;
+use crate::state::definitions::create_settings_registry;
 use crate::state::UserSettings;
 
 fn parse_quit(_: &SettingsRegistry<UserSettings>, _: &[&str], bangs: usize) -> ParsedCommand {

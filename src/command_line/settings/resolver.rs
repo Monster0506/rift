@@ -1,7 +1,13 @@
 use super::descriptor::SettingValue;
 use super::registry::SettingsRegistry;
-use crate::command_line::commands::executor::ExecutionResult;
 use crate::error::RiftError;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OptionScope {
+    Global,
+    Local(crate::document::DocumentId),
+    Resolve(crate::document::DocumentId),
+}
 
 pub(crate) struct SettingsResolver<L: 'static, G: 'static> {
     local: SettingsRegistry<L>,
@@ -33,15 +39,13 @@ impl<L, G> SettingsResolver<L, G> {
         value: Option<&str>,
         local_target: &mut L,
         global_target: &mut G,
-        error_handler: &mut dyn FnMut(RiftError),
-    ) -> ExecutionResult {
+    ) -> Result<(), RiftError> {
         if self.is_local(name) {
-            self.local
-                .execute_setting(name, value, local_target, error_handler)
+            self.local.set(name, value, local_target)?;
         } else {
-            self.global
-                .execute_setting(name, value, global_target, error_handler)
+            self.global.set(name, value, global_target)?;
         }
+        Ok(())
     }
 
     #[must_use]

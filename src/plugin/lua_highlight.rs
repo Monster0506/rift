@@ -39,8 +39,7 @@ fn register_groups(lua: &Lua, hl: &LuaTable, shared: &Shared) -> LuaResult<()> {
             let style = sh
                 .borrow()
                 .user_settings
-                .syntax_colors
-                .as_ref()
+                .syntax_colors()
                 .and_then(|c| c.get_style(&group));
             style.map(|s| style_table(lua, s)).transpose()
         })?;
@@ -75,8 +74,7 @@ fn register_groups(lua: &Lua, hl: &LuaTable, shared: &Shared) -> LuaResult<()> {
             let s = sh.borrow();
             let mut names: Vec<String> = s
                 .user_settings
-                .syntax_colors
-                .as_ref()
+                .syntax_colors()
                 .map_or_default(|c| c.names().map(str::to_string).collect());
             names.sort();
             Ok(names)

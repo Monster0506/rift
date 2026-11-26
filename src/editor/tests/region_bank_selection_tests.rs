@@ -743,8 +743,7 @@ fn selection_bg(editor: &Editor<MockTerminal>) -> Option<crate::color::Color> {
     let bg = editor
         .state
         .settings
-        .syntax_colors
-        .as_ref()
+        .syntax_colors()
         .and_then(|c| c.exact_style("ui.selection"))
         .and_then(|s| s.bg);
     assert!(

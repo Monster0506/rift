@@ -3,51 +3,12 @@
 
 use super::Color;
 use crate::layer::CellStyle;
-use crate::state::UserSettings;
 use captures::{
     ATTRIBUTE, BOOLEAN, BUILTIN, CHARACTER, COMMENT, CONSTANT, CONSTRUCTOR, C_IMPORT, ESCAPE,
     FUNCTION, KEYWORD, LABEL, MODULE, MODULE_BUILTIN, NAMESPACE, NUMBER, OPERATOR, PARAMETER,
     PROPERTY, PUNCTUATION, SPELL, STRING, TAG, TEXT_LITERAL, TEXT_REFERENCE, TEXT_TITLE, TEXT_URI,
     TYPE, VARIABLE,
 };
-
-/// Theme handler trait, allowing themes to be extended to apply more than
-/// just background/foreground colors (status bar, selection, cursor, etc.)
-trait ThemeHandler {
-    /// Apply a theme to the given settings; called whenever a theme is
-    /// changed via `:set theme <name>`.
-    fn apply_theme(&self, theme: &Theme, settings: &mut UserSettings);
-}
-
-/// Default theme handler; applies background and foreground colors, and can
-/// be extended to handle additional theme properties as they're added.
-struct DefaultThemeHandler;
-
-impl ThemeHandler for DefaultThemeHandler {
-    fn apply_theme(&self, theme: &Theme, settings: &mut UserSettings) {
-        settings.theme = Some(theme.name.to_string());
-        settings.editor_bg = Some(theme.background);
-        settings.editor_fg = Some(theme.foreground);
-        settings.syntax_colors.clone_from(&theme.syntax);
-        settings.cursor_color = Some(theme.cursor_color);
-        settings.selection_bg = None;
-        settings.selection_fg = None;
-        if !settings.highlight_overrides.is_empty() {
-            let colors = settings
-                .syntax_colors
-                .get_or_insert_with(SyntaxColors::default);
-            for (name, style) in &settings.highlight_overrides {
-                colors.set_style(name, *style);
-            }
-        }
-        settings.refresh_derived_highlights();
-    }
-}
-
-/// Global theme handler instance
-/// In the future, this could be made configurable or passed as a parameter
-static THEME_HANDLER: DefaultThemeHandler = DefaultThemeHandler;
-
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -659,10 +620,19 @@ impl Theme {
         ]
     }
 
-    /// Apply this theme using the default theme handler
-    /// This is the main entry point for applying themes
-    pub(crate) fn apply_to_settings(&self, settings: &mut UserSettings) {
-        THEME_HANDLER.apply_theme(self, settings);
+    #[must_use]
+    pub(crate) const fn name(&self) -> &'static str {
+        self.name
+    }
+
+    #[must_use]
+    pub(crate) const fn cursor_color(&self) -> Color {
+        self.cursor_color
+    }
+
+    #[must_use]
+    pub(crate) const fn syntax(&self) -> Option<&SyntaxColors> {
+        self.syntax.as_ref()
     }
 
     #[must_use]

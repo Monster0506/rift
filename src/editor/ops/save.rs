@@ -62,8 +62,8 @@ impl<T: TerminalBackend> Editor<T> {
                     buf,
                     doc.buffer().line_index.table.clone(),
                     path,
-                    doc.options.line_ending,
-                    doc.options.has_bom,
+                    doc.options().line_ending(),
+                    doc.options().has_bom(),
                     doc.history.current_seq(),
                 );
                 return SaveOutcome::Queued(self.job_manager.spawn(job));

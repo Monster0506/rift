@@ -1,10 +1,9 @@
 use crate::buffer::api::BufferView;
 use crate::command_line::commands::types::ParsedCommand;
-use crate::command_line::settings::registry::SettingsRegistry;
-use crate::document::{definitions::DocumentOptions, Document};
+use crate::command_line::settings::resolver::OptionScope;
+use crate::document::Document;
 use crate::error::{ErrorType, RiftError};
 use crate::state::State;
-use crate::state::UserSettings;
 
 /// Result of executing a command
 #[derive(PartialEq, Eq)]
@@ -101,6 +100,11 @@ pub(crate) enum ExecutionResult {
         name: String,
         args: Vec<String>,
     },
+    SetOption {
+        name: String,
+        value: Option<String>,
+        scope: OptionScope,
+    },
 }
 
 impl std::fmt::Debug for ExecutionResult {
@@ -168,6 +172,12 @@ impl std::fmt::Debug for ExecutionResult {
                 .field("name", name)
                 .field("args", args)
                 .finish(),
+            Self::SetOption { name, value, scope } => f
+                .debug_struct("SetOption")
+                .field("name", name)
+                .field("value", value)
+                .field("scope", scope)
+                .finish(),
         }
     }
 }
@@ -180,8 +190,6 @@ impl CommandExecutor {
         command: ParsedCommand,
         state: &mut State,
         document: &mut Document,
-        settings_registry: &SettingsRegistry<UserSettings>,
-        document_settings_registry: &SettingsRegistry<DocumentOptions>,
     ) -> ExecutionResult {
         match command {
             ParsedCommand::Quit { bangs } => ExecutionResult::Quit { bangs },
@@ -191,25 +199,20 @@ impl CommandExecutor {
                 option,
                 value,
                 bangs: _,
-            } => {
-                let mut errors = Vec::new();
-                let mut error_handler = |e: RiftError| errors.push(e);
-                let result = settings_registry.execute_setting(
-                    &option,
-                    value.as_deref(),
-                    &mut state.settings,
-                    &mut error_handler,
-                );
-                for err in errors {
-                    notify_error(state, err);
-                }
-                result
-            }
+            } => ExecutionResult::SetOption {
+                name: option,
+                value,
+                scope: OptionScope::Global,
+            },
             ParsedCommand::SetLocal {
-                option: _,
-                value: _,
+                option,
+                value,
                 bangs: _,
-            } => local::execute_local_command(command, state, document, document_settings_registry),
+            } => ExecutionResult::SetOption {
+                name: option,
+                value,
+                scope: OptionScope::Local(document.id),
+            },
             ParsedCommand::Write { path, bangs } => {
                 execute_write(state, document, path, bangs, |path| {
                     ExecutionResult::Write { path }
@@ -572,8 +575,6 @@ fn replace_match(
     let inserted = document.edit(Edit::insert(start, replacement), EditSource::User)?;
     Ok(deleted || inserted)
 }
-
-mod local;
 
 #[cfg(test)]
 #[path = "tests.rs"]

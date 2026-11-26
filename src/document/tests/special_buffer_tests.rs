@@ -169,7 +169,7 @@ fn sync_selection_annotations_banked_and_active_resolve_to_the_same_style() {
     ];
     doc.sync_selection_annotations(Some(Region::new(9, 9, RangeKind::Charwise)), &banked);
 
-    let colors = crate::state::UserSettings::new().syntax_colors;
+    let colors = crate::state::UserSettings::new().syntax_colors().cloned();
     let styles: Vec<_> = doc
         .annotations
         .presentation_spans(colors.as_ref(), None, 0.."0123456789".len())
