@@ -126,19 +126,8 @@ impl<T: TerminalBackend> Editor<T> {
         use crate::command_line::commands::executor::ExecutionResult;
         match result {
             ExecutionResult::Failure => return false, // keep command line visible for editing
-            ExecutionResult::OpenTerminal { cmd, .. } => {
-                if let Err(e) = self.open_terminal(cmd) {
-                    self.notify_error(e);
-                } else {
-                    self.state.clear_command_line();
-                    self.set_mode(Mode::Insert);
-                }
-                return false;
-            }
-            ExecutionResult::RunGit { args } => {
-                self.run_git_command(args);
-                self.state.clear_command_line();
-            }
+            ExecutionResult::OpenTerminal { cmd, .. } => return self.open_terminal_from_ex(cmd),
+            ExecutionResult::RunGit { args } => self.run_git_from_command(args),
             ExecutionResult::Success | ExecutionResult::Checkpoint => {}
             ExecutionResult::Quit { bangs } => {
                 self.do_quit(bangs > 0);
@@ -156,16 +145,7 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             ExecutionResult::Reload => self.load_plugins(),
-            ExecutionResult::Edit { path, bangs } => {
-                if let Err(e) = self.open_file(path, bangs > 0) {
-                    self.notify_error(e);
-                } else {
-                    self.state.clear_command_line();
-                    if let Err(e) = self.force_full_redraw() {
-                        self.notify_error(e);
-                    }
-                }
-            }
+            ExecutionResult::Edit { path, bangs } => self.open_file_from_ex(path, bangs > 0),
             ExecutionResult::BufferNext { .. } => {
                 self.do_buffer_next();
             }
@@ -221,6 +201,29 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
         true
+    }
+
+    fn open_terminal_from_ex(&mut self, cmd: Option<String>) -> bool {
+        if let Err(e) = self.open_terminal(cmd) {
+            self.notify_error(e);
+        } else {
+            self.state.clear_command_line();
+            self.set_mode(Mode::Insert);
+        }
+        false
+    }
+
+    fn open_file_from_ex(&mut self, path: Option<String>, force: bool) {
+        if let Err(e) = self.open_file(path, force) {
+            self.notify_error(e);
+        } else {
+            self.redraw_from_command();
+        }
+    }
+
+    fn run_git_from_command(&mut self, args: String) {
+        self.run_git_command(args);
+        self.state.clear_command_line();
     }
 
     fn redraw_from_command(&mut self) {
