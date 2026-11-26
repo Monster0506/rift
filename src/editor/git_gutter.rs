@@ -1,21 +1,6 @@
-//! Debounced git-gutter-diff (Phase 5): re-diffs the active `File` buffer's live content against its git index after edits settle, coloring the line-number gutter per changed line. Revision-driven rather than hooked into every edit call site; `poll_git_gutter_diff` runs once per tick (mirroring.
-
 use super::Editor;
 use crate::document::DocumentId;
 use crate::term::TerminalBackend;
-use std::time::Duration;
-
-/// Debounce window after an edit before re-diffing;  coalesces a burst of
-/// keystrokes into one job, same rationale as `SYNTAX_REPARSE_DEBOUNCE`.
-const GIT_GUTTER_DEBOUNCE: Duration = Duration::from_millis(400);
-
-#[derive(Default)]
-pub(super) struct PendingGitGutterDiff {
-    /// Buffer revision this state was last armed/diffed for. `None` means "never observed this document"; a file loaded via the bulk `from_bytes` path (skipping `insert_str`) starts at revision 0, the same value `u64::default()` would give a brand-new tracker entry, so a bare `u64` here would mistake "never seen".
-    last_seen_revision: Option<u64>,
-    debounce_deadline: Option<crate::time::Instant>,
-    in_flight_job: Option<usize>,
-}
 
 impl<T: TerminalBackend> Editor<T> {
     /// Called once per tick. Notices the active document's buffer revision changing (arms the debounce) and fires an elapsed deadline (spawns `GitGutterDiffJob`).
@@ -35,24 +20,14 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(repo_root) = repo_root else { return };
 
         let now = crate::time::Instant::now();
-        let due = {
-            let entry = self.pending_git_gutter_diff.entry(doc_id).or_default();
-            if entry.last_seen_revision != Some(revision) {
-                entry.last_seen_revision = Some(revision);
-                entry.debounce_deadline = Some(now + GIT_GUTTER_DEBOUNCE);
-            }
-            entry.debounce_deadline.is_some_and(|d| now >= d)
-        };
-        if !due {
+        if self.git_gutter_seen_revision.insert(doc_id, revision) != Some(revision) {
+            self.git_gutter_diff.arm(doc_id, now);
+        }
+        if !self.git_gutter_diff.is_due(doc_id, now) {
             return;
         }
 
-        let stale_job = {
-            let entry = self.pending_git_gutter_diff.entry(doc_id).or_default();
-            entry.debounce_deadline = None;
-            entry.in_flight_job.take()
-        };
-        if let Some(job_id) = stale_job {
+        if let Some(job_id) = self.git_gutter_diff.cancel(doc_id) {
             self.job_manager.cancel_job(job_id);
         }
 
@@ -82,10 +57,7 @@ impl<T: TerminalBackend> Editor<T> {
             buffer_text,
         );
         let job_id = self.job_manager.spawn(job);
-        self.pending_git_gutter_diff
-            .entry(doc_id)
-            .or_default()
-            .in_flight_job = Some(job_id);
+        self.git_gutter_diff.start(doc_id, job_id);
     }
 
     /// Memoized repo-root lookup for gutter-diff polling;  `git rev-parse`
@@ -109,7 +81,8 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Drop cached gutter-diff state for a closed document.
     pub(super) fn clear_git_gutter_state(&mut self, doc_id: DocumentId) {
-        self.pending_git_gutter_diff.remove(&doc_id);
+        self.git_gutter_diff.cancel(doc_id);
+        self.git_gutter_seen_revision.remove(&doc_id);
         self.git_gutter_repo_cache.remove(&doc_id);
     }
 }

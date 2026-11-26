@@ -34,6 +34,7 @@ mod plugin_ops;
 pub(crate) mod rendering;
 mod replace_mode;
 mod run_loop;
+mod scheduler;
 mod text_object_input;
 mod undo_persist;
 
@@ -208,17 +209,16 @@ pub struct Editor<T: TerminalBackend> {
     kind_registry: crate::annotations::registry::KindRegistry,
     hovered_annotation: Option<crate::annotations::AnnotationId>,
     plugin_mutation_rounds: Option<usize>,
-    pending_syntax_reparse:
-        std::collections::HashMap<crate::document::DocumentId, jobs::PendingSyntaxReparse>,
-    pending_git_gutter_diff:
-        std::collections::HashMap<crate::document::DocumentId, git_gutter::PendingGitGutterDiff>,
+    syntax_reparse: scheduler::Debounced<crate::document::DocumentId>,
+    git_gutter_diff: scheduler::Debounced<crate::document::DocumentId>,
+    git_gutter_seen_revision: std::collections::HashMap<crate::document::DocumentId, u64>,
     git_gutter_repo_cache:
         std::collections::HashMap<crate::document::DocumentId, Option<std::path::PathBuf>>,
     pending_git_status_expand_all: std::collections::HashMap<crate::document::DocumentId, bool>,
     git_status_refresh_jobs: std::collections::HashMap<crate::document::DocumentId, usize>,
     deferred_keys: std::collections::VecDeque<crate::key::Key>,
     pending_git_log_expand_head: std::collections::HashSet<crate::document::DocumentId>,
-    pending_search_refresh: Option<crate::time::Instant>,
+    search_refresh: scheduler::Debounced<()>,
     search_highlights_synced: Option<(crate::document::DocumentId, u64, String)>,
     pending_explorer_preview: Option<explorer::PendingExplorerPreview>,
     startup_first_paint: Option<crate::time::Instant>,

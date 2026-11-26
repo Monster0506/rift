@@ -93,7 +93,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.file_load_jobs.retain(|_, target_id| *target_id != id);
         self.clear_git_gutter_state(id);
-        self.pending_syntax_reparse.remove(&id);
+        self.syntax_reparse.cancel(id);
         self.pending_git_status_expand_all.remove(&id);
         self.git_status_refresh_jobs.remove(&id);
         self.pending_git_log_expand_head.remove(&id);

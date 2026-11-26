@@ -1,3 +1,6 @@
+use super::scheduler::{
+    Debounced, GIT_GUTTER_DEBOUNCE, SEARCH_REFRESH_DEBOUNCE, SYNTAX_REPARSE_DEBOUNCE,
+};
 use super::Editor;
 use super::{plugin_dirs, user_config_dir};
 use crate::command_line::commands::parser::CommandParser;
@@ -146,14 +149,15 @@ impl<T: TerminalBackend> Editor<T> {
             kind_registry: crate::annotations::registry::KindRegistry::with_core(),
             hovered_annotation: None,
             plugin_mutation_rounds: None,
-            pending_syntax_reparse: std::collections::HashMap::new(),
-            pending_git_gutter_diff: std::collections::HashMap::new(),
+            syntax_reparse: Debounced::new(SYNTAX_REPARSE_DEBOUNCE),
+            git_gutter_diff: Debounced::new(GIT_GUTTER_DEBOUNCE),
+            git_gutter_seen_revision: std::collections::HashMap::new(),
             git_gutter_repo_cache: std::collections::HashMap::new(),
             pending_git_status_expand_all: std::collections::HashMap::new(),
             git_status_refresh_jobs: std::collections::HashMap::new(),
             deferred_keys: std::collections::VecDeque::new(),
             pending_git_log_expand_head: std::collections::HashSet::new(),
-            pending_search_refresh: None,
+            search_refresh: Debounced::new(SEARCH_REFRESH_DEBOUNCE),
             search_highlights_synced: None,
             pending_explorer_preview: None,
             startup_first_paint: None,

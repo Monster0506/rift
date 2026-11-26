@@ -10,8 +10,6 @@ use crate::term::TerminalBackend;
 #[cfg(feature = "treesitter")]
 use std::sync::Arc;
 
-const SYNTAX_REPARSE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(40);
-
 #[cfg(feature = "treesitter")]
 fn syntax_for(
     loader: &Arc<crate::syntax::loader::LanguageLoader>,
@@ -45,12 +43,6 @@ fn attach_syntax(
     if let Some(doc) = docs.get_document_mut(doc_id) {
         doc.set_syntax(syntax);
     }
-}
-
-#[derive(Default)]
-pub(super) struct PendingSyntaxReparse {
-    debounce_deadline: Option<crate::time::Instant>,
-    in_flight_job: Option<usize>,
 }
 
 impl<T: TerminalBackend> Editor<T> {
@@ -111,15 +103,12 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn debounce_syntax_reparse(&mut self, doc_id: DocumentId) {
-        let entry = self.pending_syntax_reparse.entry(doc_id).or_default();
-        entry.debounce_deadline = Some(crate::time::Instant::now() + SYNTAX_REPARSE_DEBOUNCE);
+        self.syntax_reparse.arm(doc_id, crate::time::Instant::now());
     }
 
     pub(super) fn cancel_pending_syntax_reparse(&mut self, doc_id: DocumentId) {
-        if let Some(entry) = self.pending_syntax_reparse.remove(&doc_id) {
-            if let Some(job_id) = entry.in_flight_job {
-                self.job_manager.cancel_job(job_id);
-            }
+        if let Some(job_id) = self.syntax_reparse.cancel(doc_id) {
+            self.job_manager.cancel_job(job_id);
         }
     }
 
@@ -201,43 +190,15 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn spawn_syntax_parse_job_immediate(&mut self, doc_id: DocumentId) {
-        if let Some(entry) = self.pending_syntax_reparse.get(&doc_id) {
-            if let Some(old_job) = entry.in_flight_job {
-                self.job_manager.cancel_job(old_job);
-            }
-        }
+        self.cancel_pending_syntax_reparse(doc_id);
         if let Some(job_id) = self.spawn_syntax_parse_job(doc_id) {
-            let entry = self.pending_syntax_reparse.entry(doc_id).or_default();
-            entry.in_flight_job = Some(job_id);
-            entry.debounce_deadline = None;
-        } else {
-            self.pending_syntax_reparse.remove(&doc_id);
+            self.syntax_reparse.start(doc_id, job_id);
         }
     }
 
     pub(super) fn poll_pending_syntax_reparse(&mut self) {
-        let now = crate::time::Instant::now();
-        let due: Vec<DocumentId> = self
-            .pending_syntax_reparse
-            .iter()
-            .filter(|(_, p)| p.debounce_deadline.is_some_and(|d| now >= d))
-            .map(|(doc_id, _)| *doc_id)
-            .collect();
-
-        for doc_id in due {
-            if let Some(entry) = self.pending_syntax_reparse.get_mut(&doc_id) {
-                entry.debounce_deadline = None;
-                if let Some(old_job) = entry.in_flight_job.take() {
-                    self.job_manager.cancel_job(old_job);
-                }
-            }
-            if let Some(job_id) = self.spawn_syntax_parse_job(doc_id) {
-                if let Some(entry) = self.pending_syntax_reparse.get_mut(&doc_id) {
-                    entry.in_flight_job = Some(job_id);
-                }
-            } else {
-                self.pending_syntax_reparse.remove(&doc_id);
-            }
+        for doc_id in self.syntax_reparse.due(crate::time::Instant::now()) {
+            self.spawn_syntax_parse_job_immediate(doc_id);
         }
     }
 
@@ -915,6 +876,7 @@ impl<T: TerminalBackend> Editor<T> {
         result: &crate::job_manager::jobs::git::GitGutterDiffResult,
     ) {
         let doc_id = result.doc_id;
+        self.git_gutter_diff.finish(doc_id, id);
         let Some(token) = self.resolve_and_validate_token(
             id,
             token,
@@ -1314,14 +1276,7 @@ impl<T: TerminalBackend> Editor<T> {
             doc_id,
             crate::job_manager::AsyncOpDomain::SyntaxParse,
         ) else {
-            if let Some(entry) = self.pending_syntax_reparse.get_mut(&doc_id) {
-                if entry.in_flight_job == Some(id) {
-                    entry.in_flight_job = None;
-                }
-                if entry.debounce_deadline.is_none() && entry.in_flight_job.is_none() {
-                    self.pending_syntax_reparse.remove(&doc_id);
-                }
-            }
+            self.syntax_reparse.finish(doc_id, id);
             self.job_manager
                 .update_job_state(&JobMessage::Finished(id, true));
             return Ok(());
@@ -1330,14 +1285,7 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .get_document_by_handle_mut(token.handle)
         else {
-            if let Some(entry) = self.pending_syntax_reparse.get_mut(&doc_id) {
-                if entry.in_flight_job == Some(id) {
-                    entry.in_flight_job = None;
-                }
-                if entry.debounce_deadline.is_none() && entry.in_flight_job.is_none() {
-                    self.pending_syntax_reparse.remove(&doc_id);
-                }
-            }
+            self.syntax_reparse.finish(doc_id, id);
             self.job_manager
                 .update_job_state(&JobMessage::Finished(id, true));
             return Ok(());
@@ -1353,14 +1301,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.pending_syntax_updated.insert(doc.id);
         }
 
-        if let Some(entry) = self.pending_syntax_reparse.get_mut(&doc_id) {
-            if entry.in_flight_job == Some(id) {
-                entry.in_flight_job = None;
-            }
-            if entry.debounce_deadline.is_none() && entry.in_flight_job.is_none() {
-                self.pending_syntax_reparse.remove(&doc_id);
-            }
-        }
+        self.syntax_reparse.finish(doc_id, id);
 
         if !is_current {
             self.debounce_syntax_reparse(doc_id);

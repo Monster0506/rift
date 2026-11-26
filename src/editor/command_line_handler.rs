@@ -3,10 +3,6 @@ use crate::command_line::commands::executor::CommandExecutor;
 use crate::mode::Mode;
 use crate::term::TerminalBackend;
 
-/// Debounce window for re-running the search after undo/redo, coalescing a
-/// burst of undos into one full-buffer scan.
-const SEARCH_REFRESH_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(40);
-
 impl<T: TerminalBackend> Editor<T> {
     /// Schedule a debounced `update_search_highlights`. With no active query
     /// the refresh is just a cheap clear, so it runs immediately.
@@ -15,16 +11,13 @@ impl<T: TerminalBackend> Editor<T> {
             self.update_search_highlights();
             return;
         }
-        self.pending_search_refresh = Some(crate::time::Instant::now() + SEARCH_REFRESH_DEBOUNCE);
+        self.search_refresh.arm((), crate::time::Instant::now());
     }
 
     /// Fire an elapsed search-refresh deadline. Called once per run-loop tick.
     pub(super) fn poll_pending_search_refresh(&mut self) {
-        let due = self
-            .pending_search_refresh
-            .is_some_and(|d| crate::time::Instant::now() >= d);
-        if due {
-            self.pending_search_refresh = None;
+        if self.search_refresh.is_due((), crate::time::Instant::now()) {
+            self.search_refresh.cancel(());
             self.update_search_highlights();
             let _ = self.update_and_render();
         }
@@ -44,7 +37,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .is_some_and(|(id, rev, q)| {
                         *id == doc.id && *rev == doc.buffer().revision() && q == query
                     });
-                if !synced && self.pending_search_refresh.is_none() {
+                if !synced && !self.search_refresh.is_armed(()) {
                     self.schedule_search_refresh();
                 }
             }
