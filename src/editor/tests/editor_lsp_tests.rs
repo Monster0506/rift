@@ -256,7 +256,7 @@ fn diagnostic_jump_lands_on_the_diagnostic_column() {
         .lsp_diagnostics
         .insert(key, vec![diag(1, 4), diag(0, 8)]);
 
-    editor.lsp_diagnostic_next();
+    editor.execute_command_line(":lsp diag next");
     let doc = editor.active_document();
     assert_eq!(
         (
@@ -275,6 +275,15 @@ fn diagnostic_jump_lands_on_the_diagnostic_column() {
         ),
         (1, 4)
     );
+
+    #[cfg(feature = "plugins")]
+    {
+        let err = editor.plugin_host.lua_exec("rift.lsp.diagnostic_prev()");
+        assert!(err.is_none(), "{err:?}");
+        editor.apply_plugin_mutations();
+        let doc = editor.active_document();
+        assert_eq!((doc.buffer().get_line(), doc.buffer().cursor()), (0, 8));
+    }
 }
 
 #[cfg(feature = "lsp")]

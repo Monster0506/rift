@@ -275,8 +275,7 @@ pub(crate) enum PluginMutation {
     OpenFloat(PluginFloat),
     /// Close the currently open plugin float.
     CloseFloat,
-    /// Execute an editor action by its string name (e.g. `"editor:save"`, `"mode:normal"`).
-    ExecAction(String),
+    ExecAction(crate::action::Action),
     /// `keys` is key notation (e.g. `"<C-p>"`, `"<C-S-Left>"`, `"<F5>"`, `"gg"`; see
     /// `crate::key::notation::parse_key_sequence`). `action` is an action string.
     MapKey {
@@ -354,28 +353,10 @@ pub(crate) enum PluginMutation {
         language: String,
         config: crate::lsp::config::LspServerConfig,
     },
-    /// Request goto definition at the current cursor position.
-    LspGotoDefinition,
-    /// Request all references at the current cursor position.
-    LspReferences,
-    /// Request hover documentation at the current cursor position.
-    LspHover,
     /// Request a rename of the symbol at the current cursor position (direct, no dialog).
     LspRename {
         new_name: String,
     },
-    /// Open the rename dialog at the current cursor position.
-    LspRenameDialog,
-    /// Request document formatting.
-    LspFormat,
-    /// Request code actions at the current cursor position.
-    LspCodeAction,
-    /// Jump to the next LSP diagnostic in the active document.
-    LspDiagnosticNext,
-    /// Jump to the previous LSP diagnostic in the active document.
-    LspDiagnosticPrev,
-    /// Open the diagnostics panel.
-    LspDiagnosticsPanel,
     AddAnnotation {
         buf: DocumentId,
         id: u64,

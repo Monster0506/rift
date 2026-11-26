@@ -1,5 +1,7 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ParsedCommand {
+    Action(crate::action::EditorAction),
+    InvalidArgument(&'static str),
     /// Quit command
     Quit {
         bangs: usize,

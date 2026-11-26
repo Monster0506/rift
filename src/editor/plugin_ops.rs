@@ -447,18 +447,11 @@ impl<T: TerminalBackend> Editor<T> {
             PluginMutation::SetSyntaxQuery { .. }
             | PluginMutation::StartSyntax { .. }
             | PluginMutation::StopSyntax { .. } => self.apply_language_mutation(mutation),
-            PluginMutation::LspGotoDefinition
-            | PluginMutation::LspReferences
-            | PluginMutation::LspHover
-            | PluginMutation::LspRename { .. }
-            | PluginMutation::LspRenameDialog
-            | PluginMutation::LspFormat
-            | PluginMutation::LspCodeAction
-            | PluginMutation::LspDiagnosticNext
-            | PluginMutation::LspDiagnosticPrev
-            | PluginMutation::LspDiagnosticsPanel => self.apply_lsp_mutation(mutation),
+            PluginMutation::LspRename { new_name } => self.rename_lsp_symbol(new_name),
             #[cfg(feature = "lsp")]
-            PluginMutation::LspRegisterServer { .. } => self.apply_lsp_mutation(mutation),
+            PluginMutation::LspRegisterServer { language, config } => {
+                self.register_lsp_server(language, config);
+            }
             PluginMutation::AddAnnotation { .. }
             | PluginMutation::UpdateAnnotation { .. }
             | PluginMutation::RemoveAnnotation { .. }
@@ -509,7 +502,9 @@ impl<T: TerminalBackend> Editor<T> {
             PluginMutation::SetCursorHoldDelay(ms) => {
                 self.plugin_host.set_cursor_hold_delay_ms(ms);
             }
-            PluginMutation::ExecAction(action_str) => self.plugin_exec_action(&action_str),
+            PluginMutation::ExecAction(action) => {
+                self.handle_action(&action);
+            }
             PluginMutation::SetOption { buf, name, value } => {
                 self.plugin_set_option(buf, &name, &value);
             }
@@ -910,63 +905,6 @@ impl<T: TerminalBackend> Editor<T> {
         ),);
     }
 
-    fn apply_lsp_mutation(&mut self, mutation: PluginMutation) {
-        match mutation {
-            #[cfg(feature = "lsp")]
-            PluginMutation::LspRegisterServer { language, config } => {
-                self.lsp_manager.register_server(language, config);
-                self.lsp_notify_open_all();
-            }
-            PluginMutation::LspGotoDefinition => {
-                self.handle_action(&crate::action::Action::Editor(
-                    crate::action::EditorAction::LspGotoDefinition,
-                ));
-            }
-            PluginMutation::LspReferences => {
-                self.handle_action(&crate::action::Action::Editor(
-                    crate::action::EditorAction::LspReferences,
-                ));
-            }
-            PluginMutation::LspHover => {
-                self.handle_action(&crate::action::Action::Editor(
-                    crate::action::EditorAction::LspHover,
-                ));
-            }
-            PluginMutation::LspRename { new_name } => self.plugin_lsp_rename(new_name),
-            PluginMutation::LspRenameDialog => {
-                self.handle_action(&crate::action::Action::Editor(
-                    crate::action::EditorAction::LspRename,
-                ));
-            }
-            PluginMutation::LspDiagnosticsPanel => {
-                self.handle_action(&crate::action::Action::Editor(
-                    crate::action::EditorAction::LspDiagnosticsPanel,
-                ));
-            }
-            PluginMutation::LspFormat => {
-                self.handle_action(&crate::action::Action::Editor(
-                    crate::action::EditorAction::LspFormat,
-                ));
-            }
-            PluginMutation::LspCodeAction => {
-                self.handle_action(&crate::action::Action::Editor(
-                    crate::action::EditorAction::LspCodeAction,
-                ));
-            }
-            PluginMutation::LspDiagnosticNext => {
-                self.handle_action(&crate::action::Action::Editor(
-                    crate::action::EditorAction::LspDiagnosticNext,
-                ));
-            }
-            PluginMutation::LspDiagnosticPrev => {
-                self.handle_action(&crate::action::Action::Editor(
-                    crate::action::EditorAction::LspDiagnosticPrev,
-                ));
-            }
-            _ => self.report_misrouted(),
-        }
-    }
-
     fn apply_annotation_mutation(&mut self, mutation: PluginMutation) {
         let buf = match &mutation {
             PluginMutation::AddAnnotation { buf, .. }
@@ -1096,12 +1034,6 @@ impl<T: TerminalBackend> Editor<T> {
                 self.plugin_clear_ns_highlights(buf, ns, owner);
             }
             _ => self.report_misrouted(),
-        }
-    }
-
-    fn plugin_exec_action(&mut self, action_str: &str) {
-        if let Ok(action) = action_str.parse::<crate::action::Action>() {
-            self.handle_action(&action);
         }
     }
 
@@ -1269,27 +1201,6 @@ impl<T: TerminalBackend> Editor<T> {
             self.keymap
                 .unregister_sequence(crate::keymap::KeyContext::Buffer(kind_id), &key_seq);
         }
-    }
-
-    fn plugin_lsp_rename(&mut self, new_name: String) {
-        #[cfg(feature = "lsp")]
-        match self.cursor_lsp_position() {
-            Some((path, line, col)) => {
-                if self
-                    .lsp_manager
-                    .rename(&path, line, col, new_name)
-                    .is_none()
-                {
-                    self.notify_no_lsp_server();
-                }
-            }
-            None => self.notify(
-                crate::notification::NotificationType::Warning,
-                "LSP rename: no file open".to_string(),
-            ),
-        }
-        #[cfg(not(feature = "lsp"))]
-        let _ = new_name;
     }
 
     fn plugin_register_annotation_action(

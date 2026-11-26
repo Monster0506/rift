@@ -1,5 +1,6 @@
 //! Lua 5.4 plugin host - embeds mlua and exposes the `rift.*` API.
 
+use crate::action::{Action, EditorAction};
 use crate::document::ops::Edit;
 use crate::document::DocumentId;
 use crate::job_manager::jobs::plugin_process::{JobCommand, JobSpec, JobStream, PluginJobEvent};
@@ -285,10 +286,9 @@ fn opts_target(shared: &RefCell<LuaSharedState>, opts: Option<&LuaTable>) -> Lua
     buf_or_current(shared, opts_buf(opts)?)
 }
 
-fn check_action(api: &str, action: &str) -> LuaResult<()> {
+fn parse_action(api: &str, action: &str) -> LuaResult<Action> {
     action
-        .parse::<crate::action::Action>()
-        .map(drop)
+        .parse::<Action>()
         .map_err(|e| LuaError::RuntimeError(format!("{api}: {}", e.message)))
 }
 
@@ -2484,7 +2484,7 @@ impl LuaHost {
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, action: String| {
-                check_action("rift.exec_action", &action)?;
+                let action = parse_action("rift.exec_action", &action)?;
                 sh.borrow_mut()
                     .mutations
                     .push(PluginMutation::ExecAction(action));
@@ -2505,7 +2505,7 @@ impl LuaHost {
                     let action = match action {
                         LuaValue::String(s) => {
                             let action = s.to_str()?.to_string();
-                            check_action("rift.map", &action)?;
+                            parse_action("rift.map", &action)?;
                             action
                         }
                         LuaValue::Function(callback) => {
@@ -2690,11 +2690,13 @@ impl LuaHost {
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, dir: String| {
-                let cmd = match dir.as_str() {
-                    "left" => ":split :l",
-                    "right" => ":split :r",
-                    "up" => ":split :u",
-                    "down" => ":split :d",
+                use crate::command_line::commands::types::SplitSubcommand;
+                use crate::split::{navigation::Direction, tree::SplitDirection};
+                let dir = match dir.as_str() {
+                    "left" => Direction::Left,
+                    "right" => Direction::Right,
+                    "up" => Direction::Up,
+                    "down" => Direction::Down,
                     _ => {
                         return Err(mlua::Error::RuntimeError(format!(
                             "unknown direction: {dir}"
@@ -2703,7 +2705,12 @@ impl LuaHost {
                 };
                 sh.borrow_mut()
                     .mutations
-                    .push(PluginMutation::ExecAction(cmd.to_string()));
+                    .push(PluginMutation::ExecAction(Action::Editor(
+                        EditorAction::SplitWindow {
+                            direction: SplitDirection::Horizontal,
+                            subcommand: SplitSubcommand::Navigate(dir),
+                        },
+                    )));
                 Ok(())
             })?;
             windows.set("navigate", f)?;
@@ -2809,50 +2816,37 @@ impl LuaHost {
             lsp.set("register", f)?;
         }
 
-        Self::register_lsp_nav(lua, &lsp, shared)?;
-        Self::register_lsp_diag(lua, &lsp, shared)?;
+        Self::register_lsp_actions(lua, &lsp, shared)?;
+        Self::register_lsp_diagnostic_query(lua, &lsp, shared)?;
         api.set("lsp", lsp)?;
         Ok(())
     }
 
     #[cfg(feature = "lsp")]
-    fn register_lsp_nav(
+    fn register_lsp_actions(
         lua: &Lua,
         lsp: &LuaTable,
         shared: &Rc<RefCell<LuaSharedState>>,
     ) -> LuaResult<()> {
-        // rift.lsp.goto_definition()
-        {
+        for (name, action) in [
+            ("goto_definition", EditorAction::LspGotoDefinition),
+            ("references", EditorAction::LspReferences),
+            ("hover", EditorAction::LspHover),
+            ("rename_dialog", EditorAction::LspRename),
+            ("format", EditorAction::LspFormat),
+            ("code_action", EditorAction::LspCodeAction),
+            ("diagnostic_next", EditorAction::LspDiagnosticNext),
+            ("diagnostic_prev", EditorAction::LspDiagnosticPrev),
+            ("diagnostics_panel", EditorAction::LspDiagnosticsPanel),
+        ] {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, ()| {
                 sh.borrow_mut()
                     .mutations
-                    .push(PluginMutation::LspGotoDefinition);
+                    .push(PluginMutation::ExecAction(Action::Editor(action.clone())));
                 Ok(())
             })?;
-            lsp.set("goto_definition", f)?;
-        }
-
-        // rift.lsp.references()
-        {
-            let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| {
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::LspReferences);
-                Ok(())
-            })?;
-            lsp.set("references", f)?;
-        }
-
-        // rift.lsp.hover()
-        {
-            let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| {
-                sh.borrow_mut().mutations.push(PluginMutation::LspHover);
-                Ok(())
-            })?;
-            lsp.set("hover", f)?;
+            lsp.set(name, f)?;
         }
 
         // rift.lsp.rename(new_name)
@@ -2867,85 +2861,15 @@ impl LuaHost {
             lsp.set("rename", f)?;
         }
 
-        // rift.lsp.rename_dialog()
-        {
-            let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| {
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::LspRenameDialog);
-                Ok(())
-            })?;
-            lsp.set("rename_dialog", f)?;
-        }
-
         Ok(())
     }
 
     #[cfg(feature = "lsp")]
-    fn register_lsp_diag(
+    fn register_lsp_diagnostic_query(
         lua: &Lua,
         lsp: &LuaTable,
         shared: &Rc<RefCell<LuaSharedState>>,
     ) -> LuaResult<()> {
-        // rift.lsp.diagnostics_panel()
-        {
-            let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| {
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::LspDiagnosticsPanel);
-                Ok(())
-            })?;
-            lsp.set("diagnostics_panel", f)?;
-        }
-
-        // rift.lsp.format()
-        {
-            let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| {
-                sh.borrow_mut().mutations.push(PluginMutation::LspFormat);
-                Ok(())
-            })?;
-            lsp.set("format", f)?;
-        }
-
-        // rift.lsp.code_action()
-        {
-            let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| {
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::LspCodeAction);
-                Ok(())
-            })?;
-            lsp.set("code_action", f)?;
-        }
-
-        // rift.lsp.diagnostic_next()
-        {
-            let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| {
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::LspDiagnosticNext);
-                Ok(())
-            })?;
-            lsp.set("diagnostic_next", f)?;
-        }
-
-        // rift.lsp.diagnostic_prev()
-        {
-            let sh = Rc::clone(shared);
-            let f = lua.create_function(move |_, ()| {
-                sh.borrow_mut()
-                    .mutations
-                    .push(PluginMutation::LspDiagnosticPrev);
-                Ok(())
-            })?;
-            lsp.set("diagnostic_prev", f)?;
-        }
-
         // rift.lsp.get_diagnostics([uri]) -> array of {line, col, severity, message}
         // uri defaults to the active file; severity: 1=error, 2=warning, 3=info, 4=hint
         {
@@ -3210,7 +3134,7 @@ impl LuaHost {
             let map = lua.create_function(
                 move |_, (kind, _, keys, action): (String, String, String, String)| {
                     let mut s = sh.borrow_mut();
-                    check_action("rift.map_buffer_kind", &action)?;
+                    parse_action("rift.map_buffer_kind", &action)?;
                     if !s.is_active {
                         return Err(LuaError::RuntimeError(
                             "cannot map buffer kind: plugin generation is retired".to_string(),

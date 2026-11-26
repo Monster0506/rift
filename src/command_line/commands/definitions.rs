@@ -1,6 +1,7 @@
 //! Command definitions
 //! Declarative registry of all editor commands
 
+use crate::action::EditorAction;
 use crate::command_line::commands::registry::MatchResult;
 use crate::command_line::commands::types::{ParsedCommand, SplitSubcommand};
 use crate::command_line::settings::registry::SettingsRegistry;
@@ -1061,53 +1062,49 @@ const BUFFER_SUBS: &[CommandDescriptor] = &[
     },
 ];
 
-// Re-wraps as Unknown { name: "lsp", args: [subcmd, ...] } so the executor maps it to
-// PluginCommand, and the Lua "lsp" handler gets the subcommand as its first argument.
-
-fn parse_lsp_sub(subcmd: &str, extra: &[&str]) -> ParsedCommand {
-    let mut args = vec![subcmd.to_string()];
-    args.extend(extra.iter().map(std::string::ToString::to_string));
-    ParsedCommand::Unknown {
-        name: "lsp".to_string(),
-        args,
-    }
+fn parse_lsp(_: &SettingsRegistry<UserSettings>, _: &[&str], _: usize) -> ParsedCommand {
+    ParsedCommand::InvalidArgument("Expected an LSP subcommand")
 }
 
 fn parse_lsp_definition(_: &SettingsRegistry<UserSettings>, _: &[&str], _: usize) -> ParsedCommand {
-    parse_lsp_sub("definition", &[])
+    ParsedCommand::Action(EditorAction::LspGotoDefinition)
 }
 fn parse_lsp_references(_: &SettingsRegistry<UserSettings>, _: &[&str], _: usize) -> ParsedCommand {
-    parse_lsp_sub("references", &[])
+    ParsedCommand::Action(EditorAction::LspReferences)
 }
 fn parse_lsp_hover(_: &SettingsRegistry<UserSettings>, _: &[&str], _: usize) -> ParsedCommand {
-    parse_lsp_sub("hover", &[])
+    ParsedCommand::Action(EditorAction::LspHover)
 }
 fn parse_lsp_rename(_: &SettingsRegistry<UserSettings>, _: &[&str], _: usize) -> ParsedCommand {
-    parse_lsp_sub("rename", &[])
+    ParsedCommand::Action(EditorAction::LspRename)
 }
 fn parse_lsp_code_action(
     _: &SettingsRegistry<UserSettings>,
     _: &[&str],
     _: usize,
 ) -> ParsedCommand {
-    parse_lsp_sub("code_action", &[])
+    ParsedCommand::Action(EditorAction::LspCodeAction)
 }
 fn parse_lsp_format(_: &SettingsRegistry<UserSettings>, _: &[&str], _: usize) -> ParsedCommand {
-    parse_lsp_sub("format", &[])
+    ParsedCommand::Action(EditorAction::LspFormat)
 }
 fn parse_lsp_diagnostic(
     _: &SettingsRegistry<UserSettings>,
     args: &[&str],
     _: usize,
 ) -> ParsedCommand {
-    parse_lsp_sub("diagnostic", args)
+    match args {
+        ["next"] => ParsedCommand::Action(EditorAction::LspDiagnosticNext),
+        ["prev"] => ParsedCommand::Action(EditorAction::LspDiagnosticPrev),
+        _ => ParsedCommand::InvalidArgument("Expected :lsp diagnostic next or prev"),
+    }
 }
 fn parse_lsp_diagnostics_panel(
     _: &SettingsRegistry<UserSettings>,
     _: &[&str],
     _: usize,
 ) -> ParsedCommand {
-    parse_lsp_sub("diagnostics_panel", &[])
+    ParsedCommand::Action(EditorAction::LspDiagnosticsPanel)
 }
 
 const LSP_SUBS: &[CommandDescriptor] = &[
@@ -1393,7 +1390,7 @@ pub(super) const COMMANDS: &[CommandDescriptor] = &[
         name: "lsp",
         aliases: &[],
         description: "LSP actions",
-        factory: None,
+        factory: Some(parse_lsp),
         subcommands: LSP_SUBS,
         completion: N,
         subcommand_prefix: "",

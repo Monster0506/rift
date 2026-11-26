@@ -122,3 +122,15 @@ fn rift_map_binds_visual_and_operator_pending_modes() {
         );
     }
 }
+
+#[test]
+fn lua_windows_navigate_focuses_the_adjacent_split() {
+    let mut editor = editor_with_text("hello\n");
+    let left = editor.split_tree.focused_window_id();
+    editor.execute_command_line("vsplit");
+    assert_ne!(editor.split_tree.focused_window_id(), left);
+
+    lua_ok(&mut editor, "rift.windows.navigate('left')");
+
+    assert_eq!(editor.split_tree.focused_window_id(), left);
+}

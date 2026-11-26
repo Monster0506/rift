@@ -205,6 +205,14 @@ impl CommandExecutor {
         document: &mut Document,
     ) -> ExecutionResult {
         match command {
+            ParsedCommand::Action(action) => ExecutionResult::Action(action),
+            ParsedCommand::InvalidArgument(message) => {
+                notify_error(
+                    state,
+                    RiftError::new(ErrorType::Execution, "INVALID_ARGUMENT", message),
+                );
+                ExecutionResult::Failure
+            }
             ParsedCommand::Quit { bangs } => ExecutionResult::Quit { bangs },
             ParsedCommand::Terminal { cmd, bangs } => ExecutionResult::OpenTerminal { cmd, bangs },
             ParsedCommand::Git { args, bangs: _ } => ExecutionResult::RunGit { args },
