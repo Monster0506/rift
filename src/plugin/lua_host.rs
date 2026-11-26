@@ -284,6 +284,13 @@ fn opts_target(shared: &RefCell<LuaSharedState>, opts: Option<&LuaTable>) -> Lua
     buf_or_current(shared, opts_buf(opts)?)
 }
 
+fn check_action(api: &str, action: &str) -> LuaResult<()> {
+    action
+        .parse::<crate::action::Action>()
+        .map(drop)
+        .map_err(|e| LuaError::RuntimeError(format!("{api}: {}", e.message)))
+}
+
 impl LuaSharedState {
     const fn current_id(&self) -> u64 {
         self.buf_id as u64
@@ -2468,6 +2475,7 @@ impl LuaHost {
         {
             let sh = Rc::clone(shared);
             let f = lua.create_function(move |_, action: String| {
+                check_action("rift.exec_action", &action)?;
                 sh.borrow_mut()
                     .mutations
                     .push(PluginMutation::ExecAction(action));
@@ -2487,7 +2495,11 @@ impl LuaHost {
                 move |lua, (mode, keys, action): (String, String, LuaValue)| {
                     let plugin_name = sh.borrow_mut().current_plugin.clone();
                     let action = match action {
-                        LuaValue::String(s) => s.to_str()?.to_string(),
+                        LuaValue::String(s) => {
+                            let action = s.to_str()?.to_string();
+                            check_action("rift.map", &action)?;
+                            action
+                        }
                         LuaValue::Function(callback) => {
                             let id = format!("map#{}", next_map_action.get());
                             next_map_action.set(next_map_action.get() + 1);
@@ -3190,6 +3202,7 @@ impl LuaHost {
             let map = lua.create_function(
                 move |_, (kind, _, keys, action): (String, String, String, String)| {
                     let mut s = sh.borrow_mut();
+                    check_action("rift.map_buffer_kind", &action)?;
                     if !s.is_active {
                         return Err(LuaError::RuntimeError(
                             "cannot map buffer kind: plugin generation is retired".to_string(),

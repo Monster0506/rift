@@ -99,10 +99,14 @@ fn test_overwrite() {
         Some(&Action::Editor(EditorAction::Move(Motion::Down)))
     );
 
-    map.register(KeyContext::Global, Key::char('j'), Action::Noop);
+    map.register(
+        KeyContext::Global,
+        Key::char('j'),
+        Action::Editor(EditorAction::Redraw),
+    );
     assert_eq!(
         map.get_action(KeyContext::Global, Key::char('j')),
-        Some(&Action::Noop)
+        Some(&Action::Editor(EditorAction::Redraw))
     );
 }
 
@@ -204,7 +208,11 @@ fn test_undotree_falls_back_to_global_via_normal() {
 #[test]
 fn test_undotree_override_shadows_normal() {
     let mut map = KeyMap::new();
-    map.register(KeyContext::Normal, Key::ENTER, Action::Noop);
+    map.register(
+        KeyContext::Normal,
+        Key::ENTER,
+        Action::Editor(EditorAction::Redraw),
+    );
     let ctx = KeyContext::Buffer(BufferKindId::UNDO_TREE);
     map.register(
         ctx,

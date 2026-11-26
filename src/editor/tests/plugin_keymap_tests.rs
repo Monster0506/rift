@@ -59,3 +59,31 @@ fn rift_map_runs_plugin_actions_and_functions_until_unload() {
         ),
     );
 }
+
+#[test]
+fn rift_map_with_an_unknown_action_id_raises_and_binds_nothing() {
+    let mut editor = editor_with_text("hello\n");
+    let err = editor
+        .plugin_host
+        .lua_exec("rift.map('n', '<F9>', 'editor:sav')")
+        .expect("rift.map accepted an unknown action id");
+    assert!(err.contains("unknown action: editor:sav"), "{err}");
+    editor.apply_plugin_mutations();
+    assert!(matches!(
+        editor.keymap.lookup(KeyContext::Normal, &keys("<F9>")),
+        MatchResult::None
+    ));
+}
+
+#[test]
+fn exec_action_and_map_buffer_kind_reject_unknown_action_ids() {
+    let mut editor = editor_with_text("hello\n");
+    for code in [
+        "rift.exec_action('editor:nromal')",
+        "rift.map_buffer_kind('probe', 'n', 'x', 'nonsense')",
+    ] {
+        let err = editor.plugin_host.lua_exec(code).expect(code);
+        assert!(err.contains("unknown action"), "{code}: {err}");
+    }
+    editor.apply_plugin_mutations();
+}

@@ -282,8 +282,14 @@ pub enum Action {
     Editor(EditorAction),
     /// Generic buffer-kind action, namespaced by kind
     Buffer(String),
-    /// No action
-    Noop,
+}
+
+fn unknown_action(s: &str) -> RiftError {
+    RiftError::new(
+        crate::error::ErrorType::Parse,
+        "UNKNOWN_ACTION",
+        format!("unknown action: {s}"),
+    )
 }
 
 impl FromStr for Action {
@@ -293,16 +299,13 @@ impl FromStr for Action {
         if let Some(action) = table::parse_table(s) {
             return Ok(Self::Editor(action));
         }
-        if let Some(rest) = s.strip_prefix("editor:") {
-            if rest.contains(':') {
-                return Ok(Self::Buffer(rest.to_string()));
+        let id = s.strip_prefix("editor:").unwrap_or(s);
+        match id.split_once(':') {
+            Some((namespace, name)) if !namespace.is_empty() && !name.is_empty() => {
+                Ok(Self::Buffer(id.to_string()))
             }
-            return Ok(Self::Noop);
+            _ => Err(unknown_action(s)),
         }
-        if s.contains(':') {
-            return Ok(Self::Buffer(s.to_string()));
-        }
-        Ok(Self::Noop)
     }
 }
 
@@ -311,7 +314,6 @@ impl std::fmt::Display for Action {
         match self {
             Self::Editor(action) => action.fmt(f),
             Self::Buffer(id) => f.write_str(id),
-            Self::Noop => Ok(()),
         }
     }
 }

@@ -13,7 +13,11 @@ fn keymap_lookup(c: &mut Criterion) {
         for i in 0_u32..100 {
             // Using char keys for simplicity
             let c = std::char::from_u32(32 + i).unwrap_or('a');
-            map.register(KeyContext::Global, Key::char(c), Action::Noop);
+            map.register(
+                KeyContext::Global,
+                Key::char(c),
+                Action::Editor(EditorAction::Redraw),
+            );
         }
 
         b.iter(|| {

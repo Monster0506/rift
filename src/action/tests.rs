@@ -262,12 +262,18 @@ fn test_action_from_str_buffer_forwarding() {
 }
 
 #[test]
-fn test_action_from_str_noop() {
-    assert_eq!(Action::from_str("totally_unknown").unwrap(), Action::Noop);
-    assert_eq!(
-        Action::from_str("editor:unknown_flat").unwrap(),
-        Action::Noop
-    );
+fn unknown_ids_are_parse_errors() {
+    for id in [
+        "totally_unknown",
+        "editor:unknown_flat",
+        "editor:sav",
+        ":split :l",
+        "explorer:",
+        "",
+    ] {
+        let err = Action::from_str(id).expect_err(id);
+        assert!(err.contains_msg("unknown action"), "{id}: {err}");
+    }
 }
 
 #[test]

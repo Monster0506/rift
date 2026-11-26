@@ -133,7 +133,6 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 return true;
             }
-            Action::Noop => return false,
         };
 
         if !matches!(editor_action, EditorAction::CyclePaste { .. }) {
