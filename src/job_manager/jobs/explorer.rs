@@ -11,7 +11,7 @@ pub(crate) struct FileEntry {
 }
 
 #[derive(Debug)]
-pub(crate) struct DirectoryListing {
+pub struct DirectoryListing {
     pub(crate) doc_id: DocumentId,
     pub(crate) path: PathBuf,
     pub(crate) entries: Vec<FileEntry>,

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 
 #[derive(Debug)]
-pub(crate) struct ExplorerPreviewResult {
+pub struct ExplorerPreviewResult {
     pub(crate) right_doc_id: DocumentId,
     pub(crate) path: PathBuf,
     pub(crate) dir_entries: Option<Vec<DirEntry>>,

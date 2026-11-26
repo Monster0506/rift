@@ -7,7 +7,7 @@ use std::sync::mpsc::Sender;
 
 /// Result of a background undo-tree render
 #[derive(Debug)]
-pub(crate) struct UndoTreeRenderResult {
+pub struct UndoTreeRenderResult {
     /// The undotree buffer document to update
     pub(crate) ut_doc_id: DocumentId,
     /// Rendered text content

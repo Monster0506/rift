@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tree_sitter::{Parser, Tree};
 
 #[derive(Debug)]
-pub(crate) struct SyntaxParseResult {
+pub struct SyntaxParseResult {
     pub(crate) tree: Option<Tree>,
     pub(crate) language_name: String,
     pub(crate) document_id: DocumentId,

@@ -4,7 +4,7 @@ use crate::buffer::api::BufferView;
 use crate::document::DocumentId;
 use crate::error::RiftError;
 use crate::job_manager::AsyncToken;
-use crate::job_manager::JobMessage;
+use crate::job_manager::{JobMessage, JobRef, JobTarget};
 use crate::mode::Mode;
 use crate::term::TerminalBackend;
 #[cfg(feature = "treesitter")]
@@ -307,7 +307,13 @@ impl<T: TerminalBackend> Editor<T> {
                 if !self.is_async_token_valid(&token) {
                     return;
                 }
-                self.handle_custom_job_payload(id, Some(token), payload);
+                payload.apply(
+                    self,
+                    JobRef {
+                        id,
+                        token: Some(token),
+                    },
+                );
             }
             JobMessage::Custom(id, payload) => {
                 let token = self.job_manager.job_token(id);
@@ -316,7 +322,7 @@ impl<T: TerminalBackend> Editor<T> {
                         return;
                     }
                 }
-                self.handle_custom_job_payload(id, token, payload);
+                payload.apply(self, JobRef { id, token });
             }
             JobMessage::TerminalOutput(token, data) => {
                 if !self.is_async_token_valid(&token) {
@@ -416,21 +422,18 @@ impl<T: TerminalBackend> Editor<T> {
         &mut self,
         id: usize,
         token: Option<AsyncToken>,
-        payload: Box<dyn crate::job_manager::JobPayload>,
+        payload: Box<dyn std::any::Any>,
     ) {
-        let any_payload = payload.into_any();
         #[cfg(feature = "treesitter")]
-        let any_payload =
-            match any_payload.downcast::<crate::job_manager::jobs::syntax::SyntaxParseResult>() {
+        let payload =
+            match payload.downcast::<crate::job_manager::jobs::syntax::SyntaxParseResult>() {
                 Ok(result) => {
-                    if let Err(err) = self.apply_syntax_parse(id, token, *result) {
-                        self.notify_error(err);
-                    }
+                    self.apply_syntax_parse(id, token, *result);
                     return;
                 }
                 Err(p) => p,
             };
-        self.apply_custom_payload(id, token, any_payload);
+        self.apply_custom_payload(id, token, payload);
     }
 
     fn apply_custom_payload(
@@ -452,7 +455,7 @@ impl<T: TerminalBackend> Editor<T> {
         let any_payload =
             match any_payload.downcast::<crate::job_manager::jobs::explorer::DirectoryListing>() {
                 Ok(listing) => {
-                    self.apply_directory_listing(id, token, &listing);
+                    self.apply_directory_listing(id, token, *listing);
                     return;
                 }
                 Err(p) => p,
@@ -506,7 +509,7 @@ impl<T: TerminalBackend> Editor<T> {
         let any_payload =
             match any_payload.downcast::<crate::job_manager::jobs::git::GitCommandResult>() {
                 Ok(result) => {
-                    self.apply_git_command(id, &result);
+                    self.apply_git_command(id, *result);
                     return;
                 }
                 Err(p) => p,
@@ -515,7 +518,7 @@ impl<T: TerminalBackend> Editor<T> {
         let any_payload =
             match any_payload.downcast::<crate::job_manager::jobs::git::GitGutterDiffResult>() {
                 Ok(result) => {
-                    self.apply_git_gutter(id, token, &result);
+                    self.apply_git_gutter(id, token, *result);
                     return;
                 }
                 Err(p) => p,
@@ -554,7 +557,7 @@ impl<T: TerminalBackend> Editor<T> {
             .downcast::<crate::job_manager::jobs::file_operations::FileSaveResult>()
         {
             Ok(res) => {
-                self.apply_file_save(id, token, &res);
+                self.apply_file_save(id, token, *res);
                 return;
             }
             Err(p) => p,
@@ -587,11 +590,74 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    #[cfg(feature = "treesitter")]
+    fn attach_preview_syntax(
+        &mut self,
+        token: &AsyncToken,
+        preview_doc_id: DocumentId,
+        preview_path: &std::path::Path,
+    ) {
+        let Ok(loaded) = self.language_loader.load_language_for_file(preview_path) else {
+            return;
+        };
+        let syntax = syntax_for(&self.language_loader, loaded);
+        if let Some(doc) = self
+            .document_manager
+            .get_document_by_handle_mut(token.handle)
+        {
+            doc.set_syntax(syntax);
+            if doc.buffer().byte_len() <= crate::syntax::SYNC_PARSE_MAX_BYTES {
+                doc.with_syntax(crate::syntax::Syntax::incremental_parse);
+            }
+        }
+        self.spawn_syntax_parse_job(preview_doc_id);
+    }
+
+    #[cfg(feature = "lsp")]
+    fn apply_pending_goto(&mut self, token: &AsyncToken, document_id: DocumentId) {
+        let Some((goto_doc, goto_line, goto_col)) = self.scheduler.goto_after_load.take() else {
+            return;
+        };
+        if goto_doc != document_id {
+            if self.document_manager.get_document(goto_doc).is_some() {
+                self.scheduler.goto_after_load = Some((goto_doc, goto_line, goto_col));
+            }
+            return;
+        }
+        let doc_path = self
+            .document_manager
+            .get_document_by_handle(token.handle)
+            .and_then(|doc| doc.path().map(std::path::Path::to_path_buf));
+        let encoding = doc_path
+            .as_deref()
+            .map_or_default(|p| self.lsp_manager.position_encoding_for_path(p));
+        if let Some(doc) = self
+            .document_manager
+            .get_document_by_handle_mut(token.handle)
+        {
+            let goto_line = goto_line.min(doc.buffer().last_real_line());
+            let char_col = doc.lsp_char_offset_in_line(
+                goto_line,
+                u32::try_from(goto_col).unwrap_or(u32::MAX),
+                encoding,
+            );
+            let line_offset = doc.buffer().line_start(goto_line);
+            let target = (line_offset + char_col).min(doc.buffer().len());
+            let _ = doc.set_cursor(target, crate::document::ops::CursorCause::Jump);
+        }
+    }
+}
+
+impl<T: TerminalBackend> JobTarget for Editor<T> {
+    fn apply_downcast(&mut self, job: JobRef, payload: Box<dyn std::any::Any>) {
+        self.handle_custom_job_payload(job.id, job.token, payload);
+    }
+
     fn apply_directory_listing(
         &mut self,
         id: usize,
         token: Option<AsyncToken>,
-        listing: &crate::job_manager::jobs::explorer::DirectoryListing,
+        listing: crate::job_manager::jobs::explorer::DirectoryListing,
     ) {
         let doc_id = listing.doc_id;
         let Some(token) = self.resolve_and_validate_token(
@@ -867,7 +933,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn apply_git_command(
         &mut self,
         id: usize,
-        result: &crate::job_manager::jobs::git::GitCommandResult,
+        result: crate::job_manager::jobs::git::GitCommandResult,
     ) {
         self.refresh_git_status_buffers_for(&result.repo_root);
         self.show_git_command_result(&result.args, &result.output, result.success);
@@ -879,7 +945,7 @@ impl<T: TerminalBackend> Editor<T> {
         &mut self,
         id: usize,
         token: Option<AsyncToken>,
-        result: &crate::job_manager::jobs::git::GitGutterDiffResult,
+        result: crate::job_manager::jobs::git::GitGutterDiffResult,
     ) {
         let doc_id = result.doc_id;
         self.scheduler.git_gutter_diff.finish(doc_id, id);
@@ -1016,34 +1082,11 @@ impl<T: TerminalBackend> Editor<T> {
             .update_job_state(&JobMessage::Finished(id, true));
     }
 
-    #[cfg(feature = "treesitter")]
-    fn attach_preview_syntax(
-        &mut self,
-        token: &AsyncToken,
-        preview_doc_id: DocumentId,
-        preview_path: &std::path::Path,
-    ) {
-        let Ok(loaded) = self.language_loader.load_language_for_file(preview_path) else {
-            return;
-        };
-        let syntax = syntax_for(&self.language_loader, loaded);
-        if let Some(doc) = self
-            .document_manager
-            .get_document_by_handle_mut(token.handle)
-        {
-            doc.set_syntax(syntax);
-            if doc.buffer().byte_len() <= crate::syntax::SYNC_PARSE_MAX_BYTES {
-                doc.with_syntax(crate::syntax::Syntax::incremental_parse);
-            }
-        }
-        self.spawn_syntax_parse_job(preview_doc_id);
-    }
-
     fn apply_file_save(
         &mut self,
         id: usize,
         token: Option<AsyncToken>,
-        res: &crate::job_manager::jobs::file_operations::FileSaveResult,
+        res: crate::job_manager::jobs::file_operations::FileSaveResult,
     ) {
         let Some(token) = self.resolve_and_validate_token(
             id,
@@ -1207,47 +1250,13 @@ impl<T: TerminalBackend> Editor<T> {
             .update_job_state(&JobMessage::Finished(id, true));
     }
 
-    #[cfg(feature = "lsp")]
-    fn apply_pending_goto(&mut self, token: &AsyncToken, document_id: DocumentId) {
-        let Some((goto_doc, goto_line, goto_col)) = self.scheduler.goto_after_load.take() else {
-            return;
-        };
-        if goto_doc != document_id {
-            if self.document_manager.get_document(goto_doc).is_some() {
-                self.scheduler.goto_after_load = Some((goto_doc, goto_line, goto_col));
-            }
-            return;
-        }
-        let doc_path = self
-            .document_manager
-            .get_document_by_handle(token.handle)
-            .and_then(|doc| doc.path().map(std::path::Path::to_path_buf));
-        let encoding = doc_path
-            .as_deref()
-            .map_or_default(|p| self.lsp_manager.position_encoding_for_path(p));
-        if let Some(doc) = self
-            .document_manager
-            .get_document_by_handle_mut(token.handle)
-        {
-            let goto_line = goto_line.min(doc.buffer().last_real_line());
-            let char_col = doc.lsp_char_offset_in_line(
-                goto_line,
-                u32::try_from(goto_col).unwrap_or(u32::MAX),
-                encoding,
-            );
-            let line_offset = doc.buffer().line_start(goto_line);
-            let target = (line_offset + char_col).min(doc.buffer().len());
-            let _ = doc.set_cursor(target, crate::document::ops::CursorCause::Jump);
-        }
-    }
-
     #[cfg(feature = "treesitter")]
     fn apply_syntax_parse(
         &mut self,
         id: usize,
         token: Option<AsyncToken>,
         result: crate::job_manager::jobs::syntax::SyntaxParseResult,
-    ) -> Result<(), RiftError> {
+    ) {
         let doc_id = result.document_id;
         let Some(token) = self.resolve_and_validate_token(
             id,
@@ -1258,7 +1267,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.scheduler.syntax_reparse.finish(doc_id, id);
             self.job_manager
                 .update_job_state(&JobMessage::Finished(id, true));
-            return Ok(());
+            return;
         };
         let Some(doc) = self
             .document_manager
@@ -1267,7 +1276,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.scheduler.syntax_reparse.finish(doc_id, id);
             self.job_manager
                 .update_job_state(&JobMessage::Finished(id, true));
-            return Ok(());
+            return;
         };
 
         let is_current = doc.buffer().revision() == result.revision;
@@ -1286,9 +1295,11 @@ impl<T: TerminalBackend> Editor<T> {
             self.debounce_syntax_reparse(doc_id);
         }
 
-        self.update_and_render()?;
+        if let Err(err) = self.update_and_render() {
+            self.notify_error(err);
+            return;
+        }
         self.job_manager
             .update_job_state(&JobMessage::Finished(id, true));
-        Ok(())
     }
 }

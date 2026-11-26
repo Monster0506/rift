@@ -54,6 +54,99 @@ pub trait JobPayload: Any + Send + std::fmt::Debug + 'static {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
+        editor.apply_downcast(job, self.into_any());
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct JobRef {
+    pub(crate) id: usize,
+    pub(crate) token: Option<AsyncToken>,
+}
+
+pub trait JobTarget {
+    fn apply_downcast(&mut self, job: JobRef, payload: Box<dyn Any>);
+    #[cfg(feature = "treesitter")]
+    fn apply_syntax_parse(
+        &mut self,
+        id: usize,
+        token: Option<AsyncToken>,
+        result: jobs::syntax::SyntaxParseResult,
+    );
+    fn apply_directory_listing(
+        &mut self,
+        id: usize,
+        token: Option<AsyncToken>,
+        listing: jobs::explorer::DirectoryListing,
+    );
+    fn apply_git_status(
+        &mut self,
+        id: usize,
+        token: Option<AsyncToken>,
+        result: jobs::git::GitStatusResult,
+    );
+    fn apply_git_diff(
+        &mut self,
+        id: usize,
+        token: Option<AsyncToken>,
+        result: jobs::git::GitDiffResult,
+    );
+    fn apply_git_blame(
+        &mut self,
+        id: usize,
+        token: Option<AsyncToken>,
+        result: jobs::git::GitBlameResult,
+    );
+    fn apply_git_log(
+        &mut self,
+        id: usize,
+        token: Option<AsyncToken>,
+        result: jobs::git::GitLogResult,
+    );
+    fn apply_git_show(
+        &mut self,
+        id: usize,
+        token: Option<AsyncToken>,
+        result: jobs::git::GitShowResult,
+    );
+    fn apply_git_command(&mut self, id: usize, result: jobs::git::GitCommandResult);
+    fn apply_git_gutter(
+        &mut self,
+        id: usize,
+        token: Option<AsyncToken>,
+        result: jobs::git::GitGutterDiffResult,
+    );
+    fn apply_undo_tree(
+        &mut self,
+        id: usize,
+        token: Option<AsyncToken>,
+        res: jobs::undotree::UndoTreeRenderResult,
+    );
+    fn apply_explorer_preview(
+        &mut self,
+        id: usize,
+        token: Option<AsyncToken>,
+        res: jobs::explorer_preview::ExplorerPreviewResult,
+    );
+    fn apply_file_save(
+        &mut self,
+        id: usize,
+        token: Option<AsyncToken>,
+        res: jobs::file_operations::FileSaveResult,
+    );
+    fn apply_file_load(
+        &mut self,
+        id: usize,
+        token: Option<AsyncToken>,
+        res: jobs::file_operations::FileLoadResult,
+    );
+    fn apply_image_load(
+        &mut self,
+        id: usize,
+        token: Option<AsyncToken>,
+        res: jobs::file_operations::ImageLoadResult,
+    );
 }
 
 /// Implements `JobPayload`'s downcasting boilerplate for a concrete type.

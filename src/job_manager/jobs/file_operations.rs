@@ -10,7 +10,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 #[derive(Debug)]
-pub(crate) struct FileSaveResult {
+pub struct FileSaveResult {
     pub(crate) document_id: DocumentId,
     pub(crate) saved_seq: EditSeq,
     pub(crate) path: PathBuf,
@@ -162,7 +162,7 @@ impl Job for FileSaveJob {
 }
 
 #[derive(Debug)]
-pub(crate) struct FileLoadResult {
+pub struct FileLoadResult {
     pub(crate) document_id: DocumentId,
     pub(crate) line_index: LineIndex,
     pub(crate) line_ending: LineEnding,
@@ -175,7 +175,7 @@ crate::job_manager::impl_job_payload!(FileLoadResult);
 
 /// A file opened as an image buffer instead of text.
 #[derive(Debug)]
-pub(crate) struct ImageLoadResult {
+pub struct ImageLoadResult {
     pub(crate) document_id: DocumentId,
     pub(crate) image: std::sync::Arc<crate::image_view::DecodedImage>,
     pub(crate) is_reload: bool,

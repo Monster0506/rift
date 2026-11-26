@@ -7,7 +7,7 @@ use std::sync::mpsc::Sender;
 
 /// Result of a `GitStatusJob`: a freshly parsed status snapshot for `doc_id`.
 #[derive(Debug)]
-pub(crate) struct GitStatusResult {
+pub struct GitStatusResult {
     pub(crate) doc_id: DocumentId,
     pub(crate) repo_root: PathBuf,
     pub(crate) snapshot: crate::git::status::StatusSnapshot,
@@ -97,7 +97,7 @@ impl Job for GitStatusJob {
 /// Result of a `GitDiffJob`: hunks for one file's diff, to expand inline
 /// under its entry in a status buffer.
 #[derive(Debug)]
-pub(crate) struct GitDiffResult {
+pub struct GitDiffResult {
     pub(crate) doc_id: DocumentId,
     pub(crate) path: PathBuf,
     /// `true` = this came from `git diff --cached` (the staged side).
@@ -219,7 +219,7 @@ impl Job for GitDiffJob {
 
 /// Result of a `GitBlameJob`: a freshly parsed blame listing for `doc_id`.
 #[derive(Debug)]
-pub(crate) struct GitBlameResult {
+pub struct GitBlameResult {
     pub(crate) doc_id: DocumentId,
     pub(crate) lines: Vec<crate::git::blame::BlameLine>,
 }
@@ -308,7 +308,7 @@ impl Job for GitBlameJob {
 
 /// Result of a `GitLogJob`: a freshly parsed commit listing for `doc_id`.
 #[derive(Debug)]
-pub(crate) struct GitLogResult {
+pub struct GitLogResult {
     pub(crate) doc_id: DocumentId,
     pub(crate) commits: Vec<crate::git::log::CommitSummary>,
 }
@@ -390,7 +390,7 @@ impl Job for GitLogJob {
 /// Result of a `GitShowJob`: the raw `git show` body for one commit, to
 /// expand inline under it in a log buffer. Opaque text, not reparsed.
 #[derive(Debug)]
-pub(crate) struct GitShowResult {
+pub struct GitShowResult {
     pub(crate) doc_id: DocumentId,
     pub(crate) sha: String,
     pub(crate) body: String,
@@ -471,7 +471,7 @@ impl Job for GitShowJob {
 /// Result of a `GitCommandJob`: combined stdout+stderr for an arbitrary
 /// `git <args>` invocation (`:Git <args>` escape hatch).
 #[derive(Debug)]
-pub(crate) struct GitCommandResult {
+pub struct GitCommandResult {
     pub(crate) repo_root: PathBuf,
     pub(crate) args: String,
     pub(crate) output: String,
@@ -533,7 +533,7 @@ impl Job for GitCommandJob {
 
 /// Result of a `GitGutterDiffJob`: fresh gutter signs for `doc_id`, tagged with the buffer revision they were computed from so a stale result (the buffer changed again while this job was running) can be discarded.
 #[derive(Debug)]
-pub(crate) struct GitGutterDiffResult {
+pub struct GitGutterDiffResult {
     pub(crate) doc_id: DocumentId,
     pub(crate) revision: u64,
     pub(crate) signs: Vec<(usize, crate::git::diff::GutterSignKind)>,
