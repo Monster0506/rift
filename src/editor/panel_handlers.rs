@@ -51,8 +51,7 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(layout) = self.panel_layout_of(PanelKind::Clipboard) else {
             return;
         };
-        self.split_tree.set_focus(layout.dir_win_id);
-        let _ = self.document_manager.switch_to_document(layout.dir_doc_id);
+        self.focus_window_showing(layout.dir_win_id, layout.dir_doc_id);
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
@@ -126,12 +125,8 @@ impl<T: TerminalBackend> Editor<T> {
         preview.set_read_only(false);
 
         // Focus the preview pane so the user can edit
-        self.split_tree.set_focus(layout.preview_win_id);
-        let _ = self
-            .document_manager
-            .switch_to_document(layout.preview_doc_id);
-        self.split_tree
-            .set_window_document(layout.preview_win_id, layout.preview_doc_id);
+        self.focus_window_showing(layout.preview_win_id, layout.preview_doc_id);
+        self.show_in_window(layout.preview_win_id, layout.preview_doc_id);
 
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
@@ -156,12 +151,8 @@ impl<T: TerminalBackend> Editor<T> {
         preview.convert_to_clipboard_entry(None);
         preview.set_read_only(false);
 
-        self.split_tree.set_focus(layout.preview_win_id);
-        let _ = self
-            .document_manager
-            .switch_to_document(layout.preview_doc_id);
-        self.split_tree
-            .set_window_document(layout.preview_win_id, layout.preview_doc_id);
+        self.focus_window_showing(layout.preview_win_id, layout.preview_doc_id);
+        self.show_in_window(layout.preview_win_id, layout.preview_doc_id);
 
         self.set_mode(crate::mode::Mode::Insert);
         self.sync_state_with_active_document();

@@ -1090,30 +1090,19 @@ impl<T: TerminalBackend> Editor<T> {
         doc.set_location_list(entries);
         self.open_buffer(doc, crate::document::manager::Placement::Private);
 
-        let size = self
-            .term
-            .get_size()
-            .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
-        let rows = size.rows as usize;
-        let cols = size.cols as usize;
-
         // Split the current window horizontally: location list goes below, main stays above.
         let preview_win_id = self.split_tree.focused_window_id();
         let original_doc_id = self.split_tree.focused_window().document_id;
 
         let dir_win_id = self
-            .split_tree
-            .split(
-                crate::split::tree::SplitDirection::Horizontal,
+            .split_window_beside(
                 preview_win_id,
+                crate::split::tree::SplitDirection::Horizontal,
                 loc_doc_id,
-                rows,
-                cols,
             )
             .expect("preview_win_id is the focused window, which is always a valid leaf");
 
-        self.split_tree.set_focus(dir_win_id);
-        let _ = self.document_manager.switch_to_document(loc_doc_id);
+        self.focus_window_showing(dir_win_id, loc_doc_id);
 
         self.panel_layout = Some(crate::editor::PanelLayout {
             kind: crate::editor::PanelKind::LocationList,

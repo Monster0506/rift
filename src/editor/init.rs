@@ -245,44 +245,6 @@ impl<T: TerminalBackend> Editor<T> {
             .expect("No active document")
     }
 
-    pub(super) fn switch_focus(&mut self, target_id: crate::split::window::WindowId) {
-        let old_win_id = self.split_tree.focused_window_id();
-        let old_doc_id = self.split_tree.focused_window().document_id;
-        if let Some(doc) = self.document_manager.get_document(old_doc_id) {
-            let cursor = doc.buffer().cursor();
-            self.split_tree.focused_window_mut().cursor_position = cursor;
-        }
-
-        self.call_plugins(|editor| {
-            editor
-                .plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::WinLeave {
-                    win: old_win_id.get(),
-                    buf: old_doc_id,
-                });
-        });
-
-        self.split_tree.set_focus(target_id);
-
-        let new_doc_id = self.split_tree.focused_window().document_id;
-        let new_cursor = self.split_tree.focused_window().cursor_position;
-        let _ = self.document_manager.switch_to_document(new_doc_id);
-        if let Some(doc) = self.document_manager.get_document_mut(new_doc_id) {
-            let _ = doc.set_cursor(new_cursor, crate::document::ops::CursorCause::User);
-        }
-
-        self.sync_state_with_active_document();
-
-        self.call_plugins(|editor| {
-            editor
-                .plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::WinEnter {
-                    win: target_id.get(),
-                    buf: new_doc_id,
-                });
-        });
-    }
-
     pub(super) fn restore_view_state(&mut self) {
         if let Some(doc) = self.document_manager.active_document() {
             let view_state = doc.get_view_state();

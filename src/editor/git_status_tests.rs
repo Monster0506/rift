@@ -960,7 +960,7 @@ fn git_blame_keeps_source_scrolled_to_its_logical_line() {
         "cursor movement must scroll both linked panes (blame line {blame_line})"
     );
 
-    editor.switch_focus(source_window_id);
+    editor.focus_window(source_window_id);
     let offset = editor
         .active_document()
         .buffer()

@@ -31,13 +31,6 @@ impl<T: TerminalBackend> Editor<T> {
             self.active_document_id()
         };
 
-        let size = self
-            .term
-            .get_size()
-            .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
-        let rows = size.rows as usize;
-        let cols = size.cols as usize;
-
         let blame_doc_id = self.document_manager.next_id();
         let blame_doc = match crate::document::Document::new_git_blame(
             blame_doc_id,
@@ -56,18 +49,14 @@ impl<T: TerminalBackend> Editor<T> {
 
         let focused = self.split_tree.focused_window_id();
         let blame_win_id = self
-            .split_tree
-            .split_before_with_ratio(
-                crate::split::tree::SplitDirection::Vertical,
+            .split_window_before(
                 focused,
+                crate::split::tree::SplitDirection::Vertical,
                 blame_doc_id,
-                rows,
-                cols,
                 BLAME_PANE_WIDTH_RATIO,
             )
             .expect("focused window is always a valid leaf");
-        self.split_tree.set_focus(blame_win_id);
-        let _ = self.document_manager.switch_to_document(blame_doc_id);
+        self.focus_window_showing(blame_win_id, blame_doc_id);
         if let Some(doc) = self.document_manager.get_document_mut(blame_doc_id) {
             if doc.buffer_kind_id() == BufferKindId::GIT_BLAME {
                 doc.set_git_blame_linked_window_id(focused);
@@ -227,14 +216,13 @@ impl<T: TerminalBackend> Editor<T> {
                 commit.get(..8).unwrap_or(commit)
             ));
             self.open_buffer(doc, crate::document::manager::Placement::Private);
-            self.split_tree.set_window_document(linked_window_id, id);
+            self.show_in_window(linked_window_id, id);
             if let Some(old_doc_id) = old_doc_id.filter(|id| *id != linked_doc_id) {
                 let _ =
                     self.close_buffer(old_doc_id, crate::document::manager::RemovalIntent::Force);
             }
         } else {
-            self.split_tree
-                .set_window_document(linked_window_id, linked_doc_id);
+            self.show_in_window(linked_window_id, linked_doc_id);
             if let Some(old_doc_id) = old_doc_id.filter(|id| *id != linked_doc_id) {
                 let _ =
                     self.close_buffer(old_doc_id, crate::document::manager::RemovalIntent::Force);

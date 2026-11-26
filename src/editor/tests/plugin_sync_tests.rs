@@ -422,7 +422,7 @@ fn win_leave_and_win_enter_read_the_focus_change() {
          end)",
     );
 
-    editor.switch_focus(first);
+    editor.focus_window(first);
 
     let (first, second) = (first.get(), second.get());
     lua_ok(

@@ -107,7 +107,7 @@ impl<T: TerminalBackend> Editor<T> {
         let original = self.active_document_id();
         let original_tab = self.document_manager.active_document_id();
         let scroll = self.render_system.viewport.get_scroll();
-        self.split_tree.set_window_document(win, buf);
+        self.show_in_window(win, buf);
         let _ = self.document_manager.switch_to_document(buf);
         self.sync_state_with_active_document();
         let result = f(self);
@@ -117,7 +117,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .get_window(win)
                 .is_some_and(|w| w.document_id == buf)
             {
-                self.split_tree.set_window_document(win, original);
+                self.show_in_window(win, original);
                 if self.split_tree.focused_window_id() == win {
                     self.render_system.viewport.set_scroll(scroll.0, scroll.1);
                 }

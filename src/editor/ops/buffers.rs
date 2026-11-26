@@ -114,7 +114,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.buffer_kinds.decrement_open_count(kind_id);
         if let Some(doc_id) = self.document_manager.active_document_id() {
             for win_id in self.split_tree.windows_for_document(id) {
-                self.split_tree.set_window_document(win_id, doc_id);
+                self.show_in_window(win_id, doc_id);
             }
         }
         self.sync_state_with_active_document();

@@ -658,54 +658,12 @@ impl<T: TerminalBackend> Editor<T> {
     fn apply_window_mutation(&mut self, mutation: &PluginMutation) {
         match *mutation {
             PluginMutation::MoveWindow { direction } => {
-                let size = self
-                    .term
-                    .get_size()
-                    .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
-                let layouts = self
-                    .split_tree
-                    .compute_layout(size.rows as usize, size.cols as usize);
-                let moved_id = self.split_tree.focused_window_id();
-                if self.split_tree.move_window(direction, &layouts) {
-                    self.render_system.viewport.mark_needs_full_redraw();
-                    self.call_plugins(|editor| {
-                        editor.plugin_host.dispatch(
-                            &crate::plugin::events::EditorEvent::WinMoved {
-                                win: moved_id.get(),
-                            },
-                        );
-                    });
-                }
+                self.move_window(direction);
             }
             PluginMutation::SwapWindows => {
-                let focused_id = self.split_tree.focused_window_id();
-                if let Some(prev_id) = self.split_tree.previous_window {
-                    if self.split_tree.exchange_windows(focused_id, prev_id) {
-                        let new_doc = self.split_tree.focused_window().document_id;
-                        let new_cursor = self.split_tree.focused_window().cursor_position;
-                        let _ = self.document_manager.switch_to_document(new_doc);
-                        if let Some(doc) = self.document_manager.get_document_mut(new_doc) {
-                            let _ = doc
-                                .set_cursor(new_cursor, crate::document::ops::CursorCause::Plugin);
-                        }
-                        self.sync_state_with_active_document();
-                        self.render_system.viewport.mark_needs_full_redraw();
-                        self.call_plugins(|editor| {
-                            editor.plugin_host.dispatch(
-                                &crate::plugin::events::EditorEvent::WinSwapped {
-                                    win1: focused_id.get(),
-                                    win2: prev_id.get(),
-                                },
-                            );
-                        });
-                    }
-                }
+                self.swap_windows();
             }
-            PluginMutation::FocusPreviousWindow => {
-                if let Some(target_id) = self.split_tree.previous_window {
-                    self.switch_focus(target_id);
-                }
-            }
+            PluginMutation::FocusPreviousWindow => self.focus_previous_window(),
             _ => self.report_misrouted(),
         }
     }

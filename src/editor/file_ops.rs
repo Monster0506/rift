@@ -508,14 +508,8 @@ impl<T: TerminalBackend> Editor<T> {
         }
         if self.split_tree.window_count() > 1 {
             let focused_id = self.split_tree.focused_window_id();
-            self.split_tree.close_window(focused_id);
-            let new_doc_id = self.split_tree.focused_window().document_id;
-            let new_cursor = self.split_tree.focused_window().cursor_position;
-            let _ = self.document_manager.switch_to_document(new_doc_id);
-            if let Some(doc) = self.document_manager.get_document_mut(new_doc_id) {
-                let _ = doc.set_cursor(new_cursor, crate::document::ops::CursorCause::User);
-            }
-            self.sync_state_with_active_document();
+            self.close_window(focused_id);
+            let new_doc_id = self.active_document_id();
             self.call_plugins(|editor| {
                 editor
                     .plugin_host
@@ -723,78 +717,19 @@ impl<T: TerminalBackend> Editor<T> {
         match subcommand {
             SplitSubcommand::Current => {
                 let doc_id = self.active_document_id();
-                let focused_id = self.split_tree.focused_window_id();
-                let size = self
-                    .term
-                    .get_size()
-                    .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
-                let new_id = self.split_tree.split(
-                    direction,
-                    focused_id,
-                    doc_id,
-                    size.rows as usize,
-                    size.cols as usize,
-                );
-                if let Some(new_id) = new_id {
-                    self.switch_focus(new_id);
-                }
+                self.split_window(direction, doc_id);
             }
             SplitSubcommand::File(path) => self.split_file_window(direction, &path),
-            SplitSubcommand::Navigate(dir) => {
-                let size = self
-                    .term
-                    .get_size()
-                    .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
-                let layouts = self
-                    .split_tree
-                    .compute_layout(size.rows as usize, size.cols as usize);
-                if let Some(target_id) = self.split_tree.navigate(dir, &layouts) {
-                    self.switch_focus(target_id);
-                }
-            }
-            SplitSubcommand::Resize(delta) => {
-                let size = self
-                    .term
-                    .get_size()
-                    .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
-                let layouts = self
-                    .split_tree
-                    .compute_layout(size.rows as usize, size.cols as usize);
-                self.split_tree
-                    .resize_focused(direction, f64::from(delta), &layouts);
-                self.render_system.viewport.mark_needs_full_redraw();
-            }
+            SplitSubcommand::Navigate(dir) => self.navigate_window(dir),
+            SplitSubcommand::Resize(delta) => self.resize_window(direction, delta),
             SplitSubcommand::Move(dir) => {
-                let size = self
-                    .term
-                    .get_size()
-                    .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
-                let layouts = self
-                    .split_tree
-                    .compute_layout(size.rows as usize, size.cols as usize);
-                let moved_id = self.split_tree.focused_window_id();
-                if self.split_tree.move_window(dir, &layouts) {
-                    self.render_system.viewport.mark_needs_full_redraw();
-                    self.call_plugins(|editor| {
-                        editor.plugin_host.dispatch(
-                            &crate::plugin::events::EditorEvent::WinMoved {
-                                win: moved_id.get(),
-                            },
-                        );
-                    });
-                }
+                self.move_window(dir);
             }
-            SplitSubcommand::Equalize => {
-                let proportional = self.state.settings.equalize_proportional;
-                self.split_tree.equalize(proportional);
-                self.render_system.viewport.mark_needs_full_redraw();
+            SplitSubcommand::Equalize => self.equalize_windows(),
+            SplitSubcommand::Exchange => {
+                self.swap_windows();
             }
-            SplitSubcommand::Exchange => self.exchange_focused_window(),
-            SplitSubcommand::PreviousWindow => {
-                if let Some(target_id) = self.split_tree.previous_window {
-                    self.switch_focus(target_id);
-                }
-            }
+            SplitSubcommand::PreviousWindow => self.focus_previous_window(),
         }
         self.state.clear_command_line();
     }
@@ -825,44 +760,6 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
         };
-        let focused_id = self.split_tree.focused_window_id();
-        let size = self
-            .term
-            .get_size()
-            .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
-        let new_id = self.split_tree.split(
-            direction,
-            focused_id,
-            doc_id,
-            size.rows as usize,
-            size.cols as usize,
-        );
-        if let Some(new_id) = new_id {
-            self.switch_focus(new_id);
-        }
-    }
-
-    fn exchange_focused_window(&mut self) {
-        let focused_id = self.split_tree.focused_window_id();
-        if let Some(prev_id) = self.split_tree.previous_window {
-            if self.split_tree.exchange_windows(focused_id, prev_id) {
-                let new_doc = self.split_tree.focused_window().document_id;
-                let new_cursor = self.split_tree.focused_window().cursor_position;
-                let _ = self.document_manager.switch_to_document(new_doc);
-                if let Some(doc) = self.document_manager.get_document_mut(new_doc) {
-                    let _ = doc.set_cursor(new_cursor, crate::document::ops::CursorCause::User);
-                }
-                self.sync_state_with_active_document();
-                self.render_system.viewport.mark_needs_full_redraw();
-                self.call_plugins(|editor| {
-                    editor
-                        .plugin_host
-                        .dispatch(&crate::plugin::events::EditorEvent::WinSwapped {
-                            win1: focused_id.get(),
-                            win2: prev_id.get(),
-                        });
-                });
-            }
-        }
+        self.split_window(direction, doc_id);
     }
 }
