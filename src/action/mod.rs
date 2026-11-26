@@ -2,7 +2,7 @@
 use crate::command::Command;
 use crate::text_objects::TextObjectSpec;
 
-mod table;
+pub(crate) mod table;
 
 /// Represents a motion in the editor
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -304,6 +304,16 @@ impl FromStr for Action {
             return Ok(Self::Buffer(s.to_string()));
         }
         Ok(Self::Noop)
+    }
+}
+
+impl std::fmt::Display for Action {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Editor(action) => action.fmt(f),
+            Self::Buffer(id) => f.write_str(id),
+            Self::Noop => Ok(()),
+        }
     }
 }
 

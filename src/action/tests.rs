@@ -325,3 +325,60 @@ fn test_hierarchical_motion_string_mappings() {
         );
     }
 }
+
+fn sample_id(spec: &table::ActionSpec) -> String {
+    let mut id = spec.id.to_string();
+    for shape in spec.args {
+        id.push(':');
+        id.push_str(match shape {
+            table::ArgShape::Text => "probe",
+            table::ArgShape::Count => "7",
+        });
+    }
+    id
+}
+
+#[test]
+fn every_table_id_parses_and_displays_back_to_itself() {
+    for spec in table::ACTIONS {
+        let id = sample_id(spec);
+        let action = Action::from_str(&id).unwrap();
+        assert!(
+            matches!(action, Action::Editor(_)),
+            "'{id}' did not parse to an editor action"
+        );
+        assert_eq!(action.to_string(), id);
+    }
+}
+
+#[test]
+fn table_ids_are_unique_per_argument_shape() {
+    let mut seen = std::collections::HashSet::new();
+    for spec in table::ACTIONS {
+        assert!(
+            seen.insert((spec.id, spec.args.is_empty())),
+            "duplicate id {}",
+            spec.id
+        );
+    }
+}
+
+#[test]
+fn display_writes_the_argument_after_the_id() {
+    assert_eq!(
+        Action::Editor(EditorAction::GotoLine(12)).to_string(),
+        "editor:goto:line:12"
+    );
+    assert_eq!(
+        Action::Editor(EditorAction::GotoLine(0)).to_string(),
+        "editor:goto:last"
+    );
+    assert_eq!(
+        Action::Editor(EditorAction::RunCommand(":split :l".to_string())).to_string(),
+        "editor:run::split :l"
+    );
+    assert_eq!(
+        Action::Editor(EditorAction::PluginAction("git:blame".to_string())).to_string(),
+        "plugin:git:blame"
+    );
+}

@@ -1,23 +1,68 @@
 use super::{EditorAction, Motion};
+use std::fmt;
 
-pub(super) trait ActionArg: Sized {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ArgShape {
+    Text,
+    Count,
+}
+
+impl ArgShape {
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Count => "count",
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ActionSpec {
+    pub(crate) id: &'static str,
+    pub(crate) args: &'static [ArgShape],
+    pub(crate) op: &'static str,
+    pub(crate) doc: &'static str,
+}
+
+trait ActionArg: Sized {
+    const SHAPE: ArgShape;
     fn parse_arg(s: &str) -> Option<Self>;
+    fn write_arg(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
 }
 
 impl ActionArg for String {
+    const SHAPE: ArgShape = ArgShape::Text;
     fn parse_arg(s: &str) -> Option<Self> {
         Some(s.to_string())
+    }
+    fn write_arg(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self)
     }
 }
 
 impl ActionArg for usize {
+    const SHAPE: ArgShape = ArgShape::Count;
     fn parse_arg(s: &str) -> Option<Self> {
         s.parse().ok()
+    }
+    fn write_arg(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self}")
     }
 }
 
 macro_rules! action_table {
     ($( $id:literal $( ( $($arg:ident : $ty:ty),+ ) )? => [$($variant:tt)+] $op:literal $doc:literal ; )*) => {
+        pub(crate) const ACTIONS: &[ActionSpec] = &[
+            $(
+                ActionSpec {
+                    id: $id,
+                    args: &[$($(<$ty as ActionArg>::SHAPE),+)?],
+                    op: $op,
+                    doc: $doc,
+                },
+            )*
+        ];
+
         pub(super) fn parse_table(s: &str) -> Option<EditorAction> {
             $(
                 if let Some(action) =
@@ -27,6 +72,24 @@ macro_rules! action_table {
                 }
             )*
             None
+        }
+
+        impl fmt::Display for EditorAction {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match self {
+                    $(
+                        EditorAction::$($variant)+ => {
+                            f.write_str($id)?;
+                            $($(
+                                f.write_str(":")?;
+                                ActionArg::write_arg($arg, f)?;
+                            )+)?
+                            Ok(())
+                        }
+                    )*
+                    other => write!(f, "{other:?}"),
+                }
+            }
         }
     };
     (@parse $s:ident, $id:literal, [$($variant:tt)+]) => {

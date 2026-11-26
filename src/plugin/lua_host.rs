@@ -894,6 +894,7 @@ impl LuaHost {
         Self::register_buffer_info(&lua, &api, &shared)?;
         Self::register_buffer_ops(&lua, &api, &shared)?;
         Self::register_editor_state(&lua, &api, &shared)?;
+        Self::register_action_list(&lua, &api)?;
         Self::register_scroll(&lua, &api, &shared)?;
         Self::register_search(&lua, &api, &shared)?;
         Self::register_keymaps(&lua, &api, &shared)?;
@@ -2188,6 +2189,25 @@ impl LuaHost {
         }
 
         Ok(())
+    }
+
+    fn register_action_list(lua: &Lua, api: &LuaTable) -> LuaResult<()> {
+        let f = lua.create_function(|lua, ()| {
+            let result = lua.create_table()?;
+            for (i, spec) in crate::action::table::ACTIONS.iter().enumerate() {
+                let entry = lua.create_table()?;
+                entry.set("id", spec.id)?;
+                entry.set(
+                    "args",
+                    lua.create_sequence_from(spec.args.iter().map(|arg| arg.name()))?,
+                )?;
+                entry.set("operation", spec.op)?;
+                entry.set("description", spec.doc)?;
+                result.set(i + 1, entry)?;
+            }
+            Ok(result)
+        })?;
+        api.set("get_actions", f)
     }
 
     fn register_editor_state(
