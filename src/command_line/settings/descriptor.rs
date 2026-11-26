@@ -6,6 +6,7 @@ pub(crate) enum SettingValue {
     Enum(String),
     Color(crate::color::Color),
     Path(String),
+    Text(String),
 }
 
 impl SettingValue {
@@ -16,7 +17,7 @@ impl SettingValue {
             Self::Bool(b) => b.to_string(),
             Self::Integer(n) => n.to_string(),
             Self::Float(f) => f.to_string(),
-            Self::Enum(s) | Self::Path(s) => s.clone(),
+            Self::Enum(s) | Self::Path(s) | Self::Text(s) => s.clone(),
             Self::Color(Color::Reset) => "none".to_string(),
             Self::Color(Color::Black) => "black".to_string(),
             Self::Color(Color::DarkGrey) => "darkgrey".to_string(),
@@ -61,6 +62,7 @@ pub(crate) enum SettingType {
     },
     Color,
     Path,
+    Text,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,6 +122,6 @@ pub(crate) struct SettingDescriptor<T> {
     pub(crate) description: &'static str,
     pub(crate) ty: SettingType,
     pub(crate) set: SettingSetter<T>,
-    pub(crate) get: Option<SettingGetter<T>>,
+    pub(crate) get: SettingGetter<T>,
     pub(crate) needs_full_redraw: bool,
 }

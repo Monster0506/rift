@@ -76,6 +76,43 @@ fn lua_get_tab_width_and_expand_tabs_reflect_document_local_overrides() {
 }
 
 #[test]
+fn lua_get_option_reads_every_registered_setting() {
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello\n");
+    editor.plugin_host.mark_lua_used();
+    editor.update_lua_state();
+
+    let err = editor.plugin_host.lua_exec(
+        r#"
+        local expected = {
+            ["command_line.borderstyle"] = "unicode",
+            ["command_line.border"] = true,
+            ["command_line.reverse_video"] = false,
+            ["appearance.theme"] = "gruvbox",
+            ["status_line.show_filename"] = true,
+            ["status_line.reverse_video"] = false,
+            ["status_line.show_status_line"] = true,
+            ["status_line.show_dirty"] = true,
+            ["split.equalize_proportional"] = false,
+            ["lsp.debug_log"] = false,
+            ["lsp.virtual_text"] = true,
+            ["lsp.diagnostic_tooltip"] = true,
+            ["ghostcut"] = true,
+            ["quitonq"] = true,
+            ["undofile"] = true,
+            ["number"] = true,
+            ["line_ending"] = "lf",
+        }
+        for name, want in pairs(expected) do
+            local got = rift.get_option(name)
+            assert(got == want, name .. "=" .. tostring(got))
+        end
+        "#,
+    );
+    assert!(err.is_none(), "{err:?}");
+}
+
+#[test]
 fn plugin_selection_options_recolor_selected_cells_and_read_back_after_resync() {
     use crate::action::{Action, EditorAction};
     use crate::color::Color;

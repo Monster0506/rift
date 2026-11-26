@@ -6,10 +6,17 @@ use crate::command_line::settings::registry::SettingsRegistry;
 use crate::error::RiftError;
 use crate::state::{State, UserSettings};
 
-fn set_expand_tabs(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
+#[derive(Debug, Clone, Default)]
+struct TestSettings {
+    expand_tabs: bool,
+    tab_width: usize,
+    width_ratio: f64,
+}
+
+fn set_expand_tabs(settings: &mut TestSettings, value: &SettingValue) -> Result<(), SettingError> {
     match value {
         &SettingValue::Bool(b) => {
-            settings.editing.expand_tabs = b;
+            settings.expand_tabs = b;
             Ok(())
         }
         _ => Err(SettingError::ValidationError(
@@ -18,7 +25,7 @@ fn set_expand_tabs(settings: &mut UserSettings, value: &SettingValue) -> Result<
     }
 }
 
-fn set_tab_width(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
+fn set_tab_width(settings: &mut TestSettings, value: &SettingValue) -> Result<(), SettingError> {
     match value {
         &SettingValue::Integer(n) => {
             if n == 0 {
@@ -35,7 +42,7 @@ fn set_tab_width(settings: &mut UserSettings, value: &SettingValue) -> Result<()
     }
 }
 
-fn set_width_ratio(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
+fn set_width_ratio(settings: &mut TestSettings, value: &SettingValue) -> Result<(), SettingError> {
     match value {
         &SettingValue::Float(f) => {
             if !(0.0..=1.0).contains(&f) {
@@ -43,7 +50,7 @@ fn set_width_ratio(settings: &mut UserSettings, value: &SettingValue) -> Result<
                     "width_ratio must be between 0.0 and 1.0".to_string(),
                 ));
             }
-            settings.command_line_window.width_ratio = f;
+            settings.width_ratio = f;
             Ok(())
         }
         _ => Err(SettingError::ValidationError("Expected float".to_string())),
@@ -51,7 +58,7 @@ fn set_width_ratio(settings: &mut UserSettings, value: &SettingValue) -> Result<
 }
 
 fn set_border_style(
-    _settings: &mut UserSettings,
+    _settings: &mut TestSettings,
     value: &SettingValue,
 ) -> Result<(), SettingError> {
     match value {
@@ -65,14 +72,30 @@ fn set_border_style(
     }
 }
 
-const TEST_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
+const fn get_expand_tabs(settings: &TestSettings) -> SettingValue {
+    SettingValue::Bool(settings.expand_tabs)
+}
+
+const fn get_tab_width(settings: &TestSettings) -> SettingValue {
+    SettingValue::Integer(settings.tab_width)
+}
+
+const fn get_width_ratio(settings: &TestSettings) -> SettingValue {
+    SettingValue::Float(settings.width_ratio)
+}
+
+fn get_border_style(_settings: &TestSettings) -> SettingValue {
+    SettingValue::Enum("unicode".to_string())
+}
+
+const TEST_SETTINGS: &[SettingDescriptor<TestSettings>] = &[
     SettingDescriptor {
         name: "expandtabs",
         aliases: &["et"],
         description: "Expand tabs to spaces",
         ty: SettingType::Boolean,
         set: set_expand_tabs,
-        get: None,
+        get: get_expand_tabs,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -84,7 +107,7 @@ const TEST_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: None,
         },
         set: set_tab_width,
-        get: None,
+        get: get_tab_width,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -96,7 +119,7 @@ const TEST_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: Some(1.0),
         },
         set: set_width_ratio,
-        get: None,
+        get: get_width_ratio,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -107,12 +130,12 @@ const TEST_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             variants: &["unicode", "ascii", "none"],
         },
         set: set_border_style,
-        get: None,
+        get: get_border_style,
         needs_full_redraw: false,
     },
 ];
 
-fn create_test_registry() -> SettingsRegistry<UserSettings> {
+fn create_test_registry() -> SettingsRegistry<TestSettings> {
     SettingsRegistry::new(TEST_SETTINGS)
 }
 
@@ -367,129 +390,106 @@ fn test_build_option_registry() {
 #[test]
 fn test_execute_setting_boolean() {
     let registry = create_test_registry();
-    let mut settings = UserSettings::new();
-    let mut state = State::with_settings(settings.clone());
+    let mut settings = TestSettings::default();
 
     let mut error_handler = |_: RiftError| {};
     let result = registry.execute_setting(
         "expandtabs",
         Some("false"),
-        &mut state.settings,
+        &mut settings,
         &mut error_handler,
     );
     assert!(matches!(
         result,
         crate::command_line::commands::executor::ExecutionResult::Success
     ));
-    settings = state.settings.clone();
-    assert!(!settings.editing.expand_tabs);
+    assert!(!settings.expand_tabs);
 
     let result = registry.execute_setting(
         "expandtabs",
         Some("true"),
-        &mut state.settings,
+        &mut settings,
         &mut error_handler,
     );
     assert!(matches!(
         result,
         crate::command_line::commands::executor::ExecutionResult::Success
     ));
-    settings = state.settings.clone();
-    assert!(settings.editing.expand_tabs);
+    assert!(settings.expand_tabs);
 
-    let result =
-        registry.execute_setting("et", Some("false"), &mut state.settings, &mut error_handler);
+    let result = registry.execute_setting("et", Some("false"), &mut settings, &mut error_handler);
     assert!(matches!(
         result,
         crate::command_line::commands::executor::ExecutionResult::Success
     ));
-    settings = state.settings.clone();
-    assert!(!settings.editing.expand_tabs);
+    assert!(!settings.expand_tabs);
 }
 
 #[test]
 fn test_execute_setting_integer() {
     let registry = create_test_registry();
-    let mut settings = UserSettings::new();
-    let mut state = State::with_settings(settings.clone());
+    let mut settings = TestSettings::default();
 
     let mut error_handler = |_: RiftError| {};
-    let result = registry.execute_setting(
-        "tabwidth",
-        Some("4"),
-        &mut state.settings,
-        &mut error_handler,
-    );
+    let result = registry.execute_setting("tabwidth", Some("4"), &mut settings, &mut error_handler);
     assert!(matches!(
         result,
         crate::command_line::commands::executor::ExecutionResult::Success
     ));
-    settings = state.settings.clone();
     assert_eq!(settings.tab_width, 4);
 
-    let result = registry.execute_setting("tw", Some("8"), &mut state.settings, &mut error_handler);
+    let result = registry.execute_setting("tw", Some("8"), &mut settings, &mut error_handler);
     assert!(matches!(
         result,
         crate::command_line::commands::executor::ExecutionResult::Success
     ));
-    settings = state.settings.clone();
     assert_eq!(settings.tab_width, 8);
 
-    let result =
-        registry.execute_setting("tabw", Some("2"), &mut state.settings, &mut error_handler);
+    let result = registry.execute_setting("tabw", Some("2"), &mut settings, &mut error_handler);
     assert!(matches!(
         result,
         crate::command_line::commands::executor::ExecutionResult::Success
     ));
-    settings = state.settings.clone();
     assert_eq!(settings.tab_width, 2);
 }
 
 #[test]
 fn test_execute_setting_float() {
     let registry = create_test_registry();
-    let mut settings = UserSettings::new();
-    let mut state = State::with_settings(settings.clone());
+    let mut settings = TestSettings::default();
 
     let mut error_handler = |_: RiftError| {};
     let result = registry.execute_setting(
         "command_line_window.width_ratio",
         Some("0.6"),
-        &mut state.settings,
+        &mut settings,
         &mut error_handler,
     );
     assert!(matches!(
         result,
         crate::command_line::commands::executor::ExecutionResult::Success
     ));
-    settings = state.settings.clone();
-    assert!((settings.command_line_window.width_ratio - 0.6).abs() < f64::EPSILON);
+    assert!((settings.width_ratio - 0.6).abs() < f64::EPSILON);
 
-    let result = registry.execute_setting(
-        "cmdwidth",
-        Some("0.8"),
-        &mut state.settings,
-        &mut error_handler,
-    );
+    let result =
+        registry.execute_setting("cmdwidth", Some("0.8"), &mut settings, &mut error_handler);
     assert!(matches!(
         result,
         crate::command_line::commands::executor::ExecutionResult::Success
     ));
-    settings = state.settings.clone();
-    assert!((settings.command_line_window.width_ratio - 0.8).abs() < f64::EPSILON);
+    assert!((settings.width_ratio - 0.8).abs() < f64::EPSILON);
 }
 
 #[test]
 fn test_execute_setting_enum() {
     let registry = create_test_registry();
-    let settings = UserSettings::new();
-    let mut state = State::with_settings(settings);
+    let mut settings = TestSettings::default();
 
     let mut error_handler = |_: RiftError| {};
     let result = registry.execute_setting(
         "borderstyle",
         Some("unicode"),
-        &mut state.settings,
+        &mut settings,
         &mut error_handler,
     );
     assert!(matches!(
@@ -500,7 +500,7 @@ fn test_execute_setting_enum() {
     let result = registry.execute_setting(
         "borderstyle",
         Some("ASCII"),
-        &mut state.settings,
+        &mut settings,
         &mut error_handler,
     );
     assert!(matches!(
@@ -508,8 +508,7 @@ fn test_execute_setting_enum() {
         crate::command_line::commands::executor::ExecutionResult::Success
     ));
 
-    let result =
-        registry.execute_setting("bs", Some("none"), &mut state.settings, &mut error_handler);
+    let result = registry.execute_setting("bs", Some("none"), &mut settings, &mut error_handler);
     assert!(matches!(
         result,
         crate::command_line::commands::executor::ExecutionResult::Success
@@ -519,12 +518,10 @@ fn test_execute_setting_enum() {
 #[test]
 fn test_execute_setting_missing_value() {
     let registry = create_test_registry();
-    let settings = UserSettings::new();
-    let mut state = State::with_settings(settings);
+    let mut settings = TestSettings::default();
 
     let mut error_handler = |_: RiftError| {};
-    let result =
-        registry.execute_setting("expandtabs", None, &mut state.settings, &mut error_handler);
+    let result = registry.execute_setting("expandtabs", None, &mut settings, &mut error_handler);
     assert!(matches!(
         result,
         crate::command_line::commands::executor::ExecutionResult::Failure
@@ -534,14 +531,13 @@ fn test_execute_setting_missing_value() {
 #[test]
 fn test_execute_setting_unknown_option() {
     let registry = create_test_registry();
-    let settings = UserSettings::new();
-    let mut state = State::with_settings(settings);
+    let mut settings = TestSettings::default();
 
     let mut error_handler = |_: RiftError| {};
     let result = registry.execute_setting(
         "unknown_option",
         Some("value"),
-        &mut state.settings,
+        &mut settings,
         &mut error_handler,
     );
     assert!(matches!(
@@ -553,15 +549,14 @@ fn test_execute_setting_unknown_option() {
 #[test]
 fn test_execute_setting_invalid_value() {
     let registry = create_test_registry();
-    let settings = UserSettings::new();
-    let mut state = State::with_settings(settings);
+    let mut settings = TestSettings::default();
 
     let mut error_handler = |_: RiftError| {};
 
     let result = registry.execute_setting(
         "expandtabs",
         Some("maybe"),
-        &mut state.settings,
+        &mut settings,
         &mut error_handler,
     );
     assert!(matches!(
@@ -572,7 +567,7 @@ fn test_execute_setting_invalid_value() {
     let result = registry.execute_setting(
         "tabwidth",
         Some("not_a_number"),
-        &mut state.settings,
+        &mut settings,
         &mut error_handler,
     );
     assert!(matches!(
@@ -583,7 +578,7 @@ fn test_execute_setting_invalid_value() {
     let result = registry.execute_setting(
         "borderstyle",
         Some("invalid"),
-        &mut state.settings,
+        &mut settings,
         &mut error_handler,
     );
     assert!(matches!(
@@ -595,17 +590,11 @@ fn test_execute_setting_invalid_value() {
 #[test]
 fn test_execute_setting_validation_error() {
     let registry = create_test_registry();
-    let settings = UserSettings::new();
-    let mut state = State::with_settings(settings);
+    let mut settings = TestSettings::default();
 
     let mut error_handler = |_: RiftError| {};
 
-    let result = registry.execute_setting(
-        "tabwidth",
-        Some("0"),
-        &mut state.settings,
-        &mut error_handler,
-    );
+    let result = registry.execute_setting("tabwidth", Some("0"), &mut settings, &mut error_handler);
     assert!(matches!(
         result,
         crate::command_line::commands::executor::ExecutionResult::Failure
@@ -614,7 +603,7 @@ fn test_execute_setting_validation_error() {
     let result = registry.execute_setting(
         "command_line_window.width_ratio",
         Some("1.5"),
-        &mut state.settings,
+        &mut settings,
         &mut error_handler,
     );
     assert!(matches!(
@@ -625,7 +614,7 @@ fn test_execute_setting_validation_error() {
     let result = registry.execute_setting(
         "command_line_window.width_ratio",
         Some("-0.1"),
-        &mut state.settings,
+        &mut settings,
         &mut error_handler,
     );
     assert!(matches!(
@@ -636,14 +625,14 @@ fn test_execute_setting_validation_error() {
 
 #[test]
 fn test_execute_setting_ambiguous() {
-    const AMBIGUOUS_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
+    const AMBIGUOUS_SETTINGS: &[SettingDescriptor<TestSettings>] = &[
         SettingDescriptor {
             name: "expandtabs",
             aliases: &[],
             description: "Expand tabs",
             ty: SettingType::Boolean,
             set: set_expand_tabs,
-            get: None,
+            get: get_expand_tabs,
             needs_full_redraw: false,
         },
         SettingDescriptor {
@@ -652,23 +641,17 @@ fn test_execute_setting_ambiguous() {
             description: "Expand spaces",
             ty: SettingType::Boolean,
             set: set_expand_tabs,
-            get: None,
+            get: get_expand_tabs,
             needs_full_redraw: false,
         },
     ];
 
     let registry = SettingsRegistry::new(AMBIGUOUS_SETTINGS);
-    let settings = UserSettings::new();
-    let mut state = State::with_settings(settings);
+    let mut settings = TestSettings::default();
 
     let mut error_handler = |_: RiftError| {};
 
-    let result = registry.execute_setting(
-        "expa",
-        Some("true"),
-        &mut state.settings,
-        &mut error_handler,
-    );
+    let result = registry.execute_setting("expa", Some("true"), &mut settings, &mut error_handler);
     assert!(matches!(
         result,
         crate::command_line::commands::executor::ExecutionResult::Failure
@@ -677,7 +660,7 @@ fn test_execute_setting_ambiguous() {
     let result = registry.execute_setting(
         "expandtabs",
         Some("true"),
-        &mut state.settings,
+        &mut settings,
         &mut error_handler,
     );
     assert!(matches!(
@@ -1119,4 +1102,23 @@ fn highlight_override_wins_over_selection_options_until_reset() {
     set(&mut settings, "selbg", "reset");
     set(&mut settings, "selfg", "reset");
     assert_eq!(selection(&settings).and_then(|s| s.bg), rgb("#2f2c24"));
+}
+
+#[test]
+fn border_chars_take_exactly_six_characters() {
+    let mut settings = UserSettings::new();
+    assert_eq!(get(&settings, "command_line.border_chars"), "╭╮╰╯─│");
+
+    set(&mut settings, "command_line.border_chars", "++++-|");
+    assert_eq!(get(&settings, "command_line.border_chars"), "++++-|");
+
+    let mut errors = Vec::new();
+    create_settings_registry().execute_setting(
+        "command_line.border_chars",
+        Some("+-|"),
+        &mut settings,
+        &mut |e| errors.push(e),
+    );
+    assert_eq!(errors.len(), 1);
+    assert_eq!(get(&settings, "command_line.border_chars"), "++++-|");
 }

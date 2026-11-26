@@ -103,9 +103,10 @@ fn setting_value_to_lua(
         SettingValue::Bool(b) => LuaValue::Boolean(*b),
         SettingValue::Integer(n) => LuaValue::Integer(lua_int(*n)),
         SettingValue::Float(f) => LuaValue::Number(*f),
-        SettingValue::Enum(_) | SettingValue::Color(_) | SettingValue::Path(_) => {
-            LuaValue::String(lua.create_string(value.to_display_string())?)
-        }
+        SettingValue::Enum(_)
+        | SettingValue::Color(_)
+        | SettingValue::Path(_)
+        | SettingValue::Text(_) => LuaValue::String(lua.create_string(value.to_display_string())?),
     })
 }
 

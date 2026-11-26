@@ -310,6 +310,75 @@ fn get_editor_fg(s: &UserSettings) -> SettingValue {
     SettingValue::Color(s.editor_fg.unwrap_or(Color::Reset))
 }
 
+fn get_border_style(s: &UserSettings) -> SettingValue {
+    let style = match &s.default_border_chars {
+        Some(chars) if *chars == create_ascii_border() => "ascii",
+        Some(chars) if *chars != create_unicode_border() => "custom",
+        _ => "unicode",
+    };
+    SettingValue::Enum(style.to_string())
+}
+
+const fn get_cmd_window_border(s: &UserSettings) -> SettingValue {
+    SettingValue::Bool(s.command_line_window.border)
+}
+
+const fn get_cmd_window_reverse_video(s: &UserSettings) -> SettingValue {
+    SettingValue::Bool(s.command_line_window.reverse_video)
+}
+
+fn get_theme(s: &UserSettings) -> SettingValue {
+    SettingValue::Enum(s.theme.clone().unwrap_or_default())
+}
+
+const fn get_show_filename(s: &UserSettings) -> SettingValue {
+    SettingValue::Bool(s.status_line.segments.show_filename)
+}
+
+const fn get_status_line_reverse_video(s: &UserSettings) -> SettingValue {
+    SettingValue::Bool(s.status_line.reverse_video)
+}
+
+const fn get_show_status_line(s: &UserSettings) -> SettingValue {
+    SettingValue::Bool(s.status_line.show_status_line)
+}
+
+const fn get_show_dirty_indicator(s: &UserSettings) -> SettingValue {
+    SettingValue::Bool(s.status_line.segments.show_dirty_indicator)
+}
+
+const fn get_show_line_numbers(s: &UserSettings) -> SettingValue {
+    SettingValue::Bool(s.show_line_numbers)
+}
+
+const fn get_equalize_proportional(s: &UserSettings) -> SettingValue {
+    SettingValue::Bool(s.equalize_proportional)
+}
+
+const fn get_lsp_debug_log(s: &UserSettings) -> SettingValue {
+    SettingValue::Bool(s.lsp.debug_log)
+}
+
+const fn get_lsp_virtual_text(s: &UserSettings) -> SettingValue {
+    SettingValue::Bool(s.lsp.virtual_text)
+}
+
+const fn get_lsp_diagnostic_tooltip(s: &UserSettings) -> SettingValue {
+    SettingValue::Bool(s.lsp.diagnostic_tooltip)
+}
+
+const fn get_ghost_cut(s: &UserSettings) -> SettingValue {
+    SettingValue::Bool(s.editing.ghost_cut)
+}
+
+const fn get_quit_on_q(s: &UserSettings) -> SettingValue {
+    SettingValue::Bool(s.editing.quit_on_q)
+}
+
+const fn get_persistent_undo(s: &UserSettings) -> SettingValue {
+    SettingValue::Bool(s.undo.persistent)
+}
+
 fn set_cursor_color(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
     match value {
         &SettingValue::Color(color) => {
@@ -517,6 +586,92 @@ fn get_undo_dir(s: &UserSettings) -> SettingValue {
     )
 }
 
+fn set_soft_wrap(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
+    match value {
+        &SettingValue::Bool(b) => {
+            settings.soft_wrap = b;
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError(
+            "Expected boolean".to_string(),
+        )),
+    }
+}
+
+const fn get_soft_wrap(s: &UserSettings) -> SettingValue {
+    SettingValue::Bool(s.soft_wrap)
+}
+
+fn set_wrap_width(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
+    match value {
+        &SettingValue::Integer(n) => {
+            settings.wrap_width = (n > 0).then_some(n);
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError(
+            "Expected integer".to_string(),
+        )),
+    }
+}
+
+fn get_wrap_width(s: &UserSettings) -> SettingValue {
+    SettingValue::Integer(s.wrap_width.unwrap_or(0))
+}
+
+fn set_border_chars(settings: &mut UserSettings, value: &SettingValue) -> Result<(), SettingError> {
+    let SettingValue::Text(text) = value else {
+        return Err(SettingError::ValidationError("Expected text".to_string()));
+    };
+    let mut chars = text.chars();
+    let (
+        Some(top_left),
+        Some(top_right),
+        Some(bottom_left),
+        Some(bottom_right),
+        Some(horizontal),
+        Some(vertical),
+        None,
+    ) = (
+        chars.next(),
+        chars.next(),
+        chars.next(),
+        chars.next(),
+        chars.next(),
+        chars.next(),
+        chars.next(),
+    )
+    else {
+        return Err(SettingError::ValidationError(format!(
+            "Expected 6 border characters (top-left, top-right, bottom-left, bottom-right, horizontal, vertical), got '{text}'"
+        )));
+    };
+    settings.default_border_chars = Some(BorderChars {
+        top_left,
+        top_right,
+        bottom_left,
+        bottom_right,
+        horizontal,
+        vertical,
+    });
+    Ok(())
+}
+
+fn get_border_chars(s: &UserSettings) -> SettingValue {
+    let chars = s.default_border_chars.clone().unwrap_or_default();
+    SettingValue::Text(
+        [
+            chars.top_left,
+            chars.top_right,
+            chars.bottom_left,
+            chars.bottom_right,
+            chars.horizontal,
+            chars.vertical,
+        ]
+        .iter()
+        .collect(),
+    )
+}
+
 const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "command_line.borderstyle",
@@ -526,7 +681,16 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             variants: &["unicode", "ascii"],
         },
         set: set_border_style,
-        get: None,
+        get: get_border_style,
+        needs_full_redraw: false,
+    },
+    SettingDescriptor {
+        name: "command_line.border_chars",
+        aliases: &[],
+        description: "Command line window border characters: top-left, top-right, bottom-left, bottom-right, horizontal, vertical",
+        ty: SettingType::Text,
+        set: set_border_chars,
+        get: get_border_chars,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -538,7 +702,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: Some(1.0),
         },
         set: set_cmd_window_width_ratio,
-        get: Some(get_cmd_window_width_ratio),
+        get: get_cmd_window_width_ratio,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -550,7 +714,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: None,
         },
         set: set_cmd_window_min_width,
-        get: Some(get_cmd_window_min_width),
+        get: get_cmd_window_min_width,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -562,7 +726,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: None,
         },
         set: set_cmd_window_height,
-        get: Some(get_cmd_window_height),
+        get: get_cmd_window_height,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -571,7 +735,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Show border around command line window",
         ty: SettingType::Boolean,
         set: set_cmd_window_border,
-        get: None,
+        get: get_cmd_window_border,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -580,7 +744,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Use reverse video for command line window",
         ty: SettingType::Boolean,
         set: set_cmd_window_reverse_video,
-        get: None,
+        get: get_cmd_window_reverse_video,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -589,7 +753,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Editor background color",
         ty: SettingType::Color,
         set: set_editor_bg,
-        get: Some(get_editor_bg),
+        get: get_editor_bg,
         needs_full_redraw: true,
     },
     SettingDescriptor {
@@ -598,7 +762,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Editor foreground color",
         ty: SettingType::Color,
         set: set_editor_fg,
-        get: Some(get_editor_fg),
+        get: get_editor_fg,
         needs_full_redraw: true,
     },
     SettingDescriptor {
@@ -607,7 +771,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Cursor block color in Normal mode",
         ty: SettingType::Color,
         set: set_cursor_color,
-        get: Some(get_cursor_color),
+        get: get_cursor_color,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -616,7 +780,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Visual selection background color (default: derived from the theme)",
         ty: SettingType::Color,
         set: set_selection_bg,
-        get: Some(get_selection_bg),
+        get: get_selection_bg,
         needs_full_redraw: true,
     },
     SettingDescriptor {
@@ -625,7 +789,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Visual selection text color (default: none, syntax colors show through)",
         ty: SettingType::Color,
         set: set_selection_fg,
-        get: Some(get_selection_fg),
+        get: get_selection_fg,
         needs_full_redraw: true,
     },
     SettingDescriptor {
@@ -637,7 +801,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: Some(1.0),
         },
         set: set_cursor_speed,
-        get: Some(get_cursor_speed),
+        get: get_cursor_speed,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -653,7 +817,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             ],
         },
         set: set_theme,
-        get: None,
+        get: get_theme,
         needs_full_redraw: true,
     },
     SettingDescriptor {
@@ -662,7 +826,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Show filename in status line",
         ty: SettingType::Boolean,
         set: set_show_filename,
-        get: None,
+        get: get_show_filename,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -671,7 +835,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Use reverse video for status line",
         ty: SettingType::Boolean,
         set: set_status_line_reverse_video,
-        get: None,
+        get: get_status_line_reverse_video,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -680,7 +844,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Show status line",
         ty: SettingType::Boolean,
         set: set_show_status_line,
-        get: None,
+        get: get_show_status_line,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -689,7 +853,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Show dirty indicator in status line",
         ty: SettingType::Boolean,
         set: set_show_dirty_indicator,
-        get: None,
+        get: get_show_dirty_indicator,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -698,7 +862,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Show line numbers",
         ty: SettingType::Boolean,
         set: set_show_line_numbers,
-        get: None,
+        get: get_show_line_numbers,
         needs_full_redraw: true,
     },
     SettingDescriptor {
@@ -710,7 +874,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: Some(1000),
         },
         set: set_clipboard_size,
-        get: Some(get_clipboard_size),
+        get: get_clipboard_size,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -722,8 +886,29 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: Some(10000),
         },
         set: set_poll_rate,
-        get: Some(get_poll_rate),
+        get: get_poll_rate,
         needs_full_redraw: false,
+    },
+    SettingDescriptor {
+        name: "editor.soft_wrap",
+        aliases: &["softwrap"],
+        description: "Soft-wrap documents that do not set their own wrap column",
+        ty: SettingType::Boolean,
+        set: set_soft_wrap,
+        get: get_soft_wrap,
+        needs_full_redraw: true,
+    },
+    SettingDescriptor {
+        name: "editor.wrap_width",
+        aliases: &[],
+        description: "Soft-wrap column for documents that do not set their own (0 = window width)",
+        ty: SettingType::Integer {
+            min: None,
+            max: None,
+        },
+        set: set_wrap_width,
+        get: get_wrap_width,
+        needs_full_redraw: true,
     },
     SettingDescriptor {
         name: "split.equalize_proportional",
@@ -731,7 +916,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "When on, ^w= distributes space proportionally to leaf count; when off, each split gets 50/50",
         ty: SettingType::Boolean,
         set: set_equalize_proportional,
-        get: None,
+        get: get_equalize_proportional,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -740,7 +925,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Show LSP protocol debug messages as notifications",
         ty: SettingType::Boolean,
         set: set_lsp_debug_log,
-        get: None,
+        get: get_lsp_debug_log,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -749,7 +934,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Render LSP diagnostics as trailing end-of-line virtual text",
         ty: SettingType::Boolean,
         set: set_lsp_virtual_text,
-        get: None,
+        get: get_lsp_virtual_text,
         needs_full_redraw: true,
     },
     SettingDescriptor {
@@ -758,7 +943,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Show the diagnostic tooltip for the cursor line",
         ty: SettingType::Boolean,
         set: set_lsp_diagnostic_tooltip,
-        get: None,
+        get: get_lsp_diagnostic_tooltip,
         needs_full_redraw: true,
     },
     SettingDescriptor {
@@ -767,7 +952,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Delete d-cuts immediately but grey them out in place until something resolves the paint, instead of removing them from the screen right away",
         ty: SettingType::Boolean,
         set: set_ghost_cut,
-        get: None,
+        get: get_ghost_cut,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -776,7 +961,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Make q in normal mode quit the editor immediately, discarding unsaved changes. When off, q behaves like :q",
         ty: SettingType::Boolean,
         set: set_quit_on_q,
-        get: None,
+        get: get_quit_on_q,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -785,7 +970,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Persist undo history to disk so it survives editor restarts",
         ty: SettingType::Boolean,
         set: set_persistent_undo,
-        get: None,
+        get: get_persistent_undo,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -794,7 +979,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Directory for persisted undo files (default: <config_dir>/undofiles)",
         ty: SettingType::Path,
         set: set_undo_dir,
-        get: Some(get_undo_dir),
+        get: get_undo_dir,
         needs_full_redraw: false,
     },
 ];

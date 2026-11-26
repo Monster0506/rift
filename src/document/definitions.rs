@@ -68,6 +68,14 @@ const fn get_expand_tabs(options: &DocumentOptions) -> SettingValue {
     SettingValue::Bool(options.expand_tabs)
 }
 
+const fn get_number(options: &DocumentOptions) -> SettingValue {
+    SettingValue::Bool(options.show_line_numbers)
+}
+
+fn get_line_ending(options: &DocumentOptions) -> SettingValue {
+    SettingValue::Enum(options.line_ending.name().to_string())
+}
+
 fn set_tab_width(options: &mut DocumentOptions, value: &SettingValue) -> Result<(), SettingError> {
     match value {
         &SettingValue::Integer(n) => {
@@ -173,7 +181,7 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
         description: "Show line numbers",
         ty: SettingType::Boolean,
         set: set_number,
-        get: None,
+        get: get_number,
         needs_full_redraw: true,
     },
     SettingDescriptor {
@@ -184,7 +192,7 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
             variants: &["lf", "crlf", "unix", "dos", "windows"],
         },
         set: set_line_ending,
-        get: None,
+        get: get_line_ending,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -193,7 +201,7 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
         description: "Use spaces instead of tabs",
         ty: SettingType::Boolean,
         set: set_expand_tabs,
-        get: Some(get_expand_tabs),
+        get: get_expand_tabs,
         needs_full_redraw: true,
     },
     SettingDescriptor {
@@ -205,7 +213,7 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
             max: None,
         },
         set: set_tab_width,
-        get: Some(get_tab_width),
+        get: get_tab_width,
         needs_full_redraw: true,
     },
     SettingDescriptor {
@@ -218,7 +226,7 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
             keywords: &["auto"],
         },
         set: set_wrap,
-        get: Some(get_wrap),
+        get: get_wrap,
         needs_full_redraw: true,
     },
 ];

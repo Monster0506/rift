@@ -411,9 +411,9 @@ pub(crate) fn complete_setting_value<T: 'static>(
                     is_directory: false,
                 })
                 .collect();
-            if let (Some(getter), Some(val)) = (desc.get, current) {
+            if let Some(val) = current {
                 candidates.push(CompletionCandidate {
-                    text: getter(val).to_display_string(),
+                    text: (desc.get)(val).to_display_string(),
                     description: "current value".into(),
                     is_directory: false,
                 });
@@ -423,14 +423,14 @@ pub(crate) fn complete_setting_value<T: 'static>(
         SettingType::Integer { .. }
         | SettingType::Float { .. }
         | SettingType::Color
-        | SettingType::Path => match (desc.get, current) {
-            (Some(getter), Some(val)) => vec![CompletionCandidate {
-                text: getter(val).to_display_string(),
+        | SettingType::Path
+        | SettingType::Text => current.map_or_else(Vec::new, |val| {
+            vec![CompletionCandidate {
+                text: (desc.get)(val).to_display_string(),
                 description: "current value".into(),
                 is_directory: false,
-            }],
-            _ => vec![],
-        },
+            }]
+        }),
     };
 
     CompletionResult::from_candidates(candidates)
@@ -607,6 +607,7 @@ fn type_hint_for(ty: &SettingType) -> String {
         SettingType::Enum { variants } => variants.join("|"),
         SettingType::Color => "color".into(),
         SettingType::Path => "path".into(),
+        SettingType::Text => "text".into(),
         SettingType::IntegerOrKeyword { keywords, .. } => format!("integer|{}", keywords.join("|")),
     }
 }

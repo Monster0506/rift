@@ -64,8 +64,6 @@ impl Default for StatusLineSettings {
 
 #[derive(Debug, Clone)]
 pub(crate) struct EditingSettings {
-    #[cfg(test)]
-    pub(crate) expand_tabs: bool,
     pub(crate) ghost_cut: bool,
     pub(crate) quit_on_q: bool,
 }
@@ -73,8 +71,6 @@ pub(crate) struct EditingSettings {
 impl Default for EditingSettings {
     fn default() -> Self {
         Self {
-            #[cfg(test)]
-            expand_tabs: true,
             ghost_cut: true,
             quit_on_q: true,
         }
@@ -123,8 +119,6 @@ pub(crate) struct UserSettings {
     pub(crate) editor_fg: Option<Color>,
     pub(crate) theme: Option<String>,
     pub(crate) poll_timeout_ms: u64,
-    #[cfg(test)]
-    pub(crate) tab_width: usize,
     pub(crate) editing: EditingSettings,
     pub(crate) syntax_colors: Option<crate::color::theme::SyntaxColors>,
     pub(crate) highlight_overrides: std::collections::BTreeMap<String, crate::layer::CellStyle>,
@@ -152,8 +146,6 @@ impl UserSettings {
             editor_fg: None,
             theme: None,
             poll_timeout_ms: 16,
-            #[cfg(test)]
-            tab_width: 4,
             editing: EditingSettings::default(),
             syntax_colors: None,
             highlight_overrides: std::collections::BTreeMap::new(),

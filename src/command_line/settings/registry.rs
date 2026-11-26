@@ -71,7 +71,7 @@ impl<T> SettingsRegistry<T> {
     #[must_use]
     pub(super) fn get_setting(&self, name: &str, target: &T) -> Option<SettingValue> {
         let desc = self.find_descriptor(name)?;
-        desc.get.map(|getter| getter(target))
+        Some((desc.get)(target))
     }
 
     pub(super) fn parse_value(ty: &SettingType, value: &str) -> Result<SettingValue, SettingError> {
@@ -172,6 +172,7 @@ impl<T> SettingsRegistry<T> {
                 Ok(SettingValue::Enum(value.to_string()))
             }
             SettingType::Path => Ok(SettingValue::Path(value.to_string())),
+            SettingType::Text => Ok(SettingValue::Text(value.to_string())),
         }
     }
 

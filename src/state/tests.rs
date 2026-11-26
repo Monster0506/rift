@@ -186,8 +186,6 @@ fn test_buffer_stats_updates() {
 fn test_user_settings_default() {
     const RATIO_EPSILON: f64 = 1e-9;
     let settings = UserSettings::default();
-    assert!(settings.editing.expand_tabs);
-    assert_eq!(settings.tab_width, 4);
     assert_eq!(settings.default_border_chars, None);
     assert!((settings.command_line_window.width_ratio - 0.6).abs() < RATIO_EPSILON);
     assert_eq!(settings.command_line_window.min_width, 40);
@@ -199,12 +197,10 @@ fn test_user_settings_default() {
 #[test]
 fn test_state_with_custom_settings() {
     let mut custom_settings = UserSettings::new();
-    custom_settings.editing.expand_tabs = false;
-    custom_settings.tab_width = 4;
+    custom_settings.editing.ghost_cut = false;
 
     let state = State::with_settings(custom_settings);
-    assert!(!state.settings.editing.expand_tabs);
-    assert_eq!(state.settings.tab_width, 4);
+    assert!(!state.settings.editing.ghost_cut);
     assert!(!state.debug_mode); // Runtime state should still be default
 }
 
