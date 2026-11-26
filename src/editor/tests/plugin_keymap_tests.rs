@@ -87,3 +87,38 @@ fn exec_action_and_map_buffer_kind_reject_unknown_action_ids() {
     }
     editor.apply_plugin_mutations();
 }
+
+#[test]
+fn rift_map_binds_visual_and_operator_pending_modes() {
+    let mut editor = editor_with_text("hello\n");
+    lua_ok(
+        &mut editor,
+        "rift.map('v', '<F6>', 'editor:redraw') \
+         rift.map('operator_pending', '<F6>', 'editor:move:line:end')",
+    );
+    assert_eq!(
+        editor.keymap.lookup(KeyContext::Visual, &keys("<F6>")),
+        MatchResult::Exact(&crate::action::Action::Editor(
+            crate::action::EditorAction::Redraw
+        ))
+    );
+    assert_eq!(
+        editor
+            .keymap
+            .lookup(KeyContext::OperatorPending, &keys("<F6>")),
+        MatchResult::Exact(&crate::action::Action::Editor(
+            crate::action::EditorAction::Move(crate::action::Motion::EndOfLine)
+        ))
+    );
+
+    lua_ok(
+        &mut editor,
+        "rift.unmap('visual', '<F6>') rift.unmap('o', '<F6>')",
+    );
+    for context in [KeyContext::Visual, KeyContext::OperatorPending] {
+        assert_eq!(
+            editor.keymap.lookup(context, &keys("<F6>")),
+            MatchResult::None
+        );
+    }
+}

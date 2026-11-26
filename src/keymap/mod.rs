@@ -44,6 +44,8 @@ const MODES: &[(&str, &str, KeyContext)] = &[
     ("s", "search", KeyContext::Search),
     ("t", "terminal", KeyContext::Terminal),
     ("tn", "terminal_normal", KeyContext::TerminalNormal),
+    ("v", "visual", KeyContext::Visual),
+    ("o", "operator_pending", KeyContext::OperatorPending),
 ];
 
 impl KeyContext {

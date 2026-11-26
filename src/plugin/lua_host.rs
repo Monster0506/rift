@@ -2496,7 +2496,6 @@ impl LuaHost {
         }
 
         // rift.map(mode, keys, action) - register a key binding.
-        // mode: "n"|"i"|"c"|"s"|"g"|"t"|"tn"; keys: key notation e.g. "<C-p>", "<C-S-Left>", "<F5>", "<Space>g";
         // action: action string ("editor:save", "plugin:<id>" for rift.register_action ids) or a
         // function, registered as a generated plugin-owned action that rift.plugins.unload removes.
         {
