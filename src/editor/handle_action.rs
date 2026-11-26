@@ -39,37 +39,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_action_inner(&mut self, action: &crate::action::Action) -> bool {
         let editor_action = match action {
             Action::Editor(act) => act,
-            Action::Buffer(id) => {
-                let Some((doc_id, kind_name, action_dispatch, is_tombstone)) =
-                    self.document_manager.active_document().map(|document| {
-                        (
-                            document.id,
-                            document.descriptor().name().to_string(),
-                            document.descriptor().action_dispatch,
-                            document.descriptor().is_tombstone(),
-                        )
-                    })
-                else {
-                    return true;
-                };
-
-                if is_tombstone || matches!(action_dispatch, ActionDispatch::Disabled) {
-                    return true;
-                }
-
-                match action_dispatch {
-                    ActionDispatch::Native(actions) => self.run_kind_action(actions, id),
-                    ActionDispatch::Lua => {
-                        self.call_plugins(|editor| {
-                            editor
-                                .plugin_host
-                                .invoke_buffer_action(doc_id, &kind_name, id)
-                        });
-                    }
-                    ActionDispatch::Disabled => {}
-                }
-                return true;
-            }
+            Action::Buffer(id) => return self.action_buffer_action(id),
         };
 
         if !matches!(editor_action, EditorAction::CyclePaste { .. }) {
@@ -92,125 +62,23 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_motion_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
-            EditorAction::Move(motion) => {
-                use crate::action::Motion;
-
-                if self.current_mode == Mode::Replace {
-                    self.replace_originals.clear();
-                }
-
-                if matches!(
-                    motion,
-                    Motion::RepeatFindForward | Motion::RepeatFindBackward
-                ) {
-                    let has_regions = self
-                        .document_manager
-                        .active_document()
-                        .is_some_and(|d| !d.selections().is_empty());
-                    if has_regions {
-                        let forward = matches!(motion, Motion::RepeatFindForward);
-                        return self.cycle_to_region(forward);
-                    }
-                }
-
-                if self.current_mode == Mode::Normal
-                    && matches!(motion, Motion::Up | Motion::Down)
-                    && self.active_doc_is(|doc| doc.buffer_kind_id() == BufferKindId::GIT_BLAME)
-                {
-                    let _ = self.snap_to_actionable_line(matches!(motion, Motion::Down));
-                    return true;
-                }
-
-                if self.current_mode == Mode::Normal
-                    && matches!(motion, Motion::Up | Motion::Down)
-                    && self
-                        .active_doc_is(|d| d.policies().navigation == NavigationPolicy::ActionRows)
-                    && self.snap_to_actionable_line(matches!(motion, Motion::Down))
-                {
-                    self.update_explorer_preview();
-                    self.update_buffer_list_preview();
-                    return true;
-                }
-
-                let resolved = self.resolve_motion(motion);
-
-                if self.current_mode == Mode::OperatorPending {
-                    if let Some(op) = self.pending_operator {
-                        return self.execute_operator(op, resolved);
-                    }
-                }
-                let count = if self.pending_count > 0 {
-                    self.pending_count
-                } else {
-                    1
-                };
-                let command = crate::command::Command::Move(resolved, count);
-                self.handle_mode_management(command);
-                let consumed = self.execute_buffer_command(command);
-                self.update_explorer_preview();
-                self.update_undotree_preview();
-                self.update_clipboard_preview();
-                consumed
-            }
+            EditorAction::Move(motion) => self.action_move(motion),
             _ => self.handle_mode_enter_action(action, editor_action),
         }
     }
 
     fn handle_mode_enter_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
-            EditorAction::EnterInsertMode => {
-                if self.try_multi_insert_for_command(crate::command::Command::EnterInsertMode) {
-                    self.finish_region_build(Some(action.clone()));
-                    return true;
-                }
-                self.handle_mode_management(crate::command::Command::EnterInsertMode);
-                true
-            }
-            EditorAction::EnterInsertModeAfter => {
-                if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAfter)
-                {
-                    self.finish_region_build(Some(action.clone()));
-                    return true;
-                }
-                self.handle_mode_management(crate::command::Command::EnterInsertModeAfter);
-                true
-            }
+            EditorAction::EnterInsertMode => self.action_enter_insert_mode(action),
+            EditorAction::EnterInsertModeAfter => self.action_enter_insert_mode_after(action),
             EditorAction::EnterInsertModeAtLineStart => {
-                if self.try_multi_insert_for_command(
-                    crate::command::Command::EnterInsertModeAtLineStart,
-                ) {
-                    self.finish_region_build(Some(action.clone()));
-                    return true;
-                }
-                self.handle_mode_management(crate::command::Command::EnterInsertModeAtLineStart);
-                true
+                self.action_enter_insert_mode_at_line_start(action)
             }
             EditorAction::EnterInsertModeAtLineEnd => {
-                if self
-                    .try_multi_insert_for_command(crate::command::Command::EnterInsertModeAtLineEnd)
-                {
-                    self.finish_region_build(Some(action.clone()));
-                    return true;
-                }
-                self.handle_mode_management(crate::command::Command::EnterInsertModeAtLineEnd);
-                true
+                self.action_enter_insert_mode_at_line_end(action)
             }
-            EditorAction::OpenLineBelow => {
-                if self.try_multi_insert_for_command(crate::command::Command::OpenLineBelow) {
-                    self.finish_region_build(Some(action.clone()));
-                    return true;
-                }
-                self.handle_mode_management(crate::command::Command::OpenLineBelow);
-                true
-            }
-            EditorAction::OpenLineAbove => {
-                if self.try_multi_insert_for_command(crate::command::Command::OpenLineAbove) {
-                    self.finish_region_build(Some(action.clone()));
-                    return true;
-                }
-                self.handle_mode_management(crate::command::Command::OpenLineAbove);
-                true
-            }
+            EditorAction::OpenLineBelow => self.action_open_line_below(action),
+            EditorAction::OpenLineAbove => self.action_open_line_above(action),
             EditorAction::EnterCommandMode => {
                 self.handle_mode_management(crate::command::Command::EnterCommandMode);
                 true
@@ -225,72 +93,14 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_mode_exit_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
-            EditorAction::EnterNormalMode => {
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    doc.commit_pending_ghost();
-                }
-                if !self.current_mode.is_visual() {
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        doc.clear_selection();
-                        self.region_build_recording.clear();
-                    }
-                }
-                if self.current_mode == Mode::Insert || self.current_mode == Mode::Replace {
-                    if !self.dot_repeat.is_replaying() {
-                        self.dot_repeat.finish_insert_recording();
-                    }
-                    if !self.pending_multi_insert_anchors.is_empty() {
-                        self.replay_multi_insert_at_remaining_anchors();
-                    }
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        doc.commit_transaction();
-                    }
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        let cursor = doc.buffer().cursor();
-                        let target = if doc.buffer().get_col() > 0 {
-                            cursor - 1
-                        } else {
-                            cursor
-                        };
-                        let _ = doc.set_cursor(target, crate::document::ops::CursorCause::Jump);
-                    }
-                }
-                self.state.command_history.reset_navigation();
-                self.state.search_history.reset_navigation();
-                #[cfg(feature = "lsp")]
-                {
-                    self.rename_context = None;
-                }
-                self.set_mode(Mode::Normal);
-                self.state.clear_command_line();
-                self.state.search_matches.clear();
-                self.pending_operator = None;
-                self.pending_keys.clear();
-                self.pending_count = 0;
-                true
-            }
+            EditorAction::EnterNormalMode => self.action_enter_normal_mode(),
             EditorAction::Undo => self.execute_buffer_command(crate::command::Command::Undo),
             EditorAction::Redo => self.execute_buffer_command(crate::command::Command::Redo),
             EditorAction::Quit => {
                 self.do_quit(false);
                 true
             }
-            EditorAction::Submit => match self.current_mode {
-                Mode::Command => {
-                    self.handle_mode_management(crate::command::Command::ExecuteCommandLine);
-                    true
-                }
-                Mode::Search => {
-                    self.handle_mode_management(crate::command::Command::ExecuteSearch);
-                    true
-                }
-                Mode::Rename => {
-                    #[cfg(feature = "lsp")]
-                    self.execute_lsp_rename();
-                    true
-                }
-                _ => false,
-            },
+            EditorAction::Submit => self.action_submit(),
             _ => self.handle_edit_action(action, editor_action),
         }
     }
@@ -309,85 +119,9 @@ impl<T: TerminalBackend> Editor<T> {
                 self.replace_delete_word();
                 true
             }
-            EditorAction::Delete(motion) => {
-                if self.current_mode == Mode::Command
-                    || self.current_mode == Mode::Search
-                    || self.current_mode == Mode::Rename
-                {
-                    if *motion == crate::action::Motion::Left {
-                        self.handle_mode_management(crate::command::Command::DeleteFromCommandLine);
-                        return true;
-                    }
-                    if *motion == crate::action::Motion::PreviousWord {
-                        self.state.delete_word_back_command_line();
-                        return true;
-                    }
-                }
-                if self.active_doc_is(crate::document::Document::is_read_only) {
-                    return false;
-                }
-                let count = if self.pending_count > 0 {
-                    self.pending_count
-                } else {
-                    1
-                };
-                if self.current_mode == Mode::Normal {
-                    let viewport_height = self.render_system.viewport.visible_rows();
-                    let last_search_query = self.state.last_search_query.clone();
-                    let captured = self.document_manager.active_document_mut().and_then(|doc| {
-                        crate::executor::compute_motion_range(
-                            *motion,
-                            count,
-                            doc,
-                            viewport_height,
-                            last_search_query.as_deref(),
-                        )
-                        .map(|range| crate::clipboard::capture_text(doc.buffer(), &range))
-                    });
-                    let in_clipboard =
-                        self.active_doc_is(super::super::document::Document::is_any_clipboard);
-                    if let Some(text) = captured.filter(|c| !c.text().is_empty()) {
-                        if !in_clipboard {
-                            self.clipboard_ring.push(text);
-                            self.refresh_clipboard_buffer_if_open();
-                        }
-                    }
-                }
-                let command = crate::command::Command::Delete(*motion, count);
-                let result = self.execute_buffer_command(command);
-                if result && self.current_mode == Mode::Normal && !self.dot_repeat.is_replaying() {
-                    self.dot_repeat.record_single(command);
-                }
-                result
-            }
-            EditorAction::DeleteLine => {
-                let count = if self.pending_count > 0 {
-                    self.pending_count
-                } else {
-                    1
-                };
-                let command = crate::command::Command::DeleteLine(count);
-                let result = self.execute_buffer_command(command);
-                if result && self.current_mode == Mode::Normal && !self.dot_repeat.is_replaying() {
-                    self.dot_repeat.record_single(command);
-                }
-                result
-            }
-            EditorAction::InsertChar(c) => {
-                if self.current_mode == Mode::Command
-                    || self.current_mode == Mode::Search
-                    || self.current_mode == Mode::Rename
-                {
-                    self.handle_mode_management(crate::command::Command::AppendToCommandLine(*c));
-                    return true;
-                }
-                if self.current_mode == Mode::Replace {
-                    self.replace_type(*c);
-                    return true;
-                }
-                let command = crate::command::Command::InsertChar(*c);
-                self.execute_buffer_command(command)
-            }
+            EditorAction::Delete(motion) => self.action_delete(motion),
+            EditorAction::DeleteLine => self.action_delete_line(),
+            EditorAction::InsertChar(c) => self.action_insert_char(*c),
             _ => self.handle_app_action(action, editor_action),
         }
     }
@@ -406,12 +140,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.toggle_debug();
                 true
             }
-            EditorAction::Redraw => {
-                if let Err(e) = self.force_full_redraw() {
-                    self.notify_error(e);
-                }
-                true
-            }
+            EditorAction::Redraw => self.action_redraw(),
             EditorAction::Reload => {
                 self.load_plugins();
                 true
@@ -424,26 +153,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.save_and_quit(None);
                 true
             }
-            EditorAction::OpenExplorer => {
-                let path = self
-                    .document_manager
-                    .active_document()
-                    .and_then(|d| {
-                        if let Some(dir) = d.directory_path() {
-                            return Some(dir.clone());
-                        }
-                        d.path().map(|p| {
-                            if p.is_dir() {
-                                p.to_path_buf()
-                            } else {
-                                p.parent().unwrap_or(p).to_path_buf()
-                            }
-                        })
-                    })
-                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-                self.open_explorer(path);
-                true
-            }
+            EditorAction::OpenExplorer => self.action_open_explorer(),
             EditorAction::ExplorerToggleHidden => {
                 self.handle_explorer_toggle_hidden();
                 true
@@ -540,33 +250,10 @@ impl<T: TerminalBackend> Editor<T> {
                 self.do_show_buffer_list();
                 true
             }
-            EditorAction::ClearHighlights => {
-                self.state.search_matches.clear();
-                self.force_full_redraw().ok();
-                true
-            }
-            EditorAction::ClearNotifications => {
-                self.state.notifications.clear_all();
-                self.state.clear_command_line();
-                self.force_full_redraw().ok();
-                true
-            }
-            EditorAction::ClearLastNotification => {
-                self.state.notifications.clear_last();
-                self.state.clear_command_line();
-                self.force_full_redraw().ok();
-                true
-            }
-            EditorAction::Checkpoint => {
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    doc.checkpoint();
-                    self.notify(
-                        crate::notification::NotificationType::Info,
-                        "Checkpoint created".to_string(),
-                    );
-                }
-                true
-            }
+            EditorAction::ClearHighlights => self.action_clear_highlights(),
+            EditorAction::ClearNotifications => self.action_clear_notifications(),
+            EditorAction::ClearLastNotification => self.action_clear_last_notification(),
+            EditorAction::Checkpoint => self.action_checkpoint(),
             EditorAction::RunCommand(cmd_str) => {
                 self.execute_command_line(cmd_str);
                 true
@@ -578,18 +265,8 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_operator_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
             EditorAction::GotoLine(n) => self.handle_goto_line(*n),
-            EditorAction::Search(pattern) => {
-                let pattern = pattern.clone();
-                self.perform_search(&pattern, SearchDirection::Forward, false);
-                true
-            }
-            EditorAction::VisualLineOp(op) => {
-                if !self.current_mode.is_visual() {
-                    return false;
-                }
-                self.set_mode(Mode::VisualLine);
-                self.handle_operator_action(action, &EditorAction::Operator(*op))
-            }
+            EditorAction::Search(pattern) => self.action_search(pattern),
+            EditorAction::VisualLineOp(op) => self.action_visual_line_op(*op, action),
             EditorAction::Operator(op) => self.handle_operator(action, *op),
             _ => self.handle_history_action(action, editor_action),
         }
@@ -706,49 +383,12 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_history_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
             EditorAction::ChangeToLineEnd | EditorAction::DeleteToLineEnd => {
-                let command = if matches!(editor_action, EditorAction::ChangeToLineEnd) {
-                    Command::Change(crate::action::Motion::EndOfLine, 1)
-                } else {
-                    Command::Delete(crate::action::Motion::EndOfLine, 1)
-                };
-                self.handle_mode_management(command);
-                self.execute_buffer_command(command)
+                self.action_to_line_end(editor_action)
             }
-            EditorAction::HistoryUp => {
-                let dropdown_open = self
-                    .state
-                    .completion_session
-                    .as_ref()
-                    .is_some_and(|s| s.dropdown_open);
-                if dropdown_open {
-                    self.handle_mode_management(Command::TabCompletePrev);
-                } else {
-                    self.navigate_history_up();
-                }
-                true
-            }
-            EditorAction::HistoryDown => {
-                let dropdown_open = self
-                    .state
-                    .completion_session
-                    .as_ref()
-                    .is_some_and(|s| s.dropdown_open);
-                if dropdown_open {
-                    self.handle_mode_management(Command::TabComplete);
-                } else {
-                    self.navigate_history_down();
-                }
-                true
-            }
+            EditorAction::HistoryUp => self.action_history_up(),
+            EditorAction::HistoryDown => self.action_history_down(),
             EditorAction::DotRepeat => self.execute_dot_repeat(),
-            EditorAction::QuitKey => {
-                if self.state.settings.editing.quit_on_q {
-                    self.should_quit = true;
-                } else {
-                    self.do_quit(false);
-                }
-                true
-            }
+            EditorAction::QuitKey => self.action_quit_key(),
             _ => self.handle_file_action(action, editor_action),
         }
     }
@@ -756,42 +396,14 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_file_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
             EditorAction::OpenFile { path, force } => {
-                let path = path.clone();
-                let force = *force;
-                if let Err(e) = self.open_file(path, force) {
-                    self.notify_error(e);
-                } else {
-                    self.state.clear_command_line();
-                    if let Err(e) = self.force_full_redraw() {
-                        self.notify_error(e);
-                    }
-                }
-                true
+                self.action_open_file(path.as_deref(), *force)
             }
-            EditorAction::OpenDirectory(path) => {
-                let path = path.clone();
-                self.open_explorer(path);
-                true
-            }
-            EditorAction::OpenTerminal(cmd) => {
-                let cmd = cmd.clone();
-                if let Err(e) = self.open_terminal(cmd) {
-                    self.notify_error(e);
-                } else {
-                    self.state.clear_command_line();
-                    self.set_mode(Mode::Insert);
-                }
-                true
-            }
+            EditorAction::OpenDirectory(path) => self.action_open_directory(path),
+            EditorAction::OpenTerminal(cmd) => self.action_open_terminal(cmd.as_deref()),
             EditorAction::SplitWindow {
                 direction,
                 subcommand,
-            } => {
-                let direction = *direction;
-                let subcommand = subcommand.clone();
-                self.do_split_window(direction, subcommand);
-                true
-            }
+            } => self.action_split_window(*direction, subcommand),
             EditorAction::UndoCount(count) => {
                 self.do_undo(*count);
                 true
@@ -804,11 +416,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.do_undo_goto(*seq);
                 true
             }
-            EditorAction::NotificationClearAll => {
-                self.state.notifications.clear_all();
-                self.state.clear_command_line();
-                true
-            }
+            EditorAction::NotificationClearAll => self.action_notification_clear_all(),
             EditorAction::PluginAction(id) => {
                 self.call_plugins(|editor| editor.plugin_host.execute_action(id));
                 true
@@ -821,41 +429,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_paste_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
             EditorAction::Put { before } => self.handle_put(action, *before),
-            EditorAction::CyclePaste { forward } => {
-                let Some(state) = self.post_paste_state.take() else {
-                    return false;
-                };
-                let len = self.clipboard_ring.len().max(1);
-                let next = if *forward {
-                    (state.ring_index + 1) % len
-                } else {
-                    (state.ring_index + len - 1) % len
-                };
-                let Some(clip) = self.clipboard_ring.get(next).cloned() else {
-                    return false;
-                };
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    doc.undo();
-                    let _ = doc.set_cursor(
-                        state.original_cursor,
-                        crate::document::ops::CursorCause::User,
-                    );
-                }
-                let result = self.put_into_active(
-                    &clip,
-                    PutAt::Cursor {
-                        before: state.before,
-                    },
-                );
-                if result {
-                    self.post_paste_state = Some(PostPasteState {
-                        ring_index: next,
-                        before: state.before,
-                        original_cursor: state.original_cursor,
-                    });
-                }
-                result
-            }
+            EditorAction::CyclePaste { forward } => self.action_cycle_paste(*forward),
             _ => self.handle_misc_action(action, editor_action),
         }
     }
@@ -1003,22 +577,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_misc_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
             EditorAction::PutSystemClipboard { before } => {
-                let text = crate::clipboard::read_system_clipboard_text();
-                if let Some(text) = text {
-                    let text = crate::clipboard::normalize_newlines(&text);
-                    let text: Vec<crate::character::Character> = text
-                        .chars()
-                        .map(crate::character::Character::from)
-                        .collect();
-                    let clip = Clip::from_plain(text);
-                    if self.try_run_set_aware_put(*before, &clip) {
-                        self.finish_region_build(Some(action.clone()));
-                        return true;
-                    }
-                    self.put_into_active(&clip, PutAt::Cursor { before: *before })
-                } else {
-                    false
-                }
+                self.action_put_system_clipboard(*before, action)
             }
 
             EditorAction::ExitTerminalMode => {
@@ -1026,25 +585,9 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
 
-            EditorAction::TerminalScrollback(delta) => {
-                let doc_id = self.active_document_id();
-                if let Some(doc) = self.document_manager.get_document(doc_id) {
-                    if let Some(term) = doc.terminal() {
-                        term.scroll_display(*delta);
-                    }
-                }
-                if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                    doc.sync_terminal_buffer();
-                }
-                let _ = self.update_and_render();
-                true
-            }
+            EditorAction::TerminalScrollback(delta) => self.action_terminal_scrollback(*delta),
             EditorAction::FindCharPending { forward, till } => {
-                self.pending_grammar = Some(super::pending_grammar::PendingGrammar::FindChar {
-                    forward: *forward,
-                    till: *till,
-                });
-                true
+                self.action_find_char_pending(*forward, *till)
             }
 
             EditorAction::ReplaceSelection(ch) => self.replace_selection(*ch),
@@ -1065,76 +608,15 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_lsp_action(&mut self, editor_action: &EditorAction) -> bool {
         match editor_action {
-            EditorAction::LspGotoDefinition => {
-                #[cfg(feature = "lsp")]
-                if let Some((path, line, col)) = self.lsp_request_position() {
-                    if self.lsp_manager.goto_definition(&path, line, col).is_none() {
-                        self.notify_no_lsp_server();
-                    }
-                }
-                true
-            }
+            EditorAction::LspGotoDefinition => self.action_lsp_goto_definition(),
 
-            EditorAction::LspReferences => {
-                #[cfg(feature = "lsp")]
-                if let Some((path, line, col)) = self.lsp_request_position() {
-                    if self.lsp_manager.references(&path, line, col).is_none() {
-                        self.notify_no_lsp_server();
-                    }
-                }
-                true
-            }
+            EditorAction::LspReferences => self.action_lsp_references(),
 
-            EditorAction::LspHover => {
-                #[cfg(feature = "lsp")]
-                if let Some((path, line, col)) = self.lsp_request_position() {
-                    if self.lsp_manager.hover(&path, line, col).is_none() {
-                        self.notify_no_lsp_server();
-                    }
-                }
-                true
-            }
+            EditorAction::LspHover => self.action_lsp_hover(),
 
-            EditorAction::LspRename => {
-                #[cfg(feature = "lsp")]
-                {
-                    if let Some(ctx) = self.cursor_lsp_position() {
-                        self.rename_context = Some(ctx);
-                        self.state.clear_command_line();
-                        self.set_mode(Mode::Rename);
-                    } else {
-                        self.notify(
-                            crate::notification::NotificationType::Warning,
-                            "LSP rename: no file open".to_string(),
-                        );
-                    }
-                }
-                true
-            }
+            EditorAction::LspRename => self.action_lsp_rename(),
 
-            EditorAction::LspCodeAction => {
-                #[cfg(feature = "lsp")]
-                if let Some((path, line, col)) = self.lsp_request_position() {
-                    let uri = crate::lsp::protocol::path_to_uri(&path);
-                    let norm_uri = crate::lsp::protocol::normalize_uri(&uri);
-                    let diagnostics: Vec<crate::lsp::protocol::LspDiagnostic> =
-                        self.lsp_diagnostics.get(&norm_uri).map_or_default(|diags| {
-                            diags
-                                .iter()
-                                .filter(|d| d.range.start.line == line)
-                                .cloned()
-                                .collect()
-                        });
-                    if self
-                        .lsp_manager
-                        .code_action(&path, line, col, diagnostics)
-                        .is_none()
-                    {
-                        self.notify_no_lsp_server();
-                    }
-                }
-                true
-            }
+            EditorAction::LspCodeAction => self.action_lsp_code_action(),
 
             _ => self.handle_diag_annot_action(editor_action),
         }
@@ -1142,50 +624,13 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_diag_annot_action(&mut self, editor_action: &EditorAction) -> bool {
         match editor_action {
-            EditorAction::LspFormat => {
-                #[cfg(feature = "lsp")]
-                {
-                    let info = self.document_manager.active_document().and_then(|doc| {
-                        let path = doc.path()?.to_path_buf();
-                        let tab_size = u32::try_from(doc.options.tab_width).unwrap_or(u32::MAX);
-                        let insert_spaces = doc.options.expand_tabs;
-                        Some((path, tab_size, insert_spaces))
-                    });
-                    if let Some((path, tab_size, insert_spaces)) = info {
-                        if self.lsp_manager.is_indexing_path(&path) {
-                            self.notify(
-                                crate::notification::NotificationType::Info,
-                                "LSP: still indexing, please wait...".to_string(),
-                            );
-                        } else if self
-                            .lsp_manager
-                            .format(&path, tab_size, insert_spaces)
-                            .is_none()
-                        {
-                            self.notify_no_lsp_server();
-                        }
-                    }
-                }
-                true
-            }
+            EditorAction::LspFormat => self.action_lsp_format(),
 
-            EditorAction::LspDiagnosticNext => {
-                #[cfg(feature = "lsp")]
-                self.lsp_diagnostic_next();
-                true
-            }
+            EditorAction::LspDiagnosticNext => self.action_lsp_diagnostic_next(),
 
-            EditorAction::LspDiagnosticPrev => {
-                #[cfg(feature = "lsp")]
-                self.lsp_diagnostic_prev();
-                true
-            }
+            EditorAction::LspDiagnosticPrev => self.action_lsp_diagnostic_prev(),
 
-            EditorAction::LspDiagnosticsPanel => {
-                #[cfg(feature = "lsp")]
-                self.open_diagnostics_panel();
-                true
-            }
+            EditorAction::LspDiagnosticsPanel => self.action_lsp_diagnostics_panel(),
 
             EditorAction::ActivateAnnotation => {
                 self.activate_annotation_at_cursor();
@@ -1213,44 +658,8 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_visual_action(&mut self, editor_action: &EditorAction) -> bool {
         match editor_action {
-            EditorAction::SurroundStart => {
-                let count = self.pending_count;
-                self.pending_count = 0;
-                self.pending_grammar =
-                    Some(super::pending_grammar::PendingGrammar::SurroundVerb { count });
-                true
-            }
-            EditorAction::SurroundGiveLine => {
-                use crate::text_objects::{Direction, Modifier, ObjectKind, TextObjectSpec};
-                let Some(super::PendingOperator::SurroundAdd(delim_count)) =
-                    self.pending_operator.take()
-                else {
-                    self.pending_operator = None;
-                    self.set_mode(Mode::Normal);
-                    self.pending_count = 0;
-                    return false;
-                };
-                let line_span = if self.pending_count > 0 {
-                    self.pending_count
-                } else {
-                    1
-                };
-                self.pending_count = 0;
-                self.pending_operator = None;
-                let spec = TextObjectSpec {
-                    modifier: Modifier::Inner,
-                    direction: Direction::Current,
-                    nesting: 1,
-                    kind: ObjectKind::Line,
-                };
-                self.pending_grammar =
-                    Some(super::pending_grammar::PendingGrammar::AddSurroundChar {
-                        motion: crate::action::Motion::TextObject(spec),
-                        count: line_span,
-                        delim_count,
-                    });
-                true
-            }
+            EditorAction::SurroundStart => self.action_surround_start(),
+            EditorAction::SurroundGiveLine => self.action_surround_give_line(),
 
             EditorAction::EnterVisualChar => self.enter_visual_or_resume(Mode::Visual),
             EditorAction::EnterVisualLine => self.enter_visual_or_resume(Mode::VisualLine),
@@ -1270,57 +679,8 @@ impl<T: TerminalBackend> Editor<T> {
         match editor_action {
             EditorAction::RegionsListDown
             | EditorAction::RegionsListUp
-            | EditorAction::RegionsListSelect => {
-                let Some(layout) = self.panel_layout.clone() else {
-                    return false;
-                };
-                if layout.kind != crate::editor::PanelKind::Regions {
-                    return false;
-                }
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    match editor_action {
-                        EditorAction::RegionsListDown => {
-                            doc.move_cursor(crate::action::Motion::Down);
-                        }
-                        EditorAction::RegionsListUp => {
-                            doc.move_cursor(crate::action::Motion::Up);
-                        }
-                        _ => {}
-                    }
-                }
-                let line = self.document_manager.active_document().map_or(0, |d| {
-                    d.buffer().line_index.get_line_at(d.buffer().cursor())
-                });
-                let region = self
-                    .document_manager
-                    .get_document(layout.preview_doc_id)
-                    .map(|d| d.selections().sorted())
-                    .and_then(|sorted| sorted.get(line).copied());
-                let Some(region) = region else { return false };
-                if let Some(source) = self
-                    .document_manager
-                    .get_document_mut(layout.preview_doc_id)
-                {
-                    let (start, _) = region.buffer_span(source.buffer());
-                    let _ = source.set_cursor(start, crate::document::ops::CursorCause::User);
-                }
-                if matches!(editor_action, EditorAction::RegionsListSelect) {
-                    self.close_split_panel();
-                }
-                true
-            }
-            EditorAction::VisualSwapEnds => {
-                let Some(anchor) = self.visual_anchor() else {
-                    return false;
-                };
-                let Some(doc) = self.document_manager.active_document_mut() else {
-                    return false;
-                };
-                let cursor = doc.buffer().cursor();
-                doc.set_selection(Some(cursor));
-                let _ = doc.set_cursor(anchor, crate::document::ops::CursorCause::User);
-                true
-            }
+            | EditorAction::RegionsListSelect => self.action_select_region(editor_action),
+            EditorAction::VisualSwapEnds => self.action_visual_swap_ends(),
             _ => self.handle_bank_action(editor_action),
         }
     }
@@ -1328,32 +688,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_bank_action(&mut self, editor_action: &EditorAction) -> bool {
         match editor_action {
             EditorAction::RegionBankOccurrenceNext | EditorAction::RegionBankOccurrencePrev => {
-                let forward = matches!(editor_action, EditorAction::RegionBankOccurrenceNext);
-                let Some(doc) = self.document_manager.active_document_mut() else {
-                    return false;
-                };
-                if doc.selections().regions.is_empty() {
-                    self.notify(
-                        crate::notification::NotificationType::Info,
-                        "Bank a region first (v + Esc)".to_string(),
-                    );
-                    return false;
-                }
-                if let Some((region, needle)) = doc.bank_occurrence(forward) {
-                    let (start, _) = region.span();
-                    let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
-                    self.notify(
-                        crate::notification::NotificationType::Info,
-                        format!("Banked occurrence of \"{needle}\""),
-                    );
-                    true
-                } else {
-                    self.notify(
-                        crate::notification::NotificationType::Info,
-                        "No further occurrence to bank".to_string(),
-                    );
-                    false
-                }
+                self.action_bank_occurrence(editor_action)
             }
             EditorAction::AddSurroundToSet { ch, delim_count } => {
                 self.try_run_set_aware_add_surround(*ch, *delim_count)
@@ -1365,6 +700,774 @@ impl<T: TerminalBackend> Editor<T> {
                 );
                 false
             }
+        }
+    }
+
+    fn action_buffer_action(&mut self, id: &str) -> bool {
+        let Some((doc_id, kind_name, action_dispatch, is_tombstone)) =
+            self.document_manager.active_document().map(|document| {
+                (
+                    document.id,
+                    document.descriptor().name().to_string(),
+                    document.descriptor().action_dispatch,
+                    document.descriptor().is_tombstone(),
+                )
+            })
+        else {
+            return true;
+        };
+
+        if is_tombstone || matches!(action_dispatch, ActionDispatch::Disabled) {
+            return true;
+        }
+
+        match action_dispatch {
+            ActionDispatch::Native(actions) => self.run_kind_action(actions, id),
+            ActionDispatch::Lua => {
+                self.call_plugins(|editor| {
+                    editor
+                        .plugin_host
+                        .invoke_buffer_action(doc_id, &kind_name, id)
+                });
+            }
+            ActionDispatch::Disabled => {}
+        }
+        true
+    }
+
+    fn action_move(&mut self, motion: &crate::action::Motion) -> bool {
+        use crate::action::Motion;
+
+        if self.current_mode == Mode::Replace {
+            self.replace_originals.clear();
+        }
+
+        if matches!(
+            motion,
+            Motion::RepeatFindForward | Motion::RepeatFindBackward
+        ) {
+            let has_regions = self
+                .document_manager
+                .active_document()
+                .is_some_and(|d| !d.selections().is_empty());
+            if has_regions {
+                let forward = matches!(motion, Motion::RepeatFindForward);
+                return self.cycle_to_region(forward);
+            }
+        }
+
+        if self.current_mode == Mode::Normal
+            && matches!(motion, Motion::Up | Motion::Down)
+            && self.active_doc_is(|doc| doc.buffer_kind_id() == BufferKindId::GIT_BLAME)
+        {
+            let _ = self.snap_to_actionable_line(matches!(motion, Motion::Down));
+            return true;
+        }
+
+        if self.current_mode == Mode::Normal
+            && matches!(motion, Motion::Up | Motion::Down)
+            && self.active_doc_is(|d| d.policies().navigation == NavigationPolicy::ActionRows)
+            && self.snap_to_actionable_line(matches!(motion, Motion::Down))
+        {
+            self.update_explorer_preview();
+            self.update_buffer_list_preview();
+            return true;
+        }
+
+        let resolved = self.resolve_motion(motion);
+
+        if self.current_mode == Mode::OperatorPending {
+            if let Some(op) = self.pending_operator {
+                return self.execute_operator(op, resolved);
+            }
+        }
+        let count = if self.pending_count > 0 {
+            self.pending_count
+        } else {
+            1
+        };
+        let command = crate::command::Command::Move(resolved, count);
+        self.handle_mode_management(command);
+        let consumed = self.execute_buffer_command(command);
+        self.update_explorer_preview();
+        self.update_undotree_preview();
+        self.update_clipboard_preview();
+        consumed
+    }
+
+    fn action_enter_insert_mode(&mut self, action: &Action) -> bool {
+        if self.try_multi_insert_for_command(crate::command::Command::EnterInsertMode) {
+            self.finish_region_build(Some(action.clone()));
+            return true;
+        }
+        self.handle_mode_management(crate::command::Command::EnterInsertMode);
+        true
+    }
+
+    fn action_enter_insert_mode_after(&mut self, action: &Action) -> bool {
+        if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAfter) {
+            self.finish_region_build(Some(action.clone()));
+            return true;
+        }
+        self.handle_mode_management(crate::command::Command::EnterInsertModeAfter);
+        true
+    }
+
+    fn action_enter_insert_mode_at_line_start(&mut self, action: &Action) -> bool {
+        if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAtLineStart) {
+            self.finish_region_build(Some(action.clone()));
+            return true;
+        }
+        self.handle_mode_management(crate::command::Command::EnterInsertModeAtLineStart);
+        true
+    }
+
+    fn action_enter_insert_mode_at_line_end(&mut self, action: &Action) -> bool {
+        if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAtLineEnd) {
+            self.finish_region_build(Some(action.clone()));
+            return true;
+        }
+        self.handle_mode_management(crate::command::Command::EnterInsertModeAtLineEnd);
+        true
+    }
+
+    fn action_open_line_below(&mut self, action: &Action) -> bool {
+        if self.try_multi_insert_for_command(crate::command::Command::OpenLineBelow) {
+            self.finish_region_build(Some(action.clone()));
+            return true;
+        }
+        self.handle_mode_management(crate::command::Command::OpenLineBelow);
+        true
+    }
+
+    fn action_open_line_above(&mut self, action: &Action) -> bool {
+        if self.try_multi_insert_for_command(crate::command::Command::OpenLineAbove) {
+            self.finish_region_build(Some(action.clone()));
+            return true;
+        }
+        self.handle_mode_management(crate::command::Command::OpenLineAbove);
+        true
+    }
+
+    fn action_enter_normal_mode(&mut self) -> bool {
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            doc.commit_pending_ghost();
+        }
+        if !self.current_mode.is_visual() {
+            if let Some(doc) = self.document_manager.active_document_mut() {
+                doc.clear_selection();
+                self.region_build_recording.clear();
+            }
+        }
+        if self.current_mode == Mode::Insert || self.current_mode == Mode::Replace {
+            if !self.dot_repeat.is_replaying() {
+                self.dot_repeat.finish_insert_recording();
+            }
+            if !self.pending_multi_insert_anchors.is_empty() {
+                self.replay_multi_insert_at_remaining_anchors();
+            }
+            if let Some(doc) = self.document_manager.active_document_mut() {
+                doc.commit_transaction();
+            }
+            if let Some(doc) = self.document_manager.active_document_mut() {
+                let cursor = doc.buffer().cursor();
+                let target = if doc.buffer().get_col() > 0 {
+                    cursor - 1
+                } else {
+                    cursor
+                };
+                let _ = doc.set_cursor(target, crate::document::ops::CursorCause::Jump);
+            }
+        }
+        self.state.command_history.reset_navigation();
+        self.state.search_history.reset_navigation();
+        #[cfg(feature = "lsp")]
+        {
+            self.rename_context = None;
+        }
+        self.set_mode(Mode::Normal);
+        self.state.clear_command_line();
+        self.state.search_matches.clear();
+        self.pending_operator = None;
+        self.pending_keys.clear();
+        self.pending_count = 0;
+        true
+    }
+
+    fn action_submit(&mut self) -> bool {
+        match self.current_mode {
+            Mode::Command => {
+                self.handle_mode_management(crate::command::Command::ExecuteCommandLine);
+                true
+            }
+            Mode::Search => {
+                self.handle_mode_management(crate::command::Command::ExecuteSearch);
+                true
+            }
+            Mode::Rename => {
+                #[cfg(feature = "lsp")]
+                self.execute_lsp_rename();
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn action_delete(&mut self, motion: &crate::action::Motion) -> bool {
+        if self.current_mode == Mode::Command
+            || self.current_mode == Mode::Search
+            || self.current_mode == Mode::Rename
+        {
+            if *motion == crate::action::Motion::Left {
+                self.handle_mode_management(crate::command::Command::DeleteFromCommandLine);
+                return true;
+            }
+            if *motion == crate::action::Motion::PreviousWord {
+                self.state.delete_word_back_command_line();
+                return true;
+            }
+        }
+        if self.active_doc_is(crate::document::Document::is_read_only) {
+            return false;
+        }
+        let count = if self.pending_count > 0 {
+            self.pending_count
+        } else {
+            1
+        };
+        if self.current_mode == Mode::Normal {
+            let viewport_height = self.render_system.viewport.visible_rows();
+            let last_search_query = self.state.last_search_query.clone();
+            let captured = self.document_manager.active_document_mut().and_then(|doc| {
+                crate::executor::compute_motion_range(
+                    *motion,
+                    count,
+                    doc,
+                    viewport_height,
+                    last_search_query.as_deref(),
+                )
+                .map(|range| crate::clipboard::capture_text(doc.buffer(), &range))
+            });
+            let in_clipboard =
+                self.active_doc_is(super::super::document::Document::is_any_clipboard);
+            if let Some(text) = captured.filter(|c| !c.text().is_empty()) {
+                if !in_clipboard {
+                    self.clipboard_ring.push(text);
+                    self.refresh_clipboard_buffer_if_open();
+                }
+            }
+        }
+        let command = crate::command::Command::Delete(*motion, count);
+        let result = self.execute_buffer_command(command);
+        if result && self.current_mode == Mode::Normal && !self.dot_repeat.is_replaying() {
+            self.dot_repeat.record_single(command);
+        }
+        result
+    }
+
+    fn action_delete_line(&mut self) -> bool {
+        let count = if self.pending_count > 0 {
+            self.pending_count
+        } else {
+            1
+        };
+        let command = crate::command::Command::DeleteLine(count);
+        let result = self.execute_buffer_command(command);
+        if result && self.current_mode == Mode::Normal && !self.dot_repeat.is_replaying() {
+            self.dot_repeat.record_single(command);
+        }
+        result
+    }
+
+    fn action_insert_char(&mut self, c: char) -> bool {
+        if self.current_mode == Mode::Command
+            || self.current_mode == Mode::Search
+            || self.current_mode == Mode::Rename
+        {
+            self.handle_mode_management(crate::command::Command::AppendToCommandLine(c));
+            return true;
+        }
+        if self.current_mode == Mode::Replace {
+            self.replace_type(c);
+            return true;
+        }
+        let command = crate::command::Command::InsertChar(c);
+        self.execute_buffer_command(command)
+    }
+
+    fn action_redraw(&mut self) -> bool {
+        if let Err(e) = self.force_full_redraw() {
+            self.notify_error(e);
+        }
+        true
+    }
+
+    fn action_open_explorer(&mut self) -> bool {
+        let path = self
+            .document_manager
+            .active_document()
+            .and_then(|d| {
+                if let Some(dir) = d.directory_path() {
+                    return Some(dir.clone());
+                }
+                d.path().map(|p| {
+                    if p.is_dir() {
+                        p.to_path_buf()
+                    } else {
+                        p.parent().unwrap_or(p).to_path_buf()
+                    }
+                })
+            })
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        self.open_explorer(path);
+        true
+    }
+
+    fn action_clear_highlights(&mut self) -> bool {
+        self.state.search_matches.clear();
+        self.force_full_redraw().ok();
+        true
+    }
+
+    fn action_clear_notifications(&mut self) -> bool {
+        self.state.notifications.clear_all();
+        self.state.clear_command_line();
+        self.force_full_redraw().ok();
+        true
+    }
+
+    fn action_clear_last_notification(&mut self) -> bool {
+        self.state.notifications.clear_last();
+        self.state.clear_command_line();
+        self.force_full_redraw().ok();
+        true
+    }
+
+    fn action_checkpoint(&mut self) -> bool {
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            doc.checkpoint();
+            self.notify(
+                crate::notification::NotificationType::Info,
+                "Checkpoint created".to_string(),
+            );
+        }
+        true
+    }
+
+    fn action_search(&mut self, pattern: &str) -> bool {
+        let pattern = pattern.to_string();
+        self.perform_search(&pattern, SearchDirection::Forward, false);
+        true
+    }
+
+    fn action_visual_line_op(&mut self, op: crate::action::OperatorType, action: &Action) -> bool {
+        if !self.current_mode.is_visual() {
+            return false;
+        }
+        self.set_mode(Mode::VisualLine);
+        self.handle_operator_action(action, &EditorAction::Operator(op))
+    }
+
+    fn action_to_line_end(&mut self, editor_action: &EditorAction) -> bool {
+        let command = if matches!(editor_action, EditorAction::ChangeToLineEnd) {
+            Command::Change(crate::action::Motion::EndOfLine, 1)
+        } else {
+            Command::Delete(crate::action::Motion::EndOfLine, 1)
+        };
+        self.handle_mode_management(command);
+        self.execute_buffer_command(command)
+    }
+
+    fn action_history_up(&mut self) -> bool {
+        let dropdown_open = self
+            .state
+            .completion_session
+            .as_ref()
+            .is_some_and(|s| s.dropdown_open);
+        if dropdown_open {
+            self.handle_mode_management(Command::TabCompletePrev);
+        } else {
+            self.navigate_history_up();
+        }
+        true
+    }
+
+    fn action_history_down(&mut self) -> bool {
+        let dropdown_open = self
+            .state
+            .completion_session
+            .as_ref()
+            .is_some_and(|s| s.dropdown_open);
+        if dropdown_open {
+            self.handle_mode_management(Command::TabComplete);
+        } else {
+            self.navigate_history_down();
+        }
+        true
+    }
+
+    fn action_quit_key(&mut self) -> bool {
+        if self.state.settings.editing.quit_on_q {
+            self.should_quit = true;
+        } else {
+            self.do_quit(false);
+        }
+        true
+    }
+
+    fn action_open_file(&mut self, path: Option<&str>, force: bool) -> bool {
+        let path = path.map(str::to_string);
+        if let Err(e) = self.open_file(path, force) {
+            self.notify_error(e);
+        } else {
+            self.state.clear_command_line();
+            if let Err(e) = self.force_full_redraw() {
+                self.notify_error(e);
+            }
+        }
+        true
+    }
+
+    fn action_open_directory(&mut self, path: &std::path::Path) -> bool {
+        let path = path.to_path_buf();
+        self.open_explorer(path);
+        true
+    }
+
+    fn action_open_terminal(&mut self, cmd: Option<&str>) -> bool {
+        let cmd = cmd.map(str::to_string);
+        if let Err(e) = self.open_terminal(cmd) {
+            self.notify_error(e);
+        } else {
+            self.state.clear_command_line();
+            self.set_mode(Mode::Insert);
+        }
+        true
+    }
+
+    fn action_split_window(
+        &mut self,
+        direction: crate::split::tree::SplitDirection,
+        subcommand: &crate::command_line::commands::types::SplitSubcommand,
+    ) -> bool {
+        let subcommand = subcommand.clone();
+        self.do_split_window(direction, subcommand);
+        true
+    }
+
+    fn action_notification_clear_all(&mut self) -> bool {
+        self.state.notifications.clear_all();
+        self.state.clear_command_line();
+        true
+    }
+
+    fn action_cycle_paste(&mut self, forward: bool) -> bool {
+        let Some(state) = self.post_paste_state.take() else {
+            return false;
+        };
+        let len = self.clipboard_ring.len().max(1);
+        let next = if forward {
+            (state.ring_index + 1) % len
+        } else {
+            (state.ring_index + len - 1) % len
+        };
+        let Some(clip) = self.clipboard_ring.get(next).cloned() else {
+            return false;
+        };
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            doc.undo();
+            let _ = doc.set_cursor(
+                state.original_cursor,
+                crate::document::ops::CursorCause::User,
+            );
+        }
+        let result = self.put_into_active(
+            &clip,
+            PutAt::Cursor {
+                before: state.before,
+            },
+        );
+        if result {
+            self.post_paste_state = Some(PostPasteState {
+                ring_index: next,
+                before: state.before,
+                original_cursor: state.original_cursor,
+            });
+        }
+        result
+    }
+
+    fn action_put_system_clipboard(&mut self, before: bool, action: &Action) -> bool {
+        let text = crate::clipboard::read_system_clipboard_text();
+        if let Some(text) = text {
+            let text = crate::clipboard::normalize_newlines(&text);
+            let text: Vec<crate::character::Character> = text
+                .chars()
+                .map(crate::character::Character::from)
+                .collect();
+            let clip = Clip::from_plain(text);
+            if self.try_run_set_aware_put(before, &clip) {
+                self.finish_region_build(Some(action.clone()));
+                return true;
+            }
+            self.put_into_active(&clip, PutAt::Cursor { before })
+        } else {
+            false
+        }
+    }
+
+    fn action_terminal_scrollback(&mut self, delta: i32) -> bool {
+        let doc_id = self.active_document_id();
+        if let Some(doc) = self.document_manager.get_document(doc_id) {
+            if let Some(term) = doc.terminal() {
+                term.scroll_display(delta);
+            }
+        }
+        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+            doc.sync_terminal_buffer();
+        }
+        let _ = self.update_and_render();
+        true
+    }
+
+    fn action_find_char_pending(&mut self, forward: bool, till: bool) -> bool {
+        self.pending_grammar =
+            Some(super::pending_grammar::PendingGrammar::FindChar { forward, till });
+        true
+    }
+
+    fn action_lsp_goto_definition(&mut self) -> bool {
+        #[cfg(feature = "lsp")]
+        if let Some((path, line, col)) = self.lsp_request_position() {
+            if self.lsp_manager.goto_definition(&path, line, col).is_none() {
+                self.notify_no_lsp_server();
+            }
+        }
+        true
+    }
+
+    fn action_lsp_references(&mut self) -> bool {
+        #[cfg(feature = "lsp")]
+        if let Some((path, line, col)) = self.lsp_request_position() {
+            if self.lsp_manager.references(&path, line, col).is_none() {
+                self.notify_no_lsp_server();
+            }
+        }
+        true
+    }
+
+    fn action_lsp_hover(&mut self) -> bool {
+        #[cfg(feature = "lsp")]
+        if let Some((path, line, col)) = self.lsp_request_position() {
+            if self.lsp_manager.hover(&path, line, col).is_none() {
+                self.notify_no_lsp_server();
+            }
+        }
+        true
+    }
+
+    fn action_lsp_rename(&mut self) -> bool {
+        #[cfg(feature = "lsp")]
+        {
+            if let Some(ctx) = self.cursor_lsp_position() {
+                self.rename_context = Some(ctx);
+                self.state.clear_command_line();
+                self.set_mode(Mode::Rename);
+            } else {
+                self.notify(
+                    crate::notification::NotificationType::Warning,
+                    "LSP rename: no file open".to_string(),
+                );
+            }
+        }
+        true
+    }
+
+    fn action_lsp_code_action(&mut self) -> bool {
+        #[cfg(feature = "lsp")]
+        if let Some((path, line, col)) = self.lsp_request_position() {
+            let uri = crate::lsp::protocol::path_to_uri(&path);
+            let norm_uri = crate::lsp::protocol::normalize_uri(&uri);
+            let diagnostics: Vec<crate::lsp::protocol::LspDiagnostic> =
+                self.lsp_diagnostics.get(&norm_uri).map_or_default(|diags| {
+                    diags
+                        .iter()
+                        .filter(|d| d.range.start.line == line)
+                        .cloned()
+                        .collect()
+                });
+            if self
+                .lsp_manager
+                .code_action(&path, line, col, diagnostics)
+                .is_none()
+            {
+                self.notify_no_lsp_server();
+            }
+        }
+        true
+    }
+
+    fn action_lsp_format(&mut self) -> bool {
+        #[cfg(feature = "lsp")]
+        {
+            let info = self.document_manager.active_document().and_then(|doc| {
+                let path = doc.path()?.to_path_buf();
+                let tab_size = u32::try_from(doc.options.tab_width).unwrap_or(u32::MAX);
+                let insert_spaces = doc.options.expand_tabs;
+                Some((path, tab_size, insert_spaces))
+            });
+            if let Some((path, tab_size, insert_spaces)) = info {
+                if self.lsp_manager.is_indexing_path(&path) {
+                    self.notify(
+                        crate::notification::NotificationType::Info,
+                        "LSP: still indexing, please wait...".to_string(),
+                    );
+                } else if self
+                    .lsp_manager
+                    .format(&path, tab_size, insert_spaces)
+                    .is_none()
+                {
+                    self.notify_no_lsp_server();
+                }
+            }
+        }
+        true
+    }
+
+    fn action_lsp_diagnostic_next(&mut self) -> bool {
+        #[cfg(feature = "lsp")]
+        self.lsp_diagnostic_next();
+        true
+    }
+
+    fn action_lsp_diagnostic_prev(&mut self) -> bool {
+        #[cfg(feature = "lsp")]
+        self.lsp_diagnostic_prev();
+        true
+    }
+
+    fn action_lsp_diagnostics_panel(&mut self) -> bool {
+        #[cfg(feature = "lsp")]
+        self.open_diagnostics_panel();
+        true
+    }
+
+    fn action_surround_start(&mut self) -> bool {
+        let count = self.pending_count;
+        self.pending_count = 0;
+        self.pending_grammar = Some(super::pending_grammar::PendingGrammar::SurroundVerb { count });
+        true
+    }
+
+    fn action_surround_give_line(&mut self) -> bool {
+        use crate::text_objects::{Direction, Modifier, ObjectKind, TextObjectSpec};
+        let Some(super::PendingOperator::SurroundAdd(delim_count)) = self.pending_operator.take()
+        else {
+            self.pending_operator = None;
+            self.set_mode(Mode::Normal);
+            self.pending_count = 0;
+            return false;
+        };
+        let line_span = if self.pending_count > 0 {
+            self.pending_count
+        } else {
+            1
+        };
+        self.pending_count = 0;
+        self.pending_operator = None;
+        let spec = TextObjectSpec {
+            modifier: Modifier::Inner,
+            direction: Direction::Current,
+            nesting: 1,
+            kind: ObjectKind::Line,
+        };
+        self.pending_grammar = Some(super::pending_grammar::PendingGrammar::AddSurroundChar {
+            motion: crate::action::Motion::TextObject(spec),
+            count: line_span,
+            delim_count,
+        });
+        true
+    }
+
+    fn action_select_region(&mut self, editor_action: &EditorAction) -> bool {
+        let Some(layout) = self.panel_layout.clone() else {
+            return false;
+        };
+        if layout.kind != crate::editor::PanelKind::Regions {
+            return false;
+        }
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            match editor_action {
+                EditorAction::RegionsListDown => {
+                    doc.move_cursor(crate::action::Motion::Down);
+                }
+                EditorAction::RegionsListUp => {
+                    doc.move_cursor(crate::action::Motion::Up);
+                }
+                _ => {}
+            }
+        }
+        let line = self.document_manager.active_document().map_or(0, |d| {
+            d.buffer().line_index.get_line_at(d.buffer().cursor())
+        });
+        let region = self
+            .document_manager
+            .get_document(layout.preview_doc_id)
+            .map(|d| d.selections().sorted())
+            .and_then(|sorted| sorted.get(line).copied());
+        let Some(region) = region else { return false };
+        if let Some(source) = self
+            .document_manager
+            .get_document_mut(layout.preview_doc_id)
+        {
+            let (start, _) = region.buffer_span(source.buffer());
+            let _ = source.set_cursor(start, crate::document::ops::CursorCause::User);
+        }
+        if matches!(editor_action, EditorAction::RegionsListSelect) {
+            self.close_split_panel();
+        }
+        true
+    }
+
+    fn action_visual_swap_ends(&mut self) -> bool {
+        let Some(anchor) = self.visual_anchor() else {
+            return false;
+        };
+        let Some(doc) = self.document_manager.active_document_mut() else {
+            return false;
+        };
+        let cursor = doc.buffer().cursor();
+        doc.set_selection(Some(cursor));
+        let _ = doc.set_cursor(anchor, crate::document::ops::CursorCause::User);
+        true
+    }
+
+    fn action_bank_occurrence(&mut self, editor_action: &EditorAction) -> bool {
+        let forward = matches!(editor_action, EditorAction::RegionBankOccurrenceNext);
+        let Some(doc) = self.document_manager.active_document_mut() else {
+            return false;
+        };
+        if doc.selections().regions.is_empty() {
+            self.notify(
+                crate::notification::NotificationType::Info,
+                "Bank a region first (v + Esc)".to_string(),
+            );
+            return false;
+        }
+        if let Some((region, needle)) = doc.bank_occurrence(forward) {
+            let (start, _) = region.span();
+            let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
+            self.notify(
+                crate::notification::NotificationType::Info,
+                format!("Banked occurrence of \"{needle}\""),
+            );
+            true
+        } else {
+            self.notify(
+                crate::notification::NotificationType::Info,
+                "No further occurrence to bank".to_string(),
+            );
+            false
         }
     }
 
