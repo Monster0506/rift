@@ -245,20 +245,39 @@ fn test_action_from_str_buffer_forwarding() {
         Action::from_str("messages:refresh").unwrap(),
         Action::Buffer("messages:refresh".to_string())
     );
-    // editor:X:Y forwards to Buffer("X:Y")
     assert_eq!(
-        Action::from_str("editor:messages:refresh").unwrap(),
-        Action::Buffer("messages:refresh".to_string())
+        Action::from_str("probe:go").unwrap(),
+        Action::Buffer("probe:go".to_string())
     );
-    assert_eq!(
-        Action::from_str("editor:messages:open").unwrap(),
-        Action::Buffer("messages:open".to_string())
-    );
-    // Unknown namespaced key becomes Buffer action
-    assert_eq!(
-        Action::from_str("unknown:command").unwrap(),
-        Action::Buffer("unknown:command".to_string())
-    );
+}
+
+#[test]
+fn builtin_namespaces_only_accept_table_ids() {
+    for id in [
+        "editor:messages:refresh",
+        "editor:messages:open",
+        "editor:goto:line:abc",
+        "explorer:selcet",
+        "mode:nromal",
+        "buffer:quit",
+        "lsp:nope",
+        "git_status:stagee",
+        "undotree:nope",
+        "clipboard:nope",
+    ] {
+        let err = Action::from_str(id).expect_err(id);
+        assert!(err.contains_msg("unknown action"), "{id}: {err}");
+    }
+}
+
+#[test]
+fn kind_action_ids_parse_to_buffer_actions() {
+    for spec in table::KIND_ACTIONS {
+        assert_eq!(
+            Action::from_str(spec.id).unwrap(),
+            Action::Buffer(spec.id.to_string())
+        );
+    }
 }
 
 #[test]

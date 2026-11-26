@@ -299,10 +299,16 @@ impl FromStr for Action {
         if let Some(action) = table::parse_table(s) {
             return Ok(Self::Editor(action));
         }
-        let id = s.strip_prefix("editor:").unwrap_or(s);
-        match id.split_once(':') {
-            Some((namespace, name)) if !namespace.is_empty() && !name.is_empty() => {
-                Ok(Self::Buffer(id.to_string()))
+        if table::is_kind_action(s) {
+            return Ok(Self::Buffer(s.to_string()));
+        }
+        match s.split_once(':') {
+            Some((namespace, name))
+                if !namespace.is_empty()
+                    && !name.is_empty()
+                    && !table::is_builtin_namespace(namespace) =>
+            {
+                Ok(Self::Buffer(s.to_string()))
             }
             _ => Err(unknown_action(s)),
         }

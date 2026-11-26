@@ -43,6 +43,99 @@ pub(crate) struct ActionSpec {
     pub(crate) doc: &'static str,
 }
 
+#[derive(Debug)]
+pub(crate) struct KindActionSpec {
+    pub(crate) kind: &'static str,
+    pub(crate) id: &'static str,
+    pub(crate) op: &'static str,
+    pub(crate) doc: &'static str,
+}
+
+macro_rules! kind_actions {
+    ($( $kind:literal { $( $id:literal $op:literal $doc:literal ; )* } )*) => {
+        pub(crate) const KIND_ACTIONS: &[KindActionSpec] = &[
+            $( $( KindActionSpec { kind: $kind, id: $id, op: $op, doc: $doc }, )* )*
+        ];
+    };
+}
+
+kind_actions! {
+    "directory" {
+        "explorer:select" "Editor::explorer_select" "Open the entry under the cursor";
+        "explorer:parent" "Editor::explorer_parent" "Go to the parent directory";
+        "explorer:close" "Editor::close_split_panel" "Close the file explorer";
+        "explorer:refresh" "Editor::explorer_refresh" "Re-read the directory";
+    }
+    "undotree" {
+        "undotree:select" "Editor::undotree_select" "Go to the undo state under the cursor";
+        "undotree:close" "Editor::close_split_panel" "Close the undo tree";
+        "undotree:refresh" "Editor::undotree_refresh" "Redraw the undo tree";
+        "undotree:next" "Editor::undotree_move" "Move to the next undo state";
+        "undotree:prev" "Editor::undotree_move" "Move to the previous undo state";
+    }
+    "messages" {
+        "messages:refresh" "Editor::refresh_messages" "Reload the message log";
+    }
+    "clipboard" {
+        "clipboard:select" "Editor::clipboard_select" "Edit the clipboard entry under the cursor";
+        "clipboard:new" "Editor::clipboard_new" "Start a new clipboard entry";
+        "clipboard:refresh" "Editor::refresh_clipboard" "Reload the clipboard ring";
+        "clipboard:close" "Editor::close_split_panel" "Close the clipboard ring";
+    }
+    "clipboard_entry" {
+        "clipboard:entry:close" "Editor::clipboard_entry_close" "Return to the clipboard ring";
+    }
+    "location_list" {
+        "location_list:select" "Editor::location_list_select" "Jump to the location under the cursor";
+        "location_list:code_action" "Editor::location_list_code_action" "Request code actions for the diagnostic under the cursor";
+        "location_list:close" "Editor::close_split_panel" "Close the location list";
+    }
+    "regions" {
+        "regions:close" "Editor::close_split_panel" "Close the regions list";
+    }
+    "buffer_list" {
+        "buffer_list:select" "Editor::buffer_list_select" "Switch to the buffer under the cursor";
+        "buffer_list:close" "Editor::close_split_panel" "Close the buffer list";
+    }
+    "git_status" {
+        "git_status:select" "Editor::git_status_select" "Open the file or hunk under the cursor";
+        "git_status:stage" "Editor::git_status_apply" "Stage the file or hunk under the cursor";
+        "git_status:unstage" "Editor::git_status_apply" "Unstage the file or hunk under the cursor";
+        "git_status:toggle_stage" "Editor::git_status_apply" "Toggle staging of the file or hunk under the cursor";
+        "git_status:discard" "Editor::git_status_apply" "Discard the change under the cursor";
+        "git_status:toggle_expand" "Editor::git_status_toggle_expand" "Toggle the inline diff of the file under the cursor";
+        "git_status:next_hunk" "Editor::git_status_navigate_hunk" "Move to the next hunk";
+        "git_status:prev_hunk" "Editor::git_status_navigate_hunk" "Move to the previous hunk";
+        "git_status:blame" "Editor::git_blame" "Blame the file under the cursor";
+        "git_status:rebase" "Editor::git_rebase" "Rebase onto the upstream branch";
+    }
+    "git_blame" {
+        "git_blame:walk_back" "Editor::git_blame_walk" "Blame the parent of the commit under the cursor";
+        "git_blame:walk_forward" "Editor::git_blame_walk" "Return to the previous blame";
+        "git_blame:close" "Editor::close_git_blame" "Close the blame view";
+    }
+    "git_log" {
+        "git_log:select" "Editor::git_log_toggle_expand" "Toggle the commit under the cursor";
+        "git_log:toggle_expand" "Editor::git_log_toggle_expand" "Toggle the commit under the cursor";
+    }
+}
+
+fn namespace(id: &str) -> &str {
+    id.split_once(':').map_or(id, |(namespace, _)| namespace)
+}
+
+pub(super) fn is_kind_action(id: &str) -> bool {
+    KIND_ACTIONS.iter().any(|spec| spec.id == id)
+}
+
+pub(super) fn is_builtin_namespace(ns: &str) -> bool {
+    ACTIONS
+        .iter()
+        .map(|spec| spec.id)
+        .any(|id| namespace(id) == ns)
+        || KIND_ACTIONS.iter().any(|spec| namespace(spec.id) == ns)
+}
+
 trait ActionArg: Sized {
     const SHAPE: ArgShape;
     fn parse_arg(s: &str) -> Option<Self>;

@@ -190,14 +190,16 @@ fn get_actions_lists_the_action_table() {
     let editor = lua_editor("hello\n");
     lua_ok(
         &editor,
-        "local save, goto_line = nil, nil \
+        "local save, goto_line, select = nil, nil, nil \
          for _, a in ipairs(rift.get_actions()) do \
            if a.id == 'editor:save' then save = a end \
            if a.id == 'editor:goto:line' then goto_line = a end \
+           if a.id == 'explorer:select' then select = a end \
          end \
          assert(save and save.operation == 'Editor::save_buffer' and #save.args == 0) \
          assert(save.description ~= '') \
-         assert(goto_line and goto_line.args[1] == 'count')",
+         assert(goto_line and goto_line.args[1] == 'count') \
+         assert(select and select.kind == 'directory')",
     );
 }
 

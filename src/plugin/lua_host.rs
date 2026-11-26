@@ -2201,7 +2201,7 @@ impl LuaHost {
     fn register_action_list(lua: &Lua, api: &LuaTable) -> LuaResult<()> {
         let f = lua.create_function(|lua, ()| {
             let result = lua.create_table()?;
-            for (i, spec) in crate::action::table::ACTIONS.iter().enumerate() {
+            for spec in crate::action::table::ACTIONS {
                 let entry = lua.create_table()?;
                 entry.set("id", spec.id)?;
                 entry.set(
@@ -2210,7 +2210,16 @@ impl LuaHost {
                 )?;
                 entry.set("operation", spec.op)?;
                 entry.set("description", spec.doc)?;
-                result.set(i + 1, entry)?;
+                result.push(entry)?;
+            }
+            for spec in crate::action::table::KIND_ACTIONS {
+                let entry = lua.create_table()?;
+                entry.set("id", spec.id)?;
+                entry.set("args", lua.create_table()?)?;
+                entry.set("kind", spec.kind)?;
+                entry.set("operation", spec.op)?;
+                entry.set("description", spec.doc)?;
+                result.push(entry)?;
             }
             Ok(result)
         })?;

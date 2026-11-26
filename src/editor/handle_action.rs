@@ -92,10 +92,6 @@ impl<T: TerminalBackend> Editor<T> {
         let editor_action = match action {
             Action::Editor(act) => act,
             Action::Buffer(id) => {
-                if id == "messages:open" {
-                    self.open_messages(false);
-                    return true;
-                }
                 let Some((doc_id, kind_id, kind_name, action_dispatch, handle, is_tombstone)) =
                     self.document_manager.active_document().map(|document| {
                         (
