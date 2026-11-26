@@ -18,7 +18,7 @@ fn test_execute_move_left() {
     assert_eq!(doc.buffer().cursor(), 5);
 
     execute_command(
-        Command::Move(Motion::Left, 1),
+        Command::MoveBy(Motion::Left, 1),
         &mut doc,
         false,
         8,
@@ -40,7 +40,7 @@ fn test_execute_move_right() {
     assert_eq!(doc.buffer().cursor(), 0);
 
     execute_command(
-        Command::Move(Motion::Right, 1),
+        Command::MoveBy(Motion::Right, 1),
         &mut doc,
         false,
         8,
@@ -55,7 +55,7 @@ fn test_execute_move_right() {
 #[test]
 fn test_execute_insert_char() {
     let mut doc = create_doc();
-    execute_command(Command::InsertChar('a'), &mut doc, false, 8, 24, None, None).unwrap();
+    execute_command(Command::TypeChar('a'), &mut doc, false, 8, 24, None, None).unwrap();
     assert_eq!(doc.buffer().to_string(), "a");
 }
 
@@ -68,7 +68,7 @@ fn test_delete_find_char_forward_inclusive() {
         .unwrap();
 
     execute_command(
-        Command::Delete(Motion::FindCharForward('a'), 1),
+        Command::DeleteMotion(Motion::FindCharForward('a'), 1),
         &mut doc,
         false,
         8,
@@ -89,7 +89,7 @@ fn test_delete_find_char_forward_inclusive_partial() {
         .unwrap();
 
     execute_command(
-        Command::Delete(Motion::FindCharForward('c'), 1),
+        Command::DeleteMotion(Motion::FindCharForward('c'), 1),
         &mut doc,
         false,
         8,
@@ -104,7 +104,7 @@ fn test_delete_find_char_forward_inclusive_partial() {
 #[test]
 fn de_deletes_through_word_end() {
     assert_eq!(
-        run_op("foo bar", 0, Command::Delete(Motion::WordEnd, 1)),
+        run_op("foo bar", 0, Command::DeleteMotion(Motion::WordEnd, 1)),
         " bar"
     );
 }
@@ -112,7 +112,11 @@ fn de_deletes_through_word_end() {
 #[test]
 fn d_back_find_excludes_cursor_char() {
     assert_eq!(
-        run_op("abcd", 3, Command::Delete(Motion::FindCharBackward('b'), 1)),
+        run_op(
+            "abcd",
+            3,
+            Command::DeleteMotion(Motion::FindCharBackward('b'), 1)
+        ),
         "ad"
     );
 }
@@ -123,7 +127,7 @@ fn d_back_till_keeps_target_char() {
         run_op(
             "abxcd",
             4,
-            Command::Delete(Motion::TillCharBackward('x'), 1)
+            Command::DeleteMotion(Motion::TillCharBackward('x'), 1)
         ),
         "abxd"
     );
@@ -175,16 +179,7 @@ fn test_execute_insert_newline() {
     let mut doc = create_doc();
     doc.edit(Edit::type_text("hello"), EditSource::User)
         .unwrap();
-    execute_command(
-        Command::InsertChar('\n'),
-        &mut doc,
-        false,
-        8,
-        24,
-        None,
-        None,
-    )
-    .unwrap();
+    execute_command(Command::TypeChar('\n'), &mut doc, false, 8, 24, None, None).unwrap();
     assert_eq!(doc.buffer().to_string(), "hello\n");
 }
 
@@ -196,7 +191,7 @@ fn test_execute_move_to_buffer_start() {
     assert_eq!(doc.buffer().cursor(), 5);
 
     execute_command(
-        Command::Move(Motion::StartOfFile, 1),
+        Command::MoveBy(Motion::StartOfFile, 1),
         &mut doc,
         false,
         8,
@@ -218,7 +213,7 @@ fn test_execute_move_to_buffer_end() {
     assert_eq!(doc.buffer().cursor(), 0);
 
     execute_command(
-        Command::Move(Motion::EndOfFile, 1),
+        Command::MoveBy(Motion::EndOfFile, 1),
         &mut doc,
         false,
         8,
@@ -236,7 +231,7 @@ fn test_execute_insert_ctrl_char() {
     let mut doc = create_doc();
     // Ctrl+A should insert \u{1}
     execute_command(
-        Command::InsertChar('\u{1}'),
+        Command::TypeChar('\u{1}'),
         &mut doc,
         false,
         8,
@@ -252,7 +247,7 @@ fn test_execute_insert_ctrl_char() {
 #[test]
 fn test_execute_insert_tab_expanded_at_column_0() {
     let mut doc = create_doc();
-    execute_command(Command::InsertChar('\t'), &mut doc, true, 8, 24, None, None).unwrap();
+    execute_command(Command::TypeChar('\t'), &mut doc, true, 8, 24, None, None).unwrap();
     let text = doc.buffer().to_string();
     assert_eq!(text, "        "); // 8 spaces
     assert_eq!(text.len(), 8);
@@ -262,7 +257,7 @@ fn test_execute_insert_tab_expanded_at_column_0() {
 fn test_execute_insert_tab_expanded_at_column_1() {
     let mut doc = create_doc();
     doc.edit(Edit::type_text("a"), EditSource::User).unwrap();
-    execute_command(Command::InsertChar('\t'), &mut doc, true, 8, 24, None, None).unwrap();
+    execute_command(Command::TypeChar('\t'), &mut doc, true, 8, 24, None, None).unwrap();
     let text = doc.buffer().to_string();
     assert_eq!(text, "a       "); // 1 char + 7 spaces
     assert_eq!(text.len(), 8);
@@ -273,7 +268,7 @@ fn test_execute_insert_tab_expanded_at_column_7() {
     let mut doc = create_doc();
     doc.edit(Edit::type_text("abcdefg"), EditSource::User)
         .unwrap();
-    execute_command(Command::InsertChar('\t'), &mut doc, true, 8, 24, None, None).unwrap();
+    execute_command(Command::TypeChar('\t'), &mut doc, true, 8, 24, None, None).unwrap();
     let text = doc.buffer().to_string();
     assert_eq!(text, "abcdefg "); // 7 chars + 1 space
     assert_eq!(text.len(), 8);
@@ -284,7 +279,7 @@ fn test_execute_insert_tab_expanded_at_column_8() {
     let mut doc = create_doc();
     doc.edit(Edit::type_text("abcdefgh"), EditSource::User)
         .unwrap();
-    execute_command(Command::InsertChar('\t'), &mut doc, true, 8, 24, None, None).unwrap();
+    execute_command(Command::TypeChar('\t'), &mut doc, true, 8, 24, None, None).unwrap();
     let text = doc.buffer().to_string();
     assert_eq!(text, "abcdefgh        "); // 8 chars + 8 spaces
     assert_eq!(text.len(), 16);
@@ -293,16 +288,7 @@ fn test_execute_insert_tab_expanded_at_column_8() {
 #[test]
 fn test_execute_insert_tab_not_expanded() {
     let mut doc = create_doc();
-    execute_command(
-        Command::InsertChar('\t'),
-        &mut doc,
-        false,
-        8,
-        24,
-        None,
-        None,
-    )
-    .unwrap();
+    execute_command(Command::TypeChar('\t'), &mut doc, false, 8, 24, None, None).unwrap();
     let text = doc.buffer().to_string();
     assert_eq!(text, "\t");
     assert_eq!(text.len(), 1);
@@ -320,7 +306,7 @@ fn test_execute_undo_command() {
     assert_eq!(doc.buffer().to_string(), "x");
 
     // Execute undo command
-    execute_command(Command::Undo, &mut doc, false, 8, 24, None, None).unwrap();
+    execute_command(Command::ReplayUndo, &mut doc, false, 8, 24, None, None).unwrap();
     assert_eq!(doc.buffer().to_string(), "");
 }
 
@@ -334,7 +320,7 @@ fn test_execute_redo_command() {
     assert_eq!(doc.buffer().to_string(), "");
 
     // Execute redo command
-    execute_command(Command::Redo, &mut doc, false, 8, 24, None, None).unwrap();
+    execute_command(Command::ReplayRedo, &mut doc, false, 8, 24, None, None).unwrap();
     assert_eq!(doc.buffer().to_string(), "y");
 }
 
@@ -349,7 +335,7 @@ fn test_execute_delete_line_single_undo() {
 
     // Wrap delete line in transaction (simulating normal mode behavior)
     doc.begin_transaction("DeleteLine");
-    execute_command(Command::DeleteLine(1), &mut doc, false, 8, 24, None, None).unwrap();
+    execute_command(Command::DeleteRows(1), &mut doc, false, 8, 24, None, None).unwrap();
     doc.commit_transaction();
 
     assert_eq!(doc.buffer().to_string(), "");
@@ -371,7 +357,7 @@ fn test_execute_delete_motion_single_undo() {
     // Wrap delete word in transaction (simulating d2w)
     doc.begin_transaction("Delete(NextWord, 2)");
     execute_command(
-        Command::Delete(Motion::NextWord, 2),
+        Command::DeleteMotion(Motion::NextWord, 2),
         &mut doc,
         false,
         8,
@@ -495,7 +481,7 @@ fn test_execute_delete_16_lines_down() {
     // Execute d16j (delete with motion Down, count 16)
     // This should delete from line 0 down to line 16 (17 lines total: current + 16 below)
     execute_command(
-        Command::Delete(Motion::Down, 16),
+        Command::DeleteMotion(Motion::Down, 16),
         &mut doc,
         false,
         8,
@@ -545,7 +531,7 @@ fn test_execute_delete_5_lines_up() {
     // Execute d5k (delete with motion Up, count 5)
     // This should delete from line 2 up to line 7 (6 lines total: current + 5 above)
     execute_command(
-        Command::Delete(Motion::Up, 5),
+        Command::DeleteMotion(Motion::Up, 5),
         &mut doc,
         false,
         8,
@@ -601,7 +587,7 @@ fn test_execute_delete_5_lines_up_cursor_mid_line() {
 
     // Execute d5k (delete with motion Up, count 5)
     execute_command(
-        Command::Delete(Motion::Up, 5),
+        Command::DeleteMotion(Motion::Up, 5),
         &mut doc,
         false,
         8,
@@ -635,7 +621,7 @@ fn bug_dw_last_word_of_line_joins_lines() {
         .unwrap();
 
     execute_command(
-        Command::Delete(Motion::NextWord, 1),
+        Command::DeleteMotion(Motion::NextWord, 1),
         &mut doc,
         false,
         8,
@@ -659,7 +645,7 @@ fn d2w_across_lines_clamps_last_word_only() {
         .unwrap();
 
     execute_command(
-        Command::Delete(Motion::NextWord, 2),
+        Command::DeleteMotion(Motion::NextWord, 2),
         &mut doc,
         false,
         8,
@@ -700,7 +686,7 @@ fn word_delete_at_line_end_cases() {
             .unwrap();
 
         execute_command(
-            Command::Delete(motion, count),
+            Command::DeleteMotion(motion, count),
             &mut doc,
             false,
             8,
@@ -750,33 +736,38 @@ fn run_linewise(text: &str, cursor: usize, cmd: Command, typed: &str) -> String 
         .unwrap();
     execute_command(cmd, &mut doc, false, 8, 24, None, None).unwrap();
     for ch in typed.chars() {
-        execute_command(Command::InsertChar(ch), &mut doc, false, 8, 24, None, None).unwrap();
+        execute_command(Command::TypeChar(ch), &mut doc, false, 8, 24, None, None).unwrap();
     }
     doc.buffer().to_string()
 }
 
 #[test]
 fn dj_onto_last_line_removes_preceding_newline() {
-    let out = run_linewise("a\nb\nc", 2, Command::Delete(Motion::Down, 1), "");
+    let out = run_linewise("a\nb\nc", 2, Command::DeleteMotion(Motion::Down, 1), "");
     assert_eq!(out, "a");
 }
 
 #[test]
 fn dk_from_last_line_removes_preceding_newline() {
-    let out = run_linewise("a\nb\nc", 4, Command::Delete(Motion::Up, 1), "");
+    let out = run_linewise("a\nb\nc", 4, Command::DeleteMotion(Motion::Up, 1), "");
     assert_eq!(out, "a");
 }
 
 #[test]
 #[allow(non_snake_case)]
 fn dG_to_last_line_removes_preceding_newline() {
-    let out = run_linewise("a\nb\nc", 2, Command::Delete(Motion::EndOfFile, 1), "");
+    let out = run_linewise(
+        "a\nb\nc",
+        2,
+        Command::DeleteMotion(Motion::EndOfFile, 1),
+        "",
+    );
     assert_eq!(out, "a");
 }
 
 #[test]
 fn dj_on_two_line_buffer_leaves_empty_buffer() {
-    let out = run_linewise("a\nb", 0, Command::Delete(Motion::Down, 1), "");
+    let out = run_linewise("a\nb", 0, Command::DeleteMotion(Motion::Down, 1), "");
     assert_eq!(out, "");
 }
 

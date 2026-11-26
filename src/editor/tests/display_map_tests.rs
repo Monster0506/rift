@@ -8,7 +8,7 @@ fn test_display_map_cache_populated_after_command() {
 
     editor.display_map_cache.clear();
 
-    editor.execute_buffer_command(crate::command::Command::Move(
+    editor.execute_buffer_command(crate::command::Command::MoveBy(
         crate::action::Motion::Right,
         1,
     ));
@@ -25,13 +25,13 @@ fn test_display_map_cache_revision_stable_across_moves() {
     let mut editor = create_editor_sized(24, 80);
     set_content(&mut editor, "hello world\n");
 
-    editor.execute_buffer_command(crate::command::Command::Move(
+    editor.execute_buffer_command(crate::command::Command::MoveBy(
         crate::action::Motion::Right,
         1,
     ));
     let rev_after_first = editor.display_map_cache.last().map(|e| e.revision);
 
-    editor.execute_buffer_command(crate::command::Command::Move(
+    editor.execute_buffer_command(crate::command::Command::MoveBy(
         crate::action::Motion::Right,
         1,
     ));
@@ -48,14 +48,14 @@ fn test_display_map_cache_invalidated_after_mutation() {
     let mut editor = create_editor_sized(24, 80);
     set_content(&mut editor, "hello world\n");
 
-    editor.execute_buffer_command(crate::command::Command::Move(
+    editor.execute_buffer_command(crate::command::Command::MoveBy(
         crate::action::Motion::Right,
         1,
     ));
     let rev_before = editor.display_map_cache.last().map(|e| e.revision).unwrap();
 
     editor.current_mode = Mode::Insert;
-    editor.execute_buffer_command(crate::command::Command::InsertChar('x'));
+    editor.execute_buffer_command(crate::command::Command::TypeChar('x'));
 
     let rev_after = editor.display_map_cache.last().map(|e| e.revision).unwrap();
 
@@ -319,7 +319,7 @@ fn test_edit_on_partial_display_map_stays_correct() {
     assert!(!dm_before.is_complete());
 
     editor.current_mode = Mode::Insert;
-    editor.execute_buffer_command(crate::command::Command::InsertChar('X'));
+    editor.execute_buffer_command(crate::command::Command::TypeChar('X'));
 
     let doc = editor.document_manager.get_document(doc_id).unwrap();
     let mut reference = super::resolve_display_map(
@@ -380,7 +380,7 @@ fn test_large_count_down_motion_matches_full_build_reference() {
         pos
     };
 
-    editor.execute_buffer_command(crate::command::Command::Move(
+    editor.execute_buffer_command(crate::command::Command::MoveBy(
         crate::action::Motion::Down,
         count,
     ));
@@ -411,7 +411,7 @@ fn test_text_changed_coarse_fires_once_per_render() {
 
     editor.current_mode = Mode::Insert;
     for _ in 0..5 {
-        editor.execute_buffer_command(crate::command::Command::InsertChar('a'));
+        editor.execute_buffer_command(crate::command::Command::TypeChar('a'));
     }
 
     assert_eq!(
@@ -451,7 +451,7 @@ fn test_cursor_moved_fires_once_per_render_with_latest_position() {
     });
 
     for _ in 0..5 {
-        editor.execute_buffer_command(crate::command::Command::Move(
+        editor.execute_buffer_command(crate::command::Command::MoveBy(
             crate::action::Motion::Right,
             1,
         ));

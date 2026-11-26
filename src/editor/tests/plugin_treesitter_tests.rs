@@ -423,7 +423,7 @@ fn cursor_moved_handlers_read_the_moved_cursor() {
         "MOVES = {} rift.on('CursorMoved', function(ev) local r, c = rift.get_cursor(); MOVES[#MOVES + 1] = (r == ev.row and c == ev.col) end)",
     );
     for _ in 0..3 {
-        editor.execute_buffer_command(crate::command::Command::Move(
+        editor.execute_buffer_command(crate::command::Command::MoveBy(
             crate::action::Motion::Right,
             1,
         ));

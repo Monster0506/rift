@@ -673,13 +673,15 @@ fn git_rebase_todo_is_read_only_and_blocks_insert_mode() {
     let doc = editor.document_manager.active_document().unwrap();
     assert!(doc.is_read_only(), "GitRebaseTodo must be read-only");
     let before = doc.buffer().to_string();
-    editor.handle_mode_management(crate::command::Command::EnterInsertMode);
+    editor.handle_mode_management(crate::command::Command::BeginInsert(
+        crate::command::InsertEntry::AtCursor,
+    ));
     assert_eq!(
         editor.current_mode,
         crate::mode::Mode::Normal,
         "i must not enter Insert on GitRebaseTodo"
     );
-    assert!(!editor.execute_buffer_command(crate::command::Command::DeleteLine(1)));
+    assert!(!editor.execute_buffer_command(crate::command::Command::DeleteRows(1)));
     assert_eq!(
         editor
             .document_manager

@@ -7,10 +7,10 @@ use crate::term::TerminalBackend;
 
 const fn with_count_override(cmd: Command, count: usize) -> Option<Command> {
     match cmd {
-        Command::Move(m, _) => Some(Command::Move(m, count)),
-        Command::Delete(m, _) => Some(Command::Delete(m, count)),
+        Command::MoveBy(m, _) => Some(Command::MoveBy(m, count)),
+        Command::DeleteMotion(m, _) => Some(Command::DeleteMotion(m, count)),
         Command::Change(m, _) => Some(Command::Change(m, count)),
-        Command::DeleteLine(_) => Some(Command::DeleteLine(count)),
+        Command::DeleteRows(_) => Some(Command::DeleteRows(count)),
         Command::ChangeLine(_) => Some(Command::ChangeLine(count)),
         Command::ReplaceChar(ch, _) => Some(Command::ReplaceChar(ch, count)),
         Command::DeleteSurround(ch, _) => Some(Command::DeleteSurround(ch, count)),
@@ -173,7 +173,7 @@ impl<T: TerminalBackend> Editor<T> {
         count: usize,
         cut: Option<(crate::wrap::MotionRange, crate::clipboard::Clip)>,
     ) -> bool {
-        let command = crate::command::Command::Delete(motion, count);
+        let command = crate::command::Command::DeleteMotion(motion, count);
         self.set_mode(Mode::Normal);
         let ghost_allowed = self
             .document_manager
@@ -228,7 +228,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         match op {
             crate::action::OperatorType::Delete => {
-                let command = crate::command::Command::DeleteLine(count);
+                let command = crate::command::Command::DeleteRows(count);
                 self.set_mode(Mode::Normal);
                 let ghost_allowed = self
                     .document_manager

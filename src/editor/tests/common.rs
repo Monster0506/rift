@@ -198,7 +198,7 @@ pub(super) fn measure_type(editor: &mut Editor<MockTerminal>, label: &str, n: us
     let mut times = Vec::with_capacity(n);
     for _ in 0..n {
         let t = Instant::now();
-        editor.execute_buffer_command(crate::command::Command::InsertChar('x'));
+        editor.execute_buffer_command(crate::command::Command::TypeChar('x'));
         editor.update_and_render().unwrap();
         times.push(t.elapsed());
     }

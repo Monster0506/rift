@@ -1,6 +1,7 @@
 use super::Editor;
 use crate::command_line::settings::resolver::OptionScope;
 use crate::document::ops::{Edit, EditSource};
+use crate::document::DocumentId;
 use crate::plugin::lua_host::{
     BufAnnotations, BufEntry, BufMeta, BufUpdate, HistoryAvailability, SyncKeys,
 };
@@ -508,22 +509,9 @@ impl<T: TerminalBackend> Editor<T> {
             PluginMutation::SetCursorHoldDelay(ms) => {
                 self.plugin_host.set_cursor_hold_delay_ms(ms);
             }
-            PluginMutation::ExecAction(action_str) => {
-                if let Ok(action) = action_str.parse::<crate::action::Action>() {
-                    self.handle_action(&action);
-                }
-            }
+            PluginMutation::ExecAction(action_str) => self.plugin_exec_action(&action_str),
             PluginMutation::SetOption { buf, name, value } => {
-                if let Some(buf) = buf {
-                    if self.document_manager.get_document(buf).is_none() {
-                        self.drop_plugin_write(buf, "set_option");
-                        return;
-                    }
-                }
-                let scope = buf.map_or(OptionScope::Global, OptionScope::Resolve);
-                if let Err(err) = self.set_option(&name, Some(&value), scope) {
-                    self.notify_error(err);
-                }
+                self.plugin_set_option(buf, &name, &value);
             }
             _ => self.report_misrouted(),
         }
@@ -589,49 +577,16 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn apply_cursor_mutation(&mut self, mutation: PluginMutation) {
         match mutation {
-            PluginMutation::SetCursor { buf, row, col } => {
-                let Some(doc) = self.document_manager.get_document_mut(buf) else {
-                    self.drop_plugin_write(buf, "set_cursor");
-                    return;
-                };
-                let pos = doc.buffer().line_col_position(row.saturating_sub(1), col);
-                let _ = doc.set_cursor(pos, crate::document::ops::CursorCause::Plugin);
-            }
-            PluginMutation::CenterOnLine { buf, row } => {
-                let active = self.document_manager.active_document_id() == Some(buf);
-                let Some(doc) = self.document_manager.get_document_mut(buf) else {
-                    self.drop_plugin_write(buf, "center_on_line");
-                    return;
-                };
-                let total = doc.buffer().get_total_lines();
-                let row0 = row.saturating_sub(1).min(total.saturating_sub(1));
-                let target = doc.buffer().line_col_position(row0, 0);
-                let _ = doc.set_cursor(target, crate::document::ops::CursorCause::Plugin);
-                if active {
-                    self.render_system.viewport.center_on(row0, total);
-                }
-            }
+            PluginMutation::SetCursor { buf, row, col } => self.plugin_set_cursor(buf, row, col),
+            PluginMutation::CenterOnLine { buf, row } => self.plugin_center_on_line(buf, row),
             PluginMutation::SetScroll(top, left) => {
                 self.render_system.viewport.set_scroll(top, left);
             }
             PluginMutation::SetLineEnding { buf, ending } => {
-                if self.document_manager.get_document(buf).is_none() {
-                    self.drop_plugin_write(buf, "set_line_ending");
-                    return;
-                }
-                let ending = crate::document::LineEnding::from_name(&ending).name();
-                if let Err(err) =
-                    self.set_option("line_ending", Some(ending), OptionScope::Local(buf))
-                {
-                    self.notify_error(err);
-                }
+                self.plugin_set_line_ending(buf, &ending);
             }
             PluginMutation::SetBufferVar { buf, key, value } => {
-                let Some(doc) = self.document_manager.get_document_mut(buf) else {
-                    self.drop_plugin_write(buf, "set_buffer_var");
-                    return;
-                };
-                doc.vars.insert(key, value);
+                self.plugin_set_buffer_var(buf, key, value);
             }
             _ => self.report_misrouted(),
         }
@@ -656,58 +611,14 @@ impl<T: TerminalBackend> Editor<T> {
         origin: Option<PluginGeneration>,
     ) {
         match mutation {
-            PluginMutation::SaveBuffer { buf } => {
-                if self.document_manager.get_document(buf).is_some() {
-                    self.save_buffer(buf, None);
-                } else {
-                    self.drop_plugin_write(buf, "save");
-                }
-            }
-            PluginMutation::SwitchToBuffer(id) => {
-                if self.document_manager.get_document(id).is_some() {
-                    let _ = self.focus_document(id);
-                }
-            }
-            PluginMutation::OpenFile { path, force } => {
-                if !force {
-                    if let Some(doc) = self.document_manager.active_document() {
-                        if doc.is_dirty() {
-                            self.notify(
-                                crate::notification::NotificationType::Warning,
-                                "unsaved changes — use force=true to discard",
-                            );
-                            return;
-                        }
-                    }
-                }
-                let _ = self.open_file(Some(path), force);
-            }
-            PluginMutation::CloseBuffer { buf, force } => {
-                if self.document_manager.get_document(buf).is_none() {
-                    self.drop_plugin_write(buf, "close_buf");
-                } else if self.active_document_id() == buf {
-                    self.do_quit(force);
-                } else {
-                    let result = if force {
-                        self.close_buffer(buf, crate::document::manager::RemovalIntent::Force)
-                    } else {
-                        self.close_buffer(buf, crate::document::manager::RemovalIntent::Normal)
-                    };
-                    if let Err(error) = result {
-                        self.notify_error(error);
-                    }
-                }
-            }
+            PluginMutation::SaveBuffer { buf } => self.plugin_save_buffer(buf),
+            PluginMutation::SwitchToBuffer(id) => self.plugin_switch_to_buffer(id),
+            PluginMutation::OpenFile { path, force } => self.plugin_open_file(path, force),
+            PluginMutation::CloseBuffer { buf, force } => self.plugin_close_buffer(buf, force),
             PluginMutation::CreateScratchBuf { id, name, lines } => {
                 self.create_plugin_scratch(id, name, &lines);
             }
-            PluginMutation::ReloadBuffer { buf, force } => {
-                if self.document_manager.get_document(buf).is_none() {
-                    self.drop_plugin_write(buf, "reload_buf");
-                } else if let Err(error) = self.reload_document(buf, force) {
-                    self.notify_error(error);
-                }
-            }
+            PluginMutation::ReloadBuffer { buf, force } => self.plugin_reload_buffer(buf, force),
             PluginMutation::CreateBuffer {
                 id,
                 kind,
@@ -942,63 +853,13 @@ impl<T: TerminalBackend> Editor<T> {
     ) {
         match mutation {
             PluginMutation::MapKey { mode, keys, action } => {
-                let Some(ctx) = crate::keymap::KeyContext::from_mode(&mode) else {
-                    return;
-                };
-                if let (Some(key_seq), Ok(act)) = (
-                    crate::key::notation::parse_key_sequence(&keys),
-                    action.parse::<crate::action::Action>(),
-                ) {
-                    if let Some(gen) = origin {
-                        self.keymap.register_with_owner(
-                            ctx,
-                            key_seq,
-                            act,
-                            gen.keymap_owner_token(),
-                        );
-                    } else {
-                        self.keymap.register_sequence(ctx, key_seq, act);
-                    }
-                }
+                self.plugin_map_key(&mode, &keys, &action, origin);
             }
-            PluginMutation::UnmapKey { mode, keys } => {
-                let Some(ctx) = crate::keymap::KeyContext::from_mode(&mode) else {
-                    return;
-                };
-                if let Some(key_seq) = crate::key::notation::parse_key_sequence(&keys) {
-                    self.keymap.unregister_sequence(ctx, &key_seq);
-                }
-            }
+            PluginMutation::UnmapKey { mode, keys } => self.plugin_unmap_key(&mode, &keys),
             PluginMutation::MapKeyKind { kind, keys, action } => {
-                let Some(kind_id) = self.buffer_kinds.id_by_name(&kind) else {
-                    return;
-                };
-                if let (Some(key_seq), Ok(action)) = (
-                    crate::key::notation::parse_key_sequence(&keys),
-                    action.parse::<crate::action::Action>(),
-                ) {
-                    let ctx = crate::keymap::KeyContext::Buffer(kind_id);
-                    if let Some(gen) = origin {
-                        self.keymap.register_with_owner(
-                            ctx,
-                            key_seq,
-                            action,
-                            gen.keymap_owner_token(),
-                        );
-                    } else {
-                        self.keymap.register_sequence(ctx, key_seq, action);
-                    }
-                }
+                self.plugin_map_key_kind(&kind, &keys, &action, origin);
             }
-            PluginMutation::UnmapKeyKind { kind, keys } => {
-                let Some(kind_id) = self.buffer_kinds.id_by_name(&kind) else {
-                    return;
-                };
-                if let Some(key_seq) = crate::key::notation::parse_key_sequence(&keys) {
-                    self.keymap
-                        .unregister_sequence(crate::keymap::KeyContext::Buffer(kind_id), &key_seq);
-                }
-            }
+            PluginMutation::UnmapKeyKind { kind, keys } => self.plugin_unmap_key_kind(&kind, &keys),
             _ => self.report_misrouted(),
         }
     }
@@ -1069,26 +930,7 @@ impl<T: TerminalBackend> Editor<T> {
                     crate::action::EditorAction::LspHover,
                 ));
             }
-            PluginMutation::LspRename { new_name } => {
-                #[cfg(feature = "lsp")]
-                match self.cursor_lsp_position() {
-                    Some((path, line, col)) => {
-                        if self
-                            .lsp_manager
-                            .rename(&path, line, col, new_name)
-                            .is_none()
-                        {
-                            self.notify_no_lsp_server();
-                        }
-                    }
-                    None => self.notify(
-                        crate::notification::NotificationType::Warning,
-                        "LSP rename: no file open".to_string(),
-                    ),
-                }
-                #[cfg(not(feature = "lsp"))]
-                let _ = new_name;
-            }
+            PluginMutation::LspRename { new_name } => self.plugin_lsp_rename(new_name),
             PluginMutation::LspRenameDialog => {
                 self.handle_action(&crate::action::Action::Editor(
                     crate::action::EditorAction::LspRename,
@@ -1219,12 +1061,7 @@ impl<T: TerminalBackend> Editor<T> {
                 verb,
                 command,
                 owner,
-            } => {
-                use crate::annotations::registry::Handler;
-                let handler = command.map_or(Handler::Lua, Handler::Command);
-                self.dispatch_registry
-                    .register_owned(kind, verb, handler, owner);
-            }
+            } => self.plugin_register_annotation_action(kind, verb, command, owner),
             PluginMutation::RegisterKindDefaults {
                 kind,
                 presentation,
@@ -1234,10 +1071,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.kind_registry
                     .register_owned(kind, presentation, description, owner);
             }
-            PluginMutation::UnloadPlugin { owner } => {
-                self.dispatch_registry.remove_owner(&owner);
-                self.kind_registry.remove_owner(&owner);
-            }
+            PluginMutation::UnloadPlugin { owner } => self.plugin_unload_plugin(&owner),
             _ => self.report_misrouted(),
         }
     }
@@ -1255,45 +1089,290 @@ impl<T: TerminalBackend> Editor<T> {
                 range,
                 hl,
                 priority,
-            } => {
-                use crate::annotations::presentation::{FaceRef, Presentation};
-                let Some(doc) = self.document_manager.get_document_mut(buf) else {
-                    self.drop_plugin_write(buf, "highlight.add");
-                    return;
-                };
-                let bytes = highlight_bytes(doc.buffer(), &range);
-                if bytes.is_empty() {
-                    return;
-                }
-                let presentation = match hl {
-                    HighlightSpec::Group(group) => Presentation::with_face(FaceRef::new(group)),
-                    HighlightSpec::Style(style) => Presentation::with_style(style),
-                }
-                .with_priority(priority);
-                doc.annotations.add_ns_highlight(
-                    &owned_namespace(ns, owner),
-                    bytes.start,
-                    bytes.end,
-                    presentation,
-                );
-            }
+            } => self.plugin_add_ns_highlight(buf, ns, owner, &range, hl, priority),
             PluginMutation::ClearNsHighlights { buf, ns, owner } => {
-                let ns = owned_namespace(ns, owner);
-                let ids: Vec<crate::document::DocumentId> = match buf {
-                    Some(buf) => vec![buf],
-                    None => self
-                        .document_manager
-                        .documents_iter()
-                        .map(|d| d.id)
-                        .collect(),
-                };
-                for id in ids {
-                    if let Some(doc) = self.document_manager.get_document_mut(id) {
-                        doc.annotations.clear_ns_highlights(&ns);
-                    }
-                }
+                self.plugin_clear_ns_highlights(buf, ns, owner);
             }
             _ => self.report_misrouted(),
+        }
+    }
+
+    fn plugin_exec_action(&mut self, action_str: &str) {
+        if let Ok(action) = action_str.parse::<crate::action::Action>() {
+            self.handle_action(&action);
+        }
+    }
+
+    fn plugin_set_option(&mut self, buf: Option<DocumentId>, name: &str, value: &str) {
+        if let Some(buf) = buf {
+            if self.document_manager.get_document(buf).is_none() {
+                self.drop_plugin_write(buf, "set_option");
+                return;
+            }
+        }
+        let scope = buf.map_or(OptionScope::Global, OptionScope::Resolve);
+        if let Err(err) = self.set_option(name, Some(value), scope) {
+            self.notify_error(err);
+        }
+    }
+
+    fn plugin_set_cursor(&mut self, buf: DocumentId, row: usize, col: usize) {
+        let Some(doc) = self.document_manager.get_document_mut(buf) else {
+            self.drop_plugin_write(buf, "set_cursor");
+            return;
+        };
+        let pos = doc.buffer().line_col_position(row.saturating_sub(1), col);
+        let _ = doc.set_cursor(pos, crate::document::ops::CursorCause::Plugin);
+    }
+
+    fn plugin_center_on_line(&mut self, buf: DocumentId, row: usize) {
+        let active = self.document_manager.active_document_id() == Some(buf);
+        let Some(doc) = self.document_manager.get_document_mut(buf) else {
+            self.drop_plugin_write(buf, "center_on_line");
+            return;
+        };
+        let total = doc.buffer().get_total_lines();
+        let row0 = row.saturating_sub(1).min(total.saturating_sub(1));
+        let target = doc.buffer().line_col_position(row0, 0);
+        let _ = doc.set_cursor(target, crate::document::ops::CursorCause::Plugin);
+        if active {
+            self.render_system.viewport.center_on(row0, total);
+        }
+    }
+
+    fn plugin_set_line_ending(&mut self, buf: DocumentId, ending: &str) {
+        if self.document_manager.get_document(buf).is_none() {
+            self.drop_plugin_write(buf, "set_line_ending");
+            return;
+        }
+        let ending = crate::document::LineEnding::from_name(ending).name();
+        if let Err(err) = self.set_option("line_ending", Some(ending), OptionScope::Local(buf)) {
+            self.notify_error(err);
+        }
+    }
+
+    fn plugin_set_buffer_var(
+        &mut self,
+        buf: DocumentId,
+        key: String,
+        value: crate::annotations::value::Value,
+    ) {
+        let Some(doc) = self.document_manager.get_document_mut(buf) else {
+            self.drop_plugin_write(buf, "set_buffer_var");
+            return;
+        };
+        doc.vars.insert(key, value);
+    }
+
+    fn plugin_save_buffer(&mut self, buf: DocumentId) {
+        if self.document_manager.get_document(buf).is_some() {
+            self.save_buffer(buf, None);
+        } else {
+            self.drop_plugin_write(buf, "save");
+        }
+    }
+
+    fn plugin_switch_to_buffer(&mut self, id: DocumentId) {
+        if self.document_manager.get_document(id).is_some() {
+            let _ = self.focus_document(id);
+        }
+    }
+
+    fn plugin_open_file(&mut self, path: String, force: bool) {
+        if !force {
+            if let Some(doc) = self.document_manager.active_document() {
+                if doc.is_dirty() {
+                    self.notify(
+                        crate::notification::NotificationType::Warning,
+                        "unsaved changes — use force=true to discard",
+                    );
+                    return;
+                }
+            }
+        }
+        let _ = self.open_file(Some(path), force);
+    }
+
+    fn plugin_close_buffer(&mut self, buf: DocumentId, force: bool) {
+        if self.document_manager.get_document(buf).is_none() {
+            self.drop_plugin_write(buf, "close_buf");
+        } else if self.active_document_id() == buf {
+            self.do_quit(force);
+        } else {
+            let result = if force {
+                self.close_buffer(buf, crate::document::manager::RemovalIntent::Force)
+            } else {
+                self.close_buffer(buf, crate::document::manager::RemovalIntent::Normal)
+            };
+            if let Err(error) = result {
+                self.notify_error(error);
+            }
+        }
+    }
+
+    fn plugin_reload_buffer(&mut self, buf: DocumentId, force: bool) {
+        if self.document_manager.get_document(buf).is_none() {
+            self.drop_plugin_write(buf, "reload_buf");
+        } else if let Err(error) = self.reload_document(buf, force) {
+            self.notify_error(error);
+        }
+    }
+
+    fn plugin_map_key(
+        &mut self,
+        mode: &str,
+        keys: &str,
+        action: &str,
+        origin: Option<PluginGeneration>,
+    ) {
+        let Some(ctx) = crate::keymap::KeyContext::from_mode(mode) else {
+            return;
+        };
+        if let (Some(key_seq), Ok(act)) = (
+            crate::key::notation::parse_key_sequence(keys),
+            action.parse::<crate::action::Action>(),
+        ) {
+            if let Some(gen) = origin {
+                self.keymap
+                    .register_with_owner(ctx, key_seq, act, gen.keymap_owner_token());
+            } else {
+                self.keymap.register_sequence(ctx, key_seq, act);
+            }
+        }
+    }
+
+    fn plugin_unmap_key(&mut self, mode: &str, keys: &str) {
+        let Some(ctx) = crate::keymap::KeyContext::from_mode(mode) else {
+            return;
+        };
+        if let Some(key_seq) = crate::key::notation::parse_key_sequence(keys) {
+            self.keymap.unregister_sequence(ctx, &key_seq);
+        }
+    }
+
+    fn plugin_map_key_kind(
+        &mut self,
+        kind: &str,
+        keys: &str,
+        action: &str,
+        origin: Option<PluginGeneration>,
+    ) {
+        let Some(kind_id) = self.buffer_kinds.id_by_name(kind) else {
+            return;
+        };
+        if let (Some(key_seq), Ok(action)) = (
+            crate::key::notation::parse_key_sequence(keys),
+            action.parse::<crate::action::Action>(),
+        ) {
+            let ctx = crate::keymap::KeyContext::Buffer(kind_id);
+            if let Some(gen) = origin {
+                self.keymap
+                    .register_with_owner(ctx, key_seq, action, gen.keymap_owner_token());
+            } else {
+                self.keymap.register_sequence(ctx, key_seq, action);
+            }
+        }
+    }
+
+    fn plugin_unmap_key_kind(&mut self, kind: &str, keys: &str) {
+        let Some(kind_id) = self.buffer_kinds.id_by_name(kind) else {
+            return;
+        };
+        if let Some(key_seq) = crate::key::notation::parse_key_sequence(keys) {
+            self.keymap
+                .unregister_sequence(crate::keymap::KeyContext::Buffer(kind_id), &key_seq);
+        }
+    }
+
+    fn plugin_lsp_rename(&mut self, new_name: String) {
+        #[cfg(feature = "lsp")]
+        match self.cursor_lsp_position() {
+            Some((path, line, col)) => {
+                if self
+                    .lsp_manager
+                    .rename(&path, line, col, new_name)
+                    .is_none()
+                {
+                    self.notify_no_lsp_server();
+                }
+            }
+            None => self.notify(
+                crate::notification::NotificationType::Warning,
+                "LSP rename: no file open".to_string(),
+            ),
+        }
+        #[cfg(not(feature = "lsp"))]
+        let _ = new_name;
+    }
+
+    fn plugin_register_annotation_action(
+        &mut self,
+        kind: String,
+        verb: String,
+        command: Option<String>,
+        owner: Option<String>,
+    ) {
+        use crate::annotations::registry::Handler;
+        let handler = command.map_or(Handler::Lua, Handler::Command);
+        self.dispatch_registry
+            .register_owned(kind, verb, handler, owner);
+    }
+
+    fn plugin_unload_plugin(&mut self, owner: &str) {
+        self.dispatch_registry.remove_owner(owner);
+        self.kind_registry.remove_owner(owner);
+    }
+
+    fn plugin_add_ns_highlight(
+        &mut self,
+        buf: DocumentId,
+        ns: String,
+        owner: Option<String>,
+        range: &HighlightRange,
+        hl: HighlightSpec,
+        priority: i32,
+    ) {
+        use crate::annotations::presentation::{FaceRef, Presentation};
+        let Some(doc) = self.document_manager.get_document_mut(buf) else {
+            self.drop_plugin_write(buf, "highlight.add");
+            return;
+        };
+        let bytes = highlight_bytes(doc.buffer(), range);
+        if bytes.is_empty() {
+            return;
+        }
+        let presentation = match hl {
+            HighlightSpec::Group(group) => Presentation::with_face(FaceRef::new(group)),
+            HighlightSpec::Style(style) => Presentation::with_style(style),
+        }
+        .with_priority(priority);
+        doc.annotations.add_ns_highlight(
+            &owned_namespace(ns, owner),
+            bytes.start,
+            bytes.end,
+            presentation,
+        );
+    }
+
+    fn plugin_clear_ns_highlights(
+        &mut self,
+        buf: Option<DocumentId>,
+        ns: String,
+        owner: Option<String>,
+    ) {
+        let ns = owned_namespace(ns, owner);
+        let ids: Vec<crate::document::DocumentId> = match buf {
+            Some(buf) => vec![buf],
+            None => self
+                .document_manager
+                .documents_iter()
+                .map(|d| d.id)
+                .collect(),
+        };
+        for id in ids {
+            if let Some(doc) = self.document_manager.get_document_mut(id) {
+                doc.annotations.clear_ns_highlights(&ns);
+            }
         }
     }
 }

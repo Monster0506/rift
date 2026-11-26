@@ -884,7 +884,7 @@ fn dollar_in_normal_mode_rests_on_the_last_character() {
     feed_keys(&mut editor, "a");
     assert_eq!(editor.current_mode, Mode::Insert);
     assert_eq!(editor.active_document().buffer().cursor(), 3);
-    editor.execute_buffer_command(crate::command::Command::InsertChar('Q'));
+    editor.execute_buffer_command(crate::command::Command::TypeChar('Q'));
     feed_keys(&mut editor, "<Esc>");
     assert_eq!(editor.active_document().buffer().to_string(), "abcQ\n\nxyz");
 

@@ -80,11 +80,11 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::OpenLineBelow => self.action_open_line_below(action),
             EditorAction::OpenLineAbove => self.action_open_line_above(action),
             EditorAction::EnterCommandMode => {
-                self.handle_mode_management(crate::command::Command::EnterCommandMode);
+                self.handle_mode_management(crate::command::Command::ReadExLine);
                 true
             }
             EditorAction::EnterSearchMode => {
-                self.handle_mode_management(crate::command::Command::EnterSearchMode);
+                self.handle_mode_management(crate::command::Command::ReadSearchPattern);
                 true
             }
             _ => self.handle_mode_exit_action(action, editor_action),
@@ -94,8 +94,8 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_mode_exit_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
             EditorAction::EnterNormalMode => self.action_enter_normal_mode(),
-            EditorAction::Undo => self.execute_buffer_command(crate::command::Command::Undo),
-            EditorAction::Redo => self.execute_buffer_command(crate::command::Command::Redo),
+            EditorAction::Undo => self.execute_buffer_command(crate::command::Command::ReplayUndo),
+            EditorAction::Redo => self.execute_buffer_command(crate::command::Command::ReplayRedo),
             EditorAction::Quit => {
                 self.do_quit(false);
                 true
@@ -598,7 +598,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
 
             EditorAction::EnterReplaceMode => {
-                self.handle_mode_management(crate::command::Command::EnterReplaceMode);
+                self.handle_mode_management(crate::command::Command::BeginReplace);
                 true
             }
 
@@ -786,7 +786,7 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             1
         };
-        let command = crate::command::Command::Move(resolved, count);
+        let command = crate::command::Command::MoveBy(resolved, count);
         self.handle_mode_management(command);
         let consumed = self.execute_buffer_command(command);
         self.update_explorer_preview();
@@ -796,56 +796,80 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn action_enter_insert_mode(&mut self, action: &Action) -> bool {
-        if self.try_multi_insert_for_command(crate::command::Command::EnterInsertMode) {
+        if self.try_multi_insert_for_command(crate::command::Command::BeginInsert(
+            crate::command::InsertEntry::AtCursor,
+        )) {
             self.finish_region_build(Some(action.clone()));
             return true;
         }
-        self.handle_mode_management(crate::command::Command::EnterInsertMode);
+        self.handle_mode_management(crate::command::Command::BeginInsert(
+            crate::command::InsertEntry::AtCursor,
+        ));
         true
     }
 
     fn action_enter_insert_mode_after(&mut self, action: &Action) -> bool {
-        if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAfter) {
+        if self.try_multi_insert_for_command(crate::command::Command::BeginInsert(
+            crate::command::InsertEntry::AfterCursor,
+        )) {
             self.finish_region_build(Some(action.clone()));
             return true;
         }
-        self.handle_mode_management(crate::command::Command::EnterInsertModeAfter);
+        self.handle_mode_management(crate::command::Command::BeginInsert(
+            crate::command::InsertEntry::AfterCursor,
+        ));
         true
     }
 
     fn action_enter_insert_mode_at_line_start(&mut self, action: &Action) -> bool {
-        if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAtLineStart) {
+        if self.try_multi_insert_for_command(crate::command::Command::BeginInsert(
+            crate::command::InsertEntry::LineStart,
+        )) {
             self.finish_region_build(Some(action.clone()));
             return true;
         }
-        self.handle_mode_management(crate::command::Command::EnterInsertModeAtLineStart);
+        self.handle_mode_management(crate::command::Command::BeginInsert(
+            crate::command::InsertEntry::LineStart,
+        ));
         true
     }
 
     fn action_enter_insert_mode_at_line_end(&mut self, action: &Action) -> bool {
-        if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAtLineEnd) {
+        if self.try_multi_insert_for_command(crate::command::Command::BeginInsert(
+            crate::command::InsertEntry::LineEnd,
+        )) {
             self.finish_region_build(Some(action.clone()));
             return true;
         }
-        self.handle_mode_management(crate::command::Command::EnterInsertModeAtLineEnd);
+        self.handle_mode_management(crate::command::Command::BeginInsert(
+            crate::command::InsertEntry::LineEnd,
+        ));
         true
     }
 
     fn action_open_line_below(&mut self, action: &Action) -> bool {
-        if self.try_multi_insert_for_command(crate::command::Command::OpenLineBelow) {
+        if self.try_multi_insert_for_command(crate::command::Command::BeginInsert(
+            crate::command::InsertEntry::NewLineBelow,
+        )) {
             self.finish_region_build(Some(action.clone()));
             return true;
         }
-        self.handle_mode_management(crate::command::Command::OpenLineBelow);
+        self.handle_mode_management(crate::command::Command::BeginInsert(
+            crate::command::InsertEntry::NewLineBelow,
+        ));
         true
     }
 
     fn action_open_line_above(&mut self, action: &Action) -> bool {
-        if self.try_multi_insert_for_command(crate::command::Command::OpenLineAbove) {
+        if self.try_multi_insert_for_command(crate::command::Command::BeginInsert(
+            crate::command::InsertEntry::NewLineAbove,
+        )) {
             self.finish_region_build(Some(action.clone()));
             return true;
         }
-        self.handle_mode_management(crate::command::Command::OpenLineAbove);
+        self.handle_mode_management(crate::command::Command::BeginInsert(
+            crate::command::InsertEntry::NewLineAbove,
+        ));
         true
     }
 
@@ -957,7 +981,7 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
         }
-        let command = crate::command::Command::Delete(*motion, count);
+        let command = crate::command::Command::DeleteMotion(*motion, count);
         let result = self.execute_buffer_command(command);
         if result && self.current_mode == Mode::Normal && !self.dot_repeat.is_replaying() {
             self.dot_repeat.record_single(command);
@@ -971,7 +995,7 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             1
         };
-        let command = crate::command::Command::DeleteLine(count);
+        let command = crate::command::Command::DeleteRows(count);
         let result = self.execute_buffer_command(command);
         if result && self.current_mode == Mode::Normal && !self.dot_repeat.is_replaying() {
             self.dot_repeat.record_single(command);
@@ -991,7 +1015,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.replace_type(c);
             return true;
         }
-        let command = crate::command::Command::InsertChar(c);
+        let command = crate::command::Command::TypeChar(c);
         self.execute_buffer_command(command)
     }
 
@@ -1071,7 +1095,7 @@ impl<T: TerminalBackend> Editor<T> {
         let command = if matches!(editor_action, EditorAction::ChangeToLineEnd) {
             Command::Change(crate::action::Motion::EndOfLine, 1)
         } else {
-            Command::Delete(crate::action::Motion::EndOfLine, 1)
+            Command::DeleteMotion(crate::action::Motion::EndOfLine, 1)
         };
         self.handle_mode_management(command);
         self.execute_buffer_command(command)

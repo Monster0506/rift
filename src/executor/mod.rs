@@ -238,7 +238,7 @@ pub(crate) fn execute_command(
     display_map: Option<&mut DisplayMap>,
 ) -> Result<(), RiftError> {
     match cmd {
-        Command::Move(motion, count) => {
+        Command::MoveBy(motion, count) => {
             move_cmd(
                 doc,
                 display_map,
@@ -248,19 +248,19 @@ pub(crate) fn execute_command(
                 last_search_query,
             );
         }
-        Command::Delete(motion, count) => {
+        Command::DeleteMotion(motion, count) => {
             delete_motion_cmd(doc, motion, count, viewport_height, last_search_query);
         }
         Command::Change(motion, count) => {
             change_motion_cmd(doc, motion, count, viewport_height, last_search_query);
         }
-        Command::DeleteLine(count) => {
+        Command::DeleteRows(count) => {
             delete_line_cmd(doc, count);
         }
         Command::ChangeLine(count) => {
             change_line_cmd(doc, count);
         }
-        Command::InsertChar(ch) => {
+        Command::TypeChar(ch) => {
             insert_char_cmd(doc, expand_tabs, tab_width, ch)?;
         }
         Command::ReplaceChar(ch, count) => {
@@ -289,21 +289,16 @@ pub(crate) fn execute_command(
                 last_search_query,
             );
         }
-        Command::Undo => {
+        Command::ReplayUndo => {
             undo_cmd(doc);
         }
-        Command::Redo => {
+        Command::ReplayRedo => {
             redo_cmd(doc);
         }
-        Command::EnterInsertMode
-        | Command::EnterInsertModeAfter
-        | Command::EnterInsertModeAtLineStart
-        | Command::EnterInsertModeAtLineEnd
-        | Command::OpenLineBelow
-        | Command::OpenLineAbove
-        | Command::EnterReplaceMode
-        | Command::EnterCommandMode
-        | Command::EnterSearchMode
+        Command::BeginInsert(_)
+        | Command::BeginReplace
+        | Command::ReadExLine
+        | Command::ReadSearchPattern
         | Command::AppendToCommandLine(_)
         | Command::DeleteFromCommandLine
         | Command::ExecuteCommandLine

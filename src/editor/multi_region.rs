@@ -300,36 +300,41 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         match entry {
-            Command::EnterInsertMode => {
+            Command::BeginInsert(crate::command::InsertEntry::AtCursor) => {
                 self.enter_multi_insert(entry, |doc, region| region.buffer_span(doc.buffer()).0)
             }
-            Command::EnterInsertModeAfter => {
+            Command::BeginInsert(crate::command::InsertEntry::AfterCursor) => {
                 self.enter_multi_insert(entry, |doc, region| region.buffer_span(doc.buffer()).1)
             }
-            Command::EnterInsertModeAtLineStart => self.enter_multi_insert(entry, |doc, region| {
-                let (start, _) = region.buffer_span(doc.buffer());
-                let row = doc.buffer().line_index.get_line_at(start);
-                line_start_offset(doc.buffer(), row)
-            }),
-            Command::EnterInsertModeAtLineEnd => self.enter_multi_insert(entry, |doc, region| {
-                let (_, end) = region.buffer_span(doc.buffer());
-                let row = doc.buffer().line_index.get_line_at(end.saturating_sub(1));
-                line_end_offset(doc.buffer(), row)
-            }),
-            Command::OpenLineBelow => self.enter_multi_insert(entry, |doc, region| {
-                let (_, end) = region.buffer_span(doc.buffer());
-                let row = doc.buffer().line_index.get_line_at(end.saturating_sub(1));
-                let target = line_end_offset(doc.buffer(), row);
-                let _ = doc.edit(Edit::insert(target, '\n'), EditSource::User);
-                doc.buffer().cursor()
-            }),
-            Command::OpenLineAbove => self.enter_multi_insert(entry, |doc, region| {
-                let (start, _) = region.buffer_span(doc.buffer());
-                let row = doc.buffer().line_index.get_line_at(start);
-                let target = line_start_offset(doc.buffer(), row);
-                let _ = doc.edit(Edit::insert(target, '\n'), EditSource::User);
-                target
-            }),
+            Command::BeginInsert(crate::command::InsertEntry::LineStart) => self
+                .enter_multi_insert(entry, |doc, region| {
+                    let (start, _) = region.buffer_span(doc.buffer());
+                    let row = doc.buffer().line_index.get_line_at(start);
+                    line_start_offset(doc.buffer(), row)
+                }),
+            Command::BeginInsert(crate::command::InsertEntry::LineEnd) => {
+                self.enter_multi_insert(entry, |doc, region| {
+                    let (_, end) = region.buffer_span(doc.buffer());
+                    let row = doc.buffer().line_index.get_line_at(end.saturating_sub(1));
+                    line_end_offset(doc.buffer(), row)
+                })
+            }
+            Command::BeginInsert(crate::command::InsertEntry::NewLineBelow) => self
+                .enter_multi_insert(entry, |doc, region| {
+                    let (_, end) = region.buffer_span(doc.buffer());
+                    let row = doc.buffer().line_index.get_line_at(end.saturating_sub(1));
+                    let target = line_end_offset(doc.buffer(), row);
+                    let _ = doc.edit(Edit::insert(target, '\n'), EditSource::User);
+                    doc.buffer().cursor()
+                }),
+            Command::BeginInsert(crate::command::InsertEntry::NewLineAbove) => self
+                .enter_multi_insert(entry, |doc, region| {
+                    let (start, _) = region.buffer_span(doc.buffer());
+                    let row = doc.buffer().line_index.get_line_at(start);
+                    let target = line_start_offset(doc.buffer(), row);
+                    let _ = doc.edit(Edit::insert(target, '\n'), EditSource::User);
+                    target
+                }),
             _ => false,
         }
     }
@@ -364,25 +369,28 @@ impl<T: TerminalBackend> Editor<T> {
             OperatorType::Change => {
                 use crate::command::Command;
                 let mut clips = Vec::new();
-                let handled = self.enter_multi_insert(Command::EnterInsertMode, |doc, region| {
-                    clips.push(region_clip(doc.buffer(), &region));
-                    let (start, end) = region.buffer_span(doc.buffer());
-                    let start = start.min(doc.buffer().len());
-                    let mut end = end.min(doc.buffer().len());
-                    if region.kind == RangeKind::Linewise {
-                        let last_line = doc
-                            .buffer()
-                            .line_index
-                            .get_line_at(region.anchor.max(region.cursor));
-                        if last_line + 1 < doc.buffer().get_total_lines() {
-                            end = end.saturating_sub(1).max(start);
+                let handled = self.enter_multi_insert(
+                    Command::BeginInsert(crate::command::InsertEntry::AtCursor),
+                    |doc, region| {
+                        clips.push(region_clip(doc.buffer(), &region));
+                        let (start, end) = region.buffer_span(doc.buffer());
+                        let start = start.min(doc.buffer().len());
+                        let mut end = end.min(doc.buffer().len());
+                        if region.kind == RangeKind::Linewise {
+                            let last_line = doc
+                                .buffer()
+                                .line_index
+                                .get_line_at(region.anchor.max(region.cursor));
+                            if last_line + 1 < doc.buffer().get_total_lines() {
+                                end = end.saturating_sub(1).max(start);
+                            }
                         }
-                    }
-                    if start < end {
-                        let _ = doc.edit(Edit::delete(start..end), EditSource::User);
-                    }
-                    start
-                });
+                        if start < end {
+                            let _ = doc.edit(Edit::delete(start..end), EditSource::User);
+                        }
+                        start
+                    },
+                );
                 for clip in clips {
                     self.yank(clip);
                 }

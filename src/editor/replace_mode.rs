@@ -96,7 +96,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
 
-        self.execute_buffer_command(Command::Move(Motion::PreviousWord, 1));
+        self.execute_buffer_command(Command::MoveBy(Motion::PreviousWord, 1));
         let Some(doc) = self.document_manager.active_document_mut() else {
             return;
         };
@@ -135,7 +135,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
 
-        if self.execute_buffer_command(Command::InsertChar('\n')) {
+        if self.execute_buffer_command(Command::TypeChar('\n')) {
             self.replace_push(pos, None);
         }
     }

@@ -88,8 +88,10 @@ fn enter_multi_insert_replays_typed_session_at_every_remaining_anchor() {
         .active_document()
         .bank_region(Region::new(5, 5, RangeKind::Charwise));
 
-    let handled =
-        editor.enter_multi_insert(Command::EnterInsertMode, |_doc, region| region.span().0);
+    let handled = editor.enter_multi_insert(
+        Command::BeginInsert(crate::command::InsertEntry::AtCursor),
+        |_doc, region| region.span().0,
+    );
     assert!(handled);
     assert_eq!(editor.current_mode, Mode::Insert);
     assert_eq!(
@@ -114,10 +116,10 @@ fn enter_multi_insert_on_empty_set_returns_false() {
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
 
-    let handled = editor
-        .enter_multi_insert(crate::command::Command::EnterInsertMode, |_doc, region| {
-            region.span().0
-        });
+    let handled = editor.enter_multi_insert(
+        crate::command::Command::BeginInsert(crate::command::InsertEntry::AtCursor),
+        |_doc, region| region.span().0,
+    );
 
     assert!(!handled);
     assert_eq!(editor.current_mode, Mode::Normal);
@@ -846,7 +848,7 @@ fn dot_repeat_leading_count_overrides_embedded_command_count() {
         .set_cursor(0, crate::document::ops::CursorCause::User)
         .unwrap();
 
-    let d2w = Command::Delete(Motion::NextWord, 2);
+    let d2w = Command::DeleteMotion(Motion::NextWord, 2);
     editor.execute_buffer_command(d2w);
     editor.dot_repeat.record_single(d2w);
     assert_eq!(

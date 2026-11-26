@@ -206,7 +206,7 @@ fn measure_scroll(
         editor.term.clear();
         let top_before = editor.render_system.viewport.top_visual_row();
         let t = Instant::now();
-        editor.execute_buffer_command(crate::command::Command::Move(motion, 1));
+        editor.execute_buffer_command(crate::command::Command::MoveBy(motion, 1));
         editor.update_and_render().unwrap();
         times.push(t.elapsed());
         if editor.render_system.viewport.top_visual_row() != top_before {
@@ -319,13 +319,13 @@ fn scroll_latency_wrapped_markdown() {
 
     {
         let t = Instant::now();
-        editor.execute_buffer_command(crate::command::Command::InsertChar('y'));
+        editor.execute_buffer_command(crate::command::Command::TypeChar('y'));
         let exec = t.elapsed();
         let t = Instant::now();
         editor.update_and_render().unwrap();
         let render = t.elapsed();
         let t = Instant::now();
-        editor.execute_buffer_command(crate::command::Command::InsertChar('y'));
+        editor.execute_buffer_command(crate::command::Command::TypeChar('y'));
         let exec2 = t.elapsed();
         let t = Instant::now();
         editor.update_lua_state();
@@ -434,7 +434,7 @@ fn plugin_sync_cost_per_keystroke() {
     let before = lua_sync_totals();
     let start = std::time::Instant::now();
     for _ in 0..KEYS {
-        editor.execute_buffer_command(crate::command::Command::InsertChar('x'));
+        editor.execute_buffer_command(crate::command::Command::TypeChar('x'));
         editor.update_and_render().unwrap();
     }
     let per_key = start.elapsed() / u32::try_from(KEYS).unwrap();

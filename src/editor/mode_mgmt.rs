@@ -1,6 +1,6 @@
 use super::resolve_display_map;
 use super::Editor;
-use crate::command::Command;
+use crate::command::{Command, InsertEntry};
 use crate::executor::execute_command;
 use crate::message::CommandLineMessage;
 use crate::mode::Mode;
@@ -11,15 +11,10 @@ use crate::term::TerminalBackend;
 const fn enters_edit_mode(command: &Command) -> bool {
     matches!(
         command,
-        Command::EnterInsertMode
-            | Command::EnterInsertModeAfter
-            | Command::EnterInsertModeAtLineStart
-            | Command::EnterInsertModeAtLineEnd
-            | Command::OpenLineBelow
-            | Command::OpenLineAbove
+        Command::BeginInsert(_)
             | Command::Change(_, _)
             | Command::ChangeLine(_)
-            | Command::EnterReplaceMode
+            | Command::BeginReplace
     )
 }
 impl<T: TerminalBackend> Editor<T> {
@@ -38,72 +33,37 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_mode_switch(&mut self, command: Command) {
         match command {
-            Command::EnterInsertMode => {
-                // Start transaction for grouping insert mode edits
-                self.document_manager
-                    .active_document_mut()
-                    .unwrap()
-                    .begin_transaction(history::INSERT_LABEL);
-                if !self.dot_repeat.is_replaying() {
-                    self.dot_repeat.start_insert_recording(command);
-                }
-                self.set_mode(Mode::Insert);
-            }
-            Command::EnterInsertModeAfter => {
+            Command::BeginInsert(entry) => {
                 let doc = self.document_manager.active_document_mut().unwrap();
-                doc.move_cursor(crate::action::Motion::Right);
+                let motion = match entry {
+                    InsertEntry::AtCursor => None,
+                    InsertEntry::AfterCursor => Some(crate::action::Motion::Right),
+                    InsertEntry::LineStart | InsertEntry::NewLineAbove => {
+                        Some(crate::action::Motion::StartOfLine)
+                    }
+                    InsertEntry::LineEnd | InsertEntry::NewLineBelow => {
+                        Some(crate::action::Motion::EndOfLine)
+                    }
+                };
                 doc.begin_transaction(history::INSERT_LABEL);
+                if let Some(motion) = motion {
+                    doc.move_cursor(motion);
+                }
+                if matches!(entry, InsertEntry::NewLineAbove | InsertEntry::NewLineBelow) {
+                    let _ = doc.edit(
+                        crate::document::ops::Edit::type_text('\n'),
+                        crate::document::ops::EditSource::User,
+                    );
+                    if entry == InsertEntry::NewLineAbove {
+                        doc.move_cursor(crate::action::Motion::Up);
+                    }
+                }
                 if !self.dot_repeat.is_replaying() {
                     self.dot_repeat.start_insert_recording(command);
                 }
                 self.set_mode(Mode::Insert);
             }
-            Command::EnterInsertModeAtLineStart => {
-                let doc = self.document_manager.active_document_mut().unwrap();
-                doc.move_cursor(crate::action::Motion::StartOfLine);
-                doc.begin_transaction(history::INSERT_LABEL);
-                if !self.dot_repeat.is_replaying() {
-                    self.dot_repeat.start_insert_recording(command);
-                }
-                self.set_mode(Mode::Insert);
-            }
-            Command::EnterInsertModeAtLineEnd => {
-                let doc = self.document_manager.active_document_mut().unwrap();
-                doc.move_cursor(crate::action::Motion::EndOfLine);
-                doc.begin_transaction(history::INSERT_LABEL);
-                if !self.dot_repeat.is_replaying() {
-                    self.dot_repeat.start_insert_recording(command);
-                }
-                self.set_mode(Mode::Insert);
-            }
-            Command::OpenLineBelow => {
-                let doc = self.document_manager.active_document_mut().unwrap();
-                doc.begin_transaction(history::INSERT_LABEL);
-                doc.move_cursor(crate::action::Motion::EndOfLine);
-                let _ = doc.edit(
-                    crate::document::ops::Edit::type_text('\n'),
-                    crate::document::ops::EditSource::User,
-                );
-                if !self.dot_repeat.is_replaying() {
-                    self.dot_repeat.start_insert_recording(command);
-                }
-                self.set_mode(Mode::Insert);
-            }
-            Command::OpenLineAbove => {
-                let doc = self.document_manager.active_document_mut().unwrap();
-                doc.begin_transaction(history::INSERT_LABEL);
-                doc.move_cursor(crate::action::Motion::StartOfLine);
-                let _ = doc.edit(
-                    crate::document::ops::Edit::type_text('\n'),
-                    crate::document::ops::EditSource::User,
-                );
-                doc.move_cursor(crate::action::Motion::Up);
-                if !self.dot_repeat.is_replaying() {
-                    self.dot_repeat.start_insert_recording(command);
-                }
-                self.set_mode(Mode::Insert);
-            }
-            Command::EnterReplaceMode => {
+            Command::BeginReplace => {
                 let doc = self.document_manager.active_document_mut().unwrap();
                 doc.begin_transaction("Replace");
                 if !self.dot_repeat.is_replaying() {
@@ -111,13 +71,13 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 self.set_mode(Mode::Replace);
             }
-            Command::EnterCommandMode => {
+            Command::ReadExLine => {
                 self.state.completion_session = None;
                 self.state.clear_command_line();
                 self.state.command_history.reset_navigation();
                 self.set_mode(Mode::Command);
             }
-            Command::EnterSearchMode => {
+            Command::ReadSearchPattern => {
                 self.state.clear_command_line();
                 self.state.search_history.reset_navigation();
                 self.set_mode(Mode::Search);
@@ -279,42 +239,42 @@ impl<T: TerminalBackend> Editor<T> {
                     self.handle_command_line_message(CommandLineMessage::RequestCompletion(input));
                 }
             }
-            Command::Move(crate::action::Motion::Left, _)
+            Command::MoveBy(crate::action::Motion::Left, _)
                 if self.current_mode == Mode::Command
                     || self.current_mode == Mode::Search
                     || self.current_mode == Mode::Rename =>
             {
                 self.state.move_command_line_left();
             }
-            Command::Move(crate::action::Motion::Right, _)
+            Command::MoveBy(crate::action::Motion::Right, _)
                 if self.current_mode == Mode::Command
                     || self.current_mode == Mode::Search
                     || self.current_mode == Mode::Rename =>
             {
                 self.state.move_command_line_right();
             }
-            Command::Move(crate::action::Motion::StartOfLine, _)
+            Command::MoveBy(crate::action::Motion::StartOfLine, _)
                 if self.current_mode == Mode::Command
                     || self.current_mode == Mode::Search
                     || self.current_mode == Mode::Rename =>
             {
                 self.state.move_command_line_home();
             }
-            Command::Move(crate::action::Motion::EndOfLine, _)
+            Command::MoveBy(crate::action::Motion::EndOfLine, _)
                 if self.current_mode == Mode::Command
                     || self.current_mode == Mode::Search
                     || self.current_mode == Mode::Rename =>
             {
                 self.state.move_command_line_end();
             }
-            Command::Move(crate::action::Motion::PreviousWord, _)
+            Command::MoveBy(crate::action::Motion::PreviousWord, _)
                 if self.current_mode == Mode::Command
                     || self.current_mode == Mode::Search
                     || self.current_mode == Mode::Rename =>
             {
                 self.state.move_command_line_word_left();
             }
-            Command::Move(crate::action::Motion::NextWord, _)
+            Command::MoveBy(crate::action::Motion::NextWord, _)
                 if self.current_mode == Mode::Command
                     || self.current_mode == Mode::Search
                     || self.current_mode == Mode::Rename =>

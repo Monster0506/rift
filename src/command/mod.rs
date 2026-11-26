@@ -5,24 +5,28 @@ use crate::action::Motion;
 #[cfg(test)]
 mod input;
 
-/// Editor commands
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InsertEntry {
+    AtCursor,
+    AfterCursor,
+    LineStart,
+    LineEnd,
+    NewLineBelow,
+    NewLineAbove,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Command {
     // Movement
-    Move(Motion, usize),
+    MoveBy(Motion, usize),
 
     // Editing
-    EnterInsertMode,
-    EnterInsertModeAfter,
-    EnterInsertModeAtLineStart,
-    EnterInsertModeAtLineEnd,
-    OpenLineBelow,
-    OpenLineAbove,
-    Delete(Motion, usize),
+    BeginInsert(InsertEntry),
+    DeleteMotion(Motion, usize),
     Change(Motion, usize),
-    DeleteLine(usize),
+    DeleteRows(usize),
     ChangeLine(usize),
-    InsertChar(char),
+    TypeChar(char),
     /// Replace `count` chars at cursor with `ch` (`r<ch>` with optional count).
     ReplaceChar(char, usize),
     /// Replace-mode typing: overwrite the char under the cursor, or insert at line end.
@@ -30,7 +34,7 @@ pub(crate) enum Command {
     /// Replace-mode Backspace: put back the displaced char, or delete an appended one.
     ReplaceBackspace(Option<crate::character::Character>),
     /// Enter Replace mode (R: each char overwrites instead of inserting).
-    EnterReplaceMode,
+    BeginReplace,
     /// Delete an existing surround pair, keeping its contents (`sd<ch>`).
     /// The trailing count repeats the delimiter char on each side.
     DeleteSurround(char, usize),
@@ -42,8 +46,8 @@ pub(crate) enum Command {
     AddSurround(Motion, usize, char, usize),
 
     // Mode transitions
-    EnterCommandMode,
-    EnterSearchMode,
+    ReadExLine,
+    ReadSearchPattern,
 
     // Search
     ExecuteSearch,
@@ -54,8 +58,8 @@ pub(crate) enum Command {
     ExecuteCommandLine,
 
     // History
-    Undo,
-    Redo,
+    ReplayUndo,
+    ReplayRedo,
 
     // Completion
     TabComplete,
@@ -71,28 +75,27 @@ impl Command {
     pub(crate) const fn is_mutating(&self) -> bool {
         matches!(
             self,
-            Self::DeleteLine(_)
-                | Self::Delete(_, _)
+            Self::DeleteRows(_)
+                | Self::DeleteMotion(_, _)
                 | Self::Change(_, _)
                 | Self::ChangeLine(_)
-                | Self::OpenLineBelow
-                | Self::OpenLineAbove
-                | Self::InsertChar(_)
+                | Self::BeginInsert(InsertEntry::NewLineBelow | InsertEntry::NewLineAbove)
+                | Self::TypeChar(_)
                 | Self::ReplaceChar(_, _)
                 | Self::OverwriteChar(_)
                 | Self::ReplaceBackspace(_)
                 | Self::DeleteSurround(_, _)
                 | Self::ChangeSurround(_, _, _)
                 | Self::AddSurround(_, _, _, _)
-                | Self::Undo
-                | Self::Redo
+                | Self::ReplayUndo
+                | Self::ReplayRedo
         )
     }
 
     /// Check if command should be recorded for dot-repeat
     #[must_use]
     pub(crate) const fn is_repeatable(&self) -> bool {
-        self.is_mutating() && !matches!(self, Self::Undo | Self::Redo)
+        self.is_mutating() && !matches!(self, Self::ReplayUndo | Self::ReplayRedo)
     }
 }
 

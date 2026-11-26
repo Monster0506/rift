@@ -465,7 +465,7 @@ fn stacked_split_uses_its_own_scroll_region() {
         crate::split::tree::SplitDirection::Horizontal,
         crate::command_line::commands::types::SplitSubcommand::Current,
     );
-    editor.execute_buffer_command(crate::command::Command::Move(
+    editor.execute_buffer_command(crate::command::Command::MoveBy(
         crate::action::Motion::Down,
         20,
     ));

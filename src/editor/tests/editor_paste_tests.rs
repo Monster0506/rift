@@ -147,7 +147,7 @@ fn bracketed_paste_near_soft_wrap_boundary_renders_the_full_text() {
     editor.update_and_render().unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
     for ch in "0123456789012345".chars() {
-        editor.execute_buffer_command(crate::command::Command::InsertChar(ch));
+        editor.execute_buffer_command(crate::command::Command::TypeChar(ch));
         editor.update_and_render().unwrap();
     }
 
@@ -224,7 +224,7 @@ fn bracketed_paste_reproduced_through_a_real_vte_parser() {
     editor.update_and_render().unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
     for ch in "Top of the list: ".chars() {
-        editor.execute_buffer_command(crate::command::Command::InsertChar(ch));
+        editor.execute_buffer_command(crate::command::Command::TypeChar(ch));
         editor.update_and_render().unwrap();
     }
     sink.0.lock().clear();
@@ -371,7 +371,7 @@ fn single_space_keypress_with_release_moves_the_rendered_cursor() {
     let mut editor = Editor::new(PressReleaseTerminal::new(24, 80, vec![])).unwrap();
     editor.update_and_render().unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
-    editor.execute_buffer_command(crate::command::Command::InsertChar('a'));
+    editor.execute_buffer_command(crate::command::Command::TypeChar('a'));
     editor.update_and_render().unwrap();
     let before = editor.term.inner.cursor_moves.last().copied();
 
@@ -400,9 +400,9 @@ fn single_up_keypress_on_soft_wrap_with_release_moves_the_rendered_cursor() {
             crate::command_line::settings::resolver::OptionScope::Global,
         )
         .unwrap();
-    editor.execute_buffer_command(crate::command::Command::InsertChar('x'));
+    editor.execute_buffer_command(crate::command::Command::TypeChar('x'));
     for _ in 0..30 {
-        editor.execute_buffer_command(crate::command::Command::InsertChar('a'));
+        editor.execute_buffer_command(crate::command::Command::TypeChar('a'));
     }
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     editor.update_and_render().unwrap();

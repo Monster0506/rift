@@ -203,7 +203,7 @@ fn git_status_buffer_is_read_only_and_wq_reports_cannot_be_saved() {
     assert!(doc.is_read_only(), "GitStatus must be read-only");
 
     let before = doc.buffer().to_string();
-    assert!(!editor.execute_buffer_command(crate::command::Command::DeleteLine(1)));
+    assert!(!editor.execute_buffer_command(crate::command::Command::DeleteRows(1)));
     let after = editor
         .document_manager
         .active_document()
@@ -1559,13 +1559,15 @@ fn git_blame_and_log_buffers_block_insert_and_delete() {
     let doc = editor.document_manager.active_document().unwrap();
     assert!(doc.is_read_only(), "GitBlame must be read-only");
     let before = doc.buffer().to_string();
-    editor.handle_mode_management(crate::command::Command::EnterInsertMode);
+    editor.handle_mode_management(crate::command::Command::BeginInsert(
+        crate::command::InsertEntry::AtCursor,
+    ));
     assert_eq!(
         editor.current_mode,
         crate::mode::Mode::Normal,
         "i must not enter Insert on GitBlame"
     );
-    assert!(!editor.execute_buffer_command(crate::command::Command::DeleteLine(1)));
+    assert!(!editor.execute_buffer_command(crate::command::Command::DeleteRows(1)));
     assert_eq!(
         editor
             .document_manager
@@ -1582,13 +1584,15 @@ fn git_blame_and_log_buffers_block_insert_and_delete() {
     let doc = editor.document_manager.active_document().unwrap();
     assert!(doc.is_read_only(), "GitLog must be read-only");
     let before = doc.buffer().to_string();
-    editor.handle_mode_management(crate::command::Command::EnterInsertMode);
+    editor.handle_mode_management(crate::command::Command::BeginInsert(
+        crate::command::InsertEntry::AtCursor,
+    ));
     assert_eq!(
         editor.current_mode,
         crate::mode::Mode::Normal,
         "i must not enter Insert on GitLog"
     );
-    assert!(!editor.execute_buffer_command(crate::command::Command::DeleteLine(1)));
+    assert!(!editor.execute_buffer_command(crate::command::Command::DeleteRows(1)));
     assert_eq!(
         editor
             .document_manager
