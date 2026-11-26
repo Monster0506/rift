@@ -293,7 +293,7 @@ fn published_diagnostic_underlines_exactly_its_range_and_keeps_the_eol_message()
     drain_jobs(&mut editor);
 
     let uri = crate::lsp::protocol::path_to_uri(&path);
-    editor.handle_lsp_message(crate::lsp::LspMessage::Diagnostics {
+    crate::lsp::LspMessage::Diagnostics {
         uri,
         version: None,
         diagnostics: vec![LspDiagnostic {
@@ -311,7 +311,8 @@ fn published_diagnostic_underlines_exactly_its_range_and_keeps_the_eol_message()
             message: "bad".to_string(),
             source: None,
         }],
-    });
+    }
+    .apply(&mut editor);
 
     editor.update_and_render().unwrap();
     let cols = editor.render_system.compositor.cols();

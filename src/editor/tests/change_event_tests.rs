@@ -128,9 +128,10 @@ fn idle_frame_delivers_one_progress_event_per_server() {
     let seen = record(&mut editor, "LspProgress");
 
     for language in ["rust", "python", "rust"] {
-        editor.handle_lsp_message(crate::lsp::LspMessage::Progress {
+        crate::lsp::LspMessage::Progress {
             language: language.to_string(),
-        });
+        }
+        .apply(&mut editor);
     }
     assert!(seen.lock().unwrap().is_empty());
 

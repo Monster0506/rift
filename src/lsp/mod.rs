@@ -92,6 +92,62 @@ pub(crate) enum LspMessage {
     },
 }
 
+pub trait LspTarget {
+    fn lsp_diagnostics_msg(
+        &mut self,
+        uri: &str,
+        version: Option<i64>,
+        diagnostics: &[protocol::LspDiagnostic],
+    );
+    fn lsp_goto_msg(&mut self, uri: &str, locations: &[protocol::LspLocation]);
+    fn lsp_references_msg(&mut self, uri: &str, locations: &[protocol::LspLocation]);
+    fn lsp_hover_msg(&mut self, uri: &str, contents: &str);
+    fn handle_rename_result(&mut self, workspace_edit: &Value);
+    fn handle_formatting_result(&mut self, uri: &str, edits: Vec<protocol::LspTextEdit>);
+    fn lsp_code_action_msg(&mut self, uri: &str, actions: Vec<Value>);
+    fn lsp_applied_edit(&mut self, edit: &Value);
+    fn lsp_show_message(&mut self, kind: u32, message: &str);
+    fn lsp_server_exited(&mut self, language: &str);
+    fn lsp_action_resolved(&mut self, action: &Value);
+    fn lsp_error_msg(&mut self, method: &str, message: &str);
+    fn lsp_server_connected(&mut self, language: String, server_name: String);
+    fn lsp_server_ready(&mut self, language: String);
+    fn lsp_log_msg(&mut self, message: String);
+    fn lsp_progress(&mut self, language: String);
+}
+
+impl LspMessage {
+    pub(crate) fn apply(self, editor: &mut dyn crate::job_manager::JobTarget) {
+        match self {
+            Self::Diagnostics {
+                uri,
+                version,
+                diagnostics,
+            } => editor.lsp_diagnostics_msg(&uri, version, &diagnostics),
+            Self::GotoDefinitionResult { locations, uri } => editor.lsp_goto_msg(&uri, &locations),
+            Self::ReferencesResult { locations, uri } => {
+                editor.lsp_references_msg(&uri, &locations);
+            }
+            Self::HoverResult { contents, uri } => editor.lsp_hover_msg(&uri, &contents),
+            Self::RenameResult { workspace_edit } => editor.handle_rename_result(&workspace_edit),
+            Self::FormattingResult { uri, edits } => editor.handle_formatting_result(&uri, edits),
+            Self::CodeActionResult { actions, uri } => editor.lsp_code_action_msg(&uri, actions),
+            Self::ApplyWorkspaceEdit { edit } => editor.lsp_applied_edit(&edit),
+            Self::ShowMessage { kind, message } => editor.lsp_show_message(kind, &message),
+            Self::ServerExited { language } => editor.lsp_server_exited(&language),
+            Self::CodeActionResolved { action } => editor.lsp_action_resolved(&action),
+            Self::Error { method, message } => editor.lsp_error_msg(&method, &message),
+            Self::ServerConnected {
+                language,
+                server_name,
+            } => editor.lsp_server_connected(language, server_name),
+            Self::ServerReady { language } => editor.lsp_server_ready(language),
+            Self::Log { message } => editor.lsp_log_msg(message),
+            Self::Progress { language } => editor.lsp_progress(language),
+        }
+    }
+}
+
 /// Tracks per-document state sent to a language server.
 #[derive(Debug)]
 struct DocState {

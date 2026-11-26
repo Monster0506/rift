@@ -63,7 +63,12 @@ pub struct JobRef {
     pub(crate) token: Option<AsyncToken>,
 }
 
-pub trait JobTarget {
+#[cfg(feature = "lsp")]
+use crate::lsp::LspTarget;
+#[cfg(not(feature = "lsp"))]
+pub trait LspTarget {}
+
+pub trait JobTarget: LspTarget {
     fn apply_plugin_job(&mut self, payload: jobs::plugin_process::PluginJobPayload);
     fn apply_completion(&mut self, payload: jobs::completion::CompletionPayload);
     #[cfg(feature = "terminal_emulation")]

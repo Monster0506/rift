@@ -144,7 +144,7 @@ pub(crate) struct LspRange {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct LspLocation {
+pub struct LspLocation {
     pub(crate) uri: String,
     pub(crate) range: LspRange,
 }
@@ -182,7 +182,7 @@ pub(super) fn location_from_value(v: Value) -> Option<LspLocation> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct LspDiagnostic {
+pub struct LspDiagnostic {
     pub(crate) range: LspRange,
     #[serde(default)]
     pub(crate) severity: Option<u32>,
@@ -192,7 +192,7 @@ pub(crate) struct LspDiagnostic {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct LspTextEdit {
+pub struct LspTextEdit {
     pub(crate) range: LspRange,
     #[serde(rename = "newText")]
     pub(crate) new_text: String,

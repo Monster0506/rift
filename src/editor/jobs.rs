@@ -426,6 +426,9 @@ impl<T: TerminalBackend> Editor<T> {
     }
 }
 
+#[cfg(not(feature = "lsp"))]
+impl<T: TerminalBackend> crate::job_manager::LspTarget for Editor<T> {}
+
 impl<T: TerminalBackend> JobTarget for Editor<T> {
     fn apply_plugin_job(
         &mut self,

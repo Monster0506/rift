@@ -1,59 +1,78 @@
 use super::Editor;
 use crate::buffer::api::BufferView;
 use crate::lsp::protocol::{LspDiagnostic, LspLocation, LspTextEdit};
-use crate::lsp::LspMessage;
+use crate::lsp::LspTarget;
 use crate::notification::NotificationType;
 use crate::term::TerminalBackend;
 
-impl<T: TerminalBackend> Editor<T> {
-    /// Called from the main loop after draining LSP messages.
-    pub(super) fn handle_lsp_message(&mut self, msg: LspMessage) {
-        match msg {
-            LspMessage::Diagnostics {
-                uri,
-                version,
-                diagnostics,
-            } => self.lsp_diagnostics_msg(&uri, version, &diagnostics),
-            LspMessage::GotoDefinitionResult { locations, uri } => {
-                self.lsp_goto_msg(&uri, &locations);
-            }
-            LspMessage::ReferencesResult { locations, uri } => {
-                self.lsp_references_msg(&uri, &locations);
-            }
-            LspMessage::HoverResult { contents, uri } => self.lsp_hover_msg(&uri, &contents),
-            LspMessage::RenameResult { workspace_edit } => {
-                self.handle_rename_result(&workspace_edit);
-            }
-            LspMessage::FormattingResult { uri, edits } => {
-                self.handle_formatting_result(&uri, edits);
-            }
-            LspMessage::CodeActionResult { actions, uri } => {
-                if self.lsp_result_is_current(&uri, "code action") {
-                    self.handle_code_action_result(actions);
-                }
-            }
-            LspMessage::ApplyWorkspaceEdit { edit } => self.lsp_applied_edit(&edit),
-            LspMessage::ShowMessage { kind, message } => self.lsp_show_message(kind, &message),
-            LspMessage::ServerExited { language } => self.lsp_server_exited(&language),
-            LspMessage::CodeActionResolved { action } => self.lsp_action_resolved(&action),
-            LspMessage::Error { method, message } => {
-                self.notify(
-                    NotificationType::Error,
-                    format!("LSP [{method}]: {message}"),
-                );
-            }
-            LspMessage::ServerConnected {
-                language,
-                server_name,
-            } => self.lsp_server_connected(language, server_name),
-            LspMessage::ServerReady { language } => self.lsp_server_ready(language),
-            LspMessage::Log { message } => {
-                if self.state.settings.lsp.debug_log {
-                    self.notify(NotificationType::Info, message);
-                }
-            }
-            LspMessage::Progress { language, .. } => self.lsp_progress(language),
+impl<T: TerminalBackend> LspTarget for Editor<T> {
+    fn lsp_code_action_msg(&mut self, uri: &str, actions: Vec<serde_json::Value>) {
+        if self.lsp_result_is_current(uri, "code action") {
+            self.handle_code_action_result(actions);
         }
+    }
+
+    fn lsp_error_msg(&mut self, method: &str, message: &str) {
+        self.notify(
+            NotificationType::Error,
+            format!("LSP [{method}]: {message}"),
+        );
+    }
+
+    fn lsp_log_msg(&mut self, message: String) {
+        if self.state.settings.lsp.debug_log {
+            self.notify(NotificationType::Info, message);
+        }
+    }
+
+    fn handle_rename_result(&mut self, workspace_edit: &serde_json::Value) {
+        let had_changes = workspace_edit
+            .get("changes")
+            .and_then(|c| c.as_object())
+            .map_or_else(
+                || {
+                    workspace_edit
+                        .get("documentChanges")
+                        .and_then(|d| d.as_array())
+                        .is_some_and(|a| !a.is_empty())
+                },
+                |m| !m.is_empty(),
+            );
+
+        if !had_changes {
+            self.notify(
+                NotificationType::Warning,
+                "LSP: rename produced no changes".to_string(),
+            );
+            return;
+        }
+
+        let applied = self.apply_workspace_edit(workspace_edit);
+        self.notify(
+            NotificationType::Info,
+            format!("LSP: rename applied to {applied} file(s)"),
+        );
+    }
+
+    fn handle_formatting_result(&mut self, uri: &str, edits: Vec<LspTextEdit>) {
+        if edits.is_empty() {
+            self.notify(NotificationType::Info, "LSP: already formatted".to_string());
+            return;
+        }
+
+        if let Some(doc_id) = self.apply_lsp_edits_for_uri(uri, edits) {
+            // Invalidate before spawning: format often touches many lines and can
+            // leave the incremental tree in a corrupt state.
+            if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                if let Some(syntax) = &mut doc.syntax {
+                    syntax.invalidate_trees();
+                }
+            }
+            self.spawn_syntax_parse_job(doc_id);
+            let _ = self.force_full_redraw();
+        }
+
+        self.notify(NotificationType::Success, "LSP: formatted".to_string());
     }
 
     fn lsp_diagnostics_msg(
@@ -175,7 +194,9 @@ impl<T: TerminalBackend> Editor<T> {
             server_name: name,
         });
     }
+}
 
+impl<T: TerminalBackend> Editor<T> {
     /// True when `uri` (normalized) is the active document. Stale results for a
     /// document the user has since left are dropped (logged in debug mode).
     fn lsp_result_is_current(&mut self, uri: &str, what: &str) -> bool {
@@ -442,56 +463,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.plugin_host
             .apply_mutation(crate::plugin::PluginMutation::OpenFloat(float));
         let _ = self.update_and_render();
-    }
-
-    fn handle_rename_result(&mut self, workspace_edit: &serde_json::Value) {
-        let had_changes = workspace_edit
-            .get("changes")
-            .and_then(|c| c.as_object())
-            .map_or_else(
-                || {
-                    workspace_edit
-                        .get("documentChanges")
-                        .and_then(|d| d.as_array())
-                        .is_some_and(|a| !a.is_empty())
-                },
-                |m| !m.is_empty(),
-            );
-
-        if !had_changes {
-            self.notify(
-                NotificationType::Warning,
-                "LSP: rename produced no changes".to_string(),
-            );
-            return;
-        }
-
-        let applied = self.apply_workspace_edit(workspace_edit);
-        self.notify(
-            NotificationType::Info,
-            format!("LSP: rename applied to {applied} file(s)"),
-        );
-    }
-
-    fn handle_formatting_result(&mut self, uri: &str, edits: Vec<LspTextEdit>) {
-        if edits.is_empty() {
-            self.notify(NotificationType::Info, "LSP: already formatted".to_string());
-            return;
-        }
-
-        if let Some(doc_id) = self.apply_lsp_edits_for_uri(uri, edits) {
-            // Invalidate before spawning: format often touches many lines and can
-            // leave the incremental tree in a corrupt state.
-            if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                if let Some(syntax) = &mut doc.syntax {
-                    syntax.invalidate_trees();
-                }
-            }
-            self.spawn_syntax_parse_job(doc_id);
-            let _ = self.force_full_redraw();
-        }
-
-        self.notify(NotificationType::Success, "LSP: formatted".to_string());
     }
 
     fn handle_code_action_result(&mut self, actions: Vec<serde_json::Value>) {

@@ -211,7 +211,7 @@ impl<T: TerminalBackend> Editor<T> {
         let lsp_msgs = self.lsp_manager.poll();
         let had_lsp = !lsp_msgs.is_empty();
         for msg in lsp_msgs {
-            self.handle_lsp_message(msg);
+            msg.apply(self);
         }
         if had_lsp {
             let _ = self.update_and_render();

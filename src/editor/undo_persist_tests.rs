@@ -8,22 +8,21 @@ pub(in crate::editor) fn create_editor() -> Editor<MockTerminal> {
 
 pub(in crate::editor) fn drain_jobs(editor: &mut Editor<MockTerminal>) {
     use std::time::{Duration, Instant};
-    let deadline = Instant::now() + Duration::from_millis(500);
+    let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        match editor
-            .job_manager
-            .receiver()
-            .recv_timeout(Duration::from_millis(20))
-        {
-            Ok(msg) => {
-                editor.handle_job_message(msg);
+        let receiver = editor.job_manager.receiver();
+        let next = if editor.job_manager.any_job_thread_alive() {
+            receiver.recv_timeout(Duration::from_millis(20)).ok()
+        } else {
+            match receiver.try_recv() {
+                Ok(message) => Some(message),
+                Err(_) => break,
             }
-            Err(_) => {
-                if Instant::now() >= deadline {
-                    break;
-                }
-            }
+        };
+        if let Some(message) = next {
+            editor.handle_job_message(message);
         }
+        assert!(Instant::now() < deadline, "editor jobs did not finish");
     }
 }
 
