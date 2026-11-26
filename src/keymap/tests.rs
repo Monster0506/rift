@@ -874,3 +874,14 @@ fn default_rows_register_every_binding() {
         .sum();
     assert_eq!(map.layers.len(), expected);
 }
+
+#[test]
+fn mode_names_resolve_by_short_and_long_name() {
+    assert_eq!(KeyContext::from_mode("n"), Some(KeyContext::Normal));
+    assert_eq!(KeyContext::from_mode("normal"), Some(KeyContext::Normal));
+    assert_eq!(
+        KeyContext::from_mode("tn"),
+        Some(KeyContext::TerminalNormal)
+    );
+    assert_eq!(KeyContext::from_mode("nope"), None);
+}

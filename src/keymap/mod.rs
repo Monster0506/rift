@@ -36,6 +36,25 @@ pub enum KeyContext {
     Buffer(BufferKindId),
 }
 
+const MODES: &[(&str, &str, KeyContext)] = &[
+    ("g", "global", KeyContext::Global),
+    ("n", "normal", KeyContext::Normal),
+    ("i", "insert", KeyContext::Insert),
+    ("c", "command", KeyContext::Command),
+    ("s", "search", KeyContext::Search),
+    ("t", "terminal", KeyContext::Terminal),
+    ("tn", "terminal_normal", KeyContext::TerminalNormal),
+];
+
+impl KeyContext {
+    pub(crate) fn from_mode(name: &str) -> Option<Self> {
+        MODES
+            .iter()
+            .find(|(short, long, _)| *short == name || *long == name)
+            .map(|&(.., context)| context)
+    }
+}
+
 /// Opaque token identifying a key binding owner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct KeyBindingToken(pub(crate) u64);

@@ -959,16 +959,8 @@ impl<T: TerminalBackend> Editor<T> {
     ) {
         match mutation {
             PluginMutation::MapKey { mode, keys, action } => {
-                use crate::keymap::KeyContext;
-                let ctx = match mode.as_str() {
-                    "n" | "normal" => KeyContext::Normal,
-                    "i" | "insert" => KeyContext::Insert,
-                    "c" | "command" => KeyContext::Command,
-                    "s" | "search" => KeyContext::Search,
-                    "g" | "global" => KeyContext::Global,
-                    "t" | "terminal" => KeyContext::Terminal,
-                    "tn" | "terminal_normal" => KeyContext::TerminalNormal,
-                    _ => return,
+                let Some(ctx) = crate::keymap::KeyContext::from_mode(&mode) else {
+                    return;
                 };
                 if let (Some(key_seq), Ok(act)) = (
                     crate::key::notation::parse_key_sequence(&keys),
@@ -987,16 +979,8 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             PluginMutation::UnmapKey { mode, keys } => {
-                use crate::keymap::KeyContext;
-                let ctx = match mode.as_str() {
-                    "n" | "normal" => KeyContext::Normal,
-                    "i" | "insert" => KeyContext::Insert,
-                    "c" | "command" => KeyContext::Command,
-                    "s" | "search" => KeyContext::Search,
-                    "g" | "global" => KeyContext::Global,
-                    "t" | "terminal" => KeyContext::Terminal,
-                    "tn" | "terminal_normal" => KeyContext::TerminalNormal,
-                    _ => return,
+                let Some(ctx) = crate::keymap::KeyContext::from_mode(&mode) else {
+                    return;
                 };
                 if let Some(key_seq) = crate::key::notation::parse_key_sequence(&keys) {
                     self.keymap.unregister_sequence(ctx, &key_seq);
