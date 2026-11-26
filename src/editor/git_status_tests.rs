@@ -215,7 +215,7 @@ fn git_status_buffer_is_read_only_and_wq_reports_cannot_be_saved() {
         "dd must not mutate a read-only status buffer"
     );
 
-    editor.save_buffer(editor.active_document_id(), None);
+    editor.save_buffer(editor.active_document_id(), None, false);
     assert!(
         editor
             .state

@@ -29,7 +29,7 @@ fn save_does_not_write_another_buffers_content_when_a_bufsavepre_hook_closes_the
             force: true,
         });
 
-    editor.save_buffer(editor.active_document_id(), None);
+    editor.save_buffer(editor.active_document_id(), None, false);
     drain_jobs(&mut editor);
 
     if let Ok(written) = std::fs::read_to_string(&path) {
@@ -264,4 +264,54 @@ fn wq_then_typing_before_save_completes_quits_with_unsaved_edit() {
         "an edit made after :wq started must cancel the quit"
     );
     assert!(editor.active_document().is_dirty());
+}
+
+#[test]
+fn all_open_frontends_keep_dirty_buffers_when_opening_another_file() {
+    use crate::action::{Action, EditorAction};
+
+    let (_dir, a, b) = setup();
+    for frontend in 0..3 {
+        let mut editor = create_editor();
+        open(&mut editor, &a);
+        let original = editor.active_document_id();
+        type_text(&mut editor, "edit");
+        assert!(editor.active_document().is_dirty());
+        let path = b.display().to_string();
+        match frontend {
+            0 => {
+                editor.handle_action(&Action::Editor(EditorAction::OpenFile {
+                    path: Some(path),
+                    force: false,
+                }));
+            }
+            1 => editor.execute_command_line(&format!(":e {path}")),
+            _ => {
+                editor
+                    .plugin_host
+                    .queue_mutation(PluginMutation::OpenFile { path, force: false });
+                editor.apply_plugin_mutations();
+            }
+        }
+        settle(&mut editor);
+        assert_eq!(editor.active_document().buffer().to_string(), "b");
+        let original = editor.document_manager.get_document(original).unwrap();
+        assert!(original.is_dirty());
+        assert!(original.buffer().to_string().contains("edit"));
+    }
+}
+
+#[test]
+fn edit_rejects_directory_without_changing_buffers() {
+    let (dir, a, _b) = setup();
+    let mut editor = create_editor();
+    open(&mut editor, &a);
+    let original = editor.active_document_id();
+    editor.execute_command_line(&format!(":e {}", dir.path().display()));
+    assert_eq!(editor.active_document_id(), original);
+    assert!(editor
+        .state
+        .notifications
+        .iter_active()
+        .any(|n| { n.message == crate::constants::errors::MSG_NOT_A_FILE }));
 }

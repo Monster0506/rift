@@ -6,11 +6,11 @@ impl<T: TerminalBackend> Editor<T> {
     pub(crate) fn open_file_from_input(&mut self, path: Option<String>, force: bool) -> bool {
         if let Err(e) = self.open_file(path, force) {
             self.notify_error(e);
-        } else {
-            self.state.clear_command_line();
-            if let Err(e) = self.force_full_redraw() {
-                self.notify_error(e);
-            }
+            return false;
+        }
+        self.state.clear_command_line();
+        if let Err(e) = self.force_full_redraw() {
+            self.notify_error(e);
         }
         true
     }

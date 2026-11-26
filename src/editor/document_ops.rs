@@ -62,6 +62,13 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let path_str = self.resolve_link_path(path_str);
         let path = std::path::PathBuf::from(&path_str);
+        if path.is_dir() {
+            return Err(RiftError::new(
+                ErrorType::Execution,
+                crate::constants::errors::NOT_A_FILE,
+                crate::constants::errors::MSG_NOT_A_FILE,
+            ));
+        }
         let target = if let Some(existing) = self.document_manager.find_open_document_id(&path) {
             existing
         } else if path.exists() {

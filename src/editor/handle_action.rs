@@ -146,11 +146,11 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::Save => {
-                self.save_buffer(self.active_document_id(), None);
+                self.save_buffer(self.active_document_id(), None, false);
                 true
             }
             EditorAction::SaveAndQuit => {
-                self.save_and_quit(None);
+                self.save_and_quit(None, false);
                 true
             }
             EditorAction::OpenExplorer => self.action_open_explorer(),
@@ -396,7 +396,8 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_file_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
             EditorAction::OpenFile { path, force } => {
-                self.open_file_from_input(path.clone(), *force)
+                self.open_file_from_input(path.clone(), *force);
+                true
             }
             EditorAction::OpenDirectory(path) => self.action_open_directory(path),
             EditorAction::OpenTerminal(cmd) => self.open_terminal_from_input(cmd.clone()),

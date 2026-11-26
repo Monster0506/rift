@@ -104,7 +104,7 @@ fn save_commits_pending_ghost_before_writing() {
     assert_eq!(editor.active_document().buffer().to_string(), "bcdef");
     assert_eq!(editor.active_document().pending_ghost.len(), 1);
 
-    editor.save_buffer(editor.active_document_id(), None);
+    editor.save_buffer(editor.active_document_id(), None, false);
 
     assert_eq!(editor.active_document().buffer().to_string(), "bcdef");
     assert!(editor.active_document().pending_ghost.is_empty());

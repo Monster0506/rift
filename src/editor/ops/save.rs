@@ -15,7 +15,28 @@ pub(crate) enum SaveOutcome {
 }
 
 impl<T: TerminalBackend> Editor<T> {
-    pub(crate) fn save_buffer(&mut self, buf: DocumentId, target: Option<PathBuf>) -> SaveOutcome {
+    pub(crate) fn save_buffer(
+        &mut self,
+        buf: DocumentId,
+        target: Option<PathBuf>,
+        force: bool,
+    ) -> SaveOutcome {
+        let fs = crate::fs_backend::backend();
+        let target = target.map(|path| fs.canonicalize(&path));
+        if !force
+            && target.as_deref().is_some_and(|path| {
+                self.document_manager
+                    .get_document(buf)
+                    .is_some_and(|doc| doc.path() != Some(path) && fs.path_exists(path))
+            })
+        {
+            self.notify_error(RiftError::new(
+                ErrorType::Execution,
+                crate::constants::errors::FILE_EXISTS,
+                crate::constants::errors::MSG_FILE_EXISTS,
+            ));
+            return SaveOutcome::NotSaved;
+        }
         let result = self.start_save(buf, target);
         self.state.clear_command_line();
         result
@@ -113,13 +134,14 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(crate) fn save_and_quit(&mut self, target: Option<PathBuf>) {
+    pub(crate) fn save_and_quit(&mut self, target: Option<PathBuf>, force: bool) {
         let Some(doc) = self.document_manager.active_document() else {
             self.state.clear_command_line();
             return;
         };
         let handle = doc.handle();
-        let target = if target.is_none()
+        let implicit_target = target.is_none();
+        let target = if implicit_target
             && doc.buffer_kind_id() == BufferKindId::FILE
             && doc.path().is_none()
         {
@@ -131,7 +153,7 @@ impl<T: TerminalBackend> Editor<T> {
             .as_deref()
             .or_else(|| doc.path())
             .map(|path| format!("Saving {} and quitting...", path.display()));
-        match self.save_buffer(handle.doc_id(), target) {
+        match self.save_buffer(handle.doc_id(), target, force || implicit_target) {
             SaveOutcome::Queued(job) => {
                 self.scheduler.quit_after_job = Some(job);
                 if let Some(message) = message {

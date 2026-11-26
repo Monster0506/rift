@@ -126,7 +126,10 @@ impl<T: TerminalBackend> Editor<T> {
         use crate::command_line::commands::executor::ExecutionResult;
         match result {
             ExecutionResult::Failure => return false, // keep command line visible for editing
-            ExecutionResult::OpenTerminal { cmd, .. } => return self.open_terminal_from_ex(cmd),
+            ExecutionResult::OpenTerminal { cmd, .. } => {
+                self.open_terminal_from_input(cmd);
+                return false;
+            }
             ExecutionResult::RunGit { args } => self.run_git_from_command(args),
             ExecutionResult::Success => {}
             ExecutionResult::Checkpoint => {
@@ -135,11 +138,15 @@ impl<T: TerminalBackend> Editor<T> {
             ExecutionResult::Quit { bangs } => {
                 self.do_quit(bangs > 0);
             }
-            ExecutionResult::Write { path } => {
-                self.save_buffer(self.active_document_id(), path);
+            ExecutionResult::Write { path, force } => {
+                self.save_buffer(
+                    self.active_document_id(),
+                    path.map(std::path::PathBuf::from),
+                    force,
+                );
             }
-            ExecutionResult::WriteAndQuit { path } => {
-                self.save_and_quit(path);
+            ExecutionResult::WriteAndQuit { path, force } => {
+                self.save_and_quit(path.map(std::path::PathBuf::from), force);
             }
             ExecutionResult::Redraw => self.redraw_from_command(),
             ExecutionResult::Action(action) => {
@@ -152,7 +159,11 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             ExecutionResult::Reload => self.load_plugins(),
-            ExecutionResult::Edit { path, bangs } => self.open_file_from_ex(path, bangs > 0),
+            ExecutionResult::Edit { path, bangs } => {
+                if !self.open_file_from_input(path, bangs > 0) {
+                    return false;
+                }
+            }
             ExecutionResult::BufferNext { .. } => {
                 self.do_buffer_next();
             }
@@ -208,24 +219,6 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
         true
-    }
-
-    fn open_terminal_from_ex(&mut self, cmd: Option<String>) -> bool {
-        if let Err(e) = self.open_terminal(cmd) {
-            self.notify_error(e);
-        } else {
-            self.state.clear_command_line();
-            self.set_mode(Mode::Insert);
-        }
-        false
-    }
-
-    fn open_file_from_ex(&mut self, path: Option<String>, force: bool) {
-        if let Err(e) = self.open_file(path, force) {
-            self.notify_error(e);
-        } else {
-            self.redraw_from_command();
-        }
     }
 
     fn run_git_from_command(&mut self, args: String) {

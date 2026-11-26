@@ -613,7 +613,9 @@ impl<T: TerminalBackend> Editor<T> {
         match mutation {
             PluginMutation::SaveBuffer { buf } => self.plugin_save_buffer(buf),
             PluginMutation::SwitchToBuffer(id) => self.plugin_switch_to_buffer(id),
-            PluginMutation::OpenFile { path, force } => self.plugin_open_file(path, force),
+            PluginMutation::OpenFile { path, force } => {
+                self.open_file_from_input(Some(path), force);
+            }
             PluginMutation::CloseBuffer { buf, force } => self.plugin_close_buffer(buf, force),
             PluginMutation::CreateScratchBuf { id, name, lines } => {
                 self.create_plugin_scratch(id, name, &lines);
@@ -1166,7 +1168,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn plugin_save_buffer(&mut self, buf: DocumentId) {
         if self.document_manager.get_document(buf).is_some() {
-            self.save_buffer(buf, None);
+            self.save_buffer(buf, None, false);
         } else {
             self.drop_plugin_write(buf, "save");
         }
@@ -1176,21 +1178,6 @@ impl<T: TerminalBackend> Editor<T> {
         if self.document_manager.get_document(id).is_some() {
             let _ = self.focus_document(id);
         }
-    }
-
-    fn plugin_open_file(&mut self, path: String, force: bool) {
-        if !force {
-            if let Some(doc) = self.document_manager.active_document() {
-                if doc.is_dirty() {
-                    self.notify(
-                        crate::notification::NotificationType::Warning,
-                        "unsaved changes — use force=true to discard",
-                    );
-                    return;
-                }
-            }
-        }
-        let _ = self.open_file(Some(path), force);
     }
 
     fn plugin_close_buffer(&mut self, buf: DocumentId, force: bool) {

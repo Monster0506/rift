@@ -370,7 +370,7 @@ fn buffer_kind_on_action_reads_the_edited_lines() {
 fn buffer_kind_on_save_reads_the_edited_lines() {
     let mut editor = editor_with_probe_buffer();
 
-    editor.save_buffer(editor.active_document_id(), None);
+    editor.save_buffer(editor.active_document_id(), None, false);
 
     lua_ok(
         &editor,

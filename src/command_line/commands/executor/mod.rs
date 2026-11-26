@@ -17,11 +17,13 @@ pub(crate) enum ExecutionResult {
     },
     /// Write command
     Write {
-        path: Option<std::path::PathBuf>,
+        path: Option<String>,
+        force: bool,
     },
     /// Write and quit
     WriteAndQuit {
-        path: Option<std::path::PathBuf>,
+        path: Option<String>,
+        force: bool,
     },
     /// Error occurred during execution
     Failure,
@@ -115,10 +117,16 @@ impl std::fmt::Debug for ExecutionResult {
         match self {
             Self::Success => write!(f, "Success"),
             Self::Quit { bangs } => f.debug_struct("Quit").field("bangs", bangs).finish(),
-            Self::Write { path } => f.debug_struct("Write").field("path", path).finish(),
-            Self::WriteAndQuit { path } => {
-                f.debug_struct("WriteAndQuit").field("path", path).finish()
-            }
+            Self::Write { path, force } => f
+                .debug_struct("Write")
+                .field("path", path)
+                .field("force", force)
+                .finish(),
+            Self::WriteAndQuit { path, force } => f
+                .debug_struct("WriteAndQuit")
+                .field("path", path)
+                .field("force", force)
+                .finish(),
             Self::Failure => write!(f, "Failure"),
             Self::Redraw => write!(f, "Redraw"),
             Self::Action(action) => f.debug_tuple("Action").field(action).finish(),
@@ -218,16 +226,14 @@ impl CommandExecutor {
                 value,
                 scope: OptionScope::Local(document.id),
             },
-            ParsedCommand::Write { path, bangs } => {
-                execute_write(state, document, path, bangs, |path| {
-                    ExecutionResult::Write { path }
-                })
-            }
-            ParsedCommand::WriteQuit { path, bangs } => {
-                execute_write(state, document, path, bangs, |path| {
-                    ExecutionResult::WriteAndQuit { path }
-                })
-            }
+            ParsedCommand::Write { path, bangs } => ExecutionResult::Write {
+                path,
+                force: bangs > 0,
+            },
+            ParsedCommand::WriteQuit { path, bangs } => ExecutionResult::WriteAndQuit {
+                path,
+                force: bangs > 0,
+            },
             ParsedCommand::Unknown { name, args } => ExecutionResult::PluginCommand { name, args },
             ParsedCommand::Ambiguous { prefix, matches } => {
                 report_ambiguous(state, &prefix, &matches)
@@ -241,7 +247,7 @@ impl CommandExecutor {
                 message,
                 bangs,
             } => execute_notify(state, &kind, message, bangs),
-            ParsedCommand::Edit { path, bangs } => execute_edit(state, path, bangs),
+            ParsedCommand::Edit { path, bangs } => ExecutionResult::Edit { path, bangs },
             ParsedCommand::BufferNext { bangs } => ExecutionResult::BufferNext { bangs },
             ParsedCommand::BufferPrevious { bangs } => ExecutionResult::BufferPrevious { bangs },
             ParsedCommand::NoHighlight { bangs: _ } => {
@@ -297,47 +303,6 @@ impl CommandExecutor {
 
 fn notify_error(state: &mut State, err: RiftError) {
     state.notifications.notify(err.severity.into(), err.message);
-}
-
-fn execute_write(
-    state: &mut State,
-    document: &Document,
-    path: Option<String>,
-    bangs: usize,
-    result: impl FnOnce(Option<std::path::PathBuf>) -> ExecutionResult,
-) -> ExecutionResult {
-    let path = path.map(|p| crate::fs_backend::backend().canonicalize(std::path::Path::new(&p)));
-    if overwrite_refused(state, document, path.as_deref(), bangs) {
-        return ExecutionResult::Failure;
-    }
-    result(path)
-}
-
-fn overwrite_refused(
-    state: &mut State,
-    document: &Document,
-    target: Option<&std::path::Path>,
-    bangs: usize,
-) -> bool {
-    let Some(target) = target else {
-        return false;
-    };
-    if bangs > 0 || document.path() == Some(target) {
-        return false;
-    }
-    if !crate::fs_backend::backend().path_exists(target) {
-        return false;
-    }
-
-    notify_error(
-        state,
-        RiftError::new(
-            ErrorType::Execution,
-            crate::constants::errors::FILE_EXISTS,
-            crate::constants::errors::MSG_FILE_EXISTS.to_string(),
-        ),
-    );
-    true
 }
 
 fn report_ambiguous(state: &mut State, prefix: &str, matches: &[String]) -> ExecutionResult {
@@ -406,35 +371,6 @@ fn execute_notify(state: &mut State, kind: &str, message: String, bangs: usize) 
 
     state.notifications.notify(notification_kind, message);
     ExecutionResult::Success
-}
-
-fn execute_edit(state: &mut State, path: Option<String>, bangs: usize) -> ExecutionResult {
-    if let Some(ref p) = path {
-        let path_buf = std::path::Path::new(p);
-        if path_buf.exists() && path_buf.is_dir() {
-            notify_error(
-                state,
-                RiftError::new(
-                    ErrorType::Execution,
-                    crate::constants::errors::NOT_A_FILE,
-                    crate::constants::errors::MSG_NOT_A_FILE.to_string(),
-                ),
-            );
-            return ExecutionResult::Failure;
-        }
-        if !path_buf.exists() && crate::document::manager::parent_dir_missing(path_buf) {
-            notify_error(
-                state,
-                RiftError::new(
-                    ErrorType::Execution,
-                    crate::constants::errors::PARENT_DIR_MISSING,
-                    crate::constants::errors::MSG_PARENT_DIR_MISSING.to_string(),
-                ),
-            );
-            return ExecutionResult::Failure;
-        }
-    }
-    ExecutionResult::Edit { path, bangs }
 }
 
 fn execute_substitute(

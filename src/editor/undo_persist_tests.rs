@@ -52,7 +52,7 @@ fn undo_history_survives_a_simulated_editor_restart_when_enabled() {
     editor.open_file(Some(path_str.clone()), false).unwrap();
     drain_jobs(&mut editor);
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
-    editor.save_buffer(editor.active_document_id(), None);
+    editor.save_buffer(editor.active_document_id(), None, false);
     drain_jobs(&mut editor);
 
     assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "Xhello");
@@ -114,7 +114,7 @@ fn undo_file_is_not_written_when_persistent_undo_is_explicitly_disabled() {
     editor.open_file(Some(path_str), false).unwrap();
     drain_jobs(&mut editor);
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
-    editor.save_buffer(editor.active_document_id(), None);
+    editor.save_buffer(editor.active_document_id(), None, false);
     drain_jobs(&mut editor);
 
     assert!(
