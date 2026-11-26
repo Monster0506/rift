@@ -189,6 +189,7 @@ impl Job for CaptureJobSender {
     }
 }
 
+#[cfg(feature = "terminal_emulation")]
 #[test]
 fn terminal_output_batch_drains_past_ten_without_bypassing_frame_deadline() {
     let mut editor = editor();
@@ -199,7 +200,7 @@ fn terminal_output_batch_drains_past_ten_without_bypassing_frame_deadline() {
         .job_manager
         .next_token(handle, kind, AsyncOpDomain::Terminal);
     let (tx, rx) = mpsc::channel();
-    editor.job_manager.spawn(CaptureJobSender(tx));
+    let job_id = editor.job_manager.spawn(CaptureJobSender(tx));
     let sender = rx.recv().unwrap();
     let started = editor.job_manager.receiver().recv().unwrap();
     editor.handle_job_message(started);
@@ -210,7 +211,11 @@ fn terminal_output_batch_drains_past_ten_without_bypassing_frame_deadline() {
 
     for _ in 0..64 {
         sender
-            .send(JobMessage::TerminalOutput(token, Vec::new()))
+            .send(JobMessage::CustomToken(
+                job_id,
+                token,
+                Box::new(crate::job_manager::jobs::terminal_job::TerminalOutput),
+            ))
             .unwrap();
     }
     editor.tick().unwrap();
@@ -225,6 +230,7 @@ fn terminal_output_batch_drains_past_ten_without_bypassing_frame_deadline() {
     assert!(!editor.terminal_frame_pending);
 }
 
+#[cfg(feature = "terminal_emulation")]
 #[test]
 fn hidden_terminal_output_does_not_schedule_a_frame() {
     let mut editor = editor();
@@ -238,7 +244,11 @@ fn hidden_terminal_output_does_not_schedule_a_frame() {
         .job_manager
         .next_token(handle, kind, AsyncOpDomain::Terminal);
 
-    editor.handle_job_message(JobMessage::TerminalOutput(token, Vec::new()));
+    editor.handle_job_message(JobMessage::CustomToken(
+        0,
+        token,
+        Box::new(crate::job_manager::jobs::terminal_job::TerminalOutput),
+    ));
 
     assert!(!editor.terminal_frame_pending);
     assert_eq!(editor.term.inner.flushes, 0);

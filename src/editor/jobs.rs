@@ -5,7 +5,6 @@ use crate::document::DocumentId;
 use crate::error::RiftError;
 use crate::job_manager::AsyncToken;
 use crate::job_manager::{JobMessage, JobRef, JobTarget};
-use crate::mode::Mode;
 use crate::term::TerminalBackend;
 #[cfg(feature = "treesitter")]
 use std::sync::Arc;
@@ -324,18 +323,6 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 payload.apply(self, JobRef { id, token });
             }
-            JobMessage::TerminalOutput(token, data) => {
-                if !self.is_async_token_valid(&token) {
-                    return;
-                }
-                self.handle_terminal_output(token, &data);
-            }
-            JobMessage::TerminalExit(token) => {
-                if !self.is_async_token_valid(&token) {
-                    return;
-                }
-                self.handle_terminal_exit(token);
-            }
         }
 
         self.job_manager.cleanup_finished_jobs();
@@ -379,43 +366,6 @@ impl<T: TerminalBackend> Editor<T> {
                 "Quit aborted: save was cancelled".to_string(),
             );
         }
-    }
-
-    fn handle_terminal_output(&mut self, token: AsyncToken, data: &[u8]) {
-        let Some(doc) = self
-            .document_manager
-            .get_document_by_handle_mut(token.handle)
-        else {
-            return;
-        };
-        doc.handle_terminal_data(data);
-        if !self
-            .split_tree
-            .windows_for_document(token.doc_id())
-            .is_empty()
-        {
-            self.terminal_frame_pending = true;
-        }
-    }
-
-    fn handle_terminal_exit(&mut self, token: AsyncToken) {
-        let doc_id = token.doc_id();
-        if self.active_document_id() == doc_id {
-            self.set_mode(Mode::Normal);
-        }
-        if let Err(e) = self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Force) {
-            self.notify(
-                crate::notification::NotificationType::Error,
-                format!("Failed to close terminal: {e}"),
-            );
-        } else {
-            self.notify(
-                crate::notification::NotificationType::Info,
-                "Terminal closed".to_string(),
-            );
-        }
-        self.sync_state_with_active_document();
-        let _ = self.update_and_render();
     }
 
     #[cfg(feature = "treesitter")]
@@ -482,6 +432,45 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
         payload: crate::job_manager::jobs::plugin_process::PluginJobPayload,
     ) {
         self.deliver_plugin_job_payload(payload);
+    }
+
+    #[cfg(feature = "terminal_emulation")]
+    fn apply_terminal_output(&mut self, token: AsyncToken) {
+        let Some(doc) = self
+            .document_manager
+            .get_document_by_handle_mut(token.handle)
+        else {
+            return;
+        };
+        doc.handle_terminal_data(&[]);
+        if !self
+            .split_tree
+            .windows_for_document(token.doc_id())
+            .is_empty()
+        {
+            self.terminal_frame_pending = true;
+        }
+    }
+
+    #[cfg(feature = "terminal_emulation")]
+    fn apply_terminal_exit(&mut self, token: AsyncToken) {
+        let doc_id = token.doc_id();
+        if self.active_document_id() == doc_id {
+            self.set_mode(crate::mode::Mode::Normal);
+        }
+        if let Err(e) = self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Force) {
+            self.notify(
+                crate::notification::NotificationType::Error,
+                format!("Failed to close terminal: {e}"),
+            );
+        } else {
+            self.notify(
+                crate::notification::NotificationType::Info,
+                "Terminal closed".to_string(),
+            );
+        }
+        self.sync_state_with_active_document();
+        let _ = self.update_and_render();
     }
 
     fn apply_completion(

@@ -183,8 +183,10 @@ impl<T: TerminalBackend> Editor<T> {
         let mut processed_jobs = 0;
         let mut nonterminal_jobs = 0;
         while let Ok(msg) = self.job_manager.receiver().try_recv() {
-            let terminal_output =
-                matches!(&msg, crate::job_manager::JobMessage::TerminalOutput(..));
+            let terminal_output = matches!(
+                &msg,
+                crate::job_manager::JobMessage::CustomToken(_, _, payload) if payload.is_terminal_output()
+            );
             self.handle_job_message(msg);
             processed_jobs += 1;
             if !terminal_output {

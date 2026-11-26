@@ -52,6 +52,9 @@ impl Semaphore {
 /// Sealed trait for job payloads to ensure type safety.
 pub trait JobPayload: Any + Send + std::fmt::Debug + 'static {
     fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef);
+    fn is_terminal_output(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -63,6 +66,10 @@ pub struct JobRef {
 pub trait JobTarget {
     fn apply_plugin_job(&mut self, payload: jobs::plugin_process::PluginJobPayload);
     fn apply_completion(&mut self, payload: jobs::completion::CompletionPayload);
+    #[cfg(feature = "terminal_emulation")]
+    fn apply_terminal_output(&mut self, token: AsyncToken);
+    #[cfg(feature = "terminal_emulation")]
+    fn apply_terminal_exit(&mut self, token: AsyncToken);
     #[cfg(feature = "treesitter")]
     fn apply_syntax_parse(
         &mut self,
@@ -233,10 +240,6 @@ pub enum JobMessage {
     Custom(usize, Box<dyn JobPayload>),
     /// Custom payload with an associated `AsyncToken`
     CustomToken(usize, AsyncToken, Box<dyn JobPayload>),
-    /// Terminal output data (`AsyncToken`, Data)
-    TerminalOutput(AsyncToken, Vec<u8>),
-    /// Terminal process exit (`AsyncToken`)
-    TerminalExit(AsyncToken),
 }
 
 /// Sends a job's successful result, then its Finished message. The common

@@ -1,8 +1,36 @@
 use crate::document::DocumentId;
-use crate::job_manager::{AsyncToken, CancellationSignal, Job, JobMessage};
+use crate::job_manager::{
+    AsyncToken, CancellationSignal, Job, JobMessage, JobPayload, JobRef, JobTarget,
+};
 use crate::term::TerminalEvent;
 use std::fmt;
 use std::sync::mpsc::{Receiver, Sender};
+
+#[derive(Debug)]
+pub(crate) struct TerminalOutput;
+
+impl JobPayload for TerminalOutput {
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
+        if let Some(token) = job.token {
+            editor.apply_terminal_output(token);
+        }
+    }
+
+    fn is_terminal_output(&self) -> bool {
+        true
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct TerminalExit;
+
+impl JobPayload for TerminalExit {
+    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
+        if let Some(token) = job.token {
+            editor.apply_terminal_exit(token);
+        }
+    }
+}
 
 pub(crate) struct TerminalInputJob {
     document_id: DocumentId,
@@ -39,7 +67,7 @@ impl Job for TerminalInputJob {
         Some(self.token)
     }
 
-    fn run(self: Box<Self>, _id: usize, tx: Sender<JobMessage>, signal: CancellationSignal) {
+    fn run(self: Box<Self>, id: usize, tx: Sender<JobMessage>, signal: CancellationSignal) {
         loop {
             if signal.is_cancelled() {
                 break;
@@ -50,21 +78,33 @@ impl Job for TerminalInputJob {
                     TerminalEvent::Wakeup => {
                         while matches!(self.rx.try_recv(), Ok(TerminalEvent::Wakeup)) {}
                         if tx
-                            .send(JobMessage::TerminalOutput(self.token, vec![]))
+                            .send(JobMessage::CustomToken(
+                                id,
+                                self.token,
+                                Box::new(TerminalOutput),
+                            ))
                             .is_err()
                         {
                             break;
                         }
                     }
                     TerminalEvent::ChildExit(_code) => {
-                        let _ = tx.send(JobMessage::TerminalExit(self.token));
+                        let _ = tx.send(JobMessage::CustomToken(
+                            id,
+                            self.token,
+                            Box::new(TerminalExit),
+                        ));
                         break;
                     }
                     TerminalEvent::Title => {}
                 },
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                    let _ = tx.send(JobMessage::TerminalExit(self.token));
+                    let _ = tx.send(JobMessage::CustomToken(
+                        id,
+                        self.token,
+                        Box::new(TerminalExit),
+                    ));
                     break;
                 }
             }
