@@ -1408,7 +1408,7 @@ pub(crate) fn render_dividers(
         rows: total_rows,
         cols: total_cols,
     };
-    render_node_dividers(layer, &tree.root, area, fg, bg);
+    render_node_dividers(layer, tree.root(), area, fg, bg);
 }
 
 /// Screen rectangle occupied by a split node.

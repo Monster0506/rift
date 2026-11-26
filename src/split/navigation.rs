@@ -19,7 +19,7 @@ impl SplitTree {
     ) -> Option<WindowId> {
         let focused = layouts
             .iter()
-            .find(|l| l.window_id == self.focused_window)?;
+            .find(|l| l.window_id == self.focused_window_id())?;
         navigate_from(focused, direction, layouts)
     }
 }

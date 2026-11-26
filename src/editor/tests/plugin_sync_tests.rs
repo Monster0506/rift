@@ -910,8 +910,7 @@ fn switching_between_unchanged_buffers_resends_neither() {
 
     for (target, text) in [(first, "first"), (second, "second"), (first, "first")] {
         editor
-            .document_manager
-            .switch_to_document(crate::document::DocumentId::new(target))
+            .focus_document(crate::document::DocumentId::new(target))
             .unwrap();
         assert_eq!(
             resent_texts(&editor),

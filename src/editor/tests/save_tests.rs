@@ -18,7 +18,7 @@ fn save_does_not_write_another_buffers_content_when_a_bufsavepre_hook_closes_the
         &["doc two content".to_string()],
     );
     editor.open_buffer(doc2, crate::document::manager::Placement::Focused);
-    let _ = editor.document_manager.switch_to_document(doc1_id);
+    editor.focus_document(doc1_id).unwrap();
     assert_eq!(editor.active_document().id, doc1_id);
 
     // Simulate a BufSavePre Lua hook that closes the buffer being saved.

@@ -272,9 +272,7 @@ impl<T: TerminalBackend> Editor<T> {
         target_doc
             .set_cursor(cursor, crate::document::ops::CursorCause::User)
             .expect("line index must return a valid cursor offset");
-        if let Some(window) = self.split_tree.get_window_mut(target_window_id) {
-            window.cursor_position = cursor;
-        }
+        self.set_window_cursor(target_window_id, cursor);
     }
 
     /// The pane linked to the focused Git blame or source window.
@@ -301,12 +299,9 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             })
             .and_then(|blame_doc_id| {
-                self.split_tree
-                    .windows
-                    .iter()
-                    .find_map(|(window_id, window)| {
-                        (window.document_id == blame_doc_id).then_some(*window_id)
-                    })
+                self.split_tree.windows().find_map(|(window_id, window)| {
+                    (window.document_id == blame_doc_id).then_some(*window_id)
+                })
             })
     }
     /// `Escape` in a blame buffer: close it and return focus to the linked file.

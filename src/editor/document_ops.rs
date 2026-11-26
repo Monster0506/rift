@@ -98,40 +98,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.focus_document(target)
     }
 
-    pub(super) fn with_document_target<R>(
-        &mut self,
-        buf: DocumentId,
-        f: impl FnOnce(&mut Self) -> R,
-    ) -> R {
-        let win = self.split_tree.focused_window_id();
-        let original = self.active_document_id();
-        let original_tab = self.document_manager.active_document_id();
-        let scroll = self.render_system.viewport.get_scroll();
-        self.show_in_window(win, buf);
-        let _ = self.document_manager.switch_to_document(buf);
-        self.sync_state_with_active_document();
-        let result = f(self);
-        if original != buf && self.document_manager.get_document(original).is_some() {
-            if self
-                .split_tree
-                .get_window(win)
-                .is_some_and(|w| w.document_id == buf)
-            {
-                self.show_in_window(win, original);
-                if self.split_tree.focused_window_id() == win {
-                    self.render_system.viewport.set_scroll(scroll.0, scroll.1);
-                }
-            }
-            if self.document_manager.active_document_id() == Some(buf) {
-                if let Some(tab) = original_tab {
-                    let _ = self.document_manager.switch_to_document(tab);
-                }
-            }
-            self.sync_state_with_active_document();
-        }
-        result
-    }
-
     pub(super) fn reload_document(
         &mut self,
         buf: DocumentId,

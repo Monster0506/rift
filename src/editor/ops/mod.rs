@@ -1,3 +1,3 @@
-mod buffers;
+pub(crate) mod buffers;
 mod notify;
-mod windows;
+pub(crate) mod windows;

@@ -1,10 +1,5 @@
 use super::*;
-use crate::document::manager::DocumentManager;
 use crate::document::ops::{Edit, EditSource};
-
-pub(super) fn create_manager() -> DocumentManager {
-    DocumentManager::new()
-}
 
 pub(super) fn make_dir_entries(names: &[(&str, bool)], base: &str) -> Vec<DirEntry> {
     names

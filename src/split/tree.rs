@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use crate::document::DocumentId;
 
-use super::navigation::Direction;
-use super::window::{Window, WindowId};
+use crate::split::navigation::Direction;
+use crate::split::window::{Window, WindowId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SplitDirection {
@@ -17,7 +17,7 @@ struct SplitPlacement {
     first_ratio: f64,
 }
 
-pub(super) fn cells_to_f64(cells: usize) -> f64 {
+pub(crate) fn cells_to_f64(cells: usize) -> f64 {
     f64::from(u32::try_from(cells).unwrap_or(u32::MAX))
 }
 
@@ -32,10 +32,10 @@ pub(crate) enum SplitNode {
 }
 
 pub(crate) struct SplitTree {
-    pub(crate) root: SplitNode,
-    pub(crate) windows: BTreeMap<WindowId, Window>,
+    root: SplitNode,
+    windows: BTreeMap<WindowId, Window>,
     pub(super) focused_window: WindowId,
-    pub(crate) previous_window: Option<WindowId>,
+    previous_window: Option<WindowId>,
     next_window_id: WindowId,
 }
 
@@ -56,7 +56,7 @@ impl SplitTree {
         }
     }
 
-    pub(crate) fn split(
+    pub(super) fn split(
         &mut self,
         direction: SplitDirection,
         target_id: WindowId,
@@ -77,7 +77,7 @@ impl SplitTree {
         )
     }
 
-    pub(crate) fn split_before_with_ratio(
+    pub(super) fn split_before_with_ratio(
         &mut self,
         direction: SplitDirection,
         target_id: WindowId,
@@ -203,7 +203,7 @@ impl SplitTree {
     ///
     /// # Panics
     /// Panics only if no window remains to take focus, which the early return rules out.
-    pub(crate) fn close_window(&mut self, id: WindowId) -> bool {
+    pub(super) fn close_window(&mut self, id: WindowId) -> bool {
         if self.windows.len() <= 1 {
             return false;
         }
@@ -286,16 +286,12 @@ impl SplitTree {
     ///
     /// # Panics
     /// Panics if the focused window id is missing from the window map.
-    pub(crate) fn focused_window_mut(&mut self) -> &mut Window {
-        self.windows.get_mut(&self.focused_window).unwrap()
-    }
-
     #[must_use]
     pub(crate) const fn focused_window_id(&self) -> WindowId {
         self.focused_window
     }
 
-    pub(crate) fn set_focus(&mut self, id: WindowId) -> bool {
+    pub(super) fn set_focus(&mut self, id: WindowId) -> bool {
         if self.windows.contains_key(&id) {
             self.previous_window = Some(self.focused_window);
             self.focused_window = id;
@@ -305,10 +301,10 @@ impl SplitTree {
         }
     }
 
-    pub(crate) fn move_window(
+    pub(super) fn move_window(
         &mut self,
         direction: Direction,
-        layouts: &[super::layout::WindowLayout],
+        layouts: &[crate::split::layout::WindowLayout],
     ) -> bool {
         if self.windows.len() <= 1 {
             return false;
@@ -495,7 +491,7 @@ impl SplitTree {
     ///
     /// # Panics
     /// Does not panic: both ids are verified present before the lookups.
-    pub(crate) fn exchange_windows(&mut self, id1: WindowId, id2: WindowId) -> bool {
+    pub(super) fn exchange_windows(&mut self, id1: WindowId, id2: WindowId) -> bool {
         if id1 == id2 || !self.windows.contains_key(&id1) || !self.windows.contains_key(&id2) {
             return false;
         }
@@ -535,6 +531,23 @@ impl SplitTree {
             .filter(|(_, w)| w.document_id == doc_id)
             .map(|(id, _)| *id)
             .collect()
+    }
+
+    pub(crate) const fn root(&self) -> &SplitNode {
+        &self.root
+    }
+
+    pub(crate) fn windows(&self) -> impl Iterator<Item = (&WindowId, &Window)> {
+        self.windows.iter()
+    }
+
+    pub(crate) const fn previous_window(&self) -> Option<WindowId> {
+        self.previous_window
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_test_root(&mut self, root: SplitNode) {
+        self.root = root;
     }
 
     #[must_use]
@@ -626,27 +639,23 @@ impl SplitTree {
         self.windows.get(&id)
     }
 
-    pub(crate) fn get_window_mut(&mut self, id: WindowId) -> Option<&mut Window> {
+    pub(super) fn get_window_mut(&mut self, id: WindowId) -> Option<&mut Window> {
         self.windows.get_mut(&id)
     }
 
     /// Point `id`'s window at `doc_id`, if that window exists.
-    pub(crate) fn set_window_document(&mut self, id: WindowId, doc_id: DocumentId) {
+    pub(super) fn set_window_document(&mut self, id: WindowId, doc_id: DocumentId) {
         if let Some(w) = self.windows.get_mut(&id) {
             w.document_id = doc_id;
         }
     }
 
     /// Point the focused window at `doc_id`.
-    pub(crate) fn set_focused_document(&mut self, doc_id: DocumentId) {
-        self.focused_window_mut().document_id = doc_id;
-    }
-
-    pub(crate) fn resize_focused(
+    pub(super) fn resize_focused(
         &mut self,
         direction: SplitDirection,
         delta_cells: f64,
-        layouts: &[super::layout::WindowLayout],
+        layouts: &[crate::split::layout::WindowLayout],
     ) -> bool {
         Self::resize_node(
             &mut self.root,
@@ -662,7 +671,7 @@ impl SplitTree {
         target_id: WindowId,
         direction: SplitDirection,
         delta_cells: f64,
-        layouts: &[super::layout::WindowLayout],
+        layouts: &[crate::split::layout::WindowLayout],
     ) -> bool {
         match node {
             SplitNode::Leaf(_) => false,
@@ -724,7 +733,7 @@ impl SplitTree {
     fn accumulate_span(
         node: &SplitNode,
         direction: SplitDirection,
-        layouts: &[super::layout::WindowLayout],
+        layouts: &[crate::split::layout::WindowLayout],
         lo: &mut usize,
         hi: &mut usize,
     ) {
@@ -833,7 +842,7 @@ impl SplitTree {
         }
     }
 
-    pub(crate) fn equalize(&mut self, proportional: bool) {
+    pub(super) fn equalize(&mut self, proportional: bool) {
         Self::equalize_node(&mut self.root, proportional);
     }
 
@@ -868,3 +877,7 @@ impl SplitTree {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;

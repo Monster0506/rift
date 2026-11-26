@@ -733,16 +733,13 @@ fn git_blame_uses_a_third_of_its_parent_split_width() {
     let source_window_id = editor.split_tree.focused_window_id();
     let source_doc_id = editor.active_document_id();
     editor
-        .split_tree
-        .split(
-            crate::split::tree::SplitDirection::Vertical,
+        .split_window_beside(
             source_window_id,
+            crate::split::tree::SplitDirection::Vertical,
             source_doc_id,
-            24,
-            80,
         )
         .unwrap();
-    editor.split_tree.set_focus(source_window_id);
+    editor.focus_window(source_window_id);
     let parent_width = editor
         .split_tree
         .compute_layout(23, 160)

@@ -19,13 +19,13 @@ impl SplitTree {
     #[must_use]
     pub(crate) fn compute_layout(&self, total_rows: usize, total_cols: usize) -> Vec<WindowLayout> {
         let mut layouts = Vec::new();
-        compute_node_layout(&self.root, 0, 0, total_rows, total_cols, &mut layouts);
+        compute_node_layout(self.root(), 0, 0, total_rows, total_cols, &mut layouts);
         layouts
     }
 
     pub(crate) fn hash_layout<H: Hasher>(&self, state: &mut H) {
-        hash_node(&self.root, state);
-        for (id, window) in &self.windows {
+        hash_node(self.root(), state);
+        for (id, window) in self.windows() {
             id.hash(state);
             window.document_id.get().hash(state);
         }

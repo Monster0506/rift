@@ -699,9 +699,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_operator(&mut self, action: &Action, op: crate::action::OperatorType) -> bool {
         if let Some(layout) = self.panel_layout.clone() {
             if layout.kind == crate::editor::PanelKind::Regions {
-                let _ = self
-                    .document_manager
-                    .switch_to_document(layout.preview_doc_id);
+                self.focus_window_showing(layout.preview_win_id, layout.preview_doc_id);
                 self.close_split_panel();
             }
         }
@@ -1502,7 +1500,7 @@ impl<T: TerminalBackend> Editor<T> {
                 doc.commit_pending_ghost();
             }
         }
-        self.document_manager.set_most_recent_ghost_doc(None);
+        self.set_recent_ghost(None);
     }
 
     pub(super) fn put_into_active(&mut self, clip: &Clip, at: PutAt) -> bool {

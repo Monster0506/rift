@@ -2,6 +2,56 @@ use super::*;
 use crate::document::ops::{Edit, EditSource};
 
 #[test]
+fn test_remove_directory_buffer_without_dirty_check() {
+    let mut manager = DocumentManager::new();
+    let mut doc = Document::new_directory(
+        crate::document::DocumentId::new(1),
+        std::path::PathBuf::from("/tmp"),
+    )
+    .unwrap();
+    doc.replace_content("some edit", crate::document::ops::ContentKind::Render);
+    manager.insert(doc, crate::document::manager::Placement::Focused);
+
+    assert!(manager
+        .remove_document(crate::document::DocumentId::new(1))
+        .is_ok());
+}
+
+#[test]
+fn test_remove_undotree_buffer_without_dirty_check() {
+    let mut manager = DocumentManager::new();
+    let doc = Document::new_undotree(
+        crate::document::DocumentId::new(2),
+        crate::document::DocumentId::new(1),
+    )
+    .unwrap();
+    manager.insert(doc, crate::document::manager::Placement::Focused);
+    assert!(manager
+        .remove_document(crate::document::DocumentId::new(2))
+        .is_ok());
+}
+
+#[test]
+fn both_document_allocators_skip_claimed_plugin_ids_across_refills() {
+    let mut manager = crate::document::manager::DocumentManager::new();
+    let mut ids = manager.refill_plugin_ids(Vec::new());
+    let claimed = ids.pop().unwrap();
+    let next = manager.next_id();
+    assert!(!ids.contains(&next.get()) && claimed != next.get());
+    let editor_reservation = manager.reserve_creation();
+    assert_eq!(editor_reservation.id(), next);
+    let replacement_pool = manager.refill_plugin_ids(ids);
+    assert!(!replacement_pool.contains(&claimed));
+    let creation = manager
+        .claim_plugin_creation(DocumentId::new(claimed))
+        .unwrap();
+    assert_eq!(creation.id().get(), claimed);
+    assert!(manager
+        .claim_plugin_creation(DocumentId::new(claimed))
+        .is_none());
+}
+
+#[test]
 fn open_path_creates_empty_document_for_nonexistent_path_in_existing_dir() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("brand_new.txt");
@@ -10,7 +60,7 @@ fn open_path_creates_empty_document_for_nonexistent_path_in_existing_dir() {
     let doc = Document::open_path(DocumentId::new(1), &path_str).unwrap();
 
     assert_eq!(doc.path(), Some(path.as_path()));
-    assert_eq!(doc.buffer.len(), 0);
+    assert_eq!(doc.buffer().len(), 0);
     assert!(!path.exists(), "opening must not touch disk");
 }
 
@@ -62,7 +112,8 @@ fn prepare_removal_normal_rejects_dirty_without_side_effects() {
 fn prepare_removal_force_accepts_dirty() {
     let mut mgr = DocumentManager::new();
     let mut doc = Document::new(mgr.next_id()).unwrap();
-    doc.buffer.insert_str("unsaved changes").unwrap();
+    doc.edit(Edit::type_text("unsaved changes"), EditSource::User)
+        .unwrap();
     let id = doc.id;
     mgr.insert(doc, crate::document::manager::Placement::Focused);
 
@@ -116,7 +167,9 @@ fn draft_rejects_descriptor_state_mismatch() {
     let mut manager = DocumentManager::new();
     let reservation = manager.reserve_creation();
     let mut document = Document::new(reservation.id()).unwrap();
-    document.kind = crate::document::kind::BufferKind::directory();
+    document.kind = Document::new_directory(reservation.id(), std::path::PathBuf::from("/tmp"))
+        .unwrap()
+        .kind;
 
     let error = DocumentDraft::new(reservation, document)
         .err()

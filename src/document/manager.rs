@@ -161,7 +161,7 @@ impl DocumentManager {
         self.most_recent_ghost_doc
     }
 
-    pub(crate) const fn set_most_recent_ghost_doc(&mut self, id: Option<DocumentId>) {
+    pub(super) const fn set_most_recent_ghost_doc(&mut self, id: Option<DocumentId>) {
         self.most_recent_ghost_doc = id;
     }
 
@@ -198,7 +198,7 @@ impl DocumentManager {
     }
 
     #[cfg(test)]
-    pub(crate) fn reserve_creation(&mut self) -> CreationReservation {
+    pub(super) fn reserve_creation(&mut self) -> CreationReservation {
         let id = self.next_id();
         self.next_document_id = id.next();
         let instance = self.next_instance;
@@ -207,7 +207,7 @@ impl DocumentManager {
         CreationReservation::new(id, handle)
     }
 
-    pub(crate) fn insert(
+    pub(super) fn insert(
         &mut self,
         new: impl Into<NewDocument>,
         placement: Placement,
@@ -388,7 +388,7 @@ impl DocumentManager {
         id
     }
 
-    pub(crate) fn refill_plugin_ids(&self, mut ids: Vec<u64>) -> Vec<u64> {
+    pub(super) fn refill_plugin_ids(&self, mut ids: Vec<u64>) -> Vec<u64> {
         self.release_plugin_ids(ids.iter().copied());
         ids.clear();
         let mut reserved = self.plugin_ids.borrow_mut();
@@ -404,11 +404,11 @@ impl DocumentManager {
         ids
     }
 
-    pub(crate) fn clear_plugin_ids(&self) {
+    pub(super) fn clear_plugin_ids(&self) {
         self.plugin_ids.borrow_mut().clear();
     }
 
-    pub(crate) fn release_plugin_ids(&self, ids: impl IntoIterator<Item = u64>) {
+    pub(super) fn release_plugin_ids(&self, ids: impl IntoIterator<Item = u64>) {
         let mut reserved = self.plugin_ids.borrow_mut();
         for id in ids {
             if let Some(index) = reserved.iter().position(|reserved| reserved.get() == id) {
@@ -417,7 +417,7 @@ impl DocumentManager {
         }
     }
 
-    pub(crate) fn claim_plugin_creation(&mut self, id: DocumentId) -> Option<CreationReservation> {
+    pub(super) fn claim_plugin_creation(&mut self, id: DocumentId) -> Option<CreationReservation> {
         let mut reserved = self.plugin_ids.borrow_mut();
         let index = reserved.iter().position(|reserved| *reserved == id)?;
         reserved.swap_remove(index);
@@ -428,7 +428,7 @@ impl DocumentManager {
 
     /// # Errors
     /// Returns an error if `id` is not in the tab order.
-    pub(crate) fn switch_to_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
+    pub(super) fn switch_to_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
         if let Some(pos) = self.tab_order.iter().position(|&x| x == id) {
             self.current_tab = pos;
             Ok(())
@@ -444,7 +444,7 @@ impl DocumentManager {
     /// # Errors
     /// Returns an error if the document is missing or not in the tab order, has unsaved changes
     /// under a `Normal` removal, or its replacement cannot be created.
-    pub(crate) fn prepare_removal(
+    pub(super) fn prepare_removal(
         &self,
         id: DocumentId,
         intent: RemovalIntent,
@@ -482,7 +482,7 @@ impl DocumentManager {
         })
     }
 
-    pub(crate) fn commit_removal(&mut self, plan: PreparedRemoval) -> Option<Document> {
+    pub(super) fn commit_removal(&mut self, plan: PreparedRemoval) -> Option<Document> {
         if let Some(pos) = self.tab_order.iter().position(|&x| x == plan.id) {
             self.tab_order.remove(pos);
             if pos < self.current_tab {
@@ -617,7 +617,7 @@ impl DocumentManager {
 
     #[must_use]
     pub(crate) fn has_unsaved_changes(&self) -> bool {
-        self.documents.values().any(super::Document::is_dirty)
+        self.documents.values().any(Document::is_dirty)
     }
 }
 
@@ -657,3 +657,7 @@ impl Default for DocumentManager {
 #[cfg(test)]
 #[path = "manager_tests.rs"]
 mod manager_tests;
+
+#[cfg(test)]
+#[path = "tests/manager_tab_tests.rs"]
+mod manager_tab_tests;

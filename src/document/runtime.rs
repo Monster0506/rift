@@ -544,7 +544,7 @@ impl StateSlot {
     }
 
     #[must_use]
-    pub(super) const fn key_id(&self) -> StateKeyId {
+    pub(crate) const fn key_id(&self) -> StateKeyId {
         self.key_id
     }
 
@@ -601,7 +601,7 @@ impl KindDescriptor {
     }
 
     #[must_use]
-    pub(super) const fn state_key(&self) -> StateKeyId {
+    pub(crate) const fn state_key(&self) -> StateKeyId {
         self.state_key
     }
 

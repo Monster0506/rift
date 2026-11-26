@@ -293,7 +293,7 @@ fn edit_command_toggles_an_image_between_picture_and_raw_bytes() {
 #[test]
 fn reloading_a_kind_with_no_reload_dispatch_returns_a_clear_error() {
     let mut editor = create_editor();
-    let reservation = editor.document_manager.reserve_creation();
+    let reservation = editor.reserve_buffer_creation();
     editor
         .create_scratch_buffer(reservation, "scratch".to_string(), &["hello".to_string()])
         .unwrap();

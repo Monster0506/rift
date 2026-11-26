@@ -135,9 +135,8 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .active_document_id()
             .map_or(0, |id| usize::try_from(id.get()).unwrap_or(usize::MAX));
-        let creation_ids = self
-            .document_manager
-            .refill_plugin_ids(self.plugin_host.lua_take_creation_ids());
+        let creation_ids =
+            self.refill_plugin_creation_ids(self.plugin_host.lua_take_creation_ids());
         let bufs = self.lua_buf_snapshots();
 
         let window_size = (
@@ -148,7 +147,7 @@ impl<T: TerminalBackend> Editor<T> {
         let focused_win_id = self.split_tree.focused_window_id().get();
         let previous_win_id = self
             .split_tree
-            .previous_window
+            .previous_window()
             .map(super::super::split::window::WindowId::get);
         let buf_list = (keys.buf_list != synced.buf_list)
             .then(|| self.lua_buf_views().map(BufEntry::from).collect());
@@ -374,7 +373,7 @@ impl<T: TerminalBackend> Editor<T> {
                         match &envelope.mutation {
                             PluginMutation::CreateBuffer { id, .. }
                             | PluginMutation::CreateScratchBuf { id, .. } => {
-                                self.document_manager.release_plugin_ids([id.get()]);
+                                self.release_plugin_creation_ids([id.get()]);
                             }
                             _ => {}
                         }
@@ -771,7 +770,7 @@ impl<T: TerminalBackend> Editor<T> {
         name: String,
         lines: &[String],
     ) {
-        let Some(reservation) = self.document_manager.claim_plugin_creation(id) else {
+        let Some(reservation) = self.claim_buffer_creation(id) else {
             return;
         };
         if let Err(error) = self.create_scratch_buffer(reservation, name, lines) {
@@ -791,14 +790,14 @@ impl<T: TerminalBackend> Editor<T> {
         vars: Vec<(String, crate::annotations::value::Value)>,
     ) {
         let Some(descriptor) = self.buffer_kinds.get_by_name(kind) else {
-            self.document_manager.release_plugin_ids([id.get()]);
+            self.release_plugin_creation_ids([id.get()]);
             self.notify(
                 crate::notification::NotificationType::Error,
                 format!("unknown buffer kind '{kind}'"),
             );
             return;
         };
-        let Some(reservation) = self.document_manager.claim_plugin_creation(id) else {
+        let Some(reservation) = self.claim_buffer_creation(id) else {
             return;
         };
         let mut document = match crate::document::Document::new(reservation.id()) {

@@ -4,7 +4,7 @@ pub(crate) mod definitions;
 pub(crate) mod factories;
 mod ghost;
 pub(crate) mod kind;
-pub(crate) mod manager;
+pub(crate) use crate::editor::ops::buffers::manager;
 pub(crate) mod ops;
 mod persistence;
 mod populate;
@@ -48,7 +48,7 @@ impl DocumentId {
         self.0
     }
 
-    const fn next(self) -> Self {
+    pub(crate) const fn next(self) -> Self {
         Self(self.0 + 1)
     }
 }
@@ -611,7 +611,7 @@ impl Document {
         self.buffer_kind_id() == BufferKindId::UNDO_TREE
     }
 
-    fn is_messages(&self) -> bool {
+    pub(crate) fn is_messages(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::MESSAGES
     }
 

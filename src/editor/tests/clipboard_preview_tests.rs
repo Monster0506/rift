@@ -8,12 +8,7 @@ fn clipboard_preview_is_read_only_and_does_not_save_index_data() {
     press(&mut editor, &keys("yy"));
     editor.handle_action(&Action::Editor(EditorAction::OpenClipboard));
     let layout = editor.panel_layout.clone().unwrap();
-    editor.split_tree.set_focus(layout.preview_win_id);
-    editor
-        .document_manager
-        .switch_to_document(layout.preview_doc_id)
-        .unwrap();
-    editor.sync_state_with_active_document();
+    editor.focus_window_showing(layout.preview_win_id, layout.preview_doc_id);
 
     assert!(editor.active_document().is_read_only());
     assert!(!editor.active_document().is_clipboard_index());

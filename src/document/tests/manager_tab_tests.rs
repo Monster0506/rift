@@ -1,5 +1,8 @@
-use super::common::*;
-use super::*;
+use super::{Document, DocumentManager};
+
+fn create_manager() -> DocumentManager {
+    DocumentManager::new()
+}
 
 #[test]
 fn test_iter_documents_visits_all() {
@@ -13,8 +16,11 @@ fn test_iter_documents_visits_all() {
         crate::document::manager::Placement::Focused,
     );
     manager.insert(
-        Document::new_directory(crate::document::DocumentId::new(3), PathBuf::from("/tmp"))
-            .unwrap(),
+        Document::new_directory(
+            crate::document::DocumentId::new(3),
+            std::path::PathBuf::from("/tmp"),
+        )
+        .unwrap(),
         crate::document::manager::Placement::Focused,
     );
 

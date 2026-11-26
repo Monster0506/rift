@@ -455,7 +455,7 @@ impl<T: TerminalBackend> Editor<T> {
             });
 
             if let Some(id) = ghosted_doc {
-                self.document_manager.set_most_recent_ghost_doc(Some(id));
+                self.set_recent_ghost(Some(id));
             }
             ghosted_doc.is_some()
         } else {

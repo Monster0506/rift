@@ -108,7 +108,7 @@ fn setup(
     process_jobs(&mut editor);
     let win_c = editor.split_tree.focused_window_id();
 
-    editor.split_tree.set_focus(win_a);
+    editor.focus_window(win_a);
     editor.do_split_window(
         SplitDirection::Vertical,
         SplitSubcommand::File(path_b.to_str().unwrap().to_string()),
@@ -168,7 +168,7 @@ fn demo3_wl_on_a_swaps_with_b() {
     let (_dir, pa, pb, pc) = make_files();
     let (mut editor, win_a, _win_b, _win_c) = setup(&pa, &pb, &pc);
 
-    editor.split_tree.set_focus(win_a);
+    editor.focus_window(win_a);
     let before = render_ascii(&mut editor);
     print_screen("demo3 BEFORE ^WL on A", &before);
 
@@ -200,7 +200,7 @@ fn demo4_wh_on_b_swaps_with_a() {
     let (_dir, pa, pb, pc) = make_files();
     let (mut editor, _win_a, win_b, _win_c) = setup(&pa, &pb, &pc);
 
-    editor.split_tree.set_focus(win_b);
+    editor.focus_window(win_b);
     move_window(&mut editor, Direction::Left);
 
     let after = render_ascii(&mut editor);
@@ -220,7 +220,7 @@ fn demo5_wl_on_b_escapes_right() {
     let (_dir, pa, pb, pc) = make_files();
     let (mut editor, _win_a, win_b, _win_c) = setup(&pa, &pb, &pc);
 
-    editor.split_tree.set_focus(win_b);
+    editor.focus_window(win_b);
     move_window(&mut editor, Direction::Right);
 
     let after = render_ascii(&mut editor);
@@ -243,7 +243,7 @@ fn demo8_wk_on_c_joins_top_row() {
     let (_dir, pa, pb, pc) = make_files();
     let (mut editor, _win_a, _win_b, win_c) = setup(&pa, &pb, &pc);
 
-    editor.split_tree.set_focus(win_c);
+    editor.focus_window(win_c);
     move_window(&mut editor, Direction::Up);
 
     let after = render_ascii(&mut editor);
@@ -267,7 +267,7 @@ fn demo16_wj_on_b_joins_bottom_row() {
     let (_dir, pa, pb, pc) = make_files();
     let (mut editor, _win_a, win_b, _win_c) = setup(&pa, &pb, &pc);
 
-    editor.split_tree.set_focus(win_b);
+    editor.focus_window(win_b);
     move_window(&mut editor, Direction::Down);
 
     let after = render_ascii(&mut editor);
@@ -296,7 +296,7 @@ fn demo17_wj_on_a_joins_bottom_row() {
     let (_dir, pa, pb, pc) = make_files();
     let (mut editor, win_a, _win_b, _win_c) = setup(&pa, &pb, &pc);
 
-    editor.split_tree.set_focus(win_a);
+    editor.focus_window(win_a);
     move_window(&mut editor, Direction::Down);
 
     let after = render_ascii(&mut editor);
@@ -350,7 +350,7 @@ fn four_pane_move_a_down() {
     );
     process_jobs(&mut editor);
 
-    editor.split_tree.set_focus(win_a);
+    editor.focus_window(win_a);
     editor.do_split_window(
         SplitDirection::Vertical,
         SplitSubcommand::File(pb.to_str().unwrap().to_string()),
@@ -362,7 +362,7 @@ fn four_pane_move_a_down() {
     let baseline = render_ascii(&mut editor);
     print_screen("4-pane baseline (H(V(A,B), V(C,D)))", &baseline);
 
-    editor.split_tree.set_focus(win_a);
+    editor.focus_window(win_a);
     move_window(&mut editor, Direction::Down);
 
     let after = render_ascii(&mut editor);
@@ -440,7 +440,7 @@ fn three_horizontal_wl_on_a_swaps_with_b() {
     assert!(left_col < middle_col, "A should be left of B in baseline");
     assert!(middle_col < right_col, "B should be left of C in baseline");
 
-    editor.split_tree.set_focus(win_a);
+    editor.focus_window(win_a);
     move_window(&mut editor, Direction::Right);
 
     let after = render_ascii(&mut editor);
@@ -475,7 +475,7 @@ fn active_window_border_is_highlighted() {
     let (_dir, pa, pb, pc) = make_files();
     let (mut editor, _win_a, win_b, _win_c) = setup(&pa, &pb, &pc);
 
-    editor.split_tree.set_focus(win_b);
+    editor.focus_window(win_b);
     editor.update_and_render().unwrap();
 
     let highlight = editor.state.settings.editor_fg.or(Some(Color::White));
@@ -502,13 +502,13 @@ fn active_window_border_follows_focus() {
     let (_dir, pa, pb, pc) = make_files();
     let (mut editor, win_a, win_b, _win_c) = setup(&pa, &pb, &pc);
 
-    editor.split_tree.set_focus(win_b);
+    editor.focus_window(win_b);
     editor.update_and_render().unwrap();
     let highlight = editor.state.settings.editor_fg.or(Some(Color::White));
     let b_focused_left = compositor_cell_fg(&mut editor, 24, 10);
     let b_focused_right = compositor_cell_fg(&mut editor, 24, 60);
 
-    editor.split_tree.set_focus(win_a);
+    editor.focus_window(win_a);
     editor.update_and_render().unwrap();
     let a_focused_left = compositor_cell_fg(&mut editor, 24, 10);
     let a_focused_right = compositor_cell_fg(&mut editor, 24, 60);

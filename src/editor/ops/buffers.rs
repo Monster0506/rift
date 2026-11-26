@@ -1,10 +1,42 @@
+#[path = "../../document/manager.rs"]
+pub(crate) mod manager;
+
 use super::super::Editor;
-use crate::document::manager::{NewDocument, Placement};
 use crate::document::DocumentId;
 use crate::error::{ErrorType, RiftError};
 use crate::term::TerminalBackend;
+use manager::{CreationReservation, NewDocument, Placement};
 
 impl<T: TerminalBackend> Editor<T> {
+    pub(super) fn select_buffer(&mut self, id: DocumentId) -> Result<(), RiftError> {
+        self.document_manager.switch_to_document(id)
+    }
+
+    pub(crate) fn set_recent_ghost(&mut self, id: Option<DocumentId>) {
+        self.document_manager.set_most_recent_ghost_doc(id);
+    }
+
+    pub(crate) fn claim_buffer_creation(&mut self, id: DocumentId) -> Option<CreationReservation> {
+        self.document_manager.claim_plugin_creation(id)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn reserve_buffer_creation(&mut self) -> CreationReservation {
+        self.document_manager.reserve_creation()
+    }
+
+    pub(crate) fn refill_plugin_creation_ids(&self, ids: Vec<u64>) -> Vec<u64> {
+        self.document_manager.refill_plugin_ids(ids)
+    }
+
+    pub(crate) fn release_plugin_creation_ids(&self, ids: impl IntoIterator<Item = u64>) {
+        self.document_manager.release_plugin_ids(ids);
+    }
+
+    pub(crate) fn clear_plugin_creation_ids(&self) {
+        self.document_manager.clear_plugin_ids();
+    }
+
     pub(crate) fn open_buffer(
         &mut self,
         new: impl Into<NewDocument>,
@@ -30,6 +62,40 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(self.open_buffer(doc, Placement::Background))
     }
 
+    pub(crate) fn with_document_target<R>(
+        &mut self,
+        buf: DocumentId,
+        f: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let win = self.split_tree.focused_window_id();
+        let original = self.active_document_id();
+        let original_tab = self.document_manager.active_document_id();
+        let scroll = self.render_system.viewport.get_scroll();
+        self.show_in_window(win, buf);
+        let _ = self.select_buffer(buf);
+        self.sync_state_with_active_document();
+        let result = f(self);
+        if original != buf && self.document_manager.get_document(original).is_some() {
+            if self
+                .split_tree
+                .get_window(win)
+                .is_some_and(|w| w.document_id == buf)
+            {
+                self.show_in_window(win, original);
+                if self.split_tree.focused_window_id() == win {
+                    self.render_system.viewport.set_scroll(scroll.0, scroll.1);
+                }
+            }
+            if self.document_manager.active_document_id() == Some(buf) {
+                if let Some(tab) = original_tab {
+                    let _ = self.select_buffer(tab);
+                }
+            }
+            self.sync_state_with_active_document();
+        }
+        result
+    }
+
     pub(crate) fn focus_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
         let previous = self.split_tree.focused_window().document_id;
         if previous != id {
@@ -38,8 +104,8 @@ impl<T: TerminalBackend> Editor<T> {
                 doc.save_view_state(top_line, left_col);
             }
         }
-        self.document_manager.switch_to_document(id)?;
-        self.split_tree.set_focused_document(id);
+        self.select_buffer(id)?;
+        self.show_in_window(self.split_tree.focused_window_id(), id);
         if previous != id {
             self.restore_view_state();
         }

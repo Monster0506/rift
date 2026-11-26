@@ -487,23 +487,3 @@ fn ninth_buffer_creation_fails_without_losing_the_first_eight() {
     sync(&mut editor);
     assert_eq!(editor.active_document().buffer().to_string(), "ok");
 }
-
-#[test]
-fn both_document_allocators_skip_claimed_plugin_ids_across_refills() {
-    let mut manager = crate::document::manager::DocumentManager::new();
-    let mut ids = manager.refill_plugin_ids(Vec::new());
-    let claimed = ids.pop().unwrap();
-    let next = manager.next_id();
-    assert!(!ids.contains(&next.get()) && claimed != next.get());
-    let editor_reservation = manager.reserve_creation();
-    assert_eq!(editor_reservation.id(), next);
-    let replacement_pool = manager.refill_plugin_ids(ids);
-    assert!(!replacement_pool.contains(&claimed));
-    let creation = manager
-        .claim_plugin_creation(DocumentId::new(claimed))
-        .unwrap();
-    assert_eq!(creation.id().get(), claimed);
-    assert!(manager
-        .claim_plugin_creation(DocumentId::new(claimed))
-        .is_none());
-}

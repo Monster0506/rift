@@ -71,15 +71,14 @@ impl<T: TerminalBackend> Editor<T> {
         if self.split_tree.window_count() == 1 {
             let rows = self.render_system.viewport.visible_rows();
             let cols = self.render_system.viewport.visible_cols();
-            self.split_tree
-                .focused_window_mut()
-                .viewport
-                .set_size(rows, cols);
+            if let Some(viewport) = self.window_viewport_mut(self.split_tree.focused_window_id()) {
+                viewport.set_size(rows, cols);
+            }
         }
 
         let doc_id = self.split_tree.focused_window().document_id;
         if let Some(doc) = self.document_manager.get_document(doc_id) {
-            self.split_tree.focused_window_mut().cursor_position = doc.buffer().cursor();
+            self.set_window_cursor(self.split_tree.focused_window_id(), doc.buffer().cursor());
         }
 
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
@@ -192,9 +191,8 @@ impl<T: TerminalBackend> Editor<T> {
     fn visible_document_ids(&self) -> Vec<crate::document::DocumentId> {
         let mut ids: Vec<crate::document::DocumentId> = self
             .split_tree
-            .windows
-            .values()
-            .map(|w| w.document_id)
+            .windows()
+            .map(|(_, w)| w.document_id)
             .collect();
         ids.sort_unstable();
         ids.dedup();
@@ -286,9 +284,8 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let any_image = if multi_window {
             self.split_tree
-                .windows
-                .values()
-                .any(|w| shows_image(w.document_id))
+                .windows()
+                .any(|(_, w)| shows_image(w.document_id))
         } else {
             shows_image(self.split_tree.focused_window().document_id)
         };
@@ -852,9 +849,8 @@ impl<T: TerminalBackend> Editor<T> {
                     });
                 if let Some(blame_doc) = self.document_manager.get_document_mut(blame_doc_id) {
                     blame_doc.set_git_blame_wrap_rows(wrap_key, wrap_rows);
-                    if let Some(window) = self.split_tree.get_window_mut(blame_window_id) {
-                        window.cursor_position = blame_doc.buffer().cursor();
-                    }
+                    let cursor = blame_doc.buffer().cursor();
+                    self.set_window_cursor(blame_window_id, cursor);
                 }
             }
         }
@@ -926,13 +922,11 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        let Some(window) = self.split_tree.get_window_mut(layout.window_id) else {
+        let Some(viewport) = self.window_viewport_mut(layout.window_id) else {
             return;
         };
-        window.viewport.set_size(layout.rows + 1, layout.cols);
-        window
-            .viewport
-            .update(cursor_line, viewport_col, total_lines, gutter_width);
+        viewport.set_size(layout.rows + 1, layout.cols);
+        viewport.update(cursor_line, viewport_col, total_lines, gutter_width);
 
         if soft_wrap {
             let content_width = layout.cols.saturating_sub(gutter_width).max(1);
@@ -941,10 +935,8 @@ impl<T: TerminalBackend> Editor<T> {
             {
                 let cursor_visual_row = dm.char_to_visual_row(cursor_pos);
                 let total_visual = dm.total_visual_rows();
-                if let Some(window) = self.split_tree.get_window_mut(layout.window_id) {
-                    window
-                        .viewport
-                        .update_visual(cursor_visual_row, 0, total_visual, gutter_width);
+                if let Some(viewport) = self.window_viewport_mut(layout.window_id) {
+                    viewport.update_visual(cursor_visual_row, 0, total_visual, gutter_width);
                 }
             }
         }
@@ -1020,12 +1012,8 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             current_partner_top_visual
         };
-        if let Some(partner) = self.split_tree.get_window_mut(partner_window_id) {
-            partner.viewport.set_scroll_with_visual(
-                top_line,
-                partner_top_visual,
-                partner.viewport.left_col(),
-            );
+        if let Some(viewport) = self.window_viewport_mut(partner_window_id) {
+            viewport.set_scroll_with_visual(top_line, partner_top_visual, viewport.left_col());
         }
     }
 

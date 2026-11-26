@@ -125,7 +125,9 @@ fn assert_failed_split_rolls_back(open: fn(&mut super::Editor<MockTerminal>)) {
     let doc_count = editor.document_manager.documents_iter().count();
 
     // The focused window is no longer a leaf, so split() must refuse.
-    editor.split_tree.root = SplitNode::Leaf(WindowId::new(999));
+    editor
+        .split_tree
+        .set_test_root(SplitNode::Leaf(WindowId::new(999)));
     open(&mut editor);
 
     assert!(editor.panel_layout.is_none());

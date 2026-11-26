@@ -759,9 +759,7 @@ impl<T: TerminalBackend> Editor<T> {
             let _ = linked_doc.goto_seq(seq);
             let _ = linked_doc.set_cursor(0, crate::document::ops::CursorCause::User);
         }
-        if let Some(w) = self.split_tree.get_window_mut(layout.preview_win_id) {
-            w.cursor_position = 0;
-        }
+        self.set_window_cursor(layout.preview_win_id, 0);
         self.spawn_syntax_parse_job(layout.preview_doc_id);
         let _ = self.update_and_render();
     }

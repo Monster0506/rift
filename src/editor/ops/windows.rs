@@ -1,3 +1,6 @@
+#[path = "../../split/tree.rs"]
+pub(crate) mod tree;
+
 use super::super::Editor;
 use crate::document::DocumentId;
 use crate::plugin::events::EditorEvent;
@@ -74,7 +77,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn adopt_focused_window(&mut self) -> DocumentId {
         let window = self.split_tree.focused_window();
         let (doc_id, cursor) = (window.document_id, window.cursor_position);
-        let _ = self.document_manager.switch_to_document(doc_id);
+        let _ = self.select_buffer(doc_id);
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             let _ = doc.set_cursor(cursor, crate::document::ops::CursorCause::User);
         }
@@ -108,7 +111,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(crate) fn swap_windows(&mut self) -> bool {
         let focused_id = self.split_tree.focused_window_id();
-        let Some(prev_id) = self.split_tree.previous_window else {
+        let Some(prev_id) = self.split_tree.previous_window() else {
             return false;
         };
         if !self.split_tree.exchange_windows(focused_id, prev_id) {
@@ -146,7 +149,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(crate) fn focus_previous_window(&mut self) {
-        if let Some(target_id) = self.split_tree.previous_window {
+        if let Some(target_id) = self.split_tree.previous_window() {
             self.focus_window(target_id);
         }
     }
@@ -156,7 +159,7 @@ impl<T: TerminalBackend> Editor<T> {
         let old_doc_id = self.split_tree.focused_window().document_id;
         if let Some(doc) = self.document_manager.get_document(old_doc_id) {
             let cursor = doc.buffer().cursor();
-            self.split_tree.focused_window_mut().cursor_position = cursor;
+            self.set_window_cursor(old_win_id, cursor);
         }
 
         self.call_plugins(|editor| {
@@ -179,7 +182,22 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(crate) fn focus_window_showing(&mut self, target_id: WindowId, doc_id: DocumentId) {
         self.split_tree.set_focus(target_id);
-        let _ = self.document_manager.switch_to_document(doc_id);
+        let _ = self.select_buffer(doc_id);
+    }
+
+    pub(crate) fn set_window_cursor(&mut self, id: WindowId, cursor: usize) {
+        if let Some(window) = self.split_tree.get_window_mut(id) {
+            window.cursor_position = cursor;
+        }
+    }
+
+    pub(crate) fn window_viewport_mut(
+        &mut self,
+        id: WindowId,
+    ) -> Option<&mut crate::viewport::Viewport> {
+        self.split_tree
+            .get_window_mut(id)
+            .map(|window| &mut window.viewport)
     }
 
     pub(crate) fn show_in_window(&mut self, win: WindowId, doc_id: DocumentId) {

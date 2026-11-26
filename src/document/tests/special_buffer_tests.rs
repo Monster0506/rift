@@ -100,34 +100,6 @@ fn test_populate_undotree_replaces_old_highlights() {
 }
 
 #[test]
-fn test_remove_directory_buffer_without_dirty_check() {
-    let mut manager = create_manager();
-    let mut doc =
-        Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp"))
-            .unwrap();
-    let _ = doc.buffer.insert_str("some edit");
-    manager.insert(doc, crate::document::manager::Placement::Focused);
-
-    assert!(manager
-        .remove_document(crate::document::DocumentId::new(1))
-        .is_ok());
-}
-
-#[test]
-fn test_remove_undotree_buffer_without_dirty_check() {
-    let mut manager = create_manager();
-    let doc = Document::new_undotree(
-        crate::document::DocumentId::new(2),
-        crate::document::DocumentId::new(1),
-    )
-    .unwrap();
-    manager.insert(doc, crate::document::manager::Placement::Focused);
-    assert!(manager
-        .remove_document(crate::document::DocumentId::new(2))
-        .is_ok());
-}
-
-#[test]
 fn test_populate_undotree_increments_revision() {
     let mut doc = Document::new_undotree(
         crate::document::DocumentId::new(1),

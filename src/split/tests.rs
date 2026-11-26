@@ -1,6 +1,6 @@
-use super::layout::WindowLayout;
-use super::navigation::Direction;
-use super::tree::{cells_to_f64, SplitDirection, SplitTree};
+use super::{cells_to_f64, SplitDirection, SplitTree};
+use crate::split::layout::WindowLayout;
+use crate::split::navigation::Direction;
 
 // --- Tree construction & manipulation ---
 
@@ -626,7 +626,7 @@ fn layout_enforces_minimum_cols() {
 
 #[test]
 fn layout_no_degenerate_pane_when_available_below_two_min() {
-    use super::layout::{MIN_WINDOW_COLS, MIN_WINDOW_ROWS};
+    use crate::split::layout::{MIN_WINDOW_COLS, MIN_WINDOW_ROWS};
 
     let mut htree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let hw1 = htree.focused_window_id();
@@ -1194,9 +1194,9 @@ fn move_window_preserves_size_when_has_neighbor() {
 // w1=top-left, w2=top-right, w3=full-width bottom.
 fn three_window_tree() -> (
     SplitTree,
-    super::window::WindowId,
-    super::window::WindowId,
-    super::window::WindowId,
+    crate::split::window::WindowId,
+    crate::split::window::WindowId,
+    crate::split::window::WindowId,
 ) {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 48, 80);
     let w1 = tree.focused_window_id();

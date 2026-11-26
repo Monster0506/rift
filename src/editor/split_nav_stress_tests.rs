@@ -125,7 +125,7 @@ fn setup_two_pane() -> (Editor<QueueTerminal>, tempfile::TempDir, WindowId, Wind
     process_jobs(&mut editor);
     let win_b = editor.split_tree.focused_window_id();
 
-    editor.split_tree.set_focus(win_a);
+    editor.focus_window(win_a);
     (editor, dir, win_a, win_b)
 }
 
@@ -154,7 +154,7 @@ fn setup_four_pane() -> (Editor<QueueTerminal>, tempfile::TempDir, [WindowId; 4]
     process_jobs(&mut editor);
     let win_b = editor.split_tree.focused_window_id();
 
-    editor.split_tree.set_focus(win_a);
+    editor.focus_window(win_a);
     editor.do_split_window(
         SplitDirection::Horizontal,
         SplitSubcommand::File(paths[2].to_str().unwrap().to_string()),
@@ -162,7 +162,7 @@ fn setup_four_pane() -> (Editor<QueueTerminal>, tempfile::TempDir, [WindowId; 4]
     process_jobs(&mut editor);
     let win_c = editor.split_tree.focused_window_id();
 
-    editor.split_tree.set_focus(win_b);
+    editor.focus_window(win_b);
     editor.do_split_window(
         SplitDirection::Horizontal,
         SplitSubcommand::File(paths[3].to_str().unwrap().to_string()),
@@ -170,7 +170,7 @@ fn setup_four_pane() -> (Editor<QueueTerminal>, tempfile::TempDir, [WindowId; 4]
     process_jobs(&mut editor);
     let win_d = editor.split_tree.focused_window_id();
 
-    editor.split_tree.set_focus(win_a);
+    editor.focus_window(win_a);
     (editor, dir, [win_a, win_b, win_c, win_d])
 }
 
