@@ -1,6 +1,3 @@
-use super::scheduler::{
-    Debounced, GIT_GUTTER_DEBOUNCE, SEARCH_REFRESH_DEBOUNCE, SYNTAX_REPARSE_DEBOUNCE,
-};
 use super::Editor;
 use super::{plugin_dirs, user_config_dir};
 use crate::command_line::commands::parser::CommandParser;
@@ -104,7 +101,7 @@ impl<T: TerminalBackend> Editor<T> {
                 crate::document::definitions::create_document_settings_registry(),
             language_loader,
             job_manager: crate::job_manager::JobManager::new(),
-            pending_quit_job_id: None,
+            scheduler: super::scheduler::Scheduler::new(),
             keymap: KeyMap::new(),
             split_tree,
             native_action_handlers: super::handle_action::native_action_handlers(),
@@ -131,7 +128,6 @@ impl<T: TerminalBackend> Editor<T> {
             system_clipboard_cache: crate::clipboard::SystemClipboardCache::new(),
             clipboard_panel_register: None,
             post_paste_state: None,
-            pending_cursor_entry: None,
             file_load_jobs: std::collections::HashMap::new(),
             #[cfg(feature = "lsp")]
             lsp_manager: crate::lsp::LspManager::new(std::env::current_dir().ok()),
@@ -140,26 +136,16 @@ impl<T: TerminalBackend> Editor<T> {
             #[cfg(feature = "lsp")]
             lsp_ready_servers: std::collections::HashSet::new(),
             #[cfg(feature = "lsp")]
-            pending_code_actions: Vec::new(),
-            #[cfg(feature = "lsp")]
             rename_context: None,
-            #[cfg(feature = "lsp")]
-            pending_goto_target: None,
             dispatch_registry: crate::annotations::registry::DispatchRegistry::with_builtins(),
             kind_registry: crate::annotations::registry::KindRegistry::with_core(),
             hovered_annotation: None,
             plugin_mutation_rounds: None,
-            syntax_reparse: Debounced::new(SYNTAX_REPARSE_DEBOUNCE),
-            git_gutter_diff: Debounced::new(GIT_GUTTER_DEBOUNCE),
             git_gutter_seen_revision: std::collections::HashMap::new(),
             git_gutter_repo_cache: std::collections::HashMap::new(),
-            pending_git_status_expand_all: std::collections::HashMap::new(),
             git_status_refresh_jobs: std::collections::HashMap::new(),
             deferred_keys: std::collections::VecDeque::new(),
-            pending_git_log_expand_head: std::collections::HashSet::new(),
-            search_refresh: Debounced::new(SEARCH_REFRESH_DEBOUNCE),
             search_highlights_synced: None,
-            pending_explorer_preview: None,
             startup_first_paint: None,
             unrendered_key_count: 0,
             terminal_frame_pending: false,

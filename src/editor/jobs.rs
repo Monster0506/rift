@@ -103,11 +103,13 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn debounce_syntax_reparse(&mut self, doc_id: DocumentId) {
-        self.syntax_reparse.arm(doc_id, crate::time::Instant::now());
+        self.scheduler
+            .syntax_reparse
+            .arm(doc_id, crate::time::Instant::now());
     }
 
     pub(super) fn cancel_pending_syntax_reparse(&mut self, doc_id: DocumentId) {
-        if let Some(job_id) = self.syntax_reparse.cancel(doc_id) {
+        if let Some(job_id) = self.scheduler.syntax_reparse.cancel(doc_id) {
             self.job_manager.cancel_job(job_id);
         }
     }
@@ -182,8 +184,8 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
         #[cfg(feature = "lsp")]
-        if self.pending_goto_target.map(|t| t.0) == Some(doc_id) {
-            self.pending_goto_target = None;
+        if self.scheduler.goto_after_load.map(|t| t.0) == Some(doc_id) {
+            self.scheduler.goto_after_load = None;
         }
         #[cfg(not(feature = "lsp"))]
         let _ = doc_id;
@@ -192,12 +194,16 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn spawn_syntax_parse_job_immediate(&mut self, doc_id: DocumentId) {
         self.cancel_pending_syntax_reparse(doc_id);
         if let Some(job_id) = self.spawn_syntax_parse_job(doc_id) {
-            self.syntax_reparse.start(doc_id, job_id);
+            self.scheduler.syntax_reparse.start(doc_id, job_id);
         }
     }
 
     pub(super) fn poll_pending_syntax_reparse(&mut self) {
-        for doc_id in self.syntax_reparse.due(crate::time::Instant::now()) {
+        for doc_id in self
+            .scheduler
+            .syntax_reparse
+            .due(crate::time::Instant::now())
+        {
             self.spawn_syntax_parse_job_immediate(doc_id);
         }
     }
@@ -360,8 +366,8 @@ impl<T: TerminalBackend> Editor<T> {
         );
         self.on_file_load_failed(id);
 
-        if self.pending_quit_job_id == Some(id) {
-            self.pending_quit_job_id = None;
+        if self.scheduler.quit_after_job == Some(id) {
+            self.scheduler.quit_after_job = None;
             self.notify(
                 crate::notification::NotificationType::Warning,
                 "Quit aborted: save was cancelled".to_string(),
@@ -392,7 +398,10 @@ impl<T: TerminalBackend> Editor<T> {
             self.set_mode(Mode::Normal);
         }
         if let Err(e) = self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Force) {
-            self.notify(crate::notification::NotificationType::Error, format!("Failed to close terminal: {e}"));
+            self.notify(
+                crate::notification::NotificationType::Error,
+                format!("Failed to close terminal: {e}"),
+            );
         } else {
             self.notify(
                 crate::notification::NotificationType::Info,
@@ -620,7 +629,7 @@ impl<T: TerminalBackend> Editor<T> {
             .collect();
         doc.populate_directory_buffer(entries);
 
-        if let Some(target_name) = self.pending_cursor_entry.take() {
+        if let Some(target_name) = self.scheduler.explorer_cursor_entry.take() {
             let line_pos = doc
                 .annotations
                 .directory_entries_by_line()
@@ -680,7 +689,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
         doc.populate_git_status_buffer(result.snapshot, result.head_subject);
-        if let Some(staged_side) = self.pending_git_status_expand_all.remove(&doc_id) {
+        if let Some(staged_side) = self.scheduler.git_status_expand_all.remove(&doc_id) {
             self.spawn_expand_all_git_status_hunks(doc_id, staged_side);
         }
         if self.active_document_id() == doc_id {
@@ -791,7 +800,7 @@ impl<T: TerminalBackend> Editor<T> {
         if doc.is_git_log() {
             doc.populate_git_log_buffer(result.commits);
         }
-        if self.pending_git_log_expand_head.remove(&doc_id) {
+        if self.scheduler.git_log_expand_head.remove(&doc_id) {
             let head = if doc.is_git_log() {
                 doc.git_repo_root().map(std::path::Path::to_path_buf).zip(
                     doc.git_log_commits()
@@ -873,7 +882,7 @@ impl<T: TerminalBackend> Editor<T> {
         result: &crate::job_manager::jobs::git::GitGutterDiffResult,
     ) {
         let doc_id = result.doc_id;
-        self.git_gutter_diff.finish(doc_id, id);
+        self.scheduler.git_gutter_diff.finish(doc_id, id);
         let Some(token) = self.resolve_and_validate_token(
             id,
             token,
@@ -940,11 +949,12 @@ impl<T: TerminalBackend> Editor<T> {
         res: crate::job_manager::jobs::explorer_preview::ExplorerPreviewResult,
     ) {
         if self
-            .pending_explorer_preview
+            .scheduler
+            .explorer_preview
             .as_ref()
             .is_some_and(|p| p.job_id == id)
         {
-            self.pending_explorer_preview = None;
+            self.scheduler.explorer_preview = None;
         }
 
         let Some(token) = self.resolve_and_validate_token(
@@ -1077,8 +1087,8 @@ impl<T: TerminalBackend> Editor<T> {
         #[cfg(feature = "lsp")]
         self.lsp_manager.did_save(&res.path, None);
 
-        if self.pending_quit_job_id == Some(id) {
-            self.pending_quit_job_id = None;
+        if self.scheduler.quit_after_job == Some(id) {
+            self.scheduler.quit_after_job = None;
             self.quit_after_save(res.document_id);
         }
 
@@ -1193,8 +1203,8 @@ impl<T: TerminalBackend> Editor<T> {
             if res.is_reload {
                 self.lsp_notify_close(res.document_id);
             }
-            if self.pending_goto_target.map(|t| t.0) == Some(res.document_id) {
-                self.pending_goto_target = None;
+            if self.scheduler.goto_after_load.map(|t| t.0) == Some(res.document_id) {
+                self.scheduler.goto_after_load = None;
             }
         }
         let path = self
@@ -1227,12 +1237,12 @@ impl<T: TerminalBackend> Editor<T> {
 
     #[cfg(feature = "lsp")]
     fn apply_pending_goto(&mut self, token: &AsyncToken, document_id: DocumentId) {
-        let Some((goto_doc, goto_line, goto_col)) = self.pending_goto_target.take() else {
+        let Some((goto_doc, goto_line, goto_col)) = self.scheduler.goto_after_load.take() else {
             return;
         };
         if goto_doc != document_id {
             if self.document_manager.get_document(goto_doc).is_some() {
-                self.pending_goto_target = Some((goto_doc, goto_line, goto_col));
+                self.scheduler.goto_after_load = Some((goto_doc, goto_line, goto_col));
             }
             return;
         }
@@ -1273,7 +1283,7 @@ impl<T: TerminalBackend> Editor<T> {
             doc_id,
             crate::job_manager::AsyncOpDomain::SyntaxParse,
         ) else {
-            self.syntax_reparse.finish(doc_id, id);
+            self.scheduler.syntax_reparse.finish(doc_id, id);
             self.job_manager
                 .update_job_state(&JobMessage::Finished(id, true));
             return Ok(());
@@ -1282,7 +1292,7 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .get_document_by_handle_mut(token.handle)
         else {
-            self.syntax_reparse.finish(doc_id, id);
+            self.scheduler.syntax_reparse.finish(doc_id, id);
             self.job_manager
                 .update_job_state(&JobMessage::Finished(id, true));
             return Ok(());
@@ -1298,7 +1308,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.pending_syntax_updated.insert(doc.id);
         }
 
-        self.syntax_reparse.finish(doc_id, id);
+        self.scheduler.syntax_reparse.finish(doc_id, id);
 
         if !is_current {
             self.debounce_syntax_reparse(doc_id);

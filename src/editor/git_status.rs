@@ -151,7 +151,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// `:Git diff`/`:Git diff --cached`: open status, and once the async snapshot populates, expand every hunk in the given section (`true` = staged); the closest structured equivalent to a bare `git diff`.
     fn open_git_status_expand_all(&mut self, staged_side: bool) {
         if let Some(id) = self.open_git_status_inner() {
-            self.pending_git_status_expand_all.insert(id, staged_side);
+            self.scheduler.git_status_expand_all.insert(id, staged_side);
         }
     }
 

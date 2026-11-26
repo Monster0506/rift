@@ -1,3 +1,3 @@
 mod buffers;
-mod windows;
 mod notify;
+mod windows;

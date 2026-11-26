@@ -1,11 +1,69 @@
+use super::explorer::PendingExplorerPreview;
+use crate::document::DocumentId;
 use crate::time::Instant;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::time::Duration;
 
 pub(super) const SYNTAX_REPARSE_DEBOUNCE: Duration = Duration::from_millis(40);
 pub(super) const SEARCH_REFRESH_DEBOUNCE: Duration = Duration::from_millis(40);
 pub(super) const GIT_GUTTER_DEBOUNCE: Duration = Duration::from_millis(400);
+
+pub(super) struct Scheduler {
+    pub(super) syntax_reparse: Debounced<DocumentId>,
+    pub(super) search_refresh: Debounced<()>,
+    pub(super) git_gutter_diff: Debounced<DocumentId>,
+    pub(super) explorer_preview: Option<PendingExplorerPreview>,
+    pub(super) explorer_cursor_entry: Option<String>,
+    pub(super) git_status_expand_all: HashMap<DocumentId, bool>,
+    pub(super) git_log_expand_head: HashSet<DocumentId>,
+    pub(super) quit_after_job: Option<usize>,
+    #[cfg(feature = "lsp")]
+    pub(super) goto_after_load: Option<(DocumentId, usize, usize)>,
+    #[cfg(feature = "lsp")]
+    pub(super) code_actions: Vec<serde_json::Value>,
+}
+
+impl Scheduler {
+    pub(super) fn new() -> Self {
+        Self {
+            syntax_reparse: Debounced::new(SYNTAX_REPARSE_DEBOUNCE),
+            search_refresh: Debounced::new(SEARCH_REFRESH_DEBOUNCE),
+            git_gutter_diff: Debounced::new(GIT_GUTTER_DEBOUNCE),
+            explorer_preview: None,
+            explorer_cursor_entry: None,
+            git_status_expand_all: HashMap::new(),
+            git_log_expand_head: HashSet::new(),
+            quit_after_job: None,
+            #[cfg(feature = "lsp")]
+            goto_after_load: None,
+            #[cfg(feature = "lsp")]
+            code_actions: Vec::new(),
+        }
+    }
+
+    pub(super) fn next_deadline(&self, active_document: DocumentId) -> Option<Instant> {
+        [
+            self.syntax_reparse.next_deadline(),
+            self.search_refresh.next_deadline(),
+            self.git_gutter_diff.deadline(active_document),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
+    }
+
+    pub(super) fn forget_document(&mut self, id: DocumentId) {
+        self.syntax_reparse.cancel(id);
+        self.git_gutter_diff.cancel(id);
+        self.git_status_expand_all.remove(&id);
+        self.git_log_expand_head.remove(&id);
+        #[cfg(feature = "lsp")]
+        if self.goto_after_load.is_some_and(|(d, ..)| d == id) {
+            self.goto_after_load = None;
+        }
+    }
+}
 
 pub(super) struct Debounced<K> {
     delay: Duration,

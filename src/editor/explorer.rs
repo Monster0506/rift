@@ -704,13 +704,13 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        if let Some(pending) = &self.pending_explorer_preview {
+        if let Some(pending) = &self.scheduler.explorer_preview {
             if pending.path == target_path {
                 return;
             }
         }
 
-        if let Some(pending) = self.pending_explorer_preview.take() {
+        if let Some(pending) = self.scheduler.explorer_preview.take() {
             self.job_manager.cancel_job(pending.job_id);
         }
 
@@ -720,7 +720,7 @@ impl<T: TerminalBackend> Editor<T> {
             false,
         );
         let job_id = self.job_manager.spawn(job);
-        self.pending_explorer_preview = Some(PendingExplorerPreview {
+        self.scheduler.explorer_preview = Some(PendingExplorerPreview {
             path: target_path,
             job_id,
         });
@@ -846,7 +846,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
 
-        self.pending_cursor_entry = child_name;
+        self.scheduler.explorer_cursor_entry = child_name;
 
         self.reload_directory_buffer(layout.dir_doc_id, parent_path);
         self.update_explorer_preview();

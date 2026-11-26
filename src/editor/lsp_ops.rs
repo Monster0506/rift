@@ -384,7 +384,7 @@ impl<T: TerminalBackend> Editor<T> {
         if loads_async {
             // FileLoadResult applies the jump once the content is in.
             if let Some(doc_id) = self.document_manager.active_document_id() {
-                self.pending_goto_target = Some((doc_id, line, col_units as usize));
+                self.scheduler.goto_after_load = Some((doc_id, line, col_units as usize));
             }
             return;
         }
@@ -557,7 +557,7 @@ impl<T: TerminalBackend> Editor<T> {
             })
             .collect();
 
-        self.pending_code_actions = actions;
+        self.scheduler.code_actions = actions;
         self.open_location_list_panel(entries, "Code Actions");
     }
 

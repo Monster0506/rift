@@ -84,19 +84,12 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         #[cfg(feature = "lsp")]
-        {
-            self.lsp_notify_close(id);
-            if self.pending_goto_target.is_some_and(|(d, ..)| d == id) {
-                self.pending_goto_target = None;
-            }
-        }
+        self.lsp_notify_close(id);
 
         self.file_load_jobs.retain(|_, target_id| *target_id != id);
         self.clear_git_gutter_state(id);
-        self.syntax_reparse.cancel(id);
-        self.pending_git_status_expand_all.remove(&id);
+        self.scheduler.forget_document(id);
         self.git_status_refresh_jobs.remove(&id);
-        self.pending_git_log_expand_head.remove(&id);
         self.display_map_cache.retain(|entry| entry.doc_id != id);
         if self
             .search_highlights_synced

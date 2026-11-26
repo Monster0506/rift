@@ -21,13 +21,13 @@ impl<T: TerminalBackend> Editor<T> {
 
         let now = crate::time::Instant::now();
         if self.git_gutter_seen_revision.insert(doc_id, revision) != Some(revision) {
-            self.git_gutter_diff.arm(doc_id, now);
+            self.scheduler.git_gutter_diff.arm(doc_id, now);
         }
-        if !self.git_gutter_diff.is_due(doc_id, now) {
+        if !self.scheduler.git_gutter_diff.is_due(doc_id, now) {
             return;
         }
 
-        if let Some(job_id) = self.git_gutter_diff.cancel(doc_id) {
+        if let Some(job_id) = self.scheduler.git_gutter_diff.cancel(doc_id) {
             self.job_manager.cancel_job(job_id);
         }
 
@@ -57,7 +57,7 @@ impl<T: TerminalBackend> Editor<T> {
             buffer_text,
         );
         let job_id = self.job_manager.spawn(job);
-        self.git_gutter_diff.start(doc_id, job_id);
+        self.scheduler.git_gutter_diff.start(doc_id, job_id);
     }
 
     /// Memoized repo-root lookup for gutter-diff polling;  `git rev-parse`
@@ -81,7 +81,6 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Drop cached gutter-diff state for a closed document.
     pub(super) fn clear_git_gutter_state(&mut self, doc_id: DocumentId) {
-        self.git_gutter_diff.cancel(doc_id);
         self.git_gutter_seen_revision.remove(&doc_id);
         self.git_gutter_repo_cache.remove(&doc_id);
     }

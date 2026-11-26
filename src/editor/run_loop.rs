@@ -132,9 +132,7 @@ impl<T: TerminalBackend> Editor<T> {
         [
             self.terminal_frame_delay(now).map(|delay| now + delay),
             self.plugin_host.next_timer_deadline(),
-            self.syntax_reparse.next_deadline(),
-            self.search_refresh.next_deadline(),
-            self.git_gutter_diff.deadline(self.active_document_id()),
+            self.scheduler.next_deadline(self.active_document_id()),
             self.pending_keys_started_at
                 .map(|started_at| started_at + key_sequence_timeout),
             self.state.notifications.next_expiry(),

@@ -330,7 +330,7 @@ impl<T: TerminalBackend> Editor<T> {
         // Empty URI signals a code action row: apply it.
         if entry.uri.is_empty() {
             let idx = entry.line as usize;
-            let action = self.pending_code_actions.get(idx).cloned();
+            let action = self.scheduler.code_actions.get(idx).cloned();
             self.close_split_panel();
             if let Some(action) = action {
                 self.execute_code_action(action);
@@ -381,7 +381,7 @@ impl<T: TerminalBackend> Editor<T> {
         // Space applies a selected code action.
         if entry.uri.is_empty() {
             let idx = entry.line as usize;
-            let action = self.pending_code_actions.get(idx).cloned();
+            let action = self.scheduler.code_actions.get(idx).cloned();
             self.close_split_panel();
             if let Some(action) = action {
                 self.execute_code_action(action);

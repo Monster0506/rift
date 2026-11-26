@@ -18,7 +18,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// `:Git show`: open a repo-wide log browser, then expand HEAD's entry once the commit list populates; the closest structured equivalent to a bare `git show`.
     pub(super) fn open_git_log_expand_head(&mut self, repo_root: std::path::PathBuf) {
         if let Some(id) = self.open_git_log_scoped(repo_root, None) {
-            self.pending_git_log_expand_head.insert(id);
+            self.scheduler.git_log_expand_head.insert(id);
         }
     }
 

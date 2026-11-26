@@ -411,7 +411,7 @@ impl<T: TerminalBackend> Editor<T> {
                         saved_seq,
                     );
                     let id = self.job_manager.spawn(job);
-                    self.pending_quit_job_id = Some(id);
+                    self.scheduler.quit_after_job = Some(id);
                     self.notify(
                         crate::notification::NotificationType::Info,
                         format!("Saving {} and quitting...", path.display()),

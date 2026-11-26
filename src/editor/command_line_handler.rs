@@ -11,13 +11,19 @@ impl<T: TerminalBackend> Editor<T> {
             self.update_search_highlights();
             return;
         }
-        self.search_refresh.arm((), crate::time::Instant::now());
+        self.scheduler
+            .search_refresh
+            .arm((), crate::time::Instant::now());
     }
 
     /// Fire an elapsed search-refresh deadline. Called once per run-loop tick.
     pub(super) fn poll_pending_search_refresh(&mut self) {
-        if self.search_refresh.is_due((), crate::time::Instant::now()) {
-            self.search_refresh.cancel(());
+        if self
+            .scheduler
+            .search_refresh
+            .is_due((), crate::time::Instant::now())
+        {
+            self.scheduler.search_refresh.cancel(());
             self.update_search_highlights();
             let _ = self.update_and_render();
         }
@@ -37,7 +43,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .is_some_and(|(id, rev, q)| {
                         *id == doc.id && *rev == doc.buffer().revision() && q == query
                     });
-                if !synced && !self.search_refresh.is_armed(()) {
+                if !synced && !self.scheduler.search_refresh.is_armed(()) {
                     self.schedule_search_refresh();
                 }
             }

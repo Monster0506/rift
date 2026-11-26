@@ -153,7 +153,7 @@ pub struct Editor<T: TerminalBackend> {
     document_settings_registry: SettingsRegistry<crate::document::definitions::DocumentOptions>,
     language_loader: Arc<crate::syntax::loader::LanguageLoader>,
     pub(crate) job_manager: crate::job_manager::JobManager,
-    pending_quit_job_id: Option<usize>,
+    scheduler: scheduler::Scheduler,
     keymap: KeyMap,
     split_tree: SplitTree,
     native_action_handlers: std::collections::HashMap<
@@ -189,7 +189,6 @@ pub struct Editor<T: TerminalBackend> {
     system_clipboard_cache: crate::clipboard::SystemClipboardCache,
     clipboard_panel_register: Option<ClipboardPanelRegister>,
     post_paste_state: Option<PostPasteState>,
-    pending_cursor_entry: Option<String>,
     file_load_jobs: std::collections::HashMap<usize, crate::document::DocumentId>,
     #[cfg(feature = "lsp")]
     lsp_manager: crate::lsp::LspManager,
@@ -200,27 +199,17 @@ pub struct Editor<T: TerminalBackend> {
     #[cfg(feature = "lsp")]
     lsp_ready_servers: std::collections::HashSet<String>,
     #[cfg(feature = "lsp")]
-    pending_code_actions: Vec<serde_json::Value>,
-    #[cfg(feature = "lsp")]
     rename_context: Option<(std::path::PathBuf, u32, u32)>,
-    #[cfg(feature = "lsp")]
-    pending_goto_target: Option<(crate::document::DocumentId, usize, usize)>,
     dispatch_registry: crate::annotations::registry::DispatchRegistry,
     kind_registry: crate::annotations::registry::KindRegistry,
     hovered_annotation: Option<crate::annotations::AnnotationId>,
     plugin_mutation_rounds: Option<usize>,
-    syntax_reparse: scheduler::Debounced<crate::document::DocumentId>,
-    git_gutter_diff: scheduler::Debounced<crate::document::DocumentId>,
     git_gutter_seen_revision: std::collections::HashMap<crate::document::DocumentId, u64>,
     git_gutter_repo_cache:
         std::collections::HashMap<crate::document::DocumentId, Option<std::path::PathBuf>>,
-    pending_git_status_expand_all: std::collections::HashMap<crate::document::DocumentId, bool>,
     git_status_refresh_jobs: std::collections::HashMap<crate::document::DocumentId, usize>,
     deferred_keys: std::collections::VecDeque<crate::key::Key>,
-    pending_git_log_expand_head: std::collections::HashSet<crate::document::DocumentId>,
-    search_refresh: scheduler::Debounced<()>,
     search_highlights_synced: Option<(crate::document::DocumentId, u64, String)>,
-    pending_explorer_preview: Option<explorer::PendingExplorerPreview>,
     startup_first_paint: Option<crate::time::Instant>,
     unrendered_key_count: usize,
     terminal_frame_pending: bool,
