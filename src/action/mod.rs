@@ -2,6 +2,8 @@
 use crate::command::Command;
 use crate::text_objects::TextObjectSpec;
 
+mod table;
+
 /// Represents a motion in the editor
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Motion {
@@ -289,159 +291,19 @@ impl FromStr for Action {
     type Err = RiftError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            // Movement
-            "editor:move:left" => Ok(Self::Editor(EditorAction::Move(Motion::Left))),
-            "editor:move:right" => Ok(Self::Editor(EditorAction::Move(Motion::Right))),
-            "editor:move:up" => Ok(Self::Editor(EditorAction::Move(Motion::Up))),
-            "editor:move:down" => Ok(Self::Editor(EditorAction::Move(Motion::Down))),
-            "editor:move:line:start" => Ok(Self::Editor(EditorAction::Move(Motion::StartOfLine))),
-            "editor:move:line:end" => Ok(Self::Editor(EditorAction::Move(Motion::EndOfLine))),
-            "editor:move:file:start" => Ok(Self::Editor(EditorAction::Move(Motion::StartOfFile))),
-            "editor:move:file:end" => Ok(Self::Editor(EditorAction::Move(Motion::EndOfFile))),
-            "editor:move:page:up" => Ok(Self::Editor(EditorAction::Move(Motion::PageUp))),
-            "editor:move:page:down" => Ok(Self::Editor(EditorAction::Move(Motion::PageDown))),
-            "editor:move:word:next" => Ok(Self::Editor(EditorAction::Move(Motion::NextWord))),
-            "editor:move:word:prev" => Ok(Self::Editor(EditorAction::Move(Motion::PreviousWord))),
-            "editor:move:bigword:next" => Ok(Self::Editor(EditorAction::Move(Motion::NextBigWord))),
-            "editor:move:bigword:prev" => {
-                Ok(Self::Editor(EditorAction::Move(Motion::PreviousBigWord)))
-            }
-            "editor:move:paragraph:next" => {
-                Ok(Self::Editor(EditorAction::Move(Motion::NextParagraph)))
-            }
-            "editor:move:paragraph:prev" => {
-                Ok(Self::Editor(EditorAction::Move(Motion::PreviousParagraph)))
-            }
-            "editor:move:sentence:next" => {
-                Ok(Self::Editor(EditorAction::Move(Motion::NextSentence)))
-            }
-            "editor:move:sentence:prev" => {
-                Ok(Self::Editor(EditorAction::Move(Motion::PreviousSentence)))
-            }
-            "editor:move:match:next" => Ok(Self::Editor(EditorAction::Move(Motion::NextMatch))),
-            "editor:move:match:prev" => Ok(Self::Editor(EditorAction::Move(Motion::PreviousMatch))),
-
-            // Mode transitions
-            "mode:normal" => Ok(Self::Editor(EditorAction::EnterNormalMode)),
-            "mode:insert" => Ok(Self::Editor(EditorAction::EnterInsertMode)),
-            "mode:insert_after" => Ok(Self::Editor(EditorAction::EnterInsertModeAfter)),
-            "mode:insert_line_start" => Ok(Self::Editor(EditorAction::EnterInsertModeAtLineStart)),
-            "mode:insert_line_end" => Ok(Self::Editor(EditorAction::EnterInsertModeAtLineEnd)),
-            "mode:open_line_below" => Ok(Self::Editor(EditorAction::OpenLineBelow)),
-            "mode:open_line_above" => Ok(Self::Editor(EditorAction::OpenLineAbove)),
-            "mode:command" => Ok(Self::Editor(EditorAction::EnterCommandMode)),
-            "mode:search" => Ok(Self::Editor(EditorAction::EnterSearchMode)),
-            "mode:visual" => Ok(Self::Editor(EditorAction::EnterVisualChar)),
-            "mode:visual_line" => Ok(Self::Editor(EditorAction::EnterVisualLine)),
-            "mode:visual_block" => Ok(Self::Editor(EditorAction::EnterVisualBlock)),
-            _ => Ok(Self::parse_rest(s)),
+        if let Some(action) = table::parse_table(s) {
+            return Ok(Self::Editor(action));
         }
-    }
-}
-
-impl Action {
-    fn parse_rest(s: &str) -> Self {
-        match s {
-            // Buffer management
-            "buffer:next" => Self::Editor(EditorAction::BufferNext),
-            "buffer:prev" => Self::Editor(EditorAction::BufferPrevious),
-            "buffer:list" => Self::Editor(EditorAction::ShowBufferList),
-
-            // Search
-            "search:clear" => Self::Editor(EditorAction::ClearHighlights),
-
-            // Notifications
-            "notifications:clear" => Self::Editor(EditorAction::ClearNotifications),
-            "notifications:clear_last" => Self::Editor(EditorAction::ClearLastNotification),
-
-            // History
-            "history:undo" => Self::Editor(EditorAction::Undo),
-            "history:redo" => Self::Editor(EditorAction::Redo),
-            "history:checkpoint" => Self::Editor(EditorAction::Checkpoint),
-
-            // Feature openers
-            "explorer:open" => Self::Editor(EditorAction::OpenExplorer),
-            "explorer:toggle_hidden" => Self::Editor(EditorAction::ExplorerToggleHidden),
-            "terminal:exit" => Self::Editor(EditorAction::ExitTerminalMode),
-            "terminal:scroll_up" => Self::Editor(EditorAction::TerminalScrollback(5)),
-            "terminal:scroll_down" => Self::Editor(EditorAction::TerminalScrollback(-5)),
-            "terminal:scroll_page_up" => Self::Editor(EditorAction::TerminalScrollback(20)),
-            "terminal:scroll_page_down" => Self::Editor(EditorAction::TerminalScrollback(-20)),
-            "undotree:open" => Self::Editor(EditorAction::OpenUndoTree),
-            "terminal:open" => Self::Editor(EditorAction::OpenTerminal(None)),
-            "messages:open" => Self::Editor(EditorAction::OpenMessages),
-            "clipboard:open" => Self::Editor(EditorAction::OpenClipboard),
-
-            // Editor-only actions
-            "editor:delete_line" => Self::Editor(EditorAction::DeleteLine),
-            "editor:delete_char" => Self::Editor(EditorAction::Delete(Motion::Right)),
-            "editor:delete_back" => Self::Editor(EditorAction::Delete(Motion::Left)),
-            "editor:toggle_debug" => Self::Editor(EditorAction::ToggleDebug),
-            "editor:redraw" => Self::Editor(EditorAction::Redraw),
-            "editor:reload" => Self::Editor(EditorAction::Reload),
-            "editor:save" => Self::Editor(EditorAction::Save),
-            "editor:save_and_quit" => Self::Editor(EditorAction::SaveAndQuit),
-            "editor:quit" => Self::Editor(EditorAction::Quit),
-            "editor:submit" => Self::Editor(EditorAction::Submit),
-            "editor:history_up" => Self::Editor(EditorAction::HistoryUp),
-            "editor:history_down" => Self::Editor(EditorAction::HistoryDown),
-            "editor:dot_repeat" => Self::Editor(EditorAction::DotRepeat),
-
-            s if s.starts_with("plugin:") => Self::Editor(EditorAction::PluginAction(
-                s.strip_prefix("plugin:").unwrap_or_default().to_string(),
-            )),
-
-            // Navigation / search (parameterised;  must precede Buffer catch-all)
-            s if s.starts_with("editor:run:") => Self::Editor(EditorAction::RunCommand(
-                s.strip_prefix("editor:run:")
-                    .unwrap_or_default()
-                    .to_string(),
-            )),
-            "editor:goto:last" => Self::Editor(EditorAction::GotoLine(0)),
-            s if s.starts_with("editor:goto:line:") => {
-                let n = s
-                    .strip_prefix("editor:goto:line:")
-                    .unwrap_or_default()
-                    .parse::<usize>()
-                    .unwrap_or(0);
-                Self::Editor(EditorAction::GotoLine(n))
+        if let Some(rest) = s.strip_prefix("editor:") {
+            if rest.contains(':') {
+                return Ok(Self::Buffer(rest.to_string()));
             }
-            s if s.starts_with("editor:search:") => Self::Editor(EditorAction::Search(
-                s.strip_prefix("editor:search:")
-                    .unwrap_or_default()
-                    .to_string(),
-            )),
-
-            // Multi-level editor sub-namespace: editor:X:Y forwards to Buffer action X:Y
-            s if s.starts_with("editor:") && s.matches(':').count() >= 2 => {
-                Self::Buffer(s.strip_prefix("editor:").unwrap_or_default().to_string())
-            }
-
-            // LSP actions
-            "lsp:definition" => Self::Editor(EditorAction::LspGotoDefinition),
-            "lsp:references" => Self::Editor(EditorAction::LspReferences),
-            "lsp:hover" => Self::Editor(EditorAction::LspHover),
-            "lsp:rename" => Self::Editor(EditorAction::LspRename),
-            "lsp:code_action" => Self::Editor(EditorAction::LspCodeAction),
-            "lsp:format" => Self::Editor(EditorAction::LspFormat),
-            "lsp:diagnostic:next" => Self::Editor(EditorAction::LspDiagnosticNext),
-            "lsp:diagnostic:prev" => Self::Editor(EditorAction::LspDiagnosticPrev),
-            "annotation:activate" => Self::Editor(EditorAction::ActivateAnnotation),
-            s if s.starts_with("annotation:activate:") => {
-                Self::Editor(EditorAction::ActivateAnnotationVerb(
-                    s.strip_prefix("annotation:activate:")
-                        .unwrap_or_default()
-                        .to_string(),
-                ))
-            }
-            "annotation:next" => Self::Editor(EditorAction::NextInteractiveAnnotation),
-            "annotation:prev" => Self::Editor(EditorAction::PrevInteractiveAnnotation),
-            "lsp:diagnostics_panel" => Self::Editor(EditorAction::LspDiagnosticsPanel),
-
-            s if s.contains(':') && !s.starts_with("editor:") => Self::Buffer(s.to_string()),
-            _ => Self::Noop,
+            return Ok(Self::Noop);
         }
+        if s.contains(':') {
+            return Ok(Self::Buffer(s.to_string()));
+        }
+        Ok(Self::Noop)
     }
 }
 

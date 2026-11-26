@@ -164,7 +164,7 @@ fn test_job_highlights_do_not_recolor_unrelated_token_on_same_line() {
 
 #[test]
 fn test_job_highlights_real_file_diagnostics_panel_line() {
-    let initial_src = include_str!("../../action/mod.rs");
+    let initial_src = include_str!("../../action/table.rs");
     let mut buffer = make_buffer(initial_src);
     let mut syntax = rust_syntax();
     job_reparse(&mut syntax, &buffer);
