@@ -229,13 +229,15 @@ impl<T: TerminalBackend> Editor<T> {
             self.open_buffer(doc, crate::document::manager::Placement::Private);
             self.split_tree.set_window_document(linked_window_id, id);
             if let Some(old_doc_id) = old_doc_id.filter(|id| *id != linked_doc_id) {
-                let _ = self.remove_private_document(old_doc_id);
+                let _ =
+                    self.close_buffer(old_doc_id, crate::document::manager::RemovalIntent::Force);
             }
         } else {
             self.split_tree
                 .set_window_document(linked_window_id, linked_doc_id);
             if let Some(old_doc_id) = old_doc_id.filter(|id| *id != linked_doc_id) {
-                let _ = self.remove_private_document(old_doc_id);
+                let _ =
+                    self.close_buffer(old_doc_id, crate::document::manager::RemovalIntent::Force);
             }
         }
         let _ = self.document_manager.switch_to_document(active_doc_id);
@@ -341,7 +343,7 @@ impl<T: TerminalBackend> Editor<T> {
             linked_window_id,
             None,
         );
-        if let Err(e) = self.remove_document(doc_id) {
+        if let Err(e) = self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Normal) {
             self.state.handle_error(e);
             return;
         }

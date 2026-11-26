@@ -498,7 +498,9 @@ impl<T: TerminalBackend> Editor<T> {
                         new_tip.get(..8).unwrap_or(&new_tip)
                     ),
                 );
-                if let Err(e) = self.remove_document_force(doc_id) {
+                if let Err(e) =
+                    self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Force)
+                {
                     self.state.handle_error(e);
                 }
                 self.refresh_git_status_buffers_for(repo_root);
@@ -583,7 +585,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
         self.state
             .notify(NotificationType::Warning, "Rebase aborted".to_string());
-        if let Err(e) = self.remove_document_force(doc_id) {
+        if let Err(e) = self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Force) {
             self.state.handle_error(e);
         }
         self.refresh_git_status_buffers_for(&repo_root);

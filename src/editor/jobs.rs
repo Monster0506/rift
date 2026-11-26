@@ -430,7 +430,7 @@ impl<T: TerminalBackend> Editor<T> {
         if self.active_document_id() == doc_id {
             self.set_mode(Mode::Normal);
         }
-        if let Err(e) = self.remove_document_force(doc_id) {
+        if let Err(e) = self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Force) {
             self.state.notify(
                 crate::notification::NotificationType::Error,
                 format!("Failed to close terminal: {e}"),

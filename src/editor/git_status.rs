@@ -610,7 +610,9 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
                 doc.history.mark_saved();
             }
-            if let Err(e) = self.remove_document(doc_id) {
+            if let Err(e) =
+                self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Normal)
+            {
                 self.state.handle_error(e);
                 return;
             }
@@ -671,7 +673,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             doc.history.mark_saved();
         }
-        if let Err(e) = self.remove_document(doc_id) {
+        if let Err(e) = self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Normal) {
             self.state.handle_error(e);
             return;
         }

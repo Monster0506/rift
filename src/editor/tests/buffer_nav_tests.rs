@@ -49,7 +49,7 @@ fn test_editor_remove_last_tab() {
     let mut editor = create_editor();
     let doc_id = editor.document_manager.get_document_id_at(0).unwrap();
 
-    let result = editor.remove_document(doc_id);
+    let result = editor.close_buffer(doc_id, crate::document::manager::RemovalIntent::Normal);
     assert!(result.is_ok());
     assert_eq!(editor.document_manager.tab_count(), 1);
     assert_ne!(
@@ -68,7 +68,7 @@ fn test_editor_remove_dirty_tab() {
         .unwrap();
     let doc_id = editor.document_manager.get_document_id_at(0).unwrap();
 
-    let result = editor.remove_document(doc_id);
+    let result = editor.close_buffer(doc_id, crate::document::manager::RemovalIntent::Normal);
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert_eq!(err.severity, ErrorSeverity::Warning);
@@ -99,11 +99,15 @@ fn rejected_close_has_no_cleanup_side_effects() {
         .edit(Edit::type_text('x'), EditSource::User)
         .unwrap();
 
-    assert!(editor.remove_document(doc_id).is_err());
+    assert!(editor
+        .close_buffer(doc_id, crate::document::manager::RemovalIntent::Normal)
+        .is_err());
     assert_eq!(CLOSE_COUNT.load(Ordering::SeqCst), 0);
     assert!(editor.document_manager.get_document(doc_id).is_some());
 
-    editor.remove_document_force(doc_id).unwrap();
+    editor
+        .close_buffer(doc_id, crate::document::manager::RemovalIntent::Force)
+        .unwrap();
     assert_eq!(CLOSE_COUNT.load(Ordering::SeqCst), 1);
     assert!(editor.document_manager.get_document(doc_id).is_none());
 }

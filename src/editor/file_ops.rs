@@ -544,9 +544,9 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             let doc_id = self.active_document_id();
             let result = if force {
-                self.remove_document_force(doc_id)
+                self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Force)
             } else {
-                self.remove_document(doc_id)
+                self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Normal)
             };
             if let Err(e) = result {
                 self.state.handle_error(e);
@@ -691,9 +691,9 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let result = if force {
-            self.remove_document_force(target)
+            self.close_buffer(target, crate::document::manager::RemovalIntent::Force)
         } else {
-            self.remove_document(target)
+            self.close_buffer(target, crate::document::manager::RemovalIntent::Normal)
         };
 
         if let Err(e) = result {

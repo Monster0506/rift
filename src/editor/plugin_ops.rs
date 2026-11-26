@@ -754,9 +754,9 @@ impl<T: TerminalBackend> Editor<T> {
                     self.do_quit(force);
                 } else {
                     let result = if force {
-                        self.remove_document_force(buf)
+                        self.close_buffer(buf, crate::document::manager::RemovalIntent::Force)
                     } else {
-                        self.remove_document(buf)
+                        self.close_buffer(buf, crate::document::manager::RemovalIntent::Normal)
                     };
                     if let Err(error) = result {
                         self.state.handle_error(error);

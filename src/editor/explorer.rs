@@ -124,7 +124,7 @@ impl<T: TerminalBackend> Editor<T> {
     ) {
         self.split_tree.set_window_document(win_id, original_doc_id);
         for id in private_docs {
-            let _ = self.remove_private_document(*id);
+            let _ = self.close_buffer(*id, crate::document::manager::RemovalIntent::Force);
         }
     }
 
@@ -223,10 +223,16 @@ impl<T: TerminalBackend> Editor<T> {
         match layout.kind {
             PanelKind::FileExplorer | PanelKind::Clipboard => {
                 self.split_tree.close_window(layout.preview_win_id);
-                let _ = self.remove_private_document(layout.preview_doc_id);
+                let _ = self.close_buffer(
+                    layout.preview_doc_id,
+                    crate::document::manager::RemovalIntent::Force,
+                );
                 self.split_tree
                     .set_window_document(layout.dir_win_id, layout.original_doc_id);
-                let _ = self.remove_private_document(layout.dir_doc_id);
+                let _ = self.close_buffer(
+                    layout.dir_doc_id,
+                    crate::document::manager::RemovalIntent::Force,
+                );
                 self.split_tree.set_focus(layout.dir_win_id);
                 let _ = self
                     .document_manager
@@ -236,8 +242,14 @@ impl<T: TerminalBackend> Editor<T> {
                 self.split_tree
                     .set_window_document(layout.preview_win_id, layout.original_doc_id);
                 self.split_tree.close_window(layout.dir_win_id);
-                let _ = self.remove_private_document(layout.dir_doc_id);
-                let _ = self.remove_private_document(layout.preview_doc_id);
+                let _ = self.close_buffer(
+                    layout.dir_doc_id,
+                    crate::document::manager::RemovalIntent::Force,
+                );
+                let _ = self.close_buffer(
+                    layout.preview_doc_id,
+                    crate::document::manager::RemovalIntent::Force,
+                );
                 self.split_tree.set_focus(layout.preview_win_id);
                 let _ = self
                     .document_manager
@@ -245,7 +257,10 @@ impl<T: TerminalBackend> Editor<T> {
             }
             PanelKind::LocationList | PanelKind::Regions => {
                 self.split_tree.close_window(layout.dir_win_id);
-                let _ = self.remove_private_document(layout.dir_doc_id);
+                let _ = self.close_buffer(
+                    layout.dir_doc_id,
+                    crate::document::manager::RemovalIntent::Force,
+                );
                 self.split_tree.set_focus(layout.preview_win_id);
                 let _ = self
                     .document_manager
@@ -255,7 +270,10 @@ impl<T: TerminalBackend> Editor<T> {
                 self.split_tree.close_window(layout.preview_win_id);
                 self.split_tree
                     .set_window_document(layout.dir_win_id, layout.original_doc_id);
-                let _ = self.remove_private_document(layout.dir_doc_id);
+                let _ = self.close_buffer(
+                    layout.dir_doc_id,
+                    crate::document::manager::RemovalIntent::Force,
+                );
                 self.split_tree.set_focus(layout.dir_win_id);
                 let _ = self
                     .document_manager
