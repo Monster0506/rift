@@ -250,7 +250,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.do_show_buffer_list();
                 true
             }
-            EditorAction::ClearHighlights => self.action_clear_highlights(),
+            EditorAction::ClearHighlights => self.clear_search(),
             EditorAction::ClearNotifications => self.action_clear_notifications(),
             EditorAction::ClearLastNotification => self.action_clear_last_notification(),
             EditorAction::Checkpoint => self.create_checkpoint(),
@@ -1038,12 +1038,6 @@ impl<T: TerminalBackend> Editor<T> {
             })
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
         self.open_explorer(path);
-        true
-    }
-
-    fn action_clear_highlights(&mut self) -> bool {
-        self.state.search_matches.clear();
-        self.force_full_redraw().ok();
         true
     }
 

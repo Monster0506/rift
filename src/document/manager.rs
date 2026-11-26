@@ -563,8 +563,7 @@ impl DocumentManager {
         self.documents.values()
     }
 
-    #[cfg(test)]
-    pub(super) fn iter_documents_mut(&mut self) -> impl Iterator<Item = &mut Document> {
+    pub(crate) fn iter_documents_mut(&mut self) -> impl Iterator<Item = &mut Document> {
         self.documents.values_mut()
     }
 

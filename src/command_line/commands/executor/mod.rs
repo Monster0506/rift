@@ -1,3 +1,4 @@
+use crate::action::EditorAction;
 use crate::buffer::api::BufferView;
 use crate::command_line::commands::types::ParsedCommand;
 use crate::command_line::settings::resolver::OptionScope;
@@ -26,6 +27,8 @@ pub(crate) enum ExecutionResult {
     Failure,
     /// Force a full redraw
     Redraw,
+    Action(EditorAction),
+    Substituted(String),
     /// Reload the plugins
     Reload,
     /// Edit command
@@ -118,6 +121,8 @@ impl std::fmt::Debug for ExecutionResult {
             }
             Self::Failure => write!(f, "Failure"),
             Self::Redraw => write!(f, "Redraw"),
+            Self::Action(action) => f.debug_tuple("Action").field(action).finish(),
+            Self::Substituted(pattern) => f.debug_tuple("Substituted").field(pattern).finish(),
             Self::Reload => write!(f, "Reload"),
             Self::Edit { path, bangs } => f
                 .debug_struct("Edit")
@@ -239,7 +244,9 @@ impl CommandExecutor {
             ParsedCommand::Edit { path, bangs } => execute_edit(state, path, bangs),
             ParsedCommand::BufferNext { bangs } => ExecutionResult::BufferNext { bangs },
             ParsedCommand::BufferPrevious { bangs } => ExecutionResult::BufferPrevious { bangs },
-            ParsedCommand::NoHighlight { bangs: _ } => clear_highlight(state),
+            ParsedCommand::NoHighlight { bangs: _ } => {
+                ExecutionResult::Action(EditorAction::ClearHighlights)
+            }
             ParsedCommand::Substitute {
                 pattern,
                 replacement,
@@ -249,7 +256,7 @@ impl CommandExecutor {
             } => execute_substitute(
                 state,
                 document,
-                &pattern,
+                pattern,
                 &replacement,
                 &flags,
                 range.as_deref(),
@@ -290,12 +297,6 @@ impl CommandExecutor {
 
 fn notify_error(state: &mut State, err: RiftError) {
     state.notifications.notify(err.severity.into(), err.message);
-}
-
-fn clear_highlight(state: &mut State) -> ExecutionResult {
-    state.search_matches.clear();
-    state.last_search_query = None;
-    ExecutionResult::Redraw
 }
 
 fn execute_write(
@@ -439,12 +440,12 @@ fn execute_edit(state: &mut State, path: Option<String>, bangs: usize) -> Execut
 fn execute_substitute(
     state: &mut State,
     document: &mut Document,
-    pattern: &str,
+    pattern: String,
     replacement: &str,
     flags: &str,
     range: Option<&str>,
 ) -> ExecutionResult {
-    match crate::search::find_all(document.buffer(), pattern) {
+    match crate::search::find_all(document.buffer(), &pattern) {
         Ok((mut matches, _stats)) => {
             let is_global_subst = flags.contains('g');
             let whole_file = range == Some("%");
@@ -533,20 +534,15 @@ fn execute_substitute(
                 document.clear_selection();
             }
 
-            if changes_made > 0 {
-                state.last_search_query = Some(pattern.to_string());
-
-                match crate::search::find_all(document.buffer(), pattern) {
-                    Ok((new_matches, _)) => state.search_matches = new_matches,
-                    Err(_) => state.search_matches.clear(),
-                }
-            }
-
             state.notifications.notify(
                 crate::notification::NotificationType::Info,
                 format!("{changes_made} substitutions"),
             );
-            ExecutionResult::Redraw
+            if changes_made > 0 {
+                ExecutionResult::Substituted(pattern)
+            } else {
+                ExecutionResult::Redraw
+            }
         }
         Err(e) => {
             notify_error(state, e);

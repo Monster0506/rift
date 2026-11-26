@@ -402,6 +402,38 @@ fn search_highlight_flows_through_annotations() {
 }
 
 #[test]
+fn search_clear_action_and_ex_command_remove_live_highlights() {
+    for clear_with_action in [true, false] {
+        let mut editor = editor_with_text("foo bar foo");
+        editor.handle_action(&"editor:search:foo".parse().unwrap());
+        assert_eq!(
+            editor
+                .active_document()
+                .annotations
+                .query_kind("ui.search")
+                .count(),
+            2
+        );
+
+        if clear_with_action {
+            editor.handle_action(&"search:clear".parse().unwrap());
+        } else {
+            editor.execute_command_line("noh");
+        }
+        editor.update_and_render().unwrap();
+
+        assert_eq!(
+            editor
+                .active_document()
+                .annotations
+                .query_kind("ui.search")
+                .count(),
+            0
+        );
+    }
+}
+
+#[test]
 fn overlay_adornment_renders_at_anchor_column() {
     use crate::annotations::kind::Kind;
     use crate::annotations::presentation::{Adornment, Placement, Presentation};

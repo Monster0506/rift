@@ -192,7 +192,7 @@ fn test_substitute_current_line() {
 
     let result = CommandExecutor::execute(command, &mut state, &mut document);
 
-    assert_eq!(result, ExecutionResult::Redraw);
+    assert!(matches!(result, ExecutionResult::Substituted(_)));
     assert_eq!(document.buffer().to_string(), "baz bar foo");
 }
 
@@ -216,7 +216,7 @@ fn test_substitute_global_line() {
 
     let result = CommandExecutor::execute(command, &mut state, &mut document);
 
-    assert_eq!(result, ExecutionResult::Redraw);
+    assert!(matches!(result, ExecutionResult::Substituted(_)));
     assert_eq!(document.buffer().to_string(), "baz bar baz");
 }
 
@@ -241,7 +241,7 @@ fn test_substitute_whole_file() {
 
     let result = CommandExecutor::execute(command, &mut state, &mut document);
 
-    assert_eq!(result, ExecutionResult::Redraw);
+    assert!(matches!(result, ExecutionResult::Substituted(_)));
     assert_eq!(document.buffer().to_string(), "baz\nbar\nbaz");
 }
 
@@ -266,7 +266,7 @@ fn test_substitute_case_insensitive() {
 
     let result = CommandExecutor::execute(command, &mut state, &mut document);
 
-    assert_eq!(result, ExecutionResult::Redraw);
+    assert!(matches!(result, ExecutionResult::Substituted(_)));
     assert_eq!(document.buffer().to_string(), "baz bar foo"); // First match only (no 'g' flag)
 }
 
@@ -410,7 +410,7 @@ fn test_substitute_undo_redo() {
 
     let result = CommandExecutor::execute(command, &mut state, &mut document);
 
-    assert_eq!(result, ExecutionResult::Redraw);
+    assert!(matches!(result, ExecutionResult::Substituted(_)));
     assert_eq!(document.buffer().to_string(), "baz bar baz");
 
     // Undo the substitute
@@ -453,7 +453,7 @@ fn test_substitute_whole_file_undo() {
 
     let result = CommandExecutor::execute(command, &mut state, &mut document);
 
-    assert_eq!(result, ExecutionResult::Redraw);
+    assert!(matches!(result, ExecutionResult::Substituted(_)));
     assert_eq!(document.buffer().to_string(), "qux\nbar\nqux\nbaz\nqux");
 
     // Undo should restore all three substitutions as one operation
@@ -491,7 +491,7 @@ fn substitute_with_nonempty_set_scopes_to_banked_regions_only() {
 
     let result = CommandExecutor::execute(command, &mut state, &mut document);
 
-    assert_eq!(result, ExecutionResult::Redraw);
+    assert!(matches!(result, ExecutionResult::Substituted(_)));
     assert_eq!(
         document.buffer().to_string(),
         "XXX bar foo baz XXX",
@@ -519,7 +519,7 @@ fn substitute_at_cursor(text: &str, cursor: usize, pattern: &str, replacement: &
 
     let result = CommandExecutor::execute(command, &mut state, &mut document);
 
-    assert_eq!(result, ExecutionResult::Redraw);
+    assert!(matches!(result, ExecutionResult::Substituted(_)));
     document.buffer().to_string()
 }
 

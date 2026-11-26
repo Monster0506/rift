@@ -142,6 +142,10 @@ impl<T: TerminalBackend> Editor<T> {
                 self.save_and_quit(path);
             }
             ExecutionResult::Redraw => self.redraw_from_command(),
+            ExecutionResult::Action(action) => {
+                self.handle_action(&crate::action::Action::Editor(action));
+            }
+            ExecutionResult::Substituted(pattern) => self.finish_substitution(&pattern),
             ExecutionResult::SetOption { name, value, scope } => {
                 if !self.apply_ex_option(&name, value.as_deref(), scope) {
                     return false;
