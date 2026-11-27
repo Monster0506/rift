@@ -63,7 +63,7 @@ impl Document {
             Some(idx) => {
                 let region = self.selection_set.regions.remove(idx);
                 self.visual_anchor = Some(region.anchor);
-                let _ = self.set_cursor(region.cursor, super::CursorCause::User);
+                let _ = self.set_cursor(region.cursor, super::CursorCause::Programmatic);
             }
             None => self.visual_anchor = Some(cursor),
         }

@@ -38,7 +38,7 @@ impl Document {
                 };
                 let start = self.put_beside(clip, char_at, cursor, !before);
                 if clip.kind() == RangeKind::Linewise || clip.text().contains(&Character::Newline) {
-                    let _ = self.set_cursor(start, crate::document::ops::CursorCause::User);
+                    let _ = self.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
                 }
             }
             PutAt::Region { start, end, before } => {
@@ -50,11 +50,11 @@ impl Document {
                 self.put_beside(clip, char_at, line_of, !before);
             }
             PutAt::Verbatim(at) => {
-                let _ = self.set_cursor(at, crate::document::ops::CursorCause::User);
+                let _ = self.set_cursor(at, crate::document::ops::CursorCause::Programmatic);
                 self.begin_transaction("Put");
                 let _ = self.edit(Edit::insert(at, clip.text()), EditSource::User);
                 self.commit_transaction();
-                let _ = self.set_cursor(at, crate::document::ops::CursorCause::User);
+                let _ = self.set_cursor(at, crate::document::ops::CursorCause::Programmatic);
             }
             PutAt::Paste => {
                 if clip.text().is_empty() {
@@ -88,7 +88,7 @@ impl Document {
         } else {
             (char_at, false)
         };
-        let _ = self.set_cursor(pos, crate::document::ops::CursorCause::User);
+        let _ = self.set_cursor(pos, crate::document::ops::CursorCause::Programmatic);
         self.begin_transaction("Put");
         if needs_newline {
             let trimmed = text.strip_suffix(&[Character::Newline]).unwrap_or(text);
@@ -119,7 +119,7 @@ impl Document {
             clip.text()
         };
 
-        let _ = self.set_cursor(start, crate::document::ops::CursorCause::User);
+        let _ = self.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
         self.begin_transaction("Put");
         let _ = self.edit(Edit::delete(start..end), EditSource::User);
         if source_linewise && !target_linewise {
@@ -150,7 +150,7 @@ impl Document {
         };
         let _ = self.set_cursor(
             inserted_cursor.min(self.buffer.len()),
-            crate::document::ops::CursorCause::User,
+            crate::document::ops::CursorCause::Programmatic,
         );
         self.buffer.clear_desired_col();
         self.clear_selection();

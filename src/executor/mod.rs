@@ -99,7 +99,7 @@ pub(crate) fn compute_motion_range(
     }
 
     let new_cursor = doc.buffer().cursor();
-    let _ = doc.set_cursor(anchor, crate::document::ops::CursorCause::User);
+    let _ = doc.set_cursor(anchor, crate::document::ops::CursorCause::Programmatic);
 
     if anchor == new_cursor && !is_jump {
         return None;
@@ -171,7 +171,7 @@ fn clamp_to_line_end(doc: &mut Document, from: usize) {
         return;
     };
     if from < end {
-        let _ = doc.set_cursor(end, crate::document::ops::CursorCause::User);
+        let _ = doc.set_cursor(end, crate::document::ops::CursorCause::Programmatic);
     }
 }
 
@@ -468,7 +468,7 @@ fn replace_backspace_cmd(
     };
 
     doc.edit(Edit::replace(pos..pos + 1, original), EditSource::User)?;
-    doc.set_cursor(pos, crate::document::ops::CursorCause::User)
+    doc.set_cursor(pos, crate::document::ops::CursorCause::Programmatic)
 }
 
 fn delete_surround_cmd(doc: &mut Document, ch: char, count: usize) {

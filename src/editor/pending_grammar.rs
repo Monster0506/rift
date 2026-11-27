@@ -188,7 +188,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .document_manager
                 .get_document_mut(self.active_document_id())
             {
-                let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
+                let _ = doc.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
             }
         }
         let result = self.try_run_set_aware_replace_char(ch);
@@ -197,7 +197,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .document_manager
                 .get_document_mut(self.active_document_id())
             {
-                let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
+                let _ = doc.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
             }
         }
         let follow_up = (!was_visual).then_some(Action::Editor(EditorAction::ReplaceSelection(ch)));

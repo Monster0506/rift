@@ -228,7 +228,7 @@ impl Document {
         self.commit_transaction();
         let _ = self.set_cursor(
             start + usize::from(at_end) + 1,
-            crate::document::ops::CursorCause::User,
+            crate::document::ops::CursorCause::Programmatic,
         );
         true
     }

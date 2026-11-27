@@ -211,7 +211,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = self.document_manager.get_document_mut(buf) {
             let _ = doc.set_cursor(
                 cursor.min(doc.buffer().len()),
-                crate::document::ops::CursorCause::User,
+                crate::document::ops::CursorCause::Programmatic,
             );
         }
     }

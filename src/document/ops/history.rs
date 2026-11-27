@@ -94,7 +94,7 @@ impl Document {
         if let Some(offset) = cursor_before {
             let _ = self.set_cursor(
                 offset.min(self.buffer.len()),
-                crate::document::ops::CursorCause::User,
+                crate::document::ops::CursorCause::Programmatic,
             );
         }
 
@@ -133,7 +133,7 @@ impl Document {
         if let Some(offset) = cursor_after {
             let _ = self.set_cursor(
                 offset.min(self.buffer.len()),
-                crate::document::ops::CursorCause::User,
+                crate::document::ops::CursorCause::Programmatic,
             );
         }
 

@@ -9,6 +9,7 @@ use crate::wrap::{DisplayMap, OperatorContext};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CursorCause {
     User,
+    Programmatic,
     Jump,
     #[cfg(feature = "plugins")]
     Plugin,
@@ -20,10 +21,14 @@ impl Document {
     pub(crate) fn set_cursor(&mut self, pos: usize, cause: CursorCause) -> Result<(), RiftError> {
         self.buffer.set_cursor(pos)?;
         self.record_cursor_change();
-        #[cfg(feature = "lsp")]
-        let clears_desired_col = matches!(cause, CursorCause::Jump | CursorCause::Lsp);
-        #[cfg(not(feature = "lsp"))]
-        let clears_desired_col = matches!(cause, CursorCause::Jump);
+        let clears_desired_col = match cause {
+            CursorCause::User | CursorCause::Programmatic => false,
+            CursorCause::Jump => true,
+            #[cfg(feature = "plugins")]
+            CursorCause::Plugin => false,
+            #[cfg(feature = "lsp")]
+            CursorCause::Lsp => true,
+        };
         if clears_desired_col {
             self.buffer.clear_desired_col();
         }

@@ -225,7 +225,7 @@ impl<T: TerminalBackend> Editor<T> {
         let len = doc.buffer().len();
         let _ = doc.set_cursor(
             len.saturating_sub(1),
-            crate::document::ops::CursorCause::User,
+            crate::document::ops::CursorCause::Programmatic,
         );
 
         self.open_buffer(doc, crate::document::manager::Placement::Background);
@@ -326,7 +326,7 @@ impl<T: TerminalBackend> Editor<T> {
             doc.populate_buffer_list_buffer(&infos);
             let target_line = cursor_line.min(infos.len().saturating_sub(1));
             if let Some(start) = doc.buffer().line_index.get_start(target_line) {
-                let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
+                let _ = doc.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
             }
         }
     }
@@ -486,7 +486,7 @@ impl<T: TerminalBackend> Editor<T> {
             doc.populate_clipboard_buffer(self.clipboard_ring.entries());
             let line = cursor_line.min(doc.buffer().get_total_lines().saturating_sub(1));
             let cursor = doc.buffer().line_index.get_start(line).unwrap_or(0);
-            let _ = doc.set_cursor(cursor, crate::document::ops::CursorCause::User);
+            let _ = doc.set_cursor(cursor, crate::document::ops::CursorCause::Programmatic);
         }
 
         self.notify(
@@ -648,7 +648,7 @@ impl<T: TerminalBackend> Editor<T> {
             .get_document_mut(layout.preview_doc_id)
         {
             let _ = linked_doc.goto_seq(seq);
-            let _ = linked_doc.set_cursor(0, crate::document::ops::CursorCause::User);
+            let _ = linked_doc.set_cursor(0, crate::document::ops::CursorCause::Programmatic);
         }
         self.follow_document_cursor(layout.preview_win_id);
         self.spawn_syntax_parse_job(layout.preview_doc_id);
@@ -802,7 +802,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             let pos = doc.buffer().line_index.get_line_start(target_line);
-            let _ = doc.set_cursor(pos, crate::document::ops::CursorCause::User);
+            let _ = doc.set_cursor(pos, crate::document::ops::CursorCause::Programmatic);
         }
         self.update_undotree_preview();
     }

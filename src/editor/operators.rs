@@ -86,8 +86,10 @@ impl<T: TerminalBackend> Editor<T> {
                                 .document_manager
                                 .get_document_mut(self.active_document_id())
                             {
-                                let _ =
-                                    doc.set_cursor(pos, crate::document::ops::CursorCause::User);
+                                let _ = doc.set_cursor(
+                                    pos,
+                                    crate::document::ops::CursorCause::Programmatic,
+                                );
                             }
                             if !self.dot_repeat.is_replaying() {
                                 let cmd = crate::command::Command::Change(motion, 1);
@@ -191,7 +193,8 @@ impl<T: TerminalBackend> Editor<T> {
                     let (start, end) = crate::executor::range_to_offsets(&range, doc, true);
                     if end > start {
                         doc.create_ghosts(&[(start, end)], clip);
-                        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
+                        let _ =
+                            doc.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
                         ghosted_doc = Some(doc.id);
                     }
                 }
@@ -265,8 +268,10 @@ impl<T: TerminalBackend> Editor<T> {
                         } else {
                             (start, doc.buffer().cursor())
                         };
-                        let _ =
-                            doc.set_cursor(ghost_start, crate::document::ops::CursorCause::User);
+                        let _ = doc.set_cursor(
+                            ghost_start,
+                            crate::document::ops::CursorCause::Programmatic,
+                        );
                         if ghost_end > ghost_start {
                             doc.create_ghosts(&[(ghost_start, ghost_end)], clip);
                             ghosted_doc = Some(doc.id);

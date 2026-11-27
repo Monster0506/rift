@@ -36,7 +36,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let last = doc.buffer().line_last_char();
         if doc.buffer().cursor() > last {
-            let _ = doc.set_cursor(last, crate::document::ops::CursorCause::User);
+            let _ = doc.set_cursor(last, crate::document::ops::CursorCause::Programmatic);
         }
     }
 
@@ -358,7 +358,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .get_document_mut(self.active_document_id())
                 {
                     let start = start.min(doc.buffer().len());
-                    let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
+                    let _ = doc.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
                 }
             }
             if visual_line_delete {
@@ -380,7 +380,10 @@ impl<T: TerminalBackend> Editor<T> {
                             )
                         })
                         .unwrap_or(0);
-                    let _ = doc.set_cursor(start + column, crate::document::ops::CursorCause::User);
+                    let _ = doc.set_cursor(
+                        start + column,
+                        crate::document::ops::CursorCause::Programmatic,
+                    );
                 }
             }
             let follow_up = (op == crate::action::OperatorType::Change).then(|| action.clone());
@@ -1195,7 +1198,7 @@ impl<T: TerminalBackend> Editor<T> {
             doc.undo();
             let _ = doc.set_cursor(
                 state.original_cursor,
-                crate::document::ops::CursorCause::User,
+                crate::document::ops::CursorCause::Programmatic,
             );
         }
         let result = self.put_into_active(
@@ -1314,7 +1317,7 @@ impl<T: TerminalBackend> Editor<T> {
             .get_document_mut(layout.preview_doc_id)
         {
             let (start, _) = region.buffer_span(source.buffer());
-            let _ = source.set_cursor(start, crate::document::ops::CursorCause::User);
+            let _ = source.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
         }
         if matches!(editor_action, EditorAction::RegionsListSelect) {
             self.close_split_panel();
@@ -1355,7 +1358,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
         if let Some((region, needle)) = doc.bank_occurrence(forward) {
             let (start, _) = region.span();
-            let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
+            let _ = doc.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
             self.notify(
                 crate::notification::NotificationType::Info,
                 format!("Banked occurrence of \"{needle}\""),

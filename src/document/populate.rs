@@ -346,7 +346,10 @@ impl Document {
         }
 
         self.replace_content(&content, ContentKind::Render);
-        let _ = self.set_cursor(self.buffer.len(), crate::document::ops::CursorCause::User);
+        let _ = self.set_cursor(
+            self.buffer.len(),
+            crate::document::ops::CursorCause::Programmatic,
+        );
         self.set_text_colors(highlights);
         self.history.mark_saved();
     }
@@ -617,7 +620,7 @@ impl Document {
         } else {
             self.buffer.len()
         };
-        let _ = self.set_cursor(pos, crate::document::ops::CursorCause::User);
+        let _ = self.set_cursor(pos, crate::document::ops::CursorCause::Programmatic);
         if let Some(state) = self.state.try_get_mut(TERMINAL_STATE_KEY) {
             state.terminal_cursor = Some((cursor_line, cursor_col));
             state.terminal_cell_colors = cell_colors;
@@ -725,7 +728,7 @@ impl Document {
             .or(r.entry_restore_line);
         if let Some(line) = restore_line {
             if let Some(offset) = self.buffer.line_index.get_start(line) {
-                let _ = self.set_cursor(offset, crate::document::ops::CursorCause::User);
+                let _ = self.set_cursor(offset, crate::document::ops::CursorCause::Programmatic);
             }
         }
     }
@@ -1131,7 +1134,7 @@ impl Document {
         self.set_text_colors(highlights);
         if let Some(line) = restore_line.or(if steps.is_empty() { None } else { Some(0) }) {
             if let Some(offset) = self.buffer.line_index.get_start(line) {
-                let _ = self.set_cursor(offset, crate::document::ops::CursorCause::User);
+                let _ = self.set_cursor(offset, crate::document::ops::CursorCause::Programmatic);
             }
         }
     }
@@ -1368,7 +1371,7 @@ impl Document {
         let selected_source_line = selected_source_line.min(lines.len().saturating_sub(1));
         if let Some(display_line) = annotation_lines.get(selected_source_line) {
             if let Some(cursor) = self.buffer.line_index.get_start(*display_line) {
-                let _ = self.set_cursor(cursor, crate::document::ops::CursorCause::User);
+                let _ = self.set_cursor(cursor, crate::document::ops::CursorCause::Programmatic);
             }
         }
     }

@@ -44,7 +44,7 @@ impl Document {
             .map(|&(start, end)| end.min(cursor_before) - start)
             .sum();
         let restored = cursor_before.saturating_sub(shift).min(self.buffer.len());
-        let _ = self.set_cursor(restored, crate::document::ops::CursorCause::User);
+        let _ = self.set_cursor(restored, crate::document::ops::CursorCause::Programmatic);
 
         ghosts.sort_unstable_by_key(|g| g.at);
         self.pending_ghost = ghosts;
@@ -117,7 +117,7 @@ impl Document {
 
         let _ = self.set_cursor(
             (real_cursor + cursor_shift).min(self.buffer.len()),
-            crate::document::ops::CursorCause::User,
+            crate::document::ops::CursorCause::Programmatic,
         );
         self.settle_syntax();
     }
@@ -153,7 +153,7 @@ impl Document {
 
         let _ = self.set_cursor(
             real_cursor.min(self.buffer.len()),
-            crate::document::ops::CursorCause::User,
+            crate::document::ops::CursorCause::Programmatic,
         );
         self.settle_syntax();
     }

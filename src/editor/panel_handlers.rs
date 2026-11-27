@@ -90,7 +90,7 @@ impl<T: TerminalBackend> Editor<T> {
             let len = doc.buffer().len();
             let _ = doc.set_cursor(
                 cursor.min(len.saturating_sub(1)),
-                crate::document::ops::CursorCause::User,
+                crate::document::ops::CursorCause::Programmatic,
             );
         }
         if self.active_document_id() == doc_id {
@@ -262,7 +262,7 @@ impl<T: TerminalBackend> Editor<T> {
             let len = index_doc.buffer().len();
             let _ = index_doc.set_cursor(
                 cursor.min(len.saturating_sub(1)),
-                crate::document::ops::CursorCause::User,
+                crate::document::ops::CursorCause::Programmatic,
             );
         }
         self.clipboard_ring = ring;
@@ -297,7 +297,7 @@ impl<T: TerminalBackend> Editor<T> {
             let len = doc.buffer().len();
             let _ = doc.set_cursor(
                 cursor.min(len.saturating_sub(1)),
-                crate::document::ops::CursorCause::User,
+                crate::document::ops::CursorCause::Programmatic,
             );
         }
 

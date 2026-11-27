@@ -269,7 +269,7 @@ impl<T: TerminalBackend> Editor<T> {
             .get_start(target_line)
             .unwrap_or(0);
         target_doc
-            .set_cursor(cursor, crate::document::ops::CursorCause::User)
+            .set_cursor(cursor, crate::document::ops::CursorCause::Programmatic)
             .expect("line index must return a valid cursor offset");
         self.follow_document_cursor(target_window_id);
     }

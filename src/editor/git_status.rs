@@ -426,7 +426,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let doc = self.active_document();
         if let Some(start) = doc.buffer().line_index.get_start(target_line) {
-            let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
+            let _ = doc.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
         }
     }
 

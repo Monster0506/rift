@@ -107,7 +107,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
         let target = doc.buffer().cursor();
-        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
+        let _ = doc.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
 
         while self.replace_cursor().is_some_and(|c| c > target) {
             let before = self.replace_cursor();

@@ -135,7 +135,7 @@ impl<T: TerminalBackend> Editor<T> {
         {
             let _ = doc.set_cursor(
                 new_end.saturating_sub(1),
-                crate::document::ops::CursorCause::User,
+                crate::document::ops::CursorCause::Programmatic,
             );
         }
         true
@@ -155,7 +155,7 @@ impl<T: TerminalBackend> Editor<T> {
         {
             let _ = doc.set_cursor(
                 end.saturating_sub(1),
-                crate::document::ops::CursorCause::User,
+                crate::document::ops::CursorCause::Programmatic,
             );
         }
         true
@@ -260,7 +260,7 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .get_document_mut(self.active_document_id())
         {
-            let _ = doc.set_cursor(first, crate::document::ops::CursorCause::User);
+            let _ = doc.set_cursor(first, crate::document::ops::CursorCause::Programmatic);
         }
         if !self.dot_repeat.is_replaying() {
             self.dot_repeat.start_insert_recording(entry);
@@ -493,7 +493,8 @@ impl<T: TerminalBackend> Editor<T> {
                 .map(|doc| {
                     doc.create_ghosts(&ranges, ghost_clip);
                     if let Some(pos) = cursor_target {
-                        let _ = doc.set_cursor(pos, crate::document::ops::CursorCause::User);
+                        let _ =
+                            doc.set_cursor(pos, crate::document::ops::CursorCause::Programmatic);
                     }
                     doc.id
                 });
@@ -596,7 +597,7 @@ impl<T: TerminalBackend> Editor<T> {
                     break;
                 };
                 let (start, _) = region.buffer_span(doc.buffer());
-                let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
+                let _ = doc.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
                 let Some((open_range, close_range)) =
                     crate::text_objects::resolve_surround_pair(resolve_ch, doc.buffer(), count)
                 else {
@@ -670,7 +671,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .document_manager
                 .get_document_mut(self.active_document_id())
             {
-                let _ = doc.set_cursor(anchor, crate::document::ops::CursorCause::User);
+                let _ = doc.set_cursor(anchor, crate::document::ops::CursorCause::Programmatic);
             }
             for &cmd in &commands {
                 self.execute_buffer_command(cmd);

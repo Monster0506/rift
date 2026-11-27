@@ -544,7 +544,7 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
                     })
                 });
             if let Some(pos) = line_pos {
-                let _ = doc.set_cursor(pos, crate::document::ops::CursorCause::User);
+                let _ = doc.set_cursor(pos, crate::document::ops::CursorCause::Programmatic);
             }
         }
         let _ = self.force_full_redraw();
