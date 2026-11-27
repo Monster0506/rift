@@ -1,4 +1,5 @@
 use super::git_gutter;
+use super::scheduler::FrameRequest;
 use super::Editor;
 use crate::error::{ErrorType, RiftError};
 use crate::render;
@@ -24,6 +25,36 @@ struct WindowPass {
 const MAX_UNRENDERED_KEYS: usize = 32;
 
 impl<T: TerminalBackend> Editor<T> {
+    pub(in crate::editor) fn request_frame(&mut self) {
+        if self.scheduler.frame_request == FrameRequest::None {
+            self.scheduler.frame_request = FrameRequest::Paint;
+        }
+    }
+
+    pub(in crate::editor) fn request_full_redraw(&mut self) {
+        self.scheduler.frame_request = FrameRequest::Full;
+    }
+
+    pub(super) fn visible_buffer_replaced(&self) -> bool {
+        self.split_tree.windows().any(|(_, window)| {
+            self.document_manager
+                .get_document(window.document_id)
+                .is_some_and(crate::document::Document::buffer_replaced)
+        })
+    }
+
+    fn apply_frame_invalidation(&mut self) {
+        let mut full = std::mem::take(&mut self.scheduler.frame_request) == FrameRequest::Full;
+        for (_, window) in self.split_tree.windows() {
+            if let Some(doc) = self.document_manager.get_document_mut(window.document_id) {
+                full |= doc.take_buffer_replaced();
+            }
+        }
+        if full {
+            self.render_system.viewport.mark_needs_full_redraw();
+        }
+    }
+
     pub(super) fn update_state_and_render(
         &mut self,
         keypress: crate::key::Key,
@@ -67,6 +98,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.deliver_frame_events();
         #[cfg(feature = "plugins")]
         self.update_annotation_hover();
+        self.apply_frame_invalidation();
         if self.split_tree.window_count() == 1 {
             let rows = self.render_system.viewport.visible_rows();
             let cols = self.render_system.viewport.visible_cols();
@@ -236,6 +268,7 @@ impl<T: TerminalBackend> Editor<T> {
         let result = self.update_and_render_painted();
         self.end_ghost_paint(&visible);
         if result.is_ok() {
+            self.unrendered_key_count = 0;
             self.scheduler.last_frame_at = Some(crate::time::Instant::now());
             self.scheduler.terminal_frame_dirty = false;
             for id in visible {

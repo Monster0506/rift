@@ -45,7 +45,6 @@ impl<T: TerminalBackend> Editor<T> {
         let job = crate::job_manager::jobs::git::GitLogJob::new(id, repo_root, path);
         self.job_manager.spawn(job);
 
-        let _ = self.force_full_redraw();
         Some(id)
     }
 
@@ -75,7 +74,6 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
                 doc.set_git_log_expanded(None, None);
             }
-            let _ = self.force_full_redraw();
             return;
         }
 

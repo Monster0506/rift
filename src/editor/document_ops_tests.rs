@@ -240,6 +240,7 @@ fn open_file_on_an_image_shows_a_readonly_image_buffer() {
         .open_file(Some(path.to_string_lossy().into_owned()), false)
         .unwrap();
     drain_jobs(&mut editor);
+    editor.tick().unwrap();
 
     let doc = editor
         .document_manager
@@ -270,6 +271,7 @@ fn edit_command_toggles_an_image_between_picture_and_raw_bytes() {
         .open_file(Some(path.to_string_lossy().into_owned()), false)
         .unwrap();
     drain_jobs(&mut editor);
+    editor.tick().unwrap();
     let doc_id = editor.active_document_id();
 
     for expected in [
@@ -280,6 +282,7 @@ fn edit_command_toggles_an_image_between_picture_and_raw_bytes() {
         editor.term.clear();
         editor.execute_command_line("e");
         drain_jobs(&mut editor);
+        editor.tick().unwrap();
 
         assert_eq!(editor.active_document_id(), doc_id);
         let doc = editor

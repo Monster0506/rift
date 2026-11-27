@@ -90,9 +90,6 @@ impl<T: TerminalBackend> Editor<T> {
             self.notify_error(e);
         } else {
             self.state.clear_command_line();
-            if let Err(e) = self.force_full_redraw() {
-                self.notify_error(e);
-            }
         }
     }
 
@@ -159,8 +156,6 @@ impl<T: TerminalBackend> Editor<T> {
 
         let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(dir_doc_id, dir, false);
         self.job_manager.spawn(job);
-
-        let _ = self.force_full_redraw();
     }
 
     pub(super) fn close_split_panel(&mut self) {
@@ -207,7 +202,6 @@ impl<T: TerminalBackend> Editor<T> {
                 crate::document::manager::RemovalIntent::Force,
             );
         }
-        let _ = self.force_full_redraw();
     }
 
     pub(super) fn open_messages(&mut self, show_all: bool) {
@@ -235,8 +229,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         self.last_notification_generation = self.state.notifications.generation;
-
-        let _ = self.force_full_redraw();
     }
 
     pub(super) fn open_clipboard(&mut self) {
@@ -268,7 +260,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         self.update_clipboard_preview();
-        let _ = self.force_full_redraw();
     }
 
     pub(super) fn open_buffer_list_panel(&mut self) {
@@ -277,7 +268,6 @@ impl<T: TerminalBackend> Editor<T> {
                 self.focus_window_showing(layout.dir_win_id, layout.dir_doc_id);
                 self.refresh_buffer_list_panel();
                 self.update_buffer_list_preview();
-                let _ = self.force_full_redraw();
                 return;
             }
             self.close_split_panel();
@@ -296,16 +286,12 @@ impl<T: TerminalBackend> Editor<T> {
             .get_buffer_list(self.active_document_id());
         dir_doc.populate_buffer_list_buffer(&infos);
         let preview_target = infos.first().map_or(self.active_document_id(), |i| i.id);
-        if !self.open_split_panel(
+        self.open_split_panel(
             PanelKind::BufferList,
             dir_doc,
             None,
             PanelSplit::Beside(preview_target),
-        ) {
-            return;
-        }
-
-        let _ = self.force_full_redraw();
+        );
     }
 
     pub(super) fn refresh_buffer_list_panel(&mut self) {
@@ -369,7 +355,6 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
         self.show_in_window(layout.preview_win_id, target_id);
-        let _ = self.update_and_render();
     }
 
     pub(super) fn handle_buffer_list_select(&mut self) {
@@ -395,7 +380,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.close_split_panel();
         if target_exists {
             let _ = self.focus_document(target_id);
-            let _ = self.force_full_redraw();
         }
     }
 
@@ -433,8 +417,6 @@ impl<T: TerminalBackend> Editor<T> {
             preview.set_read_only(true);
             preview.replace_content(&entry_text, crate::document::ops::ContentKind::Load);
         }
-
-        let _ = self.force_full_redraw();
     }
 
     pub(super) fn apply_clipboard_diff(
@@ -493,7 +475,6 @@ impl<T: TerminalBackend> Editor<T> {
             crate::notification::NotificationType::Info,
             format!("{} clipboard entries", self.clipboard_ring.len()),
         );
-        let _ = self.force_full_redraw();
         SaveResult::Saved
     }
 
@@ -523,16 +504,12 @@ impl<T: TerminalBackend> Editor<T> {
         let (text, seqs, lc) = crate::undotree_view::render_tree_to_text(&linked.history);
         ut_doc.populate_undotree_buffer(&text, seqs, lc);
 
-        if !self.open_split_panel(
+        self.open_split_panel(
             PanelKind::UndoTree,
             ut_doc,
             Some(preview_doc),
             PanelSplit::Beside(preview_id),
-        ) {
-            return;
-        }
-
-        let _ = self.update_and_render();
+        );
     }
 
     pub(super) fn panel_layout_of(&self, kind: PanelKind) -> Option<PanelLayout> {
@@ -705,9 +682,6 @@ impl<T: TerminalBackend> Editor<T> {
                 self.notify_error(e);
             } else {
                 self.state.clear_command_line();
-                if let Err(e) = self.force_full_redraw() {
-                    self.notify_error(e);
-                }
             }
         }
     }

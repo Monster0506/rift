@@ -60,9 +60,7 @@ impl<T: TerminalBackend> LspTarget for Editor<T> {
             return;
         }
 
-        if self.apply_lsp_edits_for_uri(uri, edits).is_some() {
-            let _ = self.force_full_redraw();
-        }
+        self.apply_lsp_edits_for_uri(uri, edits);
 
         self.notify(NotificationType::Success, "LSP: formatted".to_string());
     }
@@ -403,7 +401,6 @@ impl<T: TerminalBackend> Editor<T> {
             let target = target.min(doc.buffer().len());
             let _ = doc.set_cursor(target, crate::document::ops::CursorCause::Lsp);
         }
-        let _ = self.force_full_redraw();
     }
 
     fn location_entries(locations: &[LspLocation]) -> Vec<crate::document::LocationEntry> {
@@ -466,7 +463,6 @@ impl<T: TerminalBackend> Editor<T> {
             crate::floating_window::popup::PopupContent::new("LSP Hover", lines)
                 .with_anchor_row(anchor_row),
         );
-        let _ = self.update_and_render();
     }
 
     fn handle_code_action_result(&mut self, actions: Vec<serde_json::Value>) {
@@ -607,11 +603,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        let applied = modified_docs.len();
-        if applied > 0 {
-            let _ = self.force_full_redraw();
-        }
-        applied
+        modified_docs.len()
     }
 
     /// Deserialize one document's edit array; a single malformed edit rejects
@@ -817,8 +809,6 @@ impl<T: TerminalBackend> Editor<T> {
             _ => (NotificationType::Info, "hint"),
         };
         self.notify(notif_type, format!("[{}] {}", prefix, diag.message));
-
-        let _ = self.update_and_render();
     }
 
     /// Send LSP `did_close` for `doc_id`, if it has a tracked file path. Call
@@ -997,13 +987,11 @@ impl<T: TerminalBackend> Editor<T> {
         doc.replace_content(&content, crate::document::ops::ContentKind::Load);
         let _ = doc.set_cursor(0, crate::document::ops::CursorCause::Lsp);
         doc.set_location_list(entries);
-        if self.open_split_panel(
+        self.open_split_panel(
             crate::editor::PanelKind::LocationList,
             doc,
             None,
             super::ops::windows::PanelSplit::Below,
-        ) {
-            let _ = self.force_full_redraw();
-        }
+        );
     }
 }

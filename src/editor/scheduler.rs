@@ -20,7 +20,16 @@ pub(super) const GIT_GUTTER_DEBOUNCE: Duration = Duration::from_millis(400);
 pub(super) const KEY_SEQUENCE_TIMEOUT: Duration = Duration::from_secs(1);
 pub(super) const FRAME_INTERVAL: Duration = Duration::from_nanos(16_666_667);
 
+#[derive(Default, PartialEq, Eq)]
+pub(super) enum FrameRequest {
+    #[default]
+    None,
+    Paint,
+    Full,
+}
+
 pub(super) struct Scheduler {
+    pub(super) frame_request: FrameRequest,
     pub(super) key_sequence_started_at: Option<Instant>,
     pub(super) deferred_keys: VecDeque<crate::key::Key>,
     pub(super) terminal_frame_dirty: bool,
@@ -65,6 +74,7 @@ impl Scheduler {
         Self {
             key_sequence_started_at: None,
             deferred_keys: VecDeque::new(),
+            frame_request: FrameRequest::None,
             terminal_frame_dirty: false,
             last_frame_at: None,
             syntax_reparse: Debounced::new(SYNTAX_REPARSE_DEBOUNCE),

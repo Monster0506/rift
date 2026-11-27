@@ -93,9 +93,6 @@ impl<T: TerminalBackend> Editor<T> {
             doc.clear_search_annotations();
         }
         self.state.clear_command_line();
-        if let Err(error) = self.force_full_redraw() {
-            self.notify_error(error);
-        }
         true
     }
 
@@ -186,7 +183,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.set_search_pattern(Some(pattern));
             self.schedule_search_refresh(SearchRefresh::Immediate);
         }
-        self.redraw_from_command();
+        self.state.clear_command_line();
         true
     }
 
@@ -198,7 +195,6 @@ impl<T: TerminalBackend> Editor<T> {
     ) -> bool {
         self.set_search_pattern(Some(query));
         self.schedule_search_refresh(SearchRefresh::Immediate);
-        let _ = self.force_full_redraw();
 
         let Some(doc) = self
             .document_manager

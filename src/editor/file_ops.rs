@@ -143,9 +143,6 @@ impl<T: TerminalBackend> Editor<T> {
             let _ = self.focus_document(target);
         }
         self.state.clear_command_line();
-        if let Err(e) = self.force_full_redraw() {
-            self.notify_error(e);
-        }
     }
 
     pub(super) fn do_buffer_goto(&mut self, index: usize) {
@@ -170,9 +167,6 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
         self.state.clear_command_line();
-        if let Err(e) = self.force_full_redraw() {
-            self.notify_error(e);
-        }
     }
 
     pub(super) fn do_buffer_delete(&mut self, index: Option<usize>, force: bool) {
@@ -214,9 +208,6 @@ impl<T: TerminalBackend> Editor<T> {
             self.notify_error(e);
         } else {
             self.state.clear_command_line();
-            if let Err(e) = self.force_full_redraw() {
-                self.notify_error(e);
-            }
         }
     }
 

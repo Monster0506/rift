@@ -117,6 +117,7 @@ fn test_substitute_current_line() {
     let mut editor = editor_with_text("foo bar foo", 0);
     submit(&mut editor, ":s /foo/baz");
     assert_substitute_result(&mut editor, "foo", 1, "baz bar foo");
+    editor.tick().unwrap();
     assert_eq!(editor.state.search_matches.len(), 1);
     assert_eq!(editor.state.search_matches[0].range, 8..11);
 }

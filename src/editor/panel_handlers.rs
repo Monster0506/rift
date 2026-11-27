@@ -55,7 +55,6 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
         self.focus_window_showing(layout.dir_win_id, layout.dir_doc_id);
-        let _ = self.force_full_redraw();
     }
 
     pub(super) fn refresh_clipboard_buffer_if_open(&mut self) {
@@ -92,9 +91,6 @@ impl<T: TerminalBackend> Editor<T> {
                 cursor.min(len.saturating_sub(1)),
                 crate::document::ops::CursorCause::Programmatic,
             );
-        }
-        if self.active_document_id() == doc_id {
-            let _ = self.update_and_render();
         }
     }
 
@@ -133,8 +129,6 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Focus the preview pane so the user can edit
         self.focus_window_showing(layout.preview_win_id, layout.preview_doc_id);
-
-        let _ = self.force_full_redraw();
     }
 
     fn handle_clipboard_new(&mut self) {
@@ -158,7 +152,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.focus_window_showing(layout.preview_win_id, layout.preview_doc_id);
 
         self.set_mode(crate::mode::Mode::Insert);
-        let _ = self.force_full_redraw();
     }
 
     fn clipboard_entry_can_be_replaced(&mut self, doc_id: crate::document::DocumentId) -> bool {
@@ -275,7 +268,6 @@ impl<T: TerminalBackend> Editor<T> {
             crate::notification::NotificationType::Info,
             "Clipboard entry saved".to_string(),
         );
-        let _ = self.force_full_redraw();
         SaveResult::Saved
     }
 
@@ -299,11 +291,6 @@ impl<T: TerminalBackend> Editor<T> {
                 cursor.min(len.saturating_sub(1)),
                 crate::document::ops::CursorCause::Programmatic,
             );
-        }
-
-        // Only re-render if the messages buffer is currently visible
-        if self.active_document_id() == doc_id {
-            let _ = self.update_and_render();
         }
     }
 

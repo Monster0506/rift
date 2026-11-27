@@ -152,7 +152,7 @@ fn ttfp_open_huge_treesitter_annotation_doc() {
     drop(fresh_map);
 
     let t = Instant::now();
-    editor.force_full_redraw().unwrap();
+    editor.update_and_render().unwrap();
     let full_redraw = t.elapsed();
 
     let t = Instant::now();

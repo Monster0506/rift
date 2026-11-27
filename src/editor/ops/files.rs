@@ -28,9 +28,6 @@ impl<T: TerminalBackend> Editor<T> {
             return false;
         }
         self.state.clear_command_line();
-        if let Err(e) = self.force_full_redraw() {
-            self.notify_error(e);
-        }
         true
     }
 

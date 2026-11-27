@@ -109,9 +109,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(in crate::editor) fn redraw_from_command(&mut self) {
         self.state.clear_command_line();
-        if let Err(error) = self.force_full_redraw() {
-            self.notify_error(error);
-        }
+        self.request_full_redraw();
     }
 
     fn reject_unknown_ex_command(&mut self, name: &str) -> bool {

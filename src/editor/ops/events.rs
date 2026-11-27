@@ -110,7 +110,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.raise(EventPayload::BufSavePre { buf, path })
     }
 
-    pub(super) fn deliver_open_before_close(&mut self, id: crate::document::DocumentId) {
+    pub(in crate::editor) fn deliver_buffer_open(&mut self, id: crate::document::DocumentId) {
         if let Some(index) = self.frame_events.iter().position(
             |event| matches!(event.payload(), EventPayload::BufOpen { buf, .. } if *buf == id),
         ) {

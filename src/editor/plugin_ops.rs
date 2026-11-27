@@ -679,9 +679,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
-        let id = self.open_buffer(draft, crate::document::manager::Placement::Background);
-        let _ = self.focus_document(id);
-        let _ = self.force_full_redraw();
+        let _ = self.open_plugin_draft(draft);
     }
 
     fn register_buffer_kind(&mut self, spec: BufferKindSpec, origin: Option<PluginGeneration>) {

@@ -1060,9 +1060,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn action_redraw(&mut self) -> bool {
-        if let Err(e) = self.force_full_redraw() {
-            self.notify_error(e);
-        }
+        self.request_full_redraw();
         true
     }
 
@@ -1090,14 +1088,12 @@ impl<T: TerminalBackend> Editor<T> {
     fn action_clear_notifications(&mut self) -> bool {
         self.state.notifications.clear_all();
         self.state.clear_command_line();
-        self.force_full_redraw().ok();
         true
     }
 
     fn action_clear_last_notification(&mut self) -> bool {
         self.state.notifications.clear_last();
         self.state.clear_command_line();
-        self.force_full_redraw().ok();
         true
     }
 

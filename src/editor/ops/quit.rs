@@ -66,9 +66,6 @@ impl<T: TerminalBackend> Editor<T> {
         if self.split_tree.window_count() > 1 {
             let focused_id = self.split_tree.focused_window_id();
             self.close_window(focused_id);
-            if let Err(e) = self.force_full_redraw() {
-                self.notify_error(e);
-            }
         } else if self.document_manager.tab_count() <= 1 {
             if !force {
                 let doc_id = self.active_document_id();
@@ -90,8 +87,6 @@ impl<T: TerminalBackend> Editor<T> {
                 self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Normal)
             };
             if let Err(e) = result {
-                self.notify_error(e);
-            } else if let Err(e) = self.force_full_redraw() {
                 self.notify_error(e);
             }
         }

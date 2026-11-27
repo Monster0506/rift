@@ -409,6 +409,7 @@ fn search_clear_action_and_ex_command_remove_live_highlights() {
     for clear_with_action in [true, false] {
         let mut editor = editor_with_text("foo bar foo");
         editor.handle_action(&"editor:search:foo".parse().unwrap());
+        editor.update_and_render().unwrap();
         assert_eq!(
             editor
                 .active_document()

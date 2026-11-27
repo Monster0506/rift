@@ -207,7 +207,7 @@ fn test_resolve_display_map_cached_detects_placeholder_to_loaded_swap() {
 fn test_opening_a_file_shows_its_content_immediately_not_after_a_later_edit() {
     let mut editor = create_editor_sized(24, 80);
     let doc_id = editor.active_document_id();
-    editor.force_full_redraw().unwrap();
+    editor.term.clear();
 
     let loaded_text = "line one\nline two\nline three\n";
     let decoded = crate::document::factories::decode_file_bytes(loaded_text.as_bytes());
@@ -219,9 +219,9 @@ fn test_opening_a_file_shows_its_content_immediately_not_after_a_later_edit() {
         .get_document_mut(doc_id)
         .unwrap()
         .replace_content(line_index, crate::document::ops::ContentKind::Load);
-    editor.force_full_redraw().unwrap();
 
-    let screen = render_ascii(&mut editor);
+    editor.tick().unwrap();
+    let screen = editor.term.get_written_string();
     assert!(
         screen.contains("line one") && screen.contains("line two") && screen.contains("line three"),
         "loaded content must be visible on screen right after load, not only after a later edit:\n{screen}"
@@ -547,7 +547,6 @@ fn exactly_full_wrapped_line_gets_an_eol_row_only_for_its_adornment() {
             crate::command_line::settings::resolver::OptionScope::Global,
         )
         .unwrap();
-    editor.force_full_redraw().unwrap();
     let screen = render_ascii(&mut editor);
     assert_eq!(screen.lines().nth(1).unwrap().trim_end(), "next");
     editor
@@ -557,7 +556,6 @@ fn exactly_full_wrapped_line_gets_an_eol_row_only_for_its_adornment() {
             crate::command_line::settings::resolver::OptionScope::Global,
         )
         .unwrap();
-    editor.force_full_redraw().unwrap();
     let screen = render_ascii(&mut editor);
     let rows: Vec<&str> = screen.lines().collect();
     assert_eq!(rows[1].trim_end(), " boom");

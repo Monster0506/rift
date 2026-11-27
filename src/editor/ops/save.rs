@@ -282,6 +282,7 @@ impl<T: TerminalBackend> Editor<T> {
             } else {
                 (path, None)
             };
+            self.deliver_buffer_open(buf);
             self.raise(EventPayload::BufSavePost {
                 buf,
                 path: event_path,
@@ -300,7 +301,7 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some((_, window)) = self.scheduler.quit_after_job.take_if(|(id, _)| *id == job) {
                 self.quit_after_completed_save(handle, window, SaveKind::File);
             }
-            let _ = self.update_and_render();
+            self.request_frame();
         }
         #[cfg(not(feature = "plugins"))]
         let _ = buf;

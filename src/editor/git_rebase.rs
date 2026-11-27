@@ -296,9 +296,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.open_buffer(doc, crate::document::manager::Placement::Background);
         if let Err(e) = self.focus_document(id) {
             self.notify_error(e);
-            return;
         }
-        let _ = self.force_full_redraw();
     }
 
     pub(super) fn apply_git_rebase_todo(
@@ -612,7 +610,6 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
         self.active_document().move_git_rebase_step(&sha, down);
-        let _ = self.force_full_redraw();
     }
 
     /// `p`/`s`/`f`/`e`: set the verb of the commit under the cursor directly, no insert mode. `reword` isn't reachable here; it goes through `c`/`r`'s message editor; `drop` goes through `dd`.
@@ -621,7 +618,6 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
         self.active_document().set_git_rebase_verb(&sha, verb);
-        let _ = self.force_full_redraw();
     }
 
     /// `dd`: drop the commit under the cursor from the plan entirely.
@@ -630,7 +626,6 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
         self.active_document().remove_git_rebase_step(&sha);
-        let _ = self.force_full_redraw();
     }
 
     /// `Enter`/`=`: toggle the commit under the cursor's inline body preview.
@@ -647,7 +642,6 @@ impl<T: TerminalBackend> Editor<T> {
         };
         self.active_document()
             .toggle_git_rebase_expand(&sha, &repo_root);
-        let _ = self.force_full_redraw();
     }
 
     /// `c`/`r`: open the message sub-editor for the commit under the cursor. Planning-time only; nothing's been cherry-picked yet, so saving it just updates the todo's `message_overrides` and returns; it never touches git.
@@ -684,8 +678,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
         if let Err(e) = self.focus_document(rebase_doc_id) {
             self.notify_error(e);
-            return;
         }
-        let _ = self.force_full_redraw();
     }
 }

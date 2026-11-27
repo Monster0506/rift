@@ -181,7 +181,6 @@ impl<T: TerminalBackend> Editor<T> {
         let job = crate::job_manager::jobs::git::GitStatusJob::new(id, repo_root);
         self.job_manager.spawn(job);
 
-        let _ = self.force_full_redraw();
         Some(id)
     }
 
@@ -384,7 +383,6 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
                 doc.collapse_git_status_entry(&path, staged_side);
             }
-            let _ = self.force_full_redraw();
             return;
         }
 
@@ -552,9 +550,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.open_buffer(doc, crate::document::manager::Placement::Background);
         if let Err(e) = self.focus_document(id) {
             self.notify_error(e);
-            return;
         }
-        let _ = self.force_full_redraw();
     }
 
     pub(super) fn apply_git_commit_message(
@@ -820,9 +816,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.open_buffer(doc, crate::document::manager::Placement::Background);
         if let Err(e) = self.focus_document(id) {
             self.notify_error(e);
-            return;
         }
-        let _ = self.force_full_redraw();
     }
 
     /// `g?` in a git status/log/blame/rebase-todo buffer: open a read-only
@@ -837,8 +831,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.open_buffer(doc, crate::document::manager::Placement::Background);
         if let Err(e) = self.focus_document(id) {
             self.notify_error(e);
-            return;
         }
-        let _ = self.force_full_redraw();
     }
 }

@@ -99,9 +99,18 @@ impl<T: TerminalBackend> Editor<T> {
         let mut doc = crate::document::Document::new_scratch(id, title, lines);
         doc.set_handle(reservation.handle());
         let draft = crate::document::manager::DocumentDraft::new(reservation, doc)?;
-        self.open_buffer(draft, crate::document::manager::Placement::Background);
+        self.open_plugin_draft(draft)
+    }
+
+    #[cfg(any(feature = "plugins", test))]
+    pub(super) fn open_plugin_draft(
+        &mut self,
+        draft: crate::document::manager::DocumentDraft,
+    ) -> Result<crate::document::DocumentId, RiftError> {
+        let id = self.open_buffer(draft, crate::document::manager::Placement::Background);
         self.focus_document(id)?;
-        let _ = self.force_full_redraw();
+        #[cfg(feature = "plugins")]
+        self.deliver_buffer_open(id);
         Ok(id)
     }
 
@@ -137,7 +146,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.open_buffer(doc, crate::document::manager::Placement::Background);
 
         self.focus_document(id)?;
-        let _ = self.force_full_redraw();
 
         #[cfg(feature = "terminal_emulation")]
         {

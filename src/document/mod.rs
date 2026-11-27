@@ -209,6 +209,7 @@ pub(crate) struct Document {
     annotation_undo_stack: Vec<AnnotationUndo>,
     annotation_redo_stack: Vec<AnnotationUndo>,
     content_version: u64,
+    buffer_replaced: bool,
     #[cfg(feature = "lsp")]
     pending_lsp_edits: Vec<crate::history::EditOperation>,
     #[cfg(feature = "lsp")]

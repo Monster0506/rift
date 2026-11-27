@@ -197,17 +197,6 @@ impl<T: TerminalBackend> Editor<T> {
             .expect("No active document")
     }
 
-    pub(super) fn force_full_redraw(&mut self) -> Result<(), RiftError> {
-        self.render_system.viewport.mark_needs_full_redraw();
-        self.update_and_render().map_err(|e| {
-            RiftError::new(
-                ErrorType::Io,
-                crate::constants::errors::RENDER_FAILED,
-                e.to_string(),
-            )
-        })
-    }
-
     #[cfg(feature = "plugins")]
     fn retire_lua_plugins(&mut self) {
         self.clear_plugin_creation_ids();

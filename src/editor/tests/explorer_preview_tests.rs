@@ -410,6 +410,7 @@ fn test_explorer_preview_first_move_from_blank_writes_to_terminal() {
     let mut editor = create_editor();
     editor.open_explorer(dir.clone());
     drain_jobs(&mut editor);
+    editor.tick().unwrap();
 
     let layout = editor.panel_layout.as_ref().unwrap().clone();
     let dir_doc_id = layout.dir_doc_id;
@@ -418,6 +419,7 @@ fn test_explorer_preview_first_move_from_blank_writes_to_terminal() {
     move_explorer_cursor_to_line(&mut editor, dir_doc_id, 1);
     editor.update_explorer_preview();
     drain_jobs(&mut editor);
+    editor.tick().unwrap();
 
     let written = editor.term.get_written_string();
     assert!(
@@ -440,12 +442,14 @@ fn test_explorer_preview_draws_images_and_clears_them_for_text() {
     let mut editor = create_editor();
     editor.open_explorer(dir.path().to_path_buf());
     drain_jobs(&mut editor);
+    editor.tick().unwrap();
     let layout = editor.panel_layout.as_ref().unwrap().clone();
 
     editor.term.clear();
     move_explorer_cursor_to_line(&mut editor, layout.dir_doc_id, 1);
     editor.update_explorer_preview();
     drain_jobs(&mut editor);
+    editor.tick().unwrap();
 
     let preview = editor
         .document_manager
@@ -462,6 +466,7 @@ fn test_explorer_preview_draws_images_and_clears_them_for_text() {
     move_explorer_cursor_to_line(&mut editor, layout.dir_doc_id, 2);
     editor.update_explorer_preview();
     drain_jobs(&mut editor);
+    editor.tick().unwrap();
 
     let preview = editor
         .document_manager

@@ -166,7 +166,6 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             self.state.clear_command_line();
         }
-        let _ = self.force_full_redraw();
         true
     }
 

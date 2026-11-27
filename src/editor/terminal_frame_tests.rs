@@ -193,6 +193,37 @@ fn key_render_does_not_wait_for_terminal_frame_deadline() {
     assert!(!editor.scheduler.terminal_frame_dirty);
 }
 
+#[test]
+fn split_and_buffer_replacements_paint_together_on_the_next_tick() {
+    use crate::document::manager::Placement;
+    use crate::document::ops::ContentKind;
+    use crate::split::tree::SplitDirection;
+
+    let mut editor = editor();
+    let left = editor.active_document_id();
+    let right = crate::document::Document::new(editor.document_manager.next_id()).unwrap();
+    let right = editor.open_buffer(right, Placement::Background);
+    editor
+        .split_window(SplitDirection::Vertical, right)
+        .unwrap();
+    for (id, text) in [(left, "left replacement"), (right, "right replacement")] {
+        editor
+            .document_manager
+            .get_document_mut(id)
+            .unwrap()
+            .replace_content(text, ContentKind::Load);
+    }
+    editor.term.events.push_back(None);
+    assert_eq!(editor.term.inner.flushes, 0);
+
+    editor.tick().unwrap();
+
+    assert_eq!(editor.term.inner.flushes, 1);
+    let painted = editor.term.inner.get_written_string();
+    assert!(painted.contains("left replacement"), "{painted:?}");
+    assert!(painted.contains("right replacement"), "{painted:?}");
+}
+
 #[cfg(feature = "terminal_emulation")]
 #[derive(Debug)]
 struct CaptureJobSender(Sender<Sender<JobMessage>>);
@@ -321,6 +352,7 @@ fn elapsed_search_deadline_refreshes_matches_without_input() {
         .active_document()
         .replace_content("plum", ContentKind::Load);
     editor.search("plum", crate::search::SearchDirection::Forward, false);
+    editor.update_and_render().unwrap();
     editor
         .active_document()
         .edit(Edit::insert(0, "plum "), EditSource::User)

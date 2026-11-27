@@ -1,3 +1,4 @@
+use super::scheduler::FrameRequest;
 use super::{pending_grammar, text_object_input, Editor};
 use crate::action::{Action, EditorAction};
 use crate::command::Command;
@@ -45,7 +46,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         self.drain_syntax_sync();
-        let mut jobs_changed = self.drain_job_messages();
+        self.drain_job_messages();
         self.replay_deferred_keys()?;
         self.drain_syntax_sync();
         self.poll_pending_syntax_reparse();
@@ -70,6 +71,9 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(deadline) = self.next_deadline(now) {
             timeout = timeout.min(deadline.saturating_duration_since(now));
         }
+        if self.scheduler.frame_request != FrameRequest::None {
+            timeout = std::time::Duration::ZERO;
+        }
         #[cfg(feature = "plugins")]
         if !self.frame_events.is_empty() {
             timeout = std::time::Duration::ZERO;
@@ -83,37 +87,34 @@ impl<T: TerminalBackend> Editor<T> {
         })?;
 
         // Output can arrive while polling; apply it before either kind of frame.
-        jobs_changed |= self.drain_job_messages();
+        self.drain_job_messages();
         #[cfg(feature = "plugins")]
         let timers_fired = self.fire_due_plugin_timers(crate::time::Instant::now());
         if input_ready {
             self.handle_input_event()?;
         } else {
             self.flush_pending_keys_on_timeout()?;
-
-            let notif_tick = self.state.notifications.tick(timeout);
-
-            let needs_frame = jobs_changed
-                || notif_changed
-                || notif_tick
-                || self.render_system.needs_animation_frame();
-            #[cfg(feature = "plugins")]
-            let needs_frame = needs_frame || timers_fired || !self.frame_events.is_empty();
-            if needs_frame {
-                self.update_and_render()?;
-                self.state.notifications.mark_rendered();
-            }
         }
 
         let now = crate::time::Instant::now();
-        let search_refresh_due = self
-            .scheduler
-            .search_refresh
-            .is_some_and(|deadline| deadline <= now);
-        if search_refresh_due
+        let idle_frame = !input_ready
+            && (notif_changed
+                || self.state.notifications.tick(timeout)
+                || self.render_system.needs_animation_frame());
+        #[cfg(feature = "plugins")]
+        let idle_frame =
+            idle_frame || (!input_ready && (timers_fired || !self.frame_events.is_empty()));
+        if self.scheduler.frame_request != FrameRequest::None
+            || idle_frame
+            || self
+                .scheduler
+                .search_refresh
+                .is_some_and(|deadline| deadline <= now)
             || self.scheduler.terminal_frame_delay(now) == Some(std::time::Duration::ZERO)
+            || self.visible_buffer_replaced()
         {
             self.update_and_render()?;
+            self.state.notifications.mark_rendered();
         }
 
         if notif_changed {
@@ -154,7 +155,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    fn drain_job_messages(&mut self) -> bool {
+    fn drain_job_messages(&mut self) {
         const MAX_NONTERMINAL_MESSAGES: usize = 10;
         const JOB_DRAIN_BUDGET: std::time::Duration = std::time::Duration::from_millis(2);
         const BUDGET_CHECK_INTERVAL: usize = 256;
@@ -163,7 +164,6 @@ impl<T: TerminalBackend> Editor<T> {
                 .register_document_handle(doc.handle(), doc.buffer_kind_id());
         }
         let started = crate::time::Instant::now();
-        let mut jobs_changed = false;
         let mut processed_jobs = 0;
         let mut nonterminal_jobs = 0;
         while let Ok(msg) = self.job_manager.receiver().try_recv() {
@@ -171,12 +171,12 @@ impl<T: TerminalBackend> Editor<T> {
                 &msg,
                 crate::job_manager::JobMessage::CustomToken(_, _, payload) if payload.is_terminal_output()
             );
-            self.handle_job_message(msg);
-            processed_jobs += 1;
             if !terminal_output {
-                jobs_changed = true;
+                self.request_frame();
                 nonterminal_jobs += 1;
             }
+            self.handle_job_message(msg);
+            processed_jobs += 1;
             // Wakeups are cheap and coalesce into one snapshot. Bound sustained
             // producers without imposing the old ten-message limit on output.
             if nonterminal_jobs >= MAX_NONTERMINAL_MESSAGES
@@ -186,19 +186,17 @@ impl<T: TerminalBackend> Editor<T> {
                 break;
             }
         }
-        jobs_changed
     }
 
     #[cfg(feature = "lsp")]
     fn poll_lsp(&mut self) {
         self.lsp_flush_pending_changes();
         let lsp_msgs = self.lsp_manager.poll();
-        let had_lsp = !lsp_msgs.is_empty();
+        if !lsp_msgs.is_empty() {
+            self.request_frame();
+        }
         for msg in lsp_msgs {
             msg.apply(self);
-        }
-        if had_lsp {
-            let _ = self.update_and_render();
         }
     }
 
@@ -217,7 +215,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return Ok(true);
             }
             InputEvent::Resize(cols, rows) => {
-                self.handle_terminal_resize(rows, cols)?;
+                self.handle_terminal_resize(rows, cols);
                 return Ok(true);
             }
             InputEvent::Key(key) => key,
@@ -230,11 +228,11 @@ impl<T: TerminalBackend> Editor<T> {
         self.handle_key_press(key_press)
     }
 
-    fn handle_terminal_resize(&mut self, rows: u16, cols: u16) -> Result<(), RiftError> {
+    fn handle_terminal_resize(&mut self, rows: u16, cols: u16) {
         self.render_system.resize(rows as usize, cols as usize);
+        self.request_full_redraw();
         #[cfg(feature = "plugins")]
         self.raise(crate::plugin::events::EventPayload::WindowResized { rows, cols });
-        self.update_and_render()
     }
 
     fn replay_deferred_keys(&mut self) -> Result<(), RiftError> {

@@ -288,6 +288,7 @@ impl Document {
         };
         buffer.revision = self.buffer.revision.wrapping_add(1);
         self.buffer = buffer;
+        self.buffer_replaced |= !self.is_terminal();
         self.content_version = self.content_version.wrapping_add(1);
         #[cfg(feature = "lsp")]
         self.pending_lsp_edits.clear();
@@ -307,6 +308,14 @@ impl Document {
         }
         self.record_text_change();
         self.reparse_syntax();
+    }
+
+    pub(crate) const fn buffer_replaced(&self) -> bool {
+        self.buffer_replaced
+    }
+
+    pub(crate) fn take_buffer_replaced(&mut self) -> bool {
+        std::mem::take(&mut self.buffer_replaced)
     }
 
     pub(crate) fn check_edit_access(&self) -> Result<(), ReadOnlyEdit> {

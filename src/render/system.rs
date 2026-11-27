@@ -500,7 +500,7 @@ impl RenderSystem {
             .map_err(|e| {
                 RiftError::new(
                     crate::error::ErrorType::Renderer,
-                    "RENDER_FAILED",
+                    crate::constants::errors::RENDER_FAILED,
                     e.to_string(),
                 )
             })?;

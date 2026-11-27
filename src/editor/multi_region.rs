@@ -733,14 +733,12 @@ impl<T: TerminalBackend> Editor<T> {
             doc.populate_regions_buffer(source.buffer(), &regions);
         }
         doc.set_regions(source_doc_id);
-        if self.open_split_panel(
+        self.open_split_panel(
             crate::editor::PanelKind::Regions,
             doc,
             None,
             super::ops::windows::PanelSplit::Below,
-        ) {
-            let _ = self.force_full_redraw();
-        }
+        );
     }
 
     pub(super) fn drop_regions_window_entry(&mut self) -> bool {

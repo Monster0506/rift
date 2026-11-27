@@ -557,6 +557,7 @@ fn test_search_closes_on_success() {
         crate::action::EditorAction::EnterSearchMode,
     ));
     assert_eq!(editor.current_mode, Mode::Search);
+    editor.update_and_render().unwrap();
 
     for c in "hello".chars() {
         editor.state.append_to_command_line(c);

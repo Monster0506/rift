@@ -41,7 +41,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         match applied.1 {
             SettingEffect::None => {}
-            SettingEffect::Redraw => self.render_system.viewport.mark_needs_full_redraw(),
+            SettingEffect::Redraw => self.request_full_redraw(),
             SettingEffect::ResizeClipboard => {
                 let capacity = self.state.settings.clipboard_ring_size();
                 if capacity != self.clipboard_ring.capacity() {

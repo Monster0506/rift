@@ -98,6 +98,7 @@ impl<T: TerminalBackend> Editor<T> {
             size.cols as usize,
         )?;
         self.initialize_split_view();
+        self.request_full_redraw();
         #[cfg(feature = "plugins")]
         self.raise(EventPayload::WinNew {
             win: opened.get(),
@@ -126,6 +127,7 @@ impl<T: TerminalBackend> Editor<T> {
             ratio,
         )?;
         self.initialize_split_view();
+        self.request_full_redraw();
         #[cfg(feature = "plugins")]
         self.raise(EventPayload::WinNew {
             win: opened.get(),
@@ -188,7 +190,7 @@ impl<T: TerminalBackend> Editor<T> {
         } else if self.split_tree.window_count() == 1 {
             self.restore_focused_view();
         }
-        self.render_system.viewport.mark_needs_full_redraw();
+        self.request_full_redraw();
         #[cfg(feature = "plugins")]
         self.raise(EventPayload::WinClosed { win: id.get(), buf });
         true
@@ -244,7 +246,7 @@ impl<T: TerminalBackend> Editor<T> {
         if !self.split_tree.move_window(direction, &layouts) {
             return false;
         }
-        self.render_system.viewport.mark_needs_full_redraw();
+        self.request_full_redraw();
         #[cfg(feature = "plugins")]
         self.raise(EventPayload::WinMoved {
             win: moved_id.get(),
@@ -275,7 +277,7 @@ impl<T: TerminalBackend> Editor<T> {
         {
             return false;
         }
-        self.render_system.viewport.mark_needs_full_redraw();
+        self.request_full_redraw();
         #[cfg(feature = "plugins")]
         self.raise(EventPayload::WinSwapped {
             win1: focused_id.get(),
@@ -288,13 +290,13 @@ impl<T: TerminalBackend> Editor<T> {
         let layouts = self.window_layouts();
         self.split_tree
             .resize_focused(direction, f64::from(delta), &layouts);
-        self.render_system.viewport.mark_needs_full_redraw();
+        self.request_full_redraw();
     }
 
     pub(crate) fn equalize_windows(&mut self) {
         let proportional = self.state.settings.equalize_proportional();
         self.split_tree.equalize(proportional);
-        self.render_system.viewport.mark_needs_full_redraw();
+        self.request_full_redraw();
     }
 
     pub(crate) fn navigate_window(&mut self, direction: Direction) {
@@ -349,6 +351,7 @@ impl<T: TerminalBackend> Editor<T> {
             })
             .is_ok()
         {
+            self.request_frame();
             #[cfg(feature = "plugins")]
             self.raise(EventPayload::WinEnter {
                 win: target.get(),
@@ -411,10 +414,11 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
         let scroll = doc.saved_view_state();
-        if self.split_tree.set_window_document(win, doc_id, scroll)
-            && win == self.split_tree.focused_window_id()
-        {
-            self.restore_focused_view();
+        if self.split_tree.set_window_document(win, doc_id, scroll) {
+            if win == self.split_tree.focused_window_id() {
+                self.restore_focused_view();
+            }
+            self.request_full_redraw();
         }
     }
 }

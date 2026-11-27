@@ -66,8 +66,6 @@ impl<T: TerminalBackend> Editor<T> {
         let job =
             crate::job_manager::jobs::git::GitBlameJob::new(blame_doc_id, repo_root, path, None);
         self.job_manager.spawn(job);
-
-        let _ = self.force_full_redraw();
     }
 
     pub(super) fn git_blame_walk_back(&mut self) {
@@ -332,6 +330,5 @@ impl<T: TerminalBackend> Editor<T> {
         if self.document_manager.get_document(linked_doc_id).is_some() {
             let _ = self.focus_document(linked_doc_id);
         }
-        let _ = self.force_full_redraw();
     }
 }

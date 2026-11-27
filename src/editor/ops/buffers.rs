@@ -178,7 +178,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         #[cfg(feature = "plugins")]
-        self.deliver_open_before_close(id);
+        self.deliver_buffer_open(id);
         if self
             .document_manager
             .get_document_by_handle(handle)

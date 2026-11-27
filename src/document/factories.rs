@@ -138,6 +138,7 @@ impl Document {
             annotation_undo_stack: Vec::new(),
             annotation_redo_stack: Vec::new(),
             content_version: 0,
+            buffer_replaced: false,
             #[cfg(feature = "lsp")]
             pending_lsp_edits: Vec::new(),
             #[cfg(feature = "lsp")]
