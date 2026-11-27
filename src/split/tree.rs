@@ -490,20 +490,22 @@ impl SplitTree {
         if id1 == id2 || !self.windows.contains_key(&id1) || !self.windows.contains_key(&id2) {
             return false;
         }
-        let (doc1, cursor1) = {
+        let (doc1, cursor1, scroll1) = {
             let w = &self.windows[&id1];
-            (w.document_id, w.saved_cursor)
+            (w.document_id, w.saved_cursor, w.viewport.scroll_position())
         };
-        let (doc2, cursor2) = {
+        let (doc2, cursor2, scroll2) = {
             let w = &self.windows[&id2];
-            (w.document_id, w.saved_cursor)
+            (w.document_id, w.saved_cursor, w.viewport.scroll_position())
         };
         let w1 = self.windows.get_mut(&id1).unwrap();
         w1.document_id = doc2;
         w1.saved_cursor = cursor2;
+        w1.viewport.set_scroll_position(scroll2);
         let w2 = self.windows.get_mut(&id2).unwrap();
         w2.document_id = doc1;
         w2.saved_cursor = cursor1;
+        w2.viewport.set_scroll_position(scroll1);
         true
     }
 
@@ -638,8 +640,12 @@ impl SplitTree {
         self.windows.get_mut(&id)
     }
 
-    /// Point `id`'s window at `doc_id`, if that window exists.
-    pub(super) fn set_window_document(&mut self, id: WindowId, doc_id: DocumentId) {
+    pub(super) fn set_window_document(
+        &mut self,
+        id: WindowId,
+        doc_id: DocumentId,
+        scroll: crate::viewport::ScrollPosition,
+    ) -> bool {
         if let Some(w) = self
             .windows
             .get_mut(&id)
@@ -647,6 +653,10 @@ impl SplitTree {
         {
             w.document_id = doc_id;
             w.saved_cursor = None;
+            w.viewport.set_scroll_position(scroll);
+            true
+        } else {
+            false
         }
     }
 

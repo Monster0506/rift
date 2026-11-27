@@ -209,18 +209,6 @@ impl<T: TerminalBackend> Editor<T> {
             .expect("No active document")
     }
 
-    pub(super) fn restore_view_state(&mut self) {
-        if let Some(doc) = self
-            .document_manager
-            .get_document(self.active_document_id())
-        {
-            let view_state = doc.get_view_state();
-            self.render_system
-                .viewport
-                .set_scroll(view_state.top_line, view_state.left_col);
-        }
-    }
-
     pub(super) fn sync_state_with_active_document(&mut self) {
         let (display_name, file_path, is_dirty, line_ending) = {
             let doc = self.active_document();

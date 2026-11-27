@@ -90,15 +90,12 @@ impl Document {
         self.file_path.as_deref()
     }
 
-    /// Save view state before switching away from this document.
-    pub(crate) const fn save_view_state(&mut self, top_line: usize, left_col: usize) {
-        self.view_state.top_line = top_line;
-        self.view_state.left_col = left_col;
+    pub(crate) const fn save_view_state(&mut self, scroll: crate::viewport::ScrollPosition) {
+        self.view_state = scroll;
     }
 
-    /// Get the saved view state when switching back to this document.
-    pub(crate) const fn get_view_state(&self) -> &super::ViewState {
-        &self.view_state
+    pub(crate) const fn saved_view_state(&self) -> crate::viewport::ScrollPosition {
+        self.view_state
     }
 
     /// Mark the document as saved at a specific edit sequence

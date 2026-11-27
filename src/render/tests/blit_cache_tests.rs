@@ -317,10 +317,22 @@ fn non_wrap_scroll_blit_with_left_col_tabs_and_multibyte_matches_fresh_render() 
 
     let mut system = RenderSystem::new(10, 30);
     let mut term = MockTerminal::new(10, 30);
-    system.viewport.set_scroll(0, 6);
+    system
+        .viewport
+        .set_scroll_position(crate::viewport::ScrollPosition {
+            top_line: 0,
+            left_col: 6,
+            top_visual_row: 0,
+        });
     render_once(&mut system, &mut term);
 
-    system.viewport.set_scroll(3, 6);
+    system
+        .viewport
+        .set_scroll_position(crate::viewport::ScrollPosition {
+            top_line: 3,
+            left_col: 6,
+            top_visual_row: 0,
+        });
     render_once(&mut system, &mut term);
     assert!(
         system.content_blit_key.is_some(),
@@ -329,7 +341,13 @@ fn non_wrap_scroll_blit_with_left_col_tabs_and_multibyte_matches_fresh_render() 
 
     let mut fresh_system = RenderSystem::new(10, 30);
     let mut fresh_term = MockTerminal::new(10, 30);
-    fresh_system.viewport.set_scroll(3, 6);
+    fresh_system
+        .viewport
+        .set_scroll_position(crate::viewport::ScrollPosition {
+            top_line: 3,
+            left_col: 6,
+            top_visual_row: 0,
+        });
     render_once(&mut fresh_system, &mut fresh_term);
 
     let live_layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);

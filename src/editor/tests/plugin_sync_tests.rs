@@ -1011,6 +1011,33 @@ fn scroll_and_line_ending_read_back_in_the_same_call() {
 }
 
 #[test]
+fn plugin_scroll_follows_the_focused_split_and_survives_closing_its_neighbor() {
+    let mut editor = lua_editor("one\ntwo\nthree");
+    let left = editor.split_tree.focused_window_id();
+    let doc = editor.active_document_id();
+    let right = editor
+        .split_window(crate::split::tree::SplitDirection::Vertical, doc)
+        .unwrap();
+    lua_ok(&editor, "rift.set_scroll(5, 2)");
+    sync_applied_writes(&mut editor);
+
+    editor.focus_window(left);
+    editor.update_lua_state();
+    lua_ok(
+        &editor,
+        "local top, col = rift.get_scroll() assert(top == 0 and col == 0)",
+    );
+
+    editor.focus_window(right);
+    assert!(editor.close_window(left));
+    editor.update_lua_state();
+    lua_ok(
+        &editor,
+        "local top, col = rift.get_scroll() assert(top == 5 and col == 2)",
+    );
+}
+
+#[test]
 fn unapplied_scroll_and_line_ending_are_replaced_on_next_sync() {
     let mut editor = lua_editor("one\n");
     lua_ok(

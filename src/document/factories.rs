@@ -1,5 +1,5 @@
 use super::definitions;
-use super::{Document, LineEnding, ViewState};
+use super::{Document, LineEnding};
 use crate::annotations::AnnotationStore;
 use crate::buffer::TextBuffer;
 use crate::document::kind::BufferKind;
@@ -125,7 +125,7 @@ impl Document {
             current_transaction: None,
             transaction_depth: 0,
             handle: DocumentHandle::new(id, 0),
-            view_state: ViewState::default(),
+            view_state: crate::viewport::ScrollPosition::default(),
             kind: BufferKind::file(),
             state: StateSlot::new(FILE_STATE_KEY, FileState),
             vars: crate::tracked::Tracked::default(),

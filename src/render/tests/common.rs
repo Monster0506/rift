@@ -74,7 +74,13 @@ pub(super) fn render_row_with_adornments(
     let mut state = State::new();
     state.update_buffer_stats(1, text.len(), crate::document::LineEnding::LF);
     let mut system = RenderSystem::new(5, cols);
-    system.viewport.set_scroll(0, left_col);
+    system
+        .viewport
+        .set_scroll_position(crate::viewport::ScrollPosition {
+            top_line: 0,
+            left_col,
+            top_visual_row: 0,
+        });
     system
         .render(
             &mut term,

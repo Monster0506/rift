@@ -1000,7 +1000,11 @@ impl<T: TerminalBackend> Editor<T> {
             current_partner_top_visual
         };
         if let Some(viewport) = self.window_viewport_mut(partner_window_id) {
-            viewport.set_scroll_with_visual(top_line, partner_top_visual, viewport.left_col());
+            viewport.set_scroll_position(crate::viewport::ScrollPosition {
+                top_line,
+                top_visual_row: partner_top_visual,
+                left_col: viewport.left_col(),
+            });
         }
     }
 

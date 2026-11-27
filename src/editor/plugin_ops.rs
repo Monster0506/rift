@@ -144,7 +144,8 @@ impl<T: TerminalBackend> Editor<T> {
             u16::try_from(self.render_system.compositor.rows()).unwrap_or(u16::MAX),
             u16::try_from(self.render_system.compositor.cols()).unwrap_or(u16::MAX),
         );
-        let scroll = self.render_system.viewport.get_scroll();
+        let scroll = self.focused_viewport().scroll_position();
+        let scroll = (scroll.top_line, scroll.left_col);
         let focused_win_id = self.split_tree.focused_window_id().get();
         let previous_win_id = self
             .split_tree
@@ -523,16 +524,14 @@ impl<T: TerminalBackend> Editor<T> {
         };
         if let Some((row, total)) = change.apply(BufferTarget::Document(doc)) {
             if active {
-                self.render_system.viewport.center_on(row, total);
+                self.center_focused_view(row, total);
             }
         }
     }
 
     fn apply_cursor_mutation(&mut self, mutation: PluginMutation) {
         match mutation {
-            PluginMutation::SetScroll(top, left) => {
-                self.render_system.viewport.set_scroll(top, left);
-            }
+            PluginMutation::SetScroll(top, left) => self.scroll_focused_view(top, left),
             PluginMutation::SetLineEnding { buf, ending } => {
                 self.plugin_set_line_ending(buf, &ending);
             }

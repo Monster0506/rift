@@ -183,12 +183,6 @@ impl LineEnding {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub(crate) struct ViewState {
-    pub(crate) top_line: usize,
-    pub(crate) left_col: usize,
-}
-
 pub(crate) struct Document {
     pub(crate) id: DocumentId,
     buffer: TextBuffer,
@@ -200,7 +194,7 @@ pub(crate) struct Document {
     current_transaction: Option<EditTransaction>,
     transaction_depth: usize,
     handle: DocumentHandle,
-    view_state: ViewState,
+    view_state: crate::viewport::ScrollPosition,
     pub(crate) kind: BufferKind,
     pub(crate) state: StateSlot,
     vars: crate::tracked::Tracked<

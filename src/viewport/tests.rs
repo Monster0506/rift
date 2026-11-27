@@ -275,7 +275,11 @@ fn integer_scroll_paths_reset_sub_line_offset() {
     assert_sub_line_offset(viewport.sub_line_offset(), 0.0);
 
     viewport.set_sub_line_offset(0.7);
-    viewport.set_scroll(3, 0);
+    viewport.set_scroll_position(crate::viewport::ScrollPosition {
+        top_line: 3,
+        left_col: 0,
+        top_visual_row: 0,
+    });
     assert_sub_line_offset(viewport.sub_line_offset(), 0.0);
 
     viewport.set_sub_line_offset(0.7);

@@ -4,6 +4,13 @@
 //! The viewport is a read-only window into buffer content, sized to the terminal, that never
 //! mutates the buffer; it keeps the cursor visible and stays independent of rendering mechanics.
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ScrollPosition {
+    pub(crate) top_line: usize,
+    pub(crate) top_visual_row: usize,
+    pub(crate) left_col: usize,
+}
+
 /// Viewport manages which portion of the buffer is visible
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Viewport {
@@ -156,26 +163,10 @@ impl Viewport {
         self.visible_cols = cols;
     }
 
-    /// Set the scroll position (used when restoring view state)
-    pub(crate) const fn set_scroll(&mut self, top_line: usize, left_col: usize) {
-        self.top_line = top_line;
-        self.left_col = left_col;
-        self.sub_line_offset = 0.0;
-        // Mark as needing update to ensure proper rendering
-        self.first_update = true;
-    }
-
-    /// Set the logical and visual scroll positions together for synchronized
-    /// split panes.
-    pub(crate) const fn set_scroll_with_visual(
-        &mut self,
-        top_line: usize,
-        top_visual_row: usize,
-        left_col: usize,
-    ) {
-        self.top_line = top_line;
-        self.top_visual_row = top_visual_row;
-        self.left_col = left_col;
+    pub(crate) const fn set_scroll_position(&mut self, scroll: ScrollPosition) {
+        self.top_line = scroll.top_line;
+        self.top_visual_row = scroll.top_visual_row;
+        self.left_col = scroll.left_col;
         self.sub_line_offset = 0.0;
         self.first_update = true;
     }
@@ -193,10 +184,13 @@ impl Viewport {
         self.first_update = true;
     }
 
-    /// Get current scroll position as (`top_line`, `left_col`)
     #[must_use]
-    pub(crate) const fn get_scroll(&self) -> (usize, usize) {
-        (self.top_line, self.left_col)
+    pub(crate) const fn scroll_position(&self) -> ScrollPosition {
+        ScrollPosition {
+            top_line: self.top_line,
+            top_visual_row: self.top_visual_row,
+            left_col: self.left_col,
+        }
     }
 
     #[cfg(test)]

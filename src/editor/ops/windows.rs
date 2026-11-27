@@ -11,6 +11,9 @@ use crate::split::navigation::Direction;
 use crate::split::tree::SplitDirection;
 use crate::split::window::WindowId;
 use crate::term::TerminalBackend;
+#[cfg(feature = "plugins")]
+use crate::viewport::ScrollPosition;
+use crate::viewport::Viewport;
 
 impl<T: TerminalBackend> Editor<T> {
     fn window_layouts(&self) -> Vec<crate::split::layout::WindowLayout> {
@@ -50,6 +53,7 @@ impl<T: TerminalBackend> Editor<T> {
             size.rows as usize,
             size.cols as usize,
         )?;
+        self.initialize_split_view();
         #[cfg(feature = "plugins")]
         self.raise(EventPayload::WinNew {
             win: opened.get(),
@@ -77,12 +81,23 @@ impl<T: TerminalBackend> Editor<T> {
             size.cols as usize,
             ratio,
         )?;
+        self.initialize_split_view();
         #[cfg(feature = "plugins")]
         self.raise(EventPayload::WinNew {
             win: opened.get(),
             buf: doc_id,
         });
         Some(opened)
+    }
+
+    fn initialize_split_view(&mut self) {
+        if self.split_tree.window_count() == 2 {
+            let scroll = self.render_system.viewport.scroll_position();
+            let focused = self.split_tree.focused_window_id();
+            if let Some(window) = self.split_tree.get_window_mut(focused) {
+                window.viewport.set_scroll_position(scroll);
+            }
+        }
     }
 
     pub(crate) fn close_window(&mut self, id: WindowId) -> bool {
@@ -111,8 +126,9 @@ impl<T: TerminalBackend> Editor<T> {
             self.raise(EventPayload::WinLeave { win: id.get(), buf });
             if self
                 .focus_document_with(next_buf, |editor| {
+                    editor.save_focused_view();
                     editor.split_tree.close_window(id);
-                    editor.restore_window_cursor(next_buf);
+                    editor.restore_focused_view();
                 })
                 .is_err()
             {
@@ -125,6 +141,8 @@ impl<T: TerminalBackend> Editor<T> {
             });
         } else if !self.split_tree.close_window(id) {
             return false;
+        } else if self.split_tree.window_count() == 1 {
+            self.restore_focused_view();
         }
         self.render_system.viewport.mark_needs_full_redraw();
         #[cfg(feature = "plugins")]
@@ -132,7 +150,12 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    fn restore_window_cursor(&mut self, buf: DocumentId) {
+    fn restore_focused_view(&mut self) {
+        if self.split_tree.window_count() == 1 {
+            let scroll = self.split_tree.focused_window().viewport.scroll_position();
+            self.render_system.viewport.set_scroll_position(scroll);
+        }
+        let buf = self.active_document_id();
         let id = self.split_tree.focused_window_id();
         let Some(cursor) = self
             .split_tree
@@ -149,7 +172,12 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    fn save_focused_window_cursor(&mut self) {
+    pub(super) fn save_focused_view(&mut self) {
+        let scroll = self.focused_viewport().scroll_position();
+        self.active_document().save_view_state(scroll);
+        if self.split_tree.window_count() == 1 {
+            return;
+        }
         let id = self.split_tree.focused_window_id();
         let buf = self.active_document_id();
         if !self
@@ -195,9 +223,9 @@ impl<T: TerminalBackend> Editor<T> {
         if focused_id == prev_id
             || self
                 .focus_document_with(next_buf, |editor| {
-                    editor.save_focused_window_cursor();
+                    editor.save_focused_view();
                     editor.split_tree.exchange_windows(focused_id, prev_id);
-                    editor.restore_window_cursor(next_buf);
+                    editor.restore_focused_view();
                 })
                 .is_err()
         {
@@ -267,13 +295,12 @@ impl<T: TerminalBackend> Editor<T> {
         });
         if self
             .focus_document_with(buf, |editor| {
-                editor.save_focused_window_cursor();
+                editor.save_focused_view();
                 editor.split_tree.set_focus(target);
                 if target_buf == buf {
-                    editor.restore_window_cursor(buf);
+                    editor.restore_focused_view();
                 } else {
                     editor.show_in_window(target, buf);
-                    editor.restore_view_state();
                 }
             })
             .is_ok()
@@ -284,6 +311,40 @@ impl<T: TerminalBackend> Editor<T> {
                 buf,
             });
         }
+    }
+
+    pub(in crate::editor) fn focused_viewport(&self) -> &Viewport {
+        if self.split_tree.window_count() == 1 {
+            &self.render_system.viewport
+        } else {
+            &self.split_tree.focused_window().viewport
+        }
+    }
+
+    #[cfg(feature = "plugins")]
+    fn focused_viewport_mut(&mut self) -> &mut Viewport {
+        if self.split_tree.window_count() == 1 {
+            &mut self.render_system.viewport
+        } else {
+            let id = self.split_tree.focused_window_id();
+            self.window_viewport_mut(id)
+                .expect("focused window must exist")
+        }
+    }
+
+    #[cfg(feature = "plugins")]
+    pub(in crate::editor) fn scroll_focused_view(&mut self, top: usize, left: usize) {
+        let viewport = self.focused_viewport_mut();
+        viewport.set_scroll_position(ScrollPosition {
+            top_line: top,
+            left_col: left,
+            ..viewport.scroll_position()
+        });
+    }
+
+    #[cfg(feature = "plugins")]
+    pub(in crate::editor) fn center_focused_view(&mut self, row: usize, total: usize) {
+        self.focused_viewport_mut().center_on(row, total);
     }
 
     pub(in crate::editor) fn follow_document_cursor(&mut self, id: WindowId) {
@@ -302,6 +363,14 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(crate) fn show_in_window(&mut self, win: WindowId, doc_id: DocumentId) {
-        self.split_tree.set_window_document(win, doc_id);
+        let Some(doc) = self.document_manager.get_document(doc_id) else {
+            return;
+        };
+        let scroll = doc.saved_view_state();
+        if self.split_tree.set_window_document(win, doc_id, scroll)
+            && win == self.split_tree.focused_window_id()
+        {
+            self.restore_focused_view();
+        }
     }
 }

@@ -87,7 +87,13 @@ fn test_tab_straddling_left_col_does_not_shift_text() {
     state.update_buffer_stats(1, 6, crate::document::LineEnding::LF);
     let mut system = RenderSystem::new(5, 40);
 
-    system.viewport.set_scroll(0, 2);
+    system
+        .viewport
+        .set_scroll_position(crate::viewport::ScrollPosition {
+            top_line: 0,
+            left_col: 2,
+            top_visual_row: 0,
+        });
 
     system
         .render(
@@ -138,7 +144,13 @@ fn test_wide_char_straddling_left_col_renders_as_space() {
     state.update_buffer_stats(1, 6, crate::document::LineEnding::LF);
     let mut system = RenderSystem::new(5, 40);
 
-    system.viewport.set_scroll(0, 1);
+    system
+        .viewport
+        .set_scroll_position(crate::viewport::ScrollPosition {
+            top_line: 0,
+            left_col: 1,
+            top_visual_row: 0,
+        });
 
     system
         .render(

@@ -114,12 +114,8 @@ impl<T: TerminalBackend> Editor<T> {
         id: DocumentId,
     ) {
         if previous != id {
-            let (top_line, left_col) = self.render_system.viewport.get_scroll();
-            if let Some(doc) = self.document_manager.get_document_mut(previous) {
-                doc.save_view_state(top_line, left_col);
-            }
+            self.save_focused_view();
             self.show_in_window(window, id);
-            self.restore_view_state();
         }
     }
 
