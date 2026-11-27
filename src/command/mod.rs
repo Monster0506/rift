@@ -85,12 +85,6 @@ impl Command {
                 | Self::AddSurround(_, _, _, _)
         )
     }
-
-    /// Check if command should be recorded for dot-repeat
-    #[must_use]
-    pub(crate) const fn is_repeatable(&self) -> bool {
-        self.is_mutating()
-    }
 }
 
 #[cfg(test)]

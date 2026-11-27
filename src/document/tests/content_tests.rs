@@ -19,7 +19,7 @@ fn a_read_only_edit_is_distinguishable_from_a_boundary_no_op() {
 #[test]
 fn an_edit_group_that_returns_an_error_does_not_absorb_the_next_edit() {
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let failed = doc.edit_group("Grouped edit", |doc| {
+    let failed = doc.write().unwrap().edit_group("Grouped edit", |doc| {
         doc.edit(Edit::type_text("first"), EditSource::User)?;
         doc.edit(Edit::delete(0..100), EditSource::User)
     });

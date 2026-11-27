@@ -96,11 +96,12 @@ impl<T: TerminalBackend> Editor<T> {
             PendingGrammar::DeleteSurround { count } => {
                 self.set_mode(Mode::Normal);
                 if let Some(ch) = key.text() {
-                    if self.try_run_set_aware_delete_surround(ch, count) {
-                        self.finish_region_build(None);
-                    } else {
-                        let command = Command::DeleteSurround(ch, count);
-                        self.execute_and_record(command);
+                    match self.try_run_set_aware_delete_surround(ch, count) {
+                        Ok(true) => self.finish_region_build(None),
+                        Ok(false) => {
+                            self.execute_and_record(Command::DeleteSurround(ch, count));
+                        }
+                        Err(_) => {}
                     }
                 }
                 self.input.count = 0;
@@ -116,11 +117,12 @@ impl<T: TerminalBackend> Editor<T> {
             PendingGrammar::ChangeSurroundTo { from, count } => {
                 self.set_mode(Mode::Normal);
                 if let Some(to) = key.text() {
-                    if self.try_run_set_aware_change_surround(from, to, count) {
-                        self.finish_region_build(None);
-                    } else {
-                        let command = Command::ChangeSurround(from, to, count);
-                        self.execute_and_record(command);
+                    match self.try_run_set_aware_change_surround(from, to, count) {
+                        Ok(true) => self.finish_region_build(None),
+                        Ok(false) => {
+                            self.execute_and_record(Command::ChangeSurround(from, to, count));
+                        }
+                        Err(_) => {}
                     }
                 }
                 self.input.count = 0;
@@ -132,13 +134,19 @@ impl<T: TerminalBackend> Editor<T> {
             } => {
                 self.set_mode(Mode::Normal);
                 if let Some(ch) = key.text() {
-                    if self.try_run_set_aware_add_surround(ch, delim_count) {
-                        self.finish_region_build(Some(Action::Editor(
+                    match self.try_run_set_aware_add_surround(ch, delim_count) {
+                        Ok(true) => self.finish_region_build(Some(Action::Editor(
                             EditorAction::AddSurroundToSet { ch, delim_count },
-                        )));
-                    } else {
-                        let command = Command::AddSurround(motion, count, ch, delim_count);
-                        self.execute_and_record(command);
+                        ))),
+                        Ok(false) => {
+                            self.execute_and_record(Command::AddSurround(
+                                motion,
+                                count,
+                                ch,
+                                delim_count,
+                            ));
+                        }
+                        Err(_) => {}
                     }
                 }
                 self.input.count = 0;
@@ -179,43 +187,20 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn replace_selection(&mut self, ch: char) -> bool {
-        let was_visual = self.current_mode.is_visual();
-        let has_regions = self
-            .document_manager
-            .get_document(self.active_document_id())
-            .is_some_and(|doc| !doc.selections().is_empty());
-        if !was_visual && !has_regions {
+        let visual_kind = self.current_mode.visual_range_kind();
+        if visual_kind.is_none() && self.active_document().selections().is_empty() {
             return false;
         }
-        if self.active_document().check_edit_access().is_err() {
+        let start = self
+            .visual_anchor()
+            .map(|anchor| anchor.min(self.active_document().buffer().cursor()));
+        let Ok(result) = self.replace_banked_regions(ch, visual_kind, start) else {
             return true;
-        }
-
-        let start = self.visual_anchor().and_then(|anchor| {
-            self.document_manager
-                .get_document(self.active_document_id())
-                .map(|doc| anchor.min(doc.buffer().cursor()).min(doc.buffer().len()))
-        });
-        if was_visual {
+        };
+        if visual_kind.is_some() {
             self.set_mode(Mode::Normal);
         }
-        if let Some(start) = start {
-            if let Some(doc) = self
-                .document_manager
-                .get_document_mut(self.active_document_id())
-            {
-                let _ = doc.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
-            }
-        }
-        let result = self.try_run_set_aware_replace_char(ch);
-        if let Some(start) = start {
-            if let Some(doc) = self
-                .document_manager
-                .get_document_mut(self.active_document_id())
-            {
-                let _ = doc.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
-            }
-        }
+        let was_visual = visual_kind.is_some();
         let follow_up = (!was_visual).then_some(Action::Editor(EditorAction::ReplaceSelection(ch)));
         self.finish_region_build(follow_up);
         result || was_visual

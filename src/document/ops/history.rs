@@ -9,29 +9,45 @@ pub(crate) enum EditSession {
     Replace,
     Change,
     MultiInsert,
-    MultiRegion,
+}
+
+impl super::DocumentWrite<'_> {
+    pub(crate) fn edit_group<R>(
+        &mut self,
+        description: impl Into<String>,
+        edit: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        self.doc.begin_transaction(description);
+        let result = edit(self);
+        self.doc.commit_transaction();
+        result
+    }
+
+    pub(crate) fn start_edit_session(&mut self, session: EditSession) {
+        self.doc.begin_transaction(match session {
+            EditSession::Insert => "Insert",
+            EditSession::Replace => "Replace",
+            EditSession::Change => "Change",
+            EditSession::MultiInsert => "MultiInsert",
+        });
+    }
+
+    pub(crate) fn undo(&mut self) -> bool {
+        self.doc.undo_edit()
+    }
+
+    pub(crate) fn redo(&mut self) -> bool {
+        self.doc.redo_edit()
+    }
 }
 
 impl Document {
     pub(crate) fn edit_group<R>(
         &mut self,
         description: impl Into<String>,
-        edit: impl FnOnce(&mut Self) -> R,
-    ) -> R {
-        self.begin_transaction(description);
-        let result = edit(self);
-        self.commit_transaction();
-        result
-    }
-
-    pub(crate) fn start_edit_session(&mut self, session: EditSession) {
-        self.begin_transaction(match session {
-            EditSession::Insert => "Insert",
-            EditSession::Replace => "Replace",
-            EditSession::Change => "Change",
-            EditSession::MultiInsert => "MultiInsert",
-            EditSession::MultiRegion => "MultiRegion",
-        });
+        edit: impl FnOnce(&mut super::DocumentWrite<'_>) -> R,
+    ) -> Result<R, super::ReadOnlyEdit> {
+        Ok(self.write()?.edit_group(description, edit))
     }
 
     pub(crate) fn finish_edit_session(&mut self) {
@@ -74,7 +90,12 @@ impl Document {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn undo(&mut self) -> bool {
+        self.write().is_ok_and(|mut writer| writer.undo())
+    }
+
+    fn undo_edit(&mut self) -> bool {
         self.commit_pending_ghost();
         if !self.history.can_undo() {
             return false;
@@ -109,7 +130,12 @@ impl Document {
         true
     }
 
+    #[cfg(test)]
     pub(crate) fn redo(&mut self) -> bool {
+        self.write().is_ok_and(|mut writer| writer.redo())
+    }
+
+    fn redo_edit(&mut self) -> bool {
         self.commit_pending_ghost();
         if !self.history.can_redo() {
             return false;
@@ -260,7 +286,23 @@ impl Document {
         self.history.checkpoint(snapshot);
     }
 
-    pub(crate) fn goto_seq(&mut self, target: u64) -> Result<(), crate::history::UndoError> {
+    pub(crate) fn goto_seq(&mut self, target: u64) -> Result<(), crate::error::RiftError> {
+        self.write()?.doc.replay_to_seq(target).map_err(|error| {
+            crate::error::RiftError::new(
+                crate::error::ErrorType::Execution,
+                "UNDO_ERROR",
+                error.to_string(),
+            )
+        })
+    }
+
+    pub(crate) fn render_undo_preview(&mut self, source: crate::document::DocumentId, target: u64) {
+        if self.undo_tree_preview == Some(source) {
+            let _ = self.replay_to_seq(target);
+        }
+    }
+
+    fn replay_to_seq(&mut self, target: u64) -> Result<(), crate::history::UndoError> {
         self.commit_pending_ghost();
         let replay_path = self.history.goto_seq(target)?;
 

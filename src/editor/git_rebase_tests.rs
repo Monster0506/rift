@@ -764,7 +764,7 @@ fn verb_keys_set_pick_squash_fixup_edit_directly_no_insert_mode() {
 }
 
 #[test]
-fn reorder_via_dedicated_action_is_a_single_undoable_edit() {
+fn rebase_reorder_is_one_edit_and_generic_undo_cannot_change_the_plan() {
     let root = tempfile::tempdir().unwrap();
     let dir = root.path().join("repo");
     std::fs::create_dir(&dir).unwrap();
@@ -793,6 +793,7 @@ fn reorder_via_dedicated_action_is_a_single_undoable_edit() {
         let start = doc.buffer().line_index.get_start(1).unwrap();
         let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
+    let seq = editor.active_document().history.current_seq();
     editor.git_rebase_move(false);
     let moved = editor
         .document_manager
@@ -804,16 +805,9 @@ fn reorder_via_dedicated_action_is_a_single_undoable_edit() {
     assert!(moved_lines[0].ends_with("add b"), "{moved}");
     assert!(moved_lines[1].ends_with("add a"), "{moved}");
 
-    // One undo fully reverses the move (a single transaction, not per-char).
-    let doc = editor
-        .document_manager
-        .get_document_mut(editor.active_document_id())
-        .unwrap();
-    assert!(doc.undo(), "the reorder must be undoable");
-    let restored = doc.buffer().to_string();
-    let restored_lines: Vec<&str> = restored.lines().collect();
-    assert!(restored_lines[0].ends_with("add a"), "{restored}");
-    assert!(restored_lines[1].ends_with("add b"), "{restored}");
+    assert_eq!(editor.active_document().history.current_seq(), seq + 1);
+    assert!(!editor.do_undo(None));
+    assert_eq!(editor.active_document().buffer().to_string(), moved);
 }
 
 #[test]

@@ -3,7 +3,7 @@ use super::*;
 impl LspClient {
     /// Build a client around an arbitrary writer with no real process/reader
     /// behind it, for unit-testing the send path in isolation.
-    fn new_for_test(writer: Box<dyn Write + Send>) -> Self {
+    pub(in crate::lsp) fn new_for_test(writer: Box<dyn Write + Send>) -> Self {
         let (tx, rx) = mpsc::channel::<RawLspMessage>();
         let reader_thread = spawn_reader_thread(std::io::empty(), tx);
         let (writer_tx, writer_rx) = mpsc::channel::<Vec<u8>>();

@@ -1123,7 +1123,7 @@ impl Document {
                 end: self.buffer.len(),
                 text: text.chars().map(Character::from).collect(),
             },
-            super::ops::Origin::Source(super::ops::EditSource::User),
+            super::ops::Origin::Generated,
         );
         self.commit_transaction();
 

@@ -1,7 +1,8 @@
 //! Lua 5.4 plugin host - embeds mlua and exposes the `rift.*` API.
 
 use crate::action::{Action, EditorAction};
-use crate::document::ops::{BufferChange, BufferTarget};
+use crate::document::ops::{BufferChange, BufferTarget, EditPolicy};
+use crate::document::runtime::ReadOnlyPolicy;
 use crate::document::DocumentId;
 use crate::floating_window::popup::PopupContent;
 use crate::job_manager::jobs::plugin_process::{JobCommand, JobSpec, JobStream, PluginJobEvent};
@@ -358,6 +359,7 @@ impl LuaSharedState {
         kind: &str,
         title: Option<&str>,
         lines: &[String],
+        read_only: bool,
     ) -> LuaResult<u64> {
         if !self.is_active {
             return Err(LuaError::RuntimeError(
@@ -376,7 +378,7 @@ impl LuaSharedState {
             kind: kind.to_string(),
             path: None,
             line_count: buffer.get_total_lines(),
-            is_read_only: false,
+            is_read_only: read_only,
         });
         self.bufs.insert(
             id,
@@ -384,11 +386,13 @@ impl LuaSharedState {
                 buffer,
                 meta: BufMeta {
                     kind: kind.to_string(),
+                    edit_policy: EditPolicy::for_new_buffer(read_only),
                     ..Default::default()
                 },
                 ..Default::default()
             },
         );
+        self.diverged.insert(id);
         self.buf_id = usize::try_from(id).map_err(LuaError::external)?;
         for entry in &mut self.buf_list {
             entry.is_current = entry.id as u64 == id;
@@ -2125,7 +2129,7 @@ impl LuaHost {
                     v.push(s?);
                 }
                 let mut s = sh.borrow_mut();
-                let id = s.create_local_buf("scratch", Some(&name), &v)?;
+                let id = s.create_local_buf("scratch", Some(&name), &v, false)?;
                 s.mutations.push(PluginMutation::CreateScratchBuf {
                     id: DocumentId::new(id),
                     name,
@@ -2957,18 +2961,21 @@ impl LuaHost {
                     ));
                 }
 
-                let read_only_opt: Option<String> = opts.get("read_only")?;
-                if let Some(ro) = &read_only_opt {
-                    match ro.as_str() {
-                        "readonly" | "read_only" | "fixed" | "fixed_readonly" | "writable"
-                        | "fixed_writable" | "override" | "document_override" => {}
-                        other => {
-                            return Err(LuaError::RuntimeError(format!(
-                                "invalid read_only policy: '{other}'"
-                            )));
-                        }
+                let read_only: Option<String> = opts.get("read_only")?;
+                let read_only = match read_only.as_deref() {
+                    Some("readonly" | "read_only" | "fixed" | "fixed_readonly") => {
+                        ReadOnlyPolicy::FixedReadOnly
                     }
-                }
+                    Some("writable" | "fixed_writable") => ReadOnlyPolicy::FixedWritable,
+                    Some("override" | "document_override") | None => {
+                        ReadOnlyPolicy::DocumentOverride
+                    }
+                    Some(other) => {
+                        return Err(LuaError::RuntimeError(format!(
+                            "invalid read_only policy: '{other}'"
+                        )));
+                    }
+                };
 
                 let close_opt: Option<String> = opts.get("close")?;
                 if let Some(cl) = &close_opt {
@@ -2997,13 +3004,14 @@ impl LuaHost {
                 let kinds: LuaTable = lua.globals().get("_rift_buffer_kinds")?;
                 let entry = lua.create_table()?;
                 entry.set("opts", opts.clone())?;
+                entry.set("read_only", read_only == ReadOnlyPolicy::FixedReadOnly)?;
                 if let Some(plugin) = s.current_plugin.as_deref() {
                     entry.set("plugin", plugin)?;
                 }
                 kinds.set(name.as_str(), entry)?;
                 s.mutations.push(PluginMutation::RegisterBufferKind {
                     name,
-                    read_only: read_only_opt,
+                    read_only,
                     close: close_opt,
                     key_fallback: key_fallback_opt,
                     display_name: opts.get("display_name")?,
@@ -3054,21 +3062,11 @@ impl LuaHost {
                         }
                     }
                     let kinds: LuaTable = lua.globals().get("_rift_buffer_kinds")?;
-                    let read_only =
-                        if let Some(entry) = kinds.get::<Option<LuaTable>>(kind.as_str())? {
-                            let options: LuaTable = entry.get("opts")?;
-                            matches!(
-                                options.get::<Option<String>>("read_only")?.as_deref(),
-                                Some("readonly" | "read_only" | "fixed" | "fixed_readonly")
-                            )
-                        } else {
-                            false
-                        };
+                    let read_only = kinds
+                        .get::<Option<LuaTable>>(kind.as_str())?
+                        .map_or(Ok(false), |entry| entry.get::<bool>("read_only"))?;
                     let mut s = sh.borrow_mut();
-                    let id = s.create_local_buf(&kind, title.as_deref(), &lines)?;
-                    if let Some(entry) = s.buf_list.last_mut() {
-                        entry.is_read_only = read_only;
-                    }
+                    let id = s.create_local_buf(&kind, title.as_deref(), &lines, read_only)?;
                     let local_vars = s.buffer_vars.entry(id).or_default();
                     local_vars.extend(vars.iter().cloned());
                     if let Some(title) = &title {
@@ -3227,8 +3225,22 @@ impl LuaHost {
         std::mem::take(&mut self.shared.borrow_mut().creation_ids)
     }
 
-    pub(super) fn take_divergence(&self) -> Vec<u64> {
-        self.shared.borrow_mut().diverged.drain().collect()
+    pub(super) fn for_each_diverged_buffer(&self, mut visit: impl FnMut(u64)) {
+        for &id in &self.shared.borrow().diverged {
+            visit(id);
+        }
+    }
+
+    pub(super) fn reconcile_buffers(&self, mut current: impl FnMut(u64) -> Option<BufUpdate>) {
+        let mut shared = self.shared.borrow_mut();
+        let LuaSharedState { diverged, bufs, .. } = &mut *shared;
+        for id in diverged.drain() {
+            if let Some(update) = current(id) {
+                bufs.entry(id).or_default().apply(update);
+            } else {
+                bufs.remove(&id);
+            }
+        }
     }
 
     /// Update the buffer snapshot that `rift.get_lines()` and friends read.

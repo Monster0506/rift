@@ -624,11 +624,11 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .get_document_mut(layout.preview_doc_id)
         {
-            let _ = linked_doc.goto_seq(seq);
+            linked_doc.render_undo_preview(layout.original_doc_id, seq);
             let _ = linked_doc.set_cursor(0, crate::document::ops::CursorCause::Programmatic);
         }
         self.follow_document_cursor(layout.preview_win_id);
-        let _ = self.update_and_render();
+        self.request_frame();
     }
 
     pub(super) fn handle_explorer_split_select(&mut self) {
@@ -737,7 +737,8 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         if let Some(linked_doc) = self.document_manager.get_document_mut(linked_doc_id) {
-            if linked_doc.goto_seq(seq).is_err() {
+            if let Err(error) = linked_doc.goto_seq(seq) {
+                self.notify_error(error);
                 return;
             }
         }

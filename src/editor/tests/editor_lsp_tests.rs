@@ -60,8 +60,8 @@ fn failed_split_load_clears_its_pending_jump() {
             dir.path().to_string_lossy().into_owned(),
         ),
     );
-    let target = editor.active_document_id();
-    editor.scheduler.goto_after_load = Some((target, 2, 0));
+    let handle = editor.active_document().handle();
+    assert!(editor.defer_file_load_goto(handle, 2, 0));
 
     loop {
         let message = editor
@@ -76,7 +76,7 @@ fn failed_split_load_clears_its_pending_jump() {
         }
     }
 
-    assert!(editor.scheduler.goto_after_load.is_none());
+    assert!(editor.file_load_jobs.is_empty());
 }
 
 #[cfg(feature = "lsp")]
@@ -183,6 +183,33 @@ fn workspace_edit_with_a_malformed_edit_skips_that_document_entirely() {
 
 #[cfg(feature = "lsp")]
 #[test]
+fn workspace_edits_skip_read_only_targets_and_apply_to_writable_ones() {
+    let dir = tempfile::tempdir().unwrap();
+    let protected = dir.path().join("protected.txt");
+    let writable = dir.path().join("writable.txt");
+    std::fs::write(&protected, "locked").unwrap();
+    std::fs::write(&writable, "open").unwrap();
+    let mut editor = create_editor();
+    open_and_load(&mut editor, &protected);
+    let protected_id = editor.active_document_id();
+    editor.active_document().set_read_only(true);
+    open_and_load(&mut editor, &writable);
+
+    let protected_uri = crate::lsp::protocol::path_to_uri(&protected);
+    let writable_uri = crate::lsp::protocol::path_to_uri(&writable);
+    let edit = serde_json::json!({ "changes": {
+        protected_uri: [lsp_edit_json(0, 0, 0, 6, "changed")],
+        writable_uri: [lsp_edit_json(0, 0, 0, 4, "updated")]
+    } });
+    assert_eq!(editor.apply_workspace_edit(&edit), 1);
+    let doc = editor.document_manager.get_document(protected_id).unwrap();
+    assert_eq!(doc.buffer().to_string(), "locked");
+    assert!(!doc.is_dirty());
+    assert_eq!(editor.active_document().buffer().to_string(), "updated");
+}
+
+#[cfg(feature = "lsp")]
+#[test]
 fn goto_with_multiple_definitions_opens_a_location_list() {
     use crate::lsp::protocol::{LspLocation, LspPosition, LspRange};
     let loc = |line: u32| LspLocation {
@@ -231,6 +258,66 @@ fn rename_prompt_keeps_its_file_while_direct_rename_uses_current_buffer() {
         .collect();
     assert!(messages.contains(&"LSP: no server available for this file"));
     assert!(messages.contains(&"LSP rename: no file open"));
+}
+
+#[cfg(all(feature = "lsp", feature = "plugins"))]
+#[test]
+fn rename_sends_captured_and_current_utf16_positions() {
+    use crate::document::ops::CursorCause;
+    use crate::lsp::protocol::path_to_uri;
+    use serde_json::json;
+
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first.txt");
+    let second = dir.path().join("second.txt");
+    std::fs::write(&first, "first\n😀symbol").unwrap();
+    std::fs::write(&second, "top\nmiddle\né😀 second").unwrap();
+
+    let mut editor = create_editor();
+    open_and_load(&mut editor, &first);
+    let first_id = editor.active_document_id();
+    open_and_load(&mut editor, &second);
+    let second_id = editor.active_document_id();
+    let requests = editor.lsp_manager.capture_wire_requests(&[&first, &second]);
+
+    editor.focus_document(first_id).unwrap();
+    editor
+        .active_document()
+        .set_cursor(7, CursorCause::User)
+        .unwrap();
+    assert!(editor.request_lsp_rename());
+    editor.focus_document(second_id).unwrap();
+    editor
+        .active_document()
+        .set_cursor(14, CursorCause::User)
+        .unwrap();
+    editor.state.command_line = "from_prompt".into();
+    editor.handle_action(&crate::action::Action::Editor(
+        crate::action::EditorAction::Submit,
+    ));
+    editor.call_plugins(|editor| {
+        let error = editor.plugin_host.lua_exec("rift.lsp.rename('from_lua')");
+        assert!(error.is_none(), "{error:?}");
+    });
+
+    for (path, line, character, name) in
+        [(&first, 1, 2, "from_prompt"), (&second, 2, 4, "from_lua")]
+    {
+        let frame = requests
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        let body = crate::transport::read_framed(&mut frame.as_slice()).unwrap();
+        let request: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(request["method"], "textDocument/rename");
+        assert_eq!(
+            request["params"],
+            json!({
+                "textDocument": { "uri": path_to_uri(path) },
+                "position": { "line": line, "character": character },
+                "newName": name,
+            })
+        );
+    }
 }
 
 #[cfg(feature = "lsp")]
@@ -410,4 +497,189 @@ fn published_diagnostic_underlines_exactly_its_range_and_keeps_the_eol_message()
         .filter(|&c| cells[c].attrs.is_underline())
         .collect();
     assert_eq!(underlined, vec![8, 9, 10, 11, 12]);
+}
+
+#[cfg(feature = "lsp")]
+fn receive_editor_job(
+    editor: &crate::editor::Editor<crate::test_utils::MockTerminal>,
+) -> crate::job_manager::JobMessage {
+    editor
+        .job_manager
+        .receiver()
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap()
+}
+
+#[cfg(feature = "lsp")]
+fn take_file_load_payload(
+    editor: &mut crate::editor::Editor<crate::test_utils::MockTerminal>,
+    job: usize,
+) -> Box<dyn crate::job_manager::JobPayload> {
+    use crate::job_manager::JobMessage;
+
+    loop {
+        match receive_editor_job(editor) {
+            JobMessage::Custom(id, payload) if id == job => return payload,
+            JobMessage::Error(id, err) if id == job => panic!("file load failed: {err}"),
+            message => editor.handle_job_message(message),
+        }
+    }
+}
+
+#[cfg(feature = "lsp")]
+#[test]
+fn goto_on_a_loading_split_waits_for_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("target.txt");
+    std::fs::write(&path, "one\ntwo\nthree\n").unwrap();
+    let mut editor = create_editor();
+    editor.do_split_window(
+        crate::split::tree::SplitDirection::Vertical,
+        crate::command_line::commands::types::SplitSubcommand::File(
+            path.to_string_lossy().into_owned(),
+        ),
+    );
+    let target = editor.active_document_id();
+    let job = *editor.file_load_jobs.keys().next().unwrap();
+
+    editor.jump_to_location(&path, 0, 1);
+    editor.jump_to_location(&path, 1, 2);
+    assert_eq!(editor.active_document().buffer().cursor(), 0);
+
+    let payload = take_file_load_payload(&mut editor, job);
+    editor.handle_job_message(crate::job_manager::JobMessage::Custom(job, payload));
+    assert_eq!(editor.active_document_id(), target);
+    assert_eq!(editor.active_document().buffer().cursor(), 6);
+}
+
+#[cfg(feature = "lsp")]
+#[test]
+fn overlapping_file_loads_keep_each_documents_goto() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first.txt");
+    let second = dir.path().join("second.txt");
+    std::fs::write(&first, "first\nsecond\n").unwrap();
+    std::fs::write(&second, "x\nyz\n").unwrap();
+    let mut editor = create_editor();
+
+    editor.jump_to_location(&first, 1, 1);
+    let first_doc = editor.active_document_id();
+    editor.jump_to_location(&second, 1, 0);
+    let second_doc = editor.active_document_id();
+    assert_eq!(editor.file_load_jobs.len(), 2);
+    while !editor.file_load_jobs.is_empty() {
+        let message = receive_editor_job(&editor);
+        editor.handle_job_message(message);
+    }
+
+    let first = editor.document_manager.get_document(first_doc).unwrap();
+    assert_eq!(first.buffer().cursor(), 7);
+    assert_eq!(editor.active_document_id(), second_doc);
+    assert_eq!(editor.active_document().buffer().cursor(), 2);
+}
+
+#[cfg(all(feature = "lsp", feature = "plugins"))]
+#[test]
+fn lsp_jump_uses_opened_document_even_if_a_hook_redirects_focus() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("target.txt");
+    std::fs::write(&path, "zero\nfirst\n").unwrap();
+    let mut editor = create_editor();
+    let scratch = editor.active_document_id();
+    let scratch_id = scratch.get();
+    let error = editor.plugin_host.lua_exec(&format!(
+        "rift.on('BufEnter', function(ev) \
+           if ev.buf ~= {scratch_id} then rift.switch_buf({scratch_id}) end \
+         end)"
+    ));
+    assert!(error.is_none(), "{error:?}");
+
+    editor.jump_to_location(&path, 1, 2);
+    let job = *editor.file_load_jobs.keys().next().unwrap();
+    let payload = take_file_load_payload(&mut editor, job);
+    editor.handle_job_message(crate::job_manager::JobMessage::Custom(job, payload));
+
+    assert_eq!(editor.active_document_id(), scratch);
+    assert_eq!(editor.active_document().buffer().cursor(), 0);
+    let target = editor
+        .document_manager
+        .find_open_document_id(&path)
+        .unwrap();
+    let target = editor.document_manager.get_document(target).unwrap();
+    assert_eq!(target.buffer().cursor(), 7);
+}
+
+#[cfg(feature = "lsp")]
+#[test]
+fn cancelled_file_load_discards_its_late_result() {
+    use crate::job_manager::JobMessage;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cancelled.txt");
+    std::fs::write(&path, "one\ntwo\n").unwrap();
+    let mut editor = create_editor();
+    editor.jump_to_location(&path, 1, 1);
+    let job = *editor.file_load_jobs.keys().next().unwrap();
+    let payload = take_file_load_payload(&mut editor, job);
+
+    editor.handle_job_message(JobMessage::Cancelled(job));
+    assert!(editor.file_load_jobs.is_empty());
+    editor.handle_job_message(JobMessage::Custom(job, payload));
+    assert!(editor.active_document().buffer().is_empty());
+}
+
+#[cfg(feature = "lsp")]
+#[test]
+fn stale_file_load_messages_leave_the_current_goto_intact() {
+    use crate::job_manager::JobMessage;
+
+    enum StaleMessage {
+        Finished,
+        Error,
+        Cancelled,
+        Custom,
+        CustomToken,
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("target.txt");
+    std::fs::write(&path, "one\ntwo\nthree\n").unwrap();
+    for stale in [
+        StaleMessage::Finished,
+        StaleMessage::Error,
+        StaleMessage::Cancelled,
+        StaleMessage::Custom,
+        StaleMessage::CustomToken,
+    ] {
+        let mut editor = create_editor();
+        editor.jump_to_location(&path, 1, 0);
+        let target = editor.active_document_id();
+        let old_job = *editor.file_load_jobs.keys().next().unwrap();
+        let old_token = editor.job_manager.job_token(old_job).unwrap();
+        let old_payload = take_file_load_payload(&mut editor, old_job);
+
+        editor.reload_document(target, false).unwrap();
+        editor.jump_to_location(&path, 2, 1);
+        let fresh_job = *editor
+            .file_load_jobs
+            .keys()
+            .find(|&&id| id != old_job)
+            .unwrap();
+
+        let message = match stale {
+            StaleMessage::Finished => JobMessage::Finished(old_job, true),
+            StaleMessage::Error => JobMessage::Error(old_job, "load failed".into()),
+            StaleMessage::Cancelled => JobMessage::Cancelled(old_job),
+            StaleMessage::Custom => JobMessage::Custom(old_job, old_payload),
+            StaleMessage::CustomToken => JobMessage::CustomToken(old_job, old_token, old_payload),
+        };
+        editor.handle_job_message(message);
+        assert!(!editor.file_load_jobs.contains_key(&old_job));
+        assert!(editor.file_load_jobs.contains_key(&fresh_job));
+        assert!(editor.active_document().buffer().is_empty());
+
+        let payload = take_file_load_payload(&mut editor, fresh_job);
+        editor.handle_job_message(JobMessage::Custom(fresh_job, payload));
+        assert_eq!(editor.active_document().buffer().cursor(), 9);
+    }
 }

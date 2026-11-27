@@ -9,6 +9,14 @@ pub(in crate::editor) enum QuitRequest {
     IfAlone,
 }
 
+#[derive(Clone, Copy, Default)]
+pub(in crate::editor) enum ExitState {
+    #[default]
+    Running,
+    Exit,
+    Detach,
+}
+
 impl<T: TerminalBackend> Editor<T> {
     pub(in crate::editor) fn quit(&mut self, request: QuitRequest) {
         let exit = match request {
@@ -16,13 +24,28 @@ impl<T: TerminalBackend> Editor<T> {
             QuitRequest::Close { force } => self.close_scope(force),
             QuitRequest::IfAlone => self.can_quit_alone(),
         };
-        self.should_quit |= exit;
+        if exit && matches!(self.exit_state, ExitState::Running) {
+            self.exit_state = if self.state.is_remote {
+                ExitState::Detach
+            } else {
+                ExitState::Exit
+            };
+        }
+    }
+
+    pub(in crate::editor) const fn should_quit(&self) -> bool {
+        matches!(self.exit_state, ExitState::Exit)
+    }
+
+    #[cfg(feature = "plugins")]
+    pub(in crate::editor) const fn exit_requested(&self) -> bool {
+        !matches!(self.exit_state, ExitState::Running)
     }
 
     pub(in crate::editor) fn detach_if_quitting(&mut self) {
-        if self.should_quit && self.state.is_remote {
+        if matches!(self.exit_state, ExitState::Detach) {
             self.term.request_detach();
-            self.should_quit = false;
+            self.exit_state = ExitState::Running;
         }
     }
 

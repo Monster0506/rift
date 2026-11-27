@@ -119,7 +119,7 @@ fn bug_wq_existing_other_path_overwrites() {
     settle(&mut editor);
 
     assert_eq!(std::fs::read_to_string(&b).unwrap(), "b");
-    assert!(!editor.should_quit);
+    assert!(!editor.should_quit());
 }
 
 #[test]
@@ -193,7 +193,7 @@ fn bug_wq_in_split_quits_editor() {
     drain_jobs(&mut editor);
 
     assert!(
-        !editor.should_quit,
+        !editor.should_quit(),
         ":wq in a split must only close the split"
     );
     assert_eq!(editor.split_tree.window_count(), 1);
@@ -217,7 +217,7 @@ fn bug_wq_quits_discarding_other_dirty_buffer() {
     editor.execute_command_line("wq");
     drain_jobs(&mut editor);
 
-    assert!(!editor.should_quit, ":wq must not exit with a.txt dirty");
+    assert!(!editor.should_quit(), ":wq must not exit with a.txt dirty");
     let a_doc = editor
         .document_manager
         .get_document(a_id)
@@ -241,7 +241,7 @@ fn bug_explorer_wq_quits_editor() {
     drain_jobs(&mut editor);
 
     assert!(
-        !editor.should_quit,
+        !editor.should_quit(),
         ":wq in the explorer must only close it"
     );
     assert!(editor.panel_layout.is_none());
@@ -262,7 +262,7 @@ fn wq_then_typing_before_save_completes_quits_with_unsaved_edit() {
     drain_jobs(&mut editor);
 
     assert!(
-        !editor.should_quit,
+        !editor.should_quit(),
         "an edit made after :wq started must cancel the quit"
     );
     assert!(editor.active_document().is_dirty());
@@ -321,7 +321,7 @@ mod save_pre {
             .contains("hook edit"));
         assert!(editor.active_document().is_dirty());
         assert_eq!(editor.active_document_id(), buf);
-        assert!(!editor.should_quit);
+        assert!(!editor.should_quit());
         lua(
             &editor,
             "assert(_G.cancelled and _G.post == nil and not _G.resume())",
@@ -348,7 +348,7 @@ mod save_pre {
         editor.execute_command_line("wq");
         drain_jobs(&mut editor);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "original\n");
-        assert!(!editor.should_quit);
+        assert!(!editor.should_quit());
         lua(&editor, "assert(_G.pre == 1 and _G.post == nil)");
 
         lua(
@@ -364,7 +364,7 @@ mod save_pre {
         let written = std::fs::read_to_string(&path).unwrap();
         assert!(written.contains("pre hook"));
         assert!(written.contains("after hold"));
-        assert!(editor.should_quit);
+        assert!(editor.should_quit());
         lua(
             &editor,
             "assert(_G.pre == 1 and _G.post == 1 and not _G.resume())",
@@ -394,7 +394,7 @@ mod save_pre {
 
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "original\n");
         assert!(editor.active_document().is_dirty());
-        assert!(!editor.should_quit);
+        assert!(!editor.should_quit());
     }
 
     #[test]
@@ -420,7 +420,7 @@ mod save_pre {
         assert!(std::fs::read_to_string(&path).unwrap().contains("updated "));
         assert_eq!(editor.split_tree.window_count(), 2);
         assert_eq!(editor.split_tree.focused_window_id(), original_window);
-        assert!(!editor.should_quit);
+        assert!(!editor.should_quit());
     }
 
     #[test]
@@ -442,7 +442,7 @@ mod save_pre {
         drain_jobs(&mut editor);
 
         assert!(std::fs::read_to_string(&path).unwrap().contains("updated "));
-        assert!(!editor.should_quit);
+        assert!(!editor.should_quit());
     }
 
     #[test]
@@ -515,7 +515,7 @@ mod save_pre {
 
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "original\n");
         assert!(editor.active_document().is_dirty());
-        assert!(!editor.should_quit);
+        assert!(!editor.should_quit());
     }
 
     #[test]

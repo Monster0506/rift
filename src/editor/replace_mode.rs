@@ -38,7 +38,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         let mut entries = Vec::new();
-        doc.edit_group("Paste", |doc| {
+        let result = doc.edit_group("Paste", |doc| {
             for ch in text.chars() {
                 let pos = doc.buffer().cursor();
                 let (original, result) = if ch == '\n' {
@@ -63,7 +63,9 @@ impl<T: TerminalBackend> Editor<T> {
             }
         });
 
-        self.replace_originals.extend(entries);
+        if result.is_ok() {
+            self.replace_originals.extend(entries);
+        }
     }
 
     pub(super) fn replace_backspace(&mut self) {
@@ -84,10 +86,14 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
 
-        if entry.dot == DotRecord::Recorded && !self.dot_repeat.is_replaying() {
-            self.dot_repeat.pop_insert_command();
+        let recorded = entry.dot == DotRecord::Recorded;
+        if self.execute_buffer_command(Command::ReplaceBackspace(entry.original)) {
+            if recorded && !self.dot_repeat.is_replaying() {
+                self.dot_repeat.pop_insert_command();
+            }
+        } else {
+            self.replace_originals.push(entry);
         }
-        self.execute_buffer_command(Command::ReplaceBackspace(entry.original));
     }
 
     pub(super) fn replace_delete_word(&mut self) {

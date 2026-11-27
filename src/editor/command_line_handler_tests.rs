@@ -57,7 +57,7 @@ fn assert_substitute_result(
 fn test_execute_quit() {
     let mut editor = editor();
     submit(&mut editor, ":q");
-    assert!(editor.should_quit);
+    assert!(editor.should_quit());
 }
 
 #[cfg(feature = "plugins")]
@@ -285,6 +285,50 @@ fn test_execute_undotree() {
     let layout = editor.panel_layout.as_ref().unwrap();
     assert_eq!(layout.kind, PanelKind::UndoTree);
     assert_eq!(layout.original_doc_id, document);
+}
+
+#[test]
+fn readonly_history_jump_cannot_replay_text_but_undo_preview_can() {
+    use crate::document::ops::{Edit, EditSource};
+    let mut editor = editor_with_text("original", 0);
+    let doc = editor.active_document();
+    doc.edit(Edit::insert(0, "updated "), EditSource::User)
+        .unwrap();
+    let latest = doc.history.current_seq();
+    doc.set_read_only(true);
+    let original = doc.id;
+
+    submit(&mut editor, ":undo 0");
+    assert_notice(&editor, NotificationType::Warning, "buffer is read-only");
+    assert_eq!(editor.active_document().history.current_seq(), latest);
+    assert_eq!(
+        editor.active_document().buffer().to_string(),
+        "updated original"
+    );
+
+    editor.open_undotree_split();
+    let layout = editor.panel_layout.clone().unwrap();
+    let list = editor.active_document();
+    let row = list
+        .undotree_sequences()
+        .unwrap()
+        .iter()
+        .position(|&seq| seq == 0)
+        .unwrap();
+    let start = list.buffer().line_index.get_start(row).unwrap();
+    list.set_cursor(start, CursorCause::User).unwrap();
+    editor.update_undotree_preview();
+    let snapshot = editor
+        .document_manager
+        .get_document(layout.preview_doc_id)
+        .unwrap();
+    assert!(snapshot.is_read_only());
+    assert_eq!(snapshot.buffer().to_string(), "original");
+
+    editor.handle_undotree_select();
+    let doc = editor.document_manager.get_document(original).unwrap();
+    assert_eq!(doc.history.current_seq(), latest);
+    assert_eq!(doc.buffer().to_string(), "updated original");
 }
 
 #[test]

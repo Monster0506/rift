@@ -138,13 +138,13 @@ impl Document {
         if let Some(state) = self.state.try_get_mut(CLIPBOARD_STATE_KEY) {
             state.edit = ClipboardEdit::Rows;
         }
-        let _ = self.edit(Edit::insert(at, text), EditSource::User);
+        let _ = self.apply_edit(Edit::insert(at, text), EditSource::User);
         if let Some(state) = self.state.try_get_mut(CLIPBOARD_STATE_KEY) {
             state.edit = ClipboardEdit::Number;
         }
     }
 
-    pub(crate) fn delete_clipboard_rows(&mut self, count: usize) {
+    fn delete_clipboard_rows(&mut self, count: usize) {
         let line = self.buffer.line_index.get_line_at(self.buffer.cursor());
         let mut start = self.buffer.line_index.get_start(line).unwrap_or(0);
         let end = self
@@ -156,7 +156,7 @@ impl Document {
             start -= 1;
         }
         self.begin_transaction("Delete clipboard rows");
-        let _ = self.edit(Edit::delete(start..end), EditSource::User);
+        let _ = self.apply_edit(Edit::delete(start..end), EditSource::User);
         self.commit_transaction();
     }
 
@@ -176,7 +176,7 @@ impl Document {
     }
 
     pub(crate) fn put_clipboard_rows(&mut self, rows: &[Clip], before: ClipboardSide) -> bool {
-        if rows.is_empty() {
+        if rows.is_empty() || self.write().is_err() {
             return false;
         }
         let line = self.buffer.line_index.get_line_at(self.buffer.cursor());
@@ -219,7 +219,7 @@ impl Document {
 
         self.begin_transaction("Put clipboard rows");
         if empty && !self.buffer.is_empty() {
-            let _ = self.edit(Edit::delete(0..self.buffer.len()), EditSource::User);
+            let _ = self.apply_edit(Edit::delete(0..self.buffer.len()), EditSource::User);
         }
         self.insert_clipboard_text(start.min(self.buffer.len()), &text);
         for (closing, source, position) in closings {
@@ -231,6 +231,12 @@ impl Document {
             crate::document::ops::CursorCause::Programmatic,
         );
         true
+    }
+}
+
+impl super::ops::DocumentWrite<'_> {
+    pub(crate) fn delete_clipboard_rows(&mut self, count: usize) {
+        self.doc.delete_clipboard_rows(count);
     }
 }
 

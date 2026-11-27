@@ -135,6 +135,7 @@ struct ClipboardPanelRegister {
     rows: Option<Vec<crate::clipboard::Clip>>,
 }
 
+#[cfg(test)]
 fn resolve_display_map(
     doc: &Document,
     content_width: usize,
@@ -152,7 +153,7 @@ pub struct Editor<T: TerminalBackend> {
     buffer_kinds: crate::document::runtime::BufferKindRegistry,
     render_system: crate::render::system::RenderSystem,
     current_mode: Mode,
-    should_quit: bool,
+    exit_state: ops::quit::ExitState,
     state: State,
     command_parser: CommandParser,
     settings_registry: SettingsRegistry<UserSettings>,
@@ -181,7 +182,7 @@ pub struct Editor<T: TerminalBackend> {
     system_clipboard_cache: crate::clipboard::SystemClipboardCache,
     clipboard_panel_register: Option<ClipboardPanelRegister>,
     post_paste_state: Option<PostPasteState>,
-    file_load_jobs: std::collections::HashMap<usize, crate::document::DocumentId>,
+    file_load_jobs: std::collections::HashMap<usize, jobs::FileLoad>,
     #[cfg(feature = "lsp")]
     lsp_manager: crate::lsp::LspManager,
     #[cfg(feature = "lsp")]

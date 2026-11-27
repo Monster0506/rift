@@ -194,6 +194,82 @@ fn key_render_does_not_wait_for_terminal_frame_deadline() {
 }
 
 #[test]
+fn annotation_actions_do_not_paint_before_the_key_burst_finishes() {
+    use crate::annotations::action::Action as AnnotationAction;
+    use crate::annotations::kind::Kind;
+    use crate::annotations::value::Value;
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
+
+    let mut editor = editor();
+    let id = editor.active_document().annotations.add(
+        Annotation::new(
+            Kind::new("ui.checkbox"),
+            Anchor::point(0),
+            AnnotationOwner::User,
+        )
+        .with_payload(Value::map())
+        .with_actions(vec![AnnotationAction::new("toggle").with_default()]),
+    );
+    editor.keymap.register(
+        crate::keymap::KeyContext::Normal,
+        Key::char('Q'),
+        Action::Editor(EditorAction::ActivateAnnotation),
+    );
+    editor
+        .term
+        .events
+        .extend([Some(InputEvent::Key(Key::char('Q'))), None]);
+    editor.scheduler.terminal_frame_dirty = true;
+    editor.scheduler.last_frame_at = Some(crate::time::Instant::now() + Duration::from_secs(60));
+
+    editor.tick().unwrap();
+
+    let checked = editor
+        .active_document()
+        .annotations
+        .get(id)
+        .and_then(|annotation| annotation.payload.get("checked").and_then(Value::as_bool));
+    assert_eq!(checked, Some(true));
+    assert_eq!(editor.term.inner.flushes, 0);
+    assert!(editor.scheduler.terminal_frame_dirty);
+
+    editor.tick().unwrap();
+
+    assert_eq!(editor.term.inner.flushes, 1);
+    assert!(!editor.scheduler.terminal_frame_dirty);
+}
+
+#[test]
+fn completion_results_and_paste_share_the_next_tick_frame() {
+    use crate::command_line::commands::completion::{CompletionCandidate, CompletionResult};
+    use crate::job_manager::jobs::completion::CompletionPayload;
+
+    let mut editor = editor();
+    editor.set_mode(Mode::Command);
+    editor.state.command_line = "edit fi".into();
+    editor.state.command_line_cursor = editor.state.command_line.len();
+    editor.handle_completion_result(CompletionPayload {
+        result: CompletionResult::from_candidates(vec![CompletionCandidate {
+            text: "file".into(),
+            description: String::new(),
+            is_directory: false,
+        }]),
+        input: editor.state.command_line.clone(),
+        token_start: 5,
+    });
+    editor
+        .term
+        .events
+        .push_back(Some(InputEvent::Paste(".txt".into())));
+    assert_eq!(editor.term.inner.flushes, 0);
+
+    editor.tick().unwrap();
+
+    assert_eq!(editor.state.command_line, "edit file.txt");
+    assert_eq!(editor.term.inner.flushes, 1);
+}
+
+#[test]
 fn split_and_buffer_replacements_paint_together_on_the_next_tick() {
     use crate::document::manager::Placement;
     use crate::document::ops::ContentKind;

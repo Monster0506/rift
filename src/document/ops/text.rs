@@ -161,6 +161,7 @@ fn splice(buffer: &mut TextBuffer, start: usize, end: usize, text: &[Character])
     let _ = buffer.set_cursor((start + text.len()).min(buffer.len()));
 }
 
+#[derive(Debug)]
 pub(crate) struct ReadOnlyEdit;
 
 impl ReadOnlyEdit {
@@ -183,14 +184,34 @@ impl From<ReadOnlyEdit> for RiftError {
     }
 }
 
+#[cfg(feature = "plugins")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub(crate) struct EditPolicy {
     read_only: bool,
+    rules: EditRules,
+}
+
+#[cfg(feature = "plugins")]
+impl EditPolicy {
+    pub(crate) fn for_new_buffer(read_only: bool) -> Self {
+        Self {
+            read_only,
+            ..Self::default()
+        }
+    }
+
+    pub(super) fn check(self) -> Result<(), ReadOnlyEdit> {
+        ReadOnlyEdit::check(self.read_only)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+struct EditRules {
     preserve_rows: bool,
     clipboard: Option<ClipboardEdit>,
 }
 
-impl EditPolicy {
+impl EditRules {
     fn prepare(self, buffer: &TextBuffer, edit: Edit) -> Option<Resolved> {
         let char_delete = matches!(edit, Edit::DeleteBackward | Edit::DeleteForward);
         let resolved = edit.resolve(buffer)?;
@@ -218,13 +239,12 @@ impl EditPolicy {
         }
         Some(resolved)
     }
+}
 
-    #[cfg(feature = "plugins")]
+#[cfg(feature = "plugins")]
+impl EditPolicy {
     pub(super) fn project(self, buffer: &mut TextBuffer, edit: Edit) -> bool {
-        if ReadOnlyEdit::check(self.read_only).is_err() {
-            return false;
-        }
-        let Some(Resolved { start, end, text }) = self.prepare(buffer, edit) else {
+        let Some(Resolved { start, end, text }) = self.rules.prepare(buffer, edit) else {
             return false;
         };
         if start > end || end > buffer.len() || (start == end && text.is_empty()) {
@@ -248,6 +268,7 @@ pub(crate) enum EditSource {
 pub(in crate::document) enum Origin {
     Source(EditSource),
     Replay,
+    Generated,
     GhostPaint,
 }
 
@@ -277,6 +298,83 @@ impl<T: IntoText> From<T> for Content {
 impl From<crate::buffer::line_index::LineIndex> for Content {
     fn from(lines: crate::buffer::line_index::LineIndex) -> Self {
         Self::Lines(lines)
+    }
+}
+
+pub(crate) struct DocumentWrite<'a> {
+    pub(in crate::document) doc: &'a mut Document,
+}
+
+impl std::ops::Deref for DocumentWrite<'_> {
+    type Target = Document;
+
+    fn deref(&self) -> &Document {
+        self.doc
+    }
+}
+
+impl DocumentWrite<'_> {
+    pub(crate) fn edit(&mut self, edit: Edit, source: EditSource) -> Result<bool, RiftError> {
+        self.doc.apply_edit(edit, source)
+    }
+
+    pub(crate) fn move_cursor(&mut self, motion: crate::action::Motion) -> bool {
+        self.doc.move_cursor(motion)
+    }
+
+    pub(crate) fn set_cursor(
+        &mut self,
+        pos: usize,
+        cause: super::CursorCause,
+    ) -> Result<(), RiftError> {
+        self.doc.set_cursor(pos, cause)
+    }
+
+    pub(crate) fn clear_selection(&mut self) {
+        self.doc.clear_selection();
+    }
+
+    pub(crate) fn bank_selection(&mut self, kind: crate::wrap::RangeKind) {
+        self.doc.bank_selection(kind);
+    }
+
+    pub(crate) fn take_selection_batch(&mut self) -> Vec<crate::selection::Region> {
+        self.doc.take_selection_batch()
+    }
+
+    #[cfg(feature = "lsp")]
+    pub(crate) fn invalidate_syntax(&mut self) {
+        self.doc.invalidate_syntax();
+    }
+
+    pub(crate) fn motion_range(
+        &mut self,
+        motion: crate::action::Motion,
+        count: usize,
+        viewport_height: usize,
+        query: Option<&str>,
+    ) -> Option<crate::wrap::MotionRange> {
+        super::cursor::compute_motion_range(motion, count, self.doc, viewport_height, query)
+    }
+
+    pub(crate) fn change_range(
+        &mut self,
+        motion: crate::action::Motion,
+        count: usize,
+        viewport_height: usize,
+        query: Option<&str>,
+    ) -> Option<crate::wrap::MotionRange> {
+        super::cursor::compute_change_range(motion, count, self.doc, viewport_height, query)
+    }
+
+    pub(crate) fn overwrite_char(&mut self, ch: char) -> Result<bool, RiftError> {
+        let cursor = self.buffer().cursor();
+        let edit = if self.char_to_overwrite().is_some() {
+            Edit::replace(cursor..cursor + 1, ch)
+        } else {
+            Edit::type_text(ch)
+        };
+        self.edit(edit, EditSource::User)
     }
 }
 
@@ -318,13 +416,21 @@ impl Document {
         std::mem::take(&mut self.buffer_replaced)
     }
 
-    pub(crate) fn check_edit_access(&self) -> Result<(), ReadOnlyEdit> {
-        ReadOnlyEdit::check(self.is_read_only())
+    pub(crate) fn write(&mut self) -> Result<DocumentWrite<'_>, ReadOnlyEdit> {
+        ReadOnlyEdit::check(self.is_read_only())?;
+        Ok(DocumentWrite { doc: self })
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn edit_policy(&self) -> EditPolicy {
         EditPolicy {
             read_only: self.is_read_only(),
+            rules: self.edit_rules(),
+        }
+    }
+
+    fn edit_rules(&self) -> EditRules {
+        EditRules {
             preserve_rows: self.policies().structural_edit == StructuralEditPolicy::PreserveRows,
             clipboard: self.is_clipboard_index().then(|| {
                 self.state
@@ -335,8 +441,15 @@ impl Document {
     }
 
     pub(crate) fn edit(&mut self, edit: Edit, source: EditSource) -> Result<bool, RiftError> {
-        let policy = self.edit_policy();
-        ReadOnlyEdit::check(policy.read_only)?;
+        self.write()?.edit(edit, source)
+    }
+
+    pub(in crate::document) fn apply_edit(
+        &mut self,
+        edit: Edit,
+        source: EditSource,
+    ) -> Result<bool, RiftError> {
+        let policy = self.edit_rules();
         let Some(resolved) = policy.prepare(&self.buffer, edit) else {
             return Ok(false);
         };
@@ -350,16 +463,6 @@ impl Document {
         self.buffer
             .char_at(self.buffer.cursor())
             .filter(|c| *c != Character::Newline)
-    }
-
-    pub(crate) fn overwrite_char(&mut self, ch: char) -> Result<bool, RiftError> {
-        let cursor = self.buffer.cursor();
-        let edit = if self.char_to_overwrite().is_some() {
-            Edit::replace(cursor..cursor + 1, ch)
-        } else {
-            Edit::type_text(ch)
-        };
-        self.edit(edit, EditSource::User)
     }
 
     pub(in crate::document) fn get_point(&self, byte_offset: usize) -> (usize, usize) {

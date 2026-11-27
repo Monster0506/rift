@@ -1,49 +1,30 @@
-use super::resolve_display_map;
 use super::Editor;
 use crate::command::{Command, InsertEntry};
 use crate::document::ops::EditSession;
-use crate::executor::execute_command;
+use crate::executor::execute_write_command;
 use crate::message::CommandLineMessage;
 use crate::mode::Mode;
 use crate::search::SearchDirection;
 use crate::term::TerminalBackend;
 
-/// True for commands that switch into Insert or Replace mode.
-const fn enters_edit_mode(command: &Command) -> bool {
-    matches!(
-        command,
-        Command::BeginInsert(_)
-            | Command::Change(_, _)
-            | Command::ChangeLine(_)
-            | Command::BeginReplace
-    )
-}
 impl<T: TerminalBackend> Editor<T> {
-    pub(super) fn handle_mode_management(&mut self, command: crate::command::Command) {
-        if enters_edit_mode(&command) && !self.can_enter_edit_mode() {
-            return;
-        }
+    pub(super) fn handle_mode_management(&mut self, command: Command) {
         self.handle_mode_switch(command);
         self.handle_change_command(command);
         self.handle_search_completion(command);
         self.handle_command_line_edit(command);
     }
 
-    pub(super) fn can_enter_edit_mode(&mut self) -> bool {
-        if let Err(error) = self.active_document().check_edit_access() {
-            self.notify_error(error.into());
-            return false;
-        }
-        true
-    }
-
     fn handle_mode_switch(&mut self, command: Command) {
         match command {
             Command::BeginInsert(entry) => {
-                let doc = self
-                    .document_manager
-                    .get_document_mut(self.active_document_id())
-                    .unwrap();
+                let mut doc = match self.active_document().write() {
+                    Ok(doc) => doc,
+                    Err(error) => {
+                        self.notify_error(error.into());
+                        return;
+                    }
+                };
                 let motion = match entry {
                     InsertEntry::AtCursor => None,
                     InsertEntry::AfterCursor => Some(crate::action::Motion::Right),
@@ -73,10 +54,13 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Insert);
             }
             Command::BeginReplace => {
-                let doc = self
-                    .document_manager
-                    .get_document_mut(self.active_document_id())
-                    .unwrap();
+                let mut doc = match self.active_document().write() {
+                    Ok(doc) => doc,
+                    Err(error) => {
+                        self.notify_error(error.into());
+                        return;
+                    }
+                };
                 doc.start_edit_session(EditSession::Replace);
                 if !self.dot_repeat.is_replaying() {
                     self.dot_repeat.start_insert_recording(command);
@@ -101,46 +85,31 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_change_command(&mut self, command: Command) {
         match command {
             Command::Change(_, _) | Command::ChangeLine(_) => {
-                let (expand_tabs, tab_width) = {
-                    let doc = self
-                        .document_manager
-                        .get_document(self.active_document_id())
-                        .unwrap();
-                    (doc.options().expand_tabs(), doc.options().tab_width())
+                let viewport_height = self.focused_viewport().visible_rows();
+                let doc_id = self.active_document_id();
+                let query = self.state.last_search_query.as_deref();
+                let mut doc = match self
+                    .document_manager
+                    .get_document_mut(doc_id)
+                    .unwrap()
+                    .write()
+                {
+                    Ok(doc) => doc,
+                    Err(error) => {
+                        self.notify_error(error.into());
+                        return;
+                    }
                 };
-                let viewport_height = self.render_system.viewport.visible_rows();
-                let mut display_map = {
-                    let doc = self
-                        .document_manager
-                        .get_document(self.active_document_id())
-                        .unwrap();
-                    let gutter_width = Self::line_number_gutter_width(doc);
-                    let content_width = self
-                        .split_tree
-                        .focused_window()
-                        .viewport
-                        .visible_cols()
-                        .saturating_sub(gutter_width)
-                        .max(1);
-                    resolve_display_map(
-                        doc,
-                        content_width,
-                        self.state.settings.soft_wrap(),
-                        self.state.settings.wrap_width(),
-                    )
-                };
-                self.active_document()
-                    .start_edit_session(EditSession::Change);
-                let _ = execute_command(
+                let expand_tabs = doc.options().expand_tabs();
+                let tab_width = doc.options().tab_width();
+                doc.start_edit_session(EditSession::Change);
+                let _ = execute_write_command(
                     command,
-                    self.document_manager
-                        .get_document_mut(self.active_document_id())
-                        .unwrap(),
+                    &mut doc,
                     expand_tabs,
                     tab_width,
                     viewport_height,
-                    self.state.last_search_query.as_deref(),
-                    display_map.as_mut(),
+                    query,
                 );
                 self.set_mode(Mode::Insert);
             }

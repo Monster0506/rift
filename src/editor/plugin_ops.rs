@@ -115,6 +115,22 @@ fn lua_annotations(doc: &crate::document::Document) -> BufAnnotations {
     }
 }
 
+fn lua_buf_update(
+    doc: &crate::document::Document,
+    key: BufSyncKey,
+    previous: Option<BufSyncKey>,
+) -> BufUpdate {
+    let changed = |part: fn(&BufSyncKey) -> u64| {
+        previous.is_none_or(|previous| part(&previous) != part(&key))
+    };
+    BufUpdate {
+        text: changed(|k| k.text).then(|| doc.buffer().clone()),
+        meta: changed(|k| k.meta).then(|| lua_buf_meta(doc)),
+        options: changed(|k| k.options).then(|| (**doc.options()).clone()),
+        annotations: changed(|k| k.annotations).then(|| lua_annotations(doc)),
+    }
+}
+
 const PLUGIN_MUTATION_ROUNDS: usize = 16;
 
 impl<T: TerminalBackend> Editor<T> {
@@ -130,7 +146,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
         crate::perf_span!("lua_state_sync", crate::perf::PerfFields::default());
-        self.plugin_host.resync_diverged_lua_state();
+        self.plugin_host.invalidate_diverged_lua_buffers();
 
         let synced = self.plugin_host.lua_synced_keys();
         let keys = self.lua_sync_keys();
@@ -264,16 +280,7 @@ impl<T: TerminalBackend> Editor<T> {
             .map(|(doc, key)| {
                 let id = doc.id.get();
                 let previous = self.plugin_host.sync_buf(id, key);
-                let changed = |part: fn(&BufSyncKey) -> u64| {
-                    previous.is_none_or(|previous| part(&previous) != part(&key))
-                };
-                let update = BufUpdate {
-                    text: changed(|k| k.text).then(|| doc.buffer().clone()),
-                    meta: changed(|k| k.meta).then(|| lua_buf_meta(doc)),
-                    options: changed(|k| k.options).then(|| (**doc.options()).clone()),
-                    annotations: changed(|k| k.annotations).then(|| lua_annotations(doc)),
-                };
-                (id, update)
+                (id, lua_buf_update(doc, key, previous))
             })
             .collect();
         let live: Vec<u64> = updates.iter().map(|(id, _)| *id).collect();
@@ -384,16 +391,22 @@ impl<T: TerminalBackend> Editor<T> {
                 self.apply_plugin_mutation(envelope.mutation, origin);
             }
         }
-        if outermost
-            && self.plugin_mutation_rounds.take() == Some(PLUGIN_MUTATION_ROUNDS)
-            && self.plugin_host.has_queued_mutations()
-        {
-            self.notify(
-                crate::notification::NotificationType::Error,
-                format!(
-                "plugin mutations kept re-queuing; stopped after {PLUGIN_MUTATION_ROUNDS} rounds"
-            ),
-            );
+        if outermost {
+            if self.plugin_mutation_rounds.take() == Some(PLUGIN_MUTATION_ROUNDS)
+                && self.plugin_host.has_queued_mutations()
+            {
+                self.notify(
+                    crate::notification::NotificationType::Error,
+                    format!(
+                        "plugin mutations kept re-queuing; stopped after {PLUGIN_MUTATION_ROUNDS} rounds"
+                    ),
+                );
+            }
+            self.plugin_host.reconcile_lua_buffers(|id| {
+                let doc = self.document_manager.get_document(DocumentId::new(id))?;
+                let key = lua_buf_sync_key(doc);
+                Some((key, lua_buf_update(doc, key, None)))
+            });
         }
     }
 
@@ -656,7 +669,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
         document.set_handle(reservation.handle());
-        document.kind = crate::document::kind::BufferKind::new(descriptor.clone());
+        document.kind = crate::document::kind::BufferKind::new(descriptor);
         document.initialize_vars(vars);
         if let Some(title_str) = title {
             document.set_var(
@@ -704,16 +717,6 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(owner) = self.buffer_kind_owner(&name, origin) else {
             return;
         };
-        let read_only_policy = match parse_read_only_policy(read_only.as_deref()) {
-            Ok(policy) => policy,
-            Err(invalid) => {
-                self.notify(
-                    crate::notification::NotificationType::Error,
-                    format!("buffer kind '{name}' has invalid read_only policy: '{invalid}'"),
-                );
-                return;
-            }
-        };
         let close_policy = match parse_close_policy(close.as_deref()) {
             Ok(policy) => policy,
             Err(invalid) => {
@@ -736,7 +739,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let result = self.buffer_kinds.register_runtime(&name, |id| {
             let mut policies = crate::document::runtime::BufferPolicies::file_default();
-            policies.read_only = read_only_policy;
+            policies.read_only = read_only;
             policies.close = close_policy;
             policies.language_services = crate::document::runtime::LanguageServicesPolicy::Virtual;
             policies.key_fallback = key_fallback_policy;
@@ -1241,23 +1244,6 @@ const fn annotation_anchor(
     }
 }
 
-fn parse_read_only_policy(
-    value: Option<&str>,
-) -> Result<crate::document::runtime::ReadOnlyPolicy, &str> {
-    match value {
-        Some("readonly" | "read_only" | "fixed" | "fixed_readonly") => {
-            Ok(crate::document::runtime::ReadOnlyPolicy::FixedReadOnly)
-        }
-        Some("writable" | "fixed_writable") => {
-            Ok(crate::document::runtime::ReadOnlyPolicy::FixedWritable)
-        }
-        Some("override" | "document_override") | None => {
-            Ok(crate::document::runtime::ReadOnlyPolicy::DocumentOverride)
-        }
-        Some(invalid) => Err(invalid),
-    }
-}
-
 fn parse_close_policy(value: Option<&str>) -> Result<crate::document::runtime::ClosePolicy, &str> {
     match value {
         Some("discard" | "discard_dirty") => {
@@ -1284,7 +1270,7 @@ fn parse_key_fallback_policy(
 // Grouped so register_buffer_kind stays under the argument-count lint.
 struct BufferKindSpec {
     name: String,
-    read_only: Option<String>,
+    read_only: crate::document::runtime::ReadOnlyPolicy,
     close: Option<String>,
     key_fallback: Option<String>,
     display_name: Option<String>,

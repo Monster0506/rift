@@ -90,7 +90,7 @@ impl<T: TerminalBackend> Editor<T> {
             document_manager: crate::document::manager::DocumentManager::new(),
             buffer_kinds,
             current_mode: Mode::Normal,
-            should_quit: false,
+            exit_state: super::ops::quit::ExitState::default(),
             state,
             command_parser,
             settings_registry,

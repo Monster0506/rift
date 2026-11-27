@@ -1,54 +1,45 @@
 use super::ops::search::SearchRefresh;
 use super::Editor;
-use crate::error::{ErrorType, RiftError};
+use crate::document::ops::DocumentWrite;
 use crate::mode::Mode;
 use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn do_undo(&mut self, count: Option<u64>) -> bool {
         crate::perf_span!("history_undo", crate::perf::PerfFields::default());
-        self.replay_history(
-            count,
-            crate::document::Document::undo,
-            "Already at oldest change",
-        )
+        self.replay_history(count, true, "Already at oldest change")
     }
 
     pub(super) fn do_redo(&mut self, count: Option<u64>) -> bool {
         crate::perf_span!("history_redo", crate::perf::PerfFields::default());
-        self.replay_history(
-            count,
-            crate::document::Document::redo,
-            "Already at newest change",
-        )
+        self.replay_history(count, false, "Already at newest change")
     }
 
     fn replay_history(
         &mut self,
         count: Option<u64>,
-        step: fn(&mut crate::document::Document) -> bool,
+        undo: bool,
         limit_message: &'static str,
     ) -> bool {
-        if self.active_document().check_edit_access().is_err() {
-            return false;
-        }
-        if self.current_mode.is_visual() {
-            self.set_mode(Mode::Normal);
-        }
-        let Some(doc) = self
-            .document_manager
-            .get_document_mut(self.active_document_id())
-        else {
+        let doc_id = self.active_document_id();
+        let Ok(mut writer) = self.active_document().write() else {
             return false;
         };
-        let doc_id = doc.id;
-        doc.clear_selection();
+        writer.clear_selection();
         let mut changed = false;
         for _ in 0..count.unwrap_or(1) {
-            if !step(doc) {
+            let step = if undo {
+                DocumentWrite::undo
+            } else {
+                DocumentWrite::redo
+            };
+            if !step(&mut writer) {
                 break;
             }
             changed = true;
+        }
+        if self.current_mode.is_visual() {
+            self.set_mode(Mode::Normal);
         }
         if changed {
             self.finish_history_syntax(doc_id);
@@ -88,13 +79,7 @@ impl<T: TerminalBackend> Editor<T> {
 
                 self.finish_history_syntax(self.active_document_id());
             }
-            Err(e) => {
-                self.notify_error(RiftError::new(
-                    ErrorType::Execution,
-                    "UNDO_ERROR",
-                    e.to_string(),
-                ));
-            }
+            Err(error) => self.notify_error(error),
         }
         self.state.clear_command_line();
         self.schedule_search_refresh(SearchRefresh::Debounced);

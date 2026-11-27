@@ -1,7 +1,7 @@
 use super::Editor;
 use crate::character::Character;
 use crate::clipboard::Clip;
-use crate::document::ops::{Edit, EditSession, EditSource, PutAt};
+use crate::document::ops::{DocumentWrite, Edit, EditSession, EditSource, PutAt};
 use crate::document::Document;
 use crate::selection::Region;
 use crate::term::TerminalBackend;
@@ -187,61 +187,54 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    pub(super) fn apply_to_each_region<F>(&mut self, mut f: F) -> bool
-    where
-        F: FnMut(&mut Self, crate::selection::Region) -> bool,
-    {
-        self.edit_region_batch(|editor, batch| {
+    pub(super) fn apply_to_each_region(
+        &mut self,
+        mut f: impl FnMut(&mut DocumentWrite<'_>, Region) -> bool,
+    ) -> Result<bool, crate::document::ops::ReadOnlyEdit> {
+        self.edit_region_batch(|doc, batch| {
             let mut any = false;
             for region in batch {
-                any |= f(editor, region);
+                any |= f(doc, region);
             }
             any
         })
     }
 
-    fn edit_region_batch(&mut self, edit: impl FnOnce(&mut Self, Vec<Region>) -> bool) -> bool {
-        let doc = self.active_document();
+    fn edit_region_batch(
+        &mut self,
+        edit: impl FnOnce(&mut DocumentWrite<'_>, Vec<Region>) -> bool,
+    ) -> Result<bool, crate::document::ops::ReadOnlyEdit> {
+        let mut doc = self.active_document().write()?;
         let batch = doc.take_selection_batch();
         if batch.is_empty() {
-            return false;
+            return Ok(false);
         }
-        let handle = doc.handle();
-        doc.start_edit_session(EditSession::MultiRegion);
-        let result = edit(self, batch);
-        if let Some(doc) = self.document_manager.get_document_by_handle_mut(handle) {
-            doc.finish_edit_session();
-        }
-        result
+        Ok(doc.edit_group("MultiRegion", |doc| edit(doc, batch)))
     }
 
     pub(super) fn enter_multi_insert<F>(
         &mut self,
         entry: crate::command::Command,
         mut anchor_for: F,
-    ) -> bool
+    ) -> Result<bool, crate::document::ops::ReadOnlyEdit>
     where
-        F: FnMut(&mut crate::document::Document, crate::selection::Region) -> usize,
+        F: FnMut(&mut DocumentWrite<'_>, Region) -> usize,
     {
-        if !self.can_enter_edit_mode() {
-            return false;
-        }
-        let anchors: Vec<usize> = {
-            let Some(doc) = self
-                .document_manager
-                .get_document_mut(self.active_document_id())
-            else {
-                return false;
-            };
+        let visual_kind = self.current_mode.visual_range_kind();
+        let anchors = {
+            let mut doc = self.active_document().write()?;
+            if let Some(kind) = visual_kind {
+                doc.bank_selection(kind);
+            }
             let batch = doc.take_selection_batch();
             if batch.is_empty() {
-                return false;
+                return Ok(false);
             }
             doc.start_edit_session(EditSession::MultiInsert);
             let mut anchors: Vec<usize> = Vec::with_capacity(batch.len());
             for region in batch {
                 let len_before = doc.buffer().len();
-                let new_anchor = anchor_for(doc, region);
+                let new_anchor = anchor_for(&mut doc, region);
                 let delta = len_before.cast_signed() - doc.buffer().len().cast_signed();
                 if delta != 0 {
                     for a in &mut anchors {
@@ -266,7 +259,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.dot_repeat.start_insert_recording(entry);
         }
         self.set_mode(crate::mode::Mode::Insert);
-        true
+        Ok(true)
     }
 
     pub(super) fn bank_visual_selection(&mut self) {
@@ -300,7 +293,10 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(super) fn try_multi_insert_for_command(&mut self, entry: crate::command::Command) -> bool {
+    pub(super) fn try_multi_insert_for_command(
+        &mut self,
+        entry: crate::command::Command,
+    ) -> Result<bool, crate::document::ops::ReadOnlyEdit> {
         use crate::command::Command;
 
         let has_candidate = self.current_mode.is_visual()
@@ -309,22 +305,8 @@ impl<T: TerminalBackend> Editor<T> {
                 .get_document(self.active_document_id())
                 .is_some_and(|d| !d.selections().is_empty());
         if !has_candidate {
-            return false;
+            return Ok(false);
         }
-        if !self.can_enter_edit_mode() {
-            return true;
-        }
-
-        self.bank_visual_selection();
-
-        let is_empty = self
-            .document_manager
-            .get_document(self.active_document_id())
-            .is_none_or(|d| d.selections().is_empty());
-        if is_empty {
-            return false;
-        }
-
         match entry {
             Command::BeginInsert(crate::command::InsertEntry::AtCursor) => {
                 self.enter_multi_insert(entry, |doc, region| region.buffer_span(doc.buffer()).0)
@@ -361,37 +343,32 @@ impl<T: TerminalBackend> Editor<T> {
                     let _ = doc.edit(Edit::insert(target, '\n'), EditSource::User);
                     target
                 }),
-            _ => false,
+            _ => Ok(false),
         }
     }
 
     pub(super) fn try_run_set_aware_operator(&mut self, op: crate::action::OperatorType) -> bool {
         use crate::action::OperatorType;
 
-        let is_empty = self
-            .document_manager
-            .get_document(self.active_document_id())
-            .is_none_or(|d| d.selections().is_empty());
-        if is_empty {
+        let visual_kind = self.current_mode.visual_range_kind();
+        if self.active_document().selections().is_empty()
+            && (visual_kind.is_none() || self.visual_anchor().is_none())
+        {
             return false;
         }
-        if op != OperatorType::Yank && self.active_document().check_edit_access().is_err() {
-            return true;
-        }
-
         match op {
-            OperatorType::Delete => self.run_set_delete(),
+            OperatorType::Delete => self.run_set_delete(visual_kind),
             OperatorType::Yank => {
-                let handled = self.apply_to_each_region(|editor, region| {
-                    let Some(doc) = editor
-                        .document_manager
-                        .get_document(editor.active_document_id())
-                    else {
-                        return false;
-                    };
-                    editor.yank(region_clip(doc.buffer(), &region));
-                    true
-                });
+                let doc = self.active_document();
+                let clips: Vec<_> = doc
+                    .take_selection_batch()
+                    .into_iter()
+                    .map(|region| region_clip(doc.buffer(), &region))
+                    .collect();
+                let handled = !clips.is_empty();
+                for clip in clips {
+                    self.yank(clip);
+                }
                 self.refresh_clipboard_buffer_if_open();
                 handled
             }
@@ -420,6 +397,13 @@ impl<T: TerminalBackend> Editor<T> {
                         start
                     },
                 );
+                let handled = match handled {
+                    Ok(handled) => handled,
+                    Err(error) => {
+                        self.notify_error(error.into());
+                        return true;
+                    }
+                };
                 for clip in clips {
                     self.yank(clip);
                 }
@@ -429,26 +413,19 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    fn run_set_delete(&mut self) -> bool {
-        let batch = {
-            let Some(doc) = self
-                .document_manager
-                .get_document_mut(self.active_document_id())
-            else {
-                return false;
-            };
-            doc.take_selection_batch()
+    fn run_set_delete(&mut self, visual_kind: Option<RangeKind>) -> bool {
+        let ghost_cut = self.state.settings.editing().ghost_cut;
+        let Ok(mut doc) = self.active_document().write() else {
+            return true;
         };
+        if let Some(kind) = visual_kind {
+            doc.bank_selection(kind);
+        }
+        let batch = doc.take_selection_batch();
         if batch.is_empty() {
             return false;
         }
         let (clips, mut ranges): (Vec<Clip>, Vec<(usize, usize)>) = {
-            let Some(doc) = self
-                .document_manager
-                .get_document(self.active_document_id())
-            else {
-                return false;
-            };
             let live: Vec<&crate::selection::Region> = batch
                 .iter()
                 .filter(|r| {
@@ -472,85 +449,85 @@ impl<T: TerminalBackend> Editor<T> {
             (clips, merge_spans(spans))
         };
         ranges.retain(|&(start, end)| start < end);
-        let ghost_allowed = self
-            .document_manager
-            .get_document(self.active_document_id())
-            .is_some_and(super::super::document::Document::ghost_cut_allowed);
-        let ghost_cut = self.state.settings.editing().ghost_cut && ghost_allowed;
-        let ghost_clip = clips.last().filter(|_| ghost_cut).cloned();
+        let ghost_clip = clips
+            .last()
+            .filter(|_| ghost_cut && doc.ghost_cut_allowed())
+            .cloned();
+        let ghosted = if let Some(ghost_clip) = ghost_clip {
+            let created = doc.create_ghosts(&ranges, ghost_clip);
+            if created {
+                if let Some(&(start, _)) = ranges.iter().min_by_key(|&&(start, _)| start) {
+                    let _ = doc.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
+                }
+            }
+            created.then_some(doc.id)
+        } else {
+            doc.edit_group("MultiRegion", |doc| {
+                for &(start, end) in &ranges {
+                    let _ = doc.edit(Edit::delete(start..end), EditSource::User);
+                }
+            });
+            None
+        };
+        if let Some(id) = ghosted {
+            self.set_recent_ghost(Some(id));
+        }
         for clip in clips {
             self.yank(clip);
         }
         self.refresh_clipboard_buffer_if_open();
-        if ranges.is_empty() {
-            return true;
+        if visual_kind.is_some() {
+            self.set_mode(crate::mode::Mode::Normal);
         }
-        if let Some(ghost_clip) = ghost_clip {
-            let cursor_target = ranges.iter().map(|&(s, _)| s).min();
-            let ghosted_doc = self
-                .document_manager
-                .get_document_mut(self.active_document_id())
-                .map(|doc| {
-                    doc.create_ghosts(&ranges, ghost_clip);
-                    if let Some(pos) = cursor_target {
-                        let _ =
-                            doc.set_cursor(pos, crate::document::ops::CursorCause::Programmatic);
-                    }
-                    doc.id
-                });
-
-            if let Some(id) = ghosted_doc {
-                self.set_recent_ghost(Some(id));
-            }
-            ghosted_doc.is_some()
-        } else {
-            if let Some(doc) = self
-                .document_manager
-                .get_document_mut(self.active_document_id())
-            {
-                doc.edit_group("MultiRegion", |doc| {
-                    for &(start, end) in &ranges {
-                        let _ = doc.edit(Edit::delete(start..end), EditSource::User);
-                    }
-                });
-            }
-
-            true
-        }
+        true
     }
 
-    pub(super) fn try_run_set_aware_replace_char(&mut self, ch: char) -> bool {
-        let is_empty = self
-            .document_manager
-            .get_document(self.active_document_id())
-            .is_none_or(|d| d.selections().is_empty());
-        if is_empty {
-            return false;
+    pub(super) fn replace_banked_regions(
+        &mut self,
+        ch: char,
+        visual_kind: Option<RangeKind>,
+        start: Option<usize>,
+    ) -> Result<bool, crate::document::ops::ReadOnlyEdit> {
+        let mut doc = self.active_document().write()?;
+        if let Some(kind) = visual_kind {
+            doc.bank_selection(kind);
         }
-        self.apply_to_each_region(|editor, region| {
-            let Some(doc) = editor
-                .document_manager
-                .get_document_mut(editor.active_document_id())
-            else {
-                return false;
-            };
+        let batch = doc.take_selection_batch();
+        if batch.is_empty() {
+            return Ok(false);
+        }
+        if let Some(start) = start {
+            let _ = doc.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
+        }
+        Ok(doc.edit_group("MultiRegion", |doc| {
             let mut any = false;
-            for (pos, len) in fill_runs(doc.buffer(), &region) {
-                any |= doc
-                    .edit(
-                        Edit::replace(pos..pos + len, vec![Character::from(ch); len]),
-                        EditSource::User,
-                    )
-                    .is_ok();
+            for region in batch {
+                for (pos, len) in fill_runs(doc.buffer(), &region) {
+                    any |= doc
+                        .edit(
+                            Edit::replace(pos..pos + len, vec![Character::from(ch); len]),
+                            EditSource::User,
+                        )
+                        .is_ok_and(|changed| changed);
+                }
+            }
+            if let Some(start) = start {
+                let _ = doc.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
             }
             any
-        })
+        }))
     }
 
-    pub(super) fn try_run_set_aware_delete_surround(&mut self, ch: char, count: usize) -> bool {
-        self.apply_to_each_region_surround(ch, count, |editor| {
-            editor.execute_buffer_command(crate::command::Command::DeleteSurround(ch, count))
-        })
+    pub(super) fn try_run_set_aware_delete_surround(
+        &mut self,
+        ch: char,
+        count: usize,
+    ) -> Result<bool, crate::document::ops::ReadOnlyEdit> {
+        self.apply_to_each_region_surround(
+            ch,
+            count,
+            crate::command::Command::DeleteSurround(ch, count),
+        )
     }
 
     pub(super) fn try_run_set_aware_change_surround(
@@ -558,29 +535,28 @@ impl<T: TerminalBackend> Editor<T> {
         from: char,
         to: char,
         count: usize,
-    ) -> bool {
-        self.apply_to_each_region_surround(from, count, |editor| {
-            editor.execute_buffer_command(crate::command::Command::ChangeSurround(from, to, count))
-        })
+    ) -> Result<bool, crate::document::ops::ReadOnlyEdit> {
+        self.apply_to_each_region_surround(
+            from,
+            count,
+            crate::command::Command::ChangeSurround(from, to, count),
+        )
     }
 
-    fn apply_to_each_region_surround<F>(
+    fn apply_to_each_region_surround(
         &mut self,
         resolve_ch: char,
         count: usize,
-        mut exec: F,
-    ) -> bool
-    where
-        F: FnMut(&mut Self) -> bool,
-    {
+        command: crate::command::Command,
+    ) -> Result<bool, crate::document::ops::ReadOnlyEdit> {
         let is_empty = self
             .document_manager
             .get_document(self.active_document_id())
             .is_none_or(|d| d.selections().is_empty());
         if is_empty {
-            return false;
+            return Ok(false);
         }
-        self.edit_region_batch(|editor, batch| {
+        self.edit_region_batch(|doc, batch| {
             let mut any = false;
             let mut consumed: Vec<(usize, usize)> = Vec::new();
             for region in batch {
@@ -590,12 +566,6 @@ impl<T: TerminalBackend> Editor<T> {
                 {
                     continue;
                 }
-                let Some(doc) = editor
-                    .document_manager
-                    .get_document_mut(editor.active_document_id())
-                else {
-                    break;
-                };
                 let (start, _) = region.buffer_span(doc.buffer());
                 let _ = doc.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
                 let Some((open_range, close_range)) =
@@ -603,7 +573,7 @@ impl<T: TerminalBackend> Editor<T> {
                 else {
                     continue;
                 };
-                if exec(editor) {
+                if crate::executor::execute_write_command(command, doc, false, 1, 0, None).is_ok() {
                     any = true;
                     consumed.push((open_range.start, close_range.end));
                 }
@@ -612,22 +582,20 @@ impl<T: TerminalBackend> Editor<T> {
         })
     }
 
-    pub(super) fn try_run_set_aware_add_surround(&mut self, ch: char, delim_count: usize) -> bool {
+    pub(super) fn try_run_set_aware_add_surround(
+        &mut self,
+        ch: char,
+        delim_count: usize,
+    ) -> Result<bool, crate::document::ops::ReadOnlyEdit> {
         let is_empty = self
             .document_manager
             .get_document(self.active_document_id())
             .is_none_or(|d| d.selections().is_empty());
         if is_empty {
-            return false;
+            return Ok(false);
         }
-        self.apply_to_each_region(|editor, region| {
+        self.apply_to_each_region(|doc, region| {
             let Some((open, close)) = crate::text_objects::surround_strings(ch, delim_count) else {
-                return false;
-            };
-            let Some(doc) = editor
-                .document_manager
-                .get_document_mut(editor.active_document_id())
-            else {
                 return false;
             };
             let (start, end) = region.buffer_span(doc.buffer());
@@ -637,21 +605,19 @@ impl<T: TerminalBackend> Editor<T> {
         })
     }
 
-    pub(super) fn try_run_set_aware_put(&mut self, before: bool, clip: &Clip) -> bool {
+    pub(super) fn try_run_set_aware_put(
+        &mut self,
+        before: bool,
+        clip: &Clip,
+    ) -> Result<bool, crate::document::ops::ReadOnlyEdit> {
         let is_empty = self
             .document_manager
             .get_document(self.active_document_id())
             .is_none_or(|d| d.selections().is_empty());
         if is_empty {
-            return false;
+            return Ok(false);
         }
-        self.apply_to_each_region(|editor, region| {
-            let Some(doc) = editor
-                .document_manager
-                .get_document_mut(editor.active_document_id())
-            else {
-                return false;
-            };
+        self.apply_to_each_region(|doc, region| {
             let (start, end) = region.buffer_span(doc.buffer());
             doc.put(clip, PutAt::Region { start, end, before })
         })

@@ -155,7 +155,7 @@ impl<T: TerminalBackend> Editor<T> {
             SaveDecision::Proceed => self.write_save(handle, dispatch, path),
             SaveDecision::Cancel => SaveOutcome::NotSaved,
             SaveDecision::Hold(hold) => {
-                if !self.should_quit && doc.matches_kind(kind) && hold.activate() {
+                if !self.exit_requested() && doc.matches_kind(kind) && hold.activate() {
                     self.scheduler.held_saves.insert(
                         buf,
                         HeldSave {
@@ -188,7 +188,7 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(save) = self.scheduler.held_saves.remove(&buf) else {
             return;
         };
-        if self.should_quit {
+        if self.exit_requested() {
             return;
         }
         if !self.save_target_allowed(buf, save.path.as_deref(), save.force) {

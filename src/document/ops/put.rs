@@ -25,9 +25,18 @@ pub(crate) enum PutAt {
 
 impl Document {
     pub(crate) fn put(&mut self, clip: &Clip, at: PutAt) -> bool {
-        if self.check_edit_access().is_err() {
-            return false;
-        }
+        self.write().is_ok_and(|mut writer| writer.put(clip, at))
+    }
+}
+
+impl super::DocumentWrite<'_> {
+    pub(crate) fn put(&mut self, clip: &Clip, at: PutAt) -> bool {
+        self.doc.put_edit(clip, at)
+    }
+}
+
+impl Document {
+    fn put_edit(&mut self, clip: &Clip, at: PutAt) -> bool {
         match at {
             PutAt::Cursor { before } => {
                 let cursor = self.buffer.cursor();
@@ -52,7 +61,7 @@ impl Document {
             PutAt::Verbatim(at) => {
                 let _ = self.set_cursor(at, crate::document::ops::CursorCause::Programmatic);
                 self.begin_transaction("Put");
-                let _ = self.edit(Edit::insert(at, clip.text()), EditSource::User);
+                let _ = self.apply_edit(Edit::insert(at, clip.text()), EditSource::User);
                 self.commit_transaction();
                 let _ = self.set_cursor(at, crate::document::ops::CursorCause::Programmatic);
             }
@@ -61,7 +70,7 @@ impl Document {
                     return false;
                 }
                 self.begin_transaction("Paste");
-                let _ = self.edit(Edit::type_text(clip.text()), EditSource::User);
+                let _ = self.apply_edit(Edit::type_text(clip.text()), EditSource::User);
                 self.commit_transaction();
             }
             PutAt::Selection {
@@ -92,10 +101,10 @@ impl Document {
         self.begin_transaction("Put");
         if needs_newline {
             let trimmed = text.strip_suffix(&[Character::Newline]).unwrap_or(text);
-            let _ = self.edit(Edit::insert(pos, Character::Newline), EditSource::User);
-            let _ = self.edit(Edit::insert(pos + 1, trimmed), EditSource::User);
+            let _ = self.apply_edit(Edit::insert(pos, Character::Newline), EditSource::User);
+            let _ = self.apply_edit(Edit::insert(pos + 1, trimmed), EditSource::User);
         } else {
-            let _ = self.edit(Edit::insert(pos, text), EditSource::User);
+            let _ = self.apply_edit(Edit::insert(pos, text), EditSource::User);
         }
         self.commit_transaction();
         pos + usize::from(needs_newline)
@@ -121,17 +130,17 @@ impl Document {
 
         let _ = self.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
         self.begin_transaction("Put");
-        let _ = self.edit(Edit::delete(start..end), EditSource::User);
+        let _ = self.apply_edit(Edit::delete(start..end), EditSource::User);
         if source_linewise && !target_linewise {
-            let _ = self.edit(Edit::type_text(Character::Newline), EditSource::User);
+            let _ = self.apply_edit(Edit::type_text(Character::Newline), EditSource::User);
         }
         let inserted_start = self.buffer.cursor();
         for _ in 1..count {
-            let _ = self.edit(Edit::type_text(clip.text()), EditSource::User);
+            let _ = self.apply_edit(Edit::type_text(clip.text()), EditSource::User);
         }
-        let _ = self.edit(Edit::type_text(text), EditSource::User);
+        let _ = self.apply_edit(Edit::type_text(text), EditSource::User);
         if target_linewise && !source_linewise && has_following_line {
-            let _ = self.edit(Edit::type_text(Character::Newline), EditSource::User);
+            let _ = self.apply_edit(Edit::type_text(Character::Newline), EditSource::User);
         }
         let inserted_cursor = if target_linewise || source_linewise {
             let first_line_end = text

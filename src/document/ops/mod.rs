@@ -12,7 +12,7 @@ mod selection;
 pub(crate) mod standalone;
 mod text;
 
-pub(crate) use cursor::CursorCause;
+pub(crate) use cursor::{compute_motion_range, CursorCause};
 pub(crate) use history::EditSession;
 #[cfg(any(feature = "plugins", feature = "lsp"))]
 pub(crate) use journal::{ChangeJournal, Changes};
@@ -21,6 +21,6 @@ pub(crate) use plugin::{BufferChange, BufferTarget};
 pub(crate) use put::PutAt;
 #[cfg(feature = "plugins")]
 pub(crate) use text::EditPolicy;
-pub(crate) use text::{ContentKind, EditSource};
+pub(crate) use text::{ContentKind, DocumentWrite, EditSource, ReadOnlyEdit};
 pub use text::{Edit, IntoText};
 pub(in crate::document) use text::{Origin, Resolved};

@@ -42,11 +42,12 @@ impl<T: TerminalBackend> Editor<T> {
         &mut self,
         file_path: Option<String>,
         force: bool,
-    ) -> Result<(), RiftError> {
+    ) -> Result<crate::document::DocumentId, RiftError> {
         let Some(path_str) = file_path else {
             let buf = self.active_document_id();
             self.reload_document(buf, force)?;
-            return self.focus_document(buf);
+            self.focus_document(buf)?;
+            return Ok(buf);
         };
         let path_str = self.resolve_link_path(path_str);
         let path = std::path::PathBuf::from(&path_str);
@@ -83,7 +84,8 @@ impl<T: TerminalBackend> Editor<T> {
             self.announce_buffer(doc_id);
             doc_id
         };
-        self.focus_document(target)
+        self.focus_document(target)?;
+        Ok(target)
     }
 
     /// # Errors

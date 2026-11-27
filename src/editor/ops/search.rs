@@ -1,7 +1,6 @@
 use super::super::Editor;
 use crate::buffer::api::BufferView;
 use crate::document::ops::{CursorCause, Edit, EditSource};
-use crate::document::Document;
 use crate::error::{ErrorType, RiftError};
 use crate::notification::NotificationType;
 #[cfg(feature = "plugins")]
@@ -154,23 +153,21 @@ impl<T: TerminalBackend> Editor<T> {
 
         let mut changes_made = 0;
         let mut errors = Vec::new();
-        if document.check_edit_access().is_ok() {
-            document.edit_group(
-                format!("Substitute: {pattern} -> {replacement}"),
-                |document| {
-                    for m in matches.into_iter().rev() {
-                        match replace_match(document, m.range, replacement) {
-                            Ok(true) => changes_made += 1,
-                            Ok(false) => {}
-                            Err(error) => errors.push(error),
-                        }
+        let _ = document.edit_group(
+            format!("Substitute: {pattern} -> {replacement}"),
+            |document| {
+                for m in matches.into_iter().rev() {
+                    match replace_match(document, m.range, replacement) {
+                        Ok(true) => changes_made += 1,
+                        Ok(false) => {}
+                        Err(error) => errors.push(error),
                     }
-                },
-            );
-        }
-        if has_selection {
-            document.clear_selection();
-        }
+                }
+                if has_selection {
+                    document.clear_selection();
+                }
+            },
+        );
 
         for error in errors {
             self.notify_error(error);
@@ -217,7 +214,7 @@ impl<T: TerminalBackend> Editor<T> {
 }
 
 fn replace_match(
-    document: &mut Document,
+    document: &mut crate::document::ops::DocumentWrite<'_>,
     range: std::ops::Range<usize>,
     replacement: &str,
 ) -> Result<bool, RiftError> {

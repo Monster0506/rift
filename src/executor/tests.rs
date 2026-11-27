@@ -345,7 +345,7 @@ fn test_execute_delete_motion_single_undo() {
 fn test_insert_mode_transaction_simulation() {
     let mut doc = create_doc();
 
-    doc.edit_group("Insert", |doc| {
+    doc.write().unwrap().edit_group("Insert", |doc| {
         // Type multiple characters (simulating insert mode typing)
         doc.edit(Edit::type_text('a'), EditSource::User).unwrap();
         doc.edit(Edit::type_text('b'), EditSource::User).unwrap();
@@ -367,12 +367,12 @@ fn test_insert_mode_transaction_simulation() {
 fn test_multiple_insert_sessions() {
     let mut doc = create_doc();
 
-    doc.edit_group("Insert 1", |doc| {
+    doc.write().unwrap().edit_group("Insert 1", |doc| {
         doc.edit(Edit::type_text('X'), EditSource::User).unwrap();
         doc.edit(Edit::type_text('Y'), EditSource::User).unwrap();
     });
 
-    doc.edit_group("Insert 2", |doc| {
+    doc.write().unwrap().edit_group("Insert 2", |doc| {
         doc.edit(Edit::type_text('Z'), EditSource::User).unwrap();
     });
 
@@ -392,12 +392,12 @@ fn test_undo_then_new_insert_creates_branch() {
     let mut doc = create_doc();
 
     // First insert
-    doc.edit_group("Insert A", |doc| {
+    doc.write().unwrap().edit_group("Insert A", |doc| {
         doc.edit(Edit::type_text('A'), EditSource::User).unwrap();
     });
 
     // Second insert
-    doc.edit_group("Insert B", |doc| {
+    doc.write().unwrap().edit_group("Insert B", |doc| {
         doc.edit(Edit::type_text('B'), EditSource::User).unwrap();
     });
 
@@ -408,7 +408,7 @@ fn test_undo_then_new_insert_creates_branch() {
     assert_eq!(doc.buffer().to_string(), "A");
 
     // New insert (creates branch)
-    doc.edit_group("Insert C", |doc| {
+    doc.write().unwrap().edit_group("Insert C", |doc| {
         doc.edit(Edit::type_text('C'), EditSource::User).unwrap();
     });
 
@@ -670,8 +670,8 @@ fn cw_and_yw_stop_at_line_end() {
     doc.set_cursor(4, crate::document::ops::CursorCause::User)
         .unwrap();
 
-    let range =
-        crate::executor::compute_motion_range(Motion::NextWord, 1, &mut doc, 24, None).unwrap();
+    let range = crate::document::ops::compute_motion_range(Motion::NextWord, 1, &mut doc, 24, None)
+        .unwrap();
     let (start, end) = crate::executor::range_to_offsets(&range, &doc, false);
     assert_eq!((start, end), (4, 7));
 

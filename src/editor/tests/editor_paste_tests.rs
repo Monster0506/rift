@@ -107,7 +107,8 @@ fn bracketed_paste_in_insert_mode_renders_the_full_text_without_a_second_render(
     editor.update_and_render().unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
 
-    editor.handle_paste(" 4 CS Classes to Visit").unwrap();
+    editor.handle_paste(" 4 CS Classes to Visit");
+    editor.tick().unwrap();
 
     assert_eq!(
         editor.active_document().buffer().to_string(),
@@ -126,7 +127,7 @@ fn paste_normalizes_crlf_and_lone_cr_in_insert_mode() {
     let mut editor = create_editor();
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
 
-    editor.handle_paste("a\r\nb\rc").unwrap();
+    editor.handle_paste("a\r\nb\rc");
 
     assert_eq!(editor.active_document().buffer().to_string(), "a\nb\nc");
 }
@@ -135,7 +136,7 @@ fn paste_normalizes_crlf_and_lone_cr_in_insert_mode() {
 fn paste_normalizes_crlf_in_normal_mode() {
     let mut editor = create_editor();
 
-    editor.handle_paste("a\r\nb").unwrap();
+    editor.handle_paste("a\r\nb");
 
     assert_eq!(editor.active_document().buffer().to_string(), "a\nb");
 }
@@ -151,7 +152,8 @@ fn bracketed_paste_near_soft_wrap_boundary_renders_the_full_text() {
         editor.update_and_render().unwrap();
     }
 
-    editor.handle_paste(" 4 CS Classes to Visit").unwrap();
+    editor.handle_paste(" 4 CS Classes to Visit");
+    editor.tick().unwrap();
 
     let expected = "0123456789012345 4 CS Classes to Visit";
     assert_eq!(editor.active_document().buffer().to_string(), expected);

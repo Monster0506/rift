@@ -225,10 +225,45 @@ fn readonly_visual_mutations_do_not_capture_or_enter_insert_mode() {
             "abc\ndef",
             "{keys}"
         );
-        assert_eq!(editor.current_mode, Mode::Normal, "{keys}");
+        assert!(editor.current_mode.is_visual(), "{keys}");
         let clip = editor.clipboard_ring.most_recent().unwrap();
         let captured: String = clip.text().iter().map(ToString::to_string).collect();
         assert_eq!(captured, "saved", "{keys}");
+    }
+}
+
+#[test]
+fn readonly_cuts_and_replay_leave_the_clipboard_and_history_alone() {
+    for keys in ["x", "dw", "dd", "cc", "rZ", "p", ".", "u", "<C-r>"] {
+        let mut editor = replay_editor("alpha beta\nsecond");
+        press(&mut editor, "A!<Esc>0");
+        editor
+            .clipboard_ring
+            .push_str("saved", crate::wrap::RangeKind::Charwise);
+        let doc = editor.active_document();
+        let revision = doc.buffer().revision();
+        let seq = doc.history.current_seq();
+        let text = doc.buffer().to_string();
+        doc.set_read_only(true);
+
+        press(&mut editor, keys);
+        let doc = editor.active_document();
+        assert_eq!(doc.buffer().to_string(), text, "{keys}");
+        assert_eq!(doc.buffer().revision(), revision, "{keys}");
+        assert_eq!(doc.history.current_seq(), seq, "{keys}");
+        assert_eq!(editor.mode(), Mode::Normal, "{keys}");
+        assert_eq!(
+            editor
+                .clipboard_ring
+                .most_recent()
+                .unwrap()
+                .text()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<String>(),
+            "saved",
+            "{keys}"
+        );
     }
 }
 

@@ -73,16 +73,24 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_mode_enter_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
-            EditorAction::EnterInsertMode => self.action_enter_insert_mode(action),
-            EditorAction::EnterInsertModeAfter => self.action_enter_insert_mode_after(action),
+            EditorAction::EnterInsertMode => {
+                self.action_begin_insert(action, crate::command::InsertEntry::AtCursor)
+            }
+            EditorAction::EnterInsertModeAfter => {
+                self.action_begin_insert(action, crate::command::InsertEntry::AfterCursor)
+            }
             EditorAction::EnterInsertModeAtLineStart => {
-                self.action_enter_insert_mode_at_line_start(action)
+                self.action_begin_insert(action, crate::command::InsertEntry::LineStart)
             }
             EditorAction::EnterInsertModeAtLineEnd => {
-                self.action_enter_insert_mode_at_line_end(action)
+                self.action_begin_insert(action, crate::command::InsertEntry::LineEnd)
             }
-            EditorAction::OpenLineBelow => self.action_open_line_below(action),
-            EditorAction::OpenLineAbove => self.action_open_line_above(action),
+            EditorAction::OpenLineBelow => {
+                self.action_begin_insert(action, crate::command::InsertEntry::NewLineBelow)
+            }
+            EditorAction::OpenLineAbove => {
+                self.action_begin_insert(action, crate::command::InsertEntry::NewLineAbove)
+            }
             EditorAction::EnterCommandMode => {
                 self.handle_mode_management(crate::command::Command::ReadExLine);
                 true
@@ -342,16 +350,16 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             None
         };
-        let visual_line_delete = self.current_mode == Mode::VisualLine
-            && op == crate::action::OperatorType::Delete
-            && self
-                .document_manager
-                .get_document(self.active_document_id())
-                .is_some_and(|doc| doc.check_edit_access().is_ok());
-        if self.current_mode.is_visual() {
+        let visual_line_delete =
+            self.current_mode == Mode::VisualLine && op == crate::action::OperatorType::Delete;
+        let revision = self.active_document().buffer().revision();
+        if self.current_mode.is_visual() && op == crate::action::OperatorType::Yank {
             self.set_mode(Mode::Normal);
         }
         if self.try_run_set_aware_operator(op) {
+            if self.current_mode.is_visual() {
+                return true;
+            }
             if let Some(start) = visual_yank_start {
                 if let Some(doc) = self
                     .document_manager
@@ -361,7 +369,7 @@ impl<T: TerminalBackend> Editor<T> {
                     let _ = doc.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
                 }
             }
-            if visual_line_delete {
+            if visual_line_delete && self.active_document().buffer().revision() != revision {
                 if let Some(doc) = self
                     .document_manager
                     .get_document_mut(self.active_document_id())
@@ -501,8 +509,6 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 Some((clip.clone(), None))
             });
-        self.commit_all_pending_ghosts();
-
         let (clip, same_location_origin) = match ghost_put {
             Some(put) => put,
             None => match self.clipboard_ring.most_recent() {
@@ -511,9 +517,14 @@ impl<T: TerminalBackend> Editor<T> {
             },
         };
 
-        if self.try_run_set_aware_put(before, &clip) {
-            self.finish_region_build(Some(action.clone()));
-            return true;
+        match self.try_run_set_aware_put(before, &clip) {
+            Ok(true) => {
+                self.commit_all_pending_ghosts();
+                self.finish_region_build(Some(action.clone()));
+                return true;
+            }
+            Ok(false) => {}
+            Err(_) => return false,
         }
         let original_cursor = self
             .document_manager
@@ -525,6 +536,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.put_into_active(&clip, PutAt::Cursor { before })
         };
         if result {
+            self.commit_all_pending_ghosts();
             self.post_paste_state = Some(PostPasteState {
                 ring_index: 0,
                 before,
@@ -541,15 +553,6 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(kind) = self.current_mode.visual_range_kind() else {
             return false;
         };
-        let Some(doc) = self
-            .document_manager
-            .get_document(self.active_document_id())
-        else {
-            return false;
-        };
-        if doc.check_edit_access().is_err() {
-            return false;
-        }
         let clip = self
             .document_manager
             .most_recent_ghost_doc()
@@ -561,8 +564,6 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(clip) = clip else {
             return false;
         };
-        self.commit_all_pending_ghosts();
-
         let count = self.input.count.max(1);
         let Some(doc) = self
             .document_manager
@@ -592,6 +593,7 @@ impl<T: TerminalBackend> Editor<T> {
             return false;
         }
 
+        self.commit_all_pending_ghosts();
         if let Some(selected) = selected {
             self.yank(selected);
             self.refresh_clipboard_buffer_if_open();
@@ -716,9 +718,9 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::RegionBankOccurrenceNext | EditorAction::RegionBankOccurrencePrev => {
                 self.action_bank_occurrence(editor_action)
             }
-            EditorAction::AddSurroundToSet { ch, delim_count } => {
-                self.try_run_set_aware_add_surround(*ch, *delim_count)
-            }
+            EditorAction::AddSurroundToSet { ch, delim_count } => self
+                .try_run_set_aware_add_surround(*ch, *delim_count)
+                .unwrap_or(false),
             _ => {
                 self.notify(
                     crate::notification::NotificationType::Error,
@@ -785,7 +787,9 @@ impl<T: TerminalBackend> Editor<T> {
             && matches!(motion, Motion::Up | Motion::Down)
             && self.active_doc_is(|doc| doc.buffer_kind_id() == BufferKindId::GIT_BLAME)
         {
-            let _ = self.snap_to_actionable_line(matches!(motion, Motion::Down));
+            if self.snap_to_actionable_line(matches!(motion, Motion::Down)) {
+                self.sync_git_blame_cursor();
+            }
             return true;
         }
 
@@ -820,81 +824,13 @@ impl<T: TerminalBackend> Editor<T> {
         consumed
     }
 
-    fn action_enter_insert_mode(&mut self, action: &Action) -> bool {
-        if self.try_multi_insert_for_command(crate::command::Command::BeginInsert(
-            crate::command::InsertEntry::AtCursor,
-        )) {
-            self.finish_region_build(Some(action.clone()));
-            return true;
+    fn action_begin_insert(&mut self, action: &Action, entry: crate::command::InsertEntry) -> bool {
+        let command = Command::BeginInsert(entry);
+        match self.try_multi_insert_for_command(command) {
+            Ok(true) => self.finish_region_build(Some(action.clone())),
+            Ok(false) => self.handle_mode_management(command),
+            Err(error) => self.notify_error(error.into()),
         }
-        self.handle_mode_management(crate::command::Command::BeginInsert(
-            crate::command::InsertEntry::AtCursor,
-        ));
-        true
-    }
-
-    fn action_enter_insert_mode_after(&mut self, action: &Action) -> bool {
-        if self.try_multi_insert_for_command(crate::command::Command::BeginInsert(
-            crate::command::InsertEntry::AfterCursor,
-        )) {
-            self.finish_region_build(Some(action.clone()));
-            return true;
-        }
-        self.handle_mode_management(crate::command::Command::BeginInsert(
-            crate::command::InsertEntry::AfterCursor,
-        ));
-        true
-    }
-
-    fn action_enter_insert_mode_at_line_start(&mut self, action: &Action) -> bool {
-        if self.try_multi_insert_for_command(crate::command::Command::BeginInsert(
-            crate::command::InsertEntry::LineStart,
-        )) {
-            self.finish_region_build(Some(action.clone()));
-            return true;
-        }
-        self.handle_mode_management(crate::command::Command::BeginInsert(
-            crate::command::InsertEntry::LineStart,
-        ));
-        true
-    }
-
-    fn action_enter_insert_mode_at_line_end(&mut self, action: &Action) -> bool {
-        if self.try_multi_insert_for_command(crate::command::Command::BeginInsert(
-            crate::command::InsertEntry::LineEnd,
-        )) {
-            self.finish_region_build(Some(action.clone()));
-            return true;
-        }
-        self.handle_mode_management(crate::command::Command::BeginInsert(
-            crate::command::InsertEntry::LineEnd,
-        ));
-        true
-    }
-
-    fn action_open_line_below(&mut self, action: &Action) -> bool {
-        if self.try_multi_insert_for_command(crate::command::Command::BeginInsert(
-            crate::command::InsertEntry::NewLineBelow,
-        )) {
-            self.finish_region_build(Some(action.clone()));
-            return true;
-        }
-        self.handle_mode_management(crate::command::Command::BeginInsert(
-            crate::command::InsertEntry::NewLineBelow,
-        ));
-        true
-    }
-
-    fn action_open_line_above(&mut self, action: &Action) -> bool {
-        if self.try_multi_insert_for_command(crate::command::Command::BeginInsert(
-            crate::command::InsertEntry::NewLineAbove,
-        )) {
-            self.finish_region_build(Some(action.clone()));
-            return true;
-        }
-        self.handle_mode_management(crate::command::Command::BeginInsert(
-            crate::command::InsertEntry::NewLineAbove,
-        ));
         true
     }
 
@@ -988,45 +924,16 @@ impl<T: TerminalBackend> Editor<T> {
                 return true;
             }
         }
-        if self.active_document().check_edit_access().is_err() {
-            return false;
-        }
-        let count = if self.input.count > 0 {
-            self.input.count
-        } else {
-            1
-        };
+        let count = self.input.count.max(1);
         if self.current_mode == Mode::Normal {
-            let viewport_height = self.render_system.viewport.visible_rows();
-            let last_search_query = self.state.last_search_query.clone();
-            let captured = self
-                .document_manager
-                .get_document_mut(self.active_document_id())
-                .and_then(|doc| {
-                    crate::executor::compute_motion_range(
-                        *motion,
-                        count,
-                        doc,
-                        viewport_height,
-                        last_search_query.as_deref(),
-                    )
-                    .map(|range| crate::clipboard::capture_text(doc.buffer(), &range))
-                });
-            let in_clipboard =
-                self.active_doc_is(super::super::document::Document::is_any_clipboard);
-            if let Some(text) = captured.filter(|c| !c.text().is_empty()) {
-                if !in_clipboard {
-                    self.yank(text);
-                    self.refresh_clipboard_buffer_if_open();
-                }
-            }
+            return self.execute_resolved_operator(
+                crate::action::OperatorType::Delete,
+                Some(*motion),
+                count,
+                false,
+            );
         }
-        let command = crate::command::Command::DeleteMotion(*motion, count);
-        let result = self.execute_buffer_command(command);
-        if result && self.current_mode == Mode::Normal && !self.dot_repeat.is_replaying() {
-            self.dot_repeat.record_single(command);
-        }
-        result
+        self.execute_buffer_command(Command::DeleteMotion(*motion, count))
     }
 
     fn action_delete_line(&mut self) -> bool {
@@ -1116,8 +1023,12 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             Command::DeleteMotion(crate::action::Motion::EndOfLine, 1)
         };
-        self.handle_mode_management(command);
-        self.execute_buffer_command(command)
+        if matches!(command, Command::Change(..)) {
+            self.handle_mode_management(command);
+            self.current_mode == Mode::Insert
+        } else {
+            self.execute_buffer_command(command)
+        }
     }
 
     fn action_history_up(&mut self) -> bool {
@@ -1188,17 +1099,16 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(clip) = self.clipboard_ring.get(next).cloned() else {
             return false;
         };
-        if let Some(doc) = self
-            .document_manager
-            .get_document_mut(self.active_document_id())
-        {
-            doc.undo();
-            let _ = doc.set_cursor(
-                state.original_cursor,
-                crate::document::ops::CursorCause::Programmatic,
-            );
-        }
-        let result = self.put_into_active(
+        let Ok(mut doc) = self.active_document().write() else {
+            self.post_paste_state = Some(state);
+            return false;
+        };
+        doc.undo();
+        let _ = doc.set_cursor(
+            state.original_cursor,
+            crate::document::ops::CursorCause::Programmatic,
+        );
+        let result = doc.put(
             &clip,
             PutAt::Cursor {
                 before: state.before,
@@ -1223,11 +1133,14 @@ impl<T: TerminalBackend> Editor<T> {
                 .map(crate::character::Character::from)
                 .collect();
             let clip = Clip::from_plain(text);
-            if self.try_run_set_aware_put(before, &clip) {
-                self.finish_region_build(Some(action.clone()));
-                return true;
+            match self.try_run_set_aware_put(before, &clip) {
+                Ok(true) => {
+                    self.finish_region_build(Some(action.clone()));
+                    true
+                }
+                Ok(false) => self.put_into_active(&clip, PutAt::Cursor { before }),
+                Err(_) => false,
             }
-            self.put_into_active(&clip, PutAt::Cursor { before })
         } else {
             false
         }

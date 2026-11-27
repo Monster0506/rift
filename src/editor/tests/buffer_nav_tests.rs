@@ -119,7 +119,7 @@ fn test_quit_last_buffer_quits_editor() {
     editor.execute_command_line("q");
 
     assert!(
-        editor.should_quit,
+        editor.should_quit(),
         ":q on last clean buffer should quit the editor"
     );
 }
@@ -136,7 +136,7 @@ fn test_quit_dirty_last_buffer_refuses() {
 
     editor.execute_command_line("q");
     assert!(
-        !editor.should_quit,
+        !editor.should_quit(),
         ":q should refuse when last buffer is dirty"
     );
     assert_eq!(
@@ -147,7 +147,7 @@ fn test_quit_dirty_last_buffer_refuses() {
 
     editor.execute_command_line("q!");
     assert!(
-        editor.should_quit,
+        editor.should_quit(),
         ":q! should quit even with dirty last buffer"
     );
 }
@@ -164,7 +164,7 @@ fn q_key_refuses_dirty_buffer_when_quitonq_off() {
 
     feed_keys(&mut editor, "q");
 
-    assert!(!editor.should_quit, "q must honor the dirty check");
+    assert!(!editor.should_quit(), "q must honor the dirty check");
 }
 
 #[test]
@@ -178,7 +178,7 @@ fn q_key_quits_dirty_buffer_by_default() {
 
     feed_keys(&mut editor, "q");
 
-    assert!(editor.should_quit);
+    assert!(editor.should_quit());
 }
 
 #[test]
@@ -192,7 +192,7 @@ fn q_key_quits_without_closing_the_dirty_split_first() {
 
     feed_keys(&mut editor, "q");
 
-    assert!(editor.should_quit);
+    assert!(editor.should_quit());
     assert_eq!(editor.split_tree.window_count(), 2);
 }
 
@@ -205,7 +205,7 @@ fn q_key_closes_split_when_quitonq_off() {
 
     feed_keys(&mut editor, "q");
 
-    assert!(!editor.should_quit);
+    assert!(!editor.should_quit());
     assert_eq!(editor.split_tree.window_count(), 1);
 }
 
@@ -227,7 +227,7 @@ fn test_handle_execution_result_quit_only_checks_current_buffer() {
     let clean_id = editor.active_document_id();
 
     editor.execute_command_line("q");
-    assert!(!editor.should_quit, ":q should not quit the editor");
+    assert!(!editor.should_quit(), ":q should not quit the editor");
     assert_ne!(
         editor.active_document_id(),
         clean_id,
@@ -248,7 +248,7 @@ fn test_cancelled_save_clears_quit_after_job() {
         "a cancelled save tied to a pending quit must clear quit_after_job"
     );
     assert!(
-        !editor.should_quit,
+        !editor.should_quit(),
         "a cancelled save must not force the editor to quit"
     );
 }

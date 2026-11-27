@@ -865,6 +865,33 @@ fn checkbox_toggle_edits_literal_box_in_buffer() {
 }
 
 #[test]
+fn read_only_literal_checkbox_does_not_toggle_its_overlay() {
+    let mut editor = editor_with_text("[ ] task");
+    let mut payload = Value::map();
+    payload.set("checked", Value::Bool(false));
+    let id = editor.active_document().annotations.add(
+        Annotation::new(
+            Kind::new("ui.checkbox"),
+            Anchor::range(0, 3),
+            AnnotationOwner::User,
+        )
+        .with_payload(payload)
+        .with_actions(vec![Action::new("toggle").with_default()]),
+    );
+    editor.active_document().set_read_only(true);
+    editor
+        .active_document()
+        .set_cursor(0, crate::document::ops::CursorCause::User)
+        .unwrap();
+
+    assert!(editor.activate_annotation_at_cursor());
+    let doc = editor.active_document();
+    assert_eq!(doc.buffer().to_string(), "[ ] task");
+    let checked = doc.annotations.get(id).unwrap().payload.get("checked");
+    assert_eq!(checked.and_then(Value::as_bool), Some(false));
+}
+
+#[test]
 fn affordances_render_when_cursor_on_interactive_annotation() {
     use crate::annotations::action::KeyHint;
     let mut e = editor_with_text("hello world");

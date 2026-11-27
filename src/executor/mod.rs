@@ -4,7 +4,7 @@
 use crate::action::Motion;
 use crate::buffer::TextBuffer;
 use crate::command::Command;
-use crate::document::ops::{Edit, EditSource};
+use crate::document::ops::{DocumentWrite, Edit, EditSource};
 use crate::document::Document;
 use crate::error::RiftError;
 use crate::wrap::DisplayMap;
@@ -28,151 +28,6 @@ fn calculate_current_column(buf: &TextBuffer, tab_width: usize) -> usize {
 
 pub(crate) fn tab_fill_width(buf: &TextBuffer, tab_width: usize) -> usize {
     tab_width - (calculate_current_column(buf, tab_width) % tab_width)
-}
-
-pub(crate) fn compute_motion_range(
-    motion: Motion,
-    count: usize,
-    doc: &mut Document,
-    viewport_height: usize,
-    last_search_query: Option<&str>,
-) -> Option<crate::wrap::MotionRange> {
-    use crate::wrap::{MotionRange, OperatorContext};
-    const MAX_MOTION_REPEAT: usize = 1_000_000;
-
-    if let Motion::TextObject(spec) = motion {
-        #[cfg(feature = "treesitter")]
-        {
-            let needs_tree = crate::text_objects::requires_treesitter(spec.kind);
-            let ts_bytes: Option<Vec<u8>> =
-                if needs_tree && doc.syntax.as_ref().and_then(|s| s.tree.as_ref()).is_some() {
-                    Some(doc.buffer().to_logical_bytes())
-                } else {
-                    None
-                };
-            let syntax_ctx = ts_bytes.as_ref().and_then(|bytes| {
-                doc.syntax
-                    .as_ref()
-                    .and_then(|s| s.tree.as_ref())
-                    .map(|tree| crate::text_objects::treesitter::SyntaxContext {
-                        tree,
-                        source: bytes.as_slice(),
-                    })
-            });
-            return crate::text_objects::resolve(spec, doc.buffer(), count, syntax_ctx.as_ref());
-        }
-        #[cfg(not(feature = "treesitter"))]
-        {
-            return crate::text_objects::resolve(spec, doc.buffer(), count, None);
-        }
-    }
-
-    let is_jump = matches!(
-        motion,
-        Motion::ToLine(_) | Motion::StartOfFile | Motion::EndOfFile
-    );
-    let is_linewise = is_jump
-        || matches!(
-            motion,
-            Motion::Up | Motion::Down | Motion::PageUp | Motion::PageDown
-        );
-    let is_inclusive = matches!(motion, Motion::FindCharForward(_) | Motion::WordEnd);
-
-    let anchor = doc.buffer().cursor();
-
-    let count = count.min(MAX_MOTION_REPEAT);
-
-    for i in 0..count {
-        let iter_start = doc.buffer().cursor();
-
-        doc.apply_motion(
-            motion,
-            None,
-            OperatorContext::Operator,
-            viewport_height,
-            last_search_query,
-        );
-
-        if i + 1 == count && matches!(motion, Motion::NextWord | Motion::NextBigWord) {
-            clamp_to_line_end(doc, iter_start);
-        }
-    }
-
-    let new_cursor = doc.buffer().cursor();
-    let _ = doc.set_cursor(anchor, crate::document::ops::CursorCause::Programmatic);
-
-    if anchor == new_cursor && !is_jump {
-        return None;
-    }
-
-    if is_linewise {
-        Some(MotionRange::linewise(anchor, new_cursor))
-    } else if is_inclusive {
-        Some(MotionRange::charwise_inclusive(anchor, new_cursor))
-    } else {
-        Some(MotionRange::charwise(anchor, new_cursor))
-    }
-}
-
-pub(crate) fn compute_change_range(
-    motion: Motion,
-    count: usize,
-    doc: &mut Document,
-    viewport_height: usize,
-    last_search_query: Option<&str>,
-) -> Option<crate::wrap::MotionRange> {
-    if !matches!(motion, Motion::NextWord) || !on_non_blank(doc.buffer()) {
-        return compute_motion_range(motion, count, doc, viewport_height, last_search_query);
-    }
-
-    let cursor = doc.buffer().cursor();
-    let remaining = if on_word_end(doc.buffer()) {
-        count.max(1) - 1
-    } else {
-        count
-    };
-    if remaining == 0 {
-        return Some(crate::wrap::MotionRange::charwise_inclusive(cursor, cursor));
-    }
-
-    compute_motion_range(
-        Motion::WordEnd,
-        remaining,
-        doc,
-        viewport_height,
-        last_search_query,
-    )
-}
-
-fn on_non_blank(buf: &TextBuffer) -> bool {
-    use crate::movement::classify::{classify_character, CharClass};
-    buf.char_at(buf.cursor())
-        .is_some_and(|c| classify_character(c) != CharClass::Whitespace)
-}
-
-fn on_word_end(buf: &TextBuffer) -> bool {
-    use crate::movement::classify::classify_character;
-    let cursor = buf.cursor();
-    let Some(cur) = buf.char_at(cursor) else {
-        return false;
-    };
-
-    buf.char_at(cursor + 1).map(classify_character) != Some(classify_character(cur))
-}
-
-fn clamp_to_line_end(doc: &mut Document, from: usize) {
-    let buf = doc.buffer();
-    let start_line = buf.line_index.get_line_at(from);
-    if buf.line_index.get_line_at(buf.cursor()) <= start_line {
-        return;
-    }
-
-    let Some(end) = buf.line_index.get_end(start_line, buf.len()) else {
-        return;
-    };
-    if from < end {
-        let _ = doc.set_cursor(end, crate::document::ops::CursorCause::Programmatic);
-    }
 }
 
 pub(crate) fn range_to_offsets(
@@ -237,21 +92,38 @@ pub(crate) fn execute_command(
     last_search_query: Option<&str>,
     display_map: Option<&mut DisplayMap>,
 ) -> Result<(), RiftError> {
-    if cmd.is_mutating() {
-        doc.check_edit_access()?;
-        doc.clear_selection();
+    if let Command::MoveBy(motion, count) = cmd {
+        move_cmd(
+            doc,
+            display_map,
+            motion,
+            count,
+            viewport_height,
+            last_search_query,
+        );
+    } else if cmd.is_mutating() {
+        execute_write_command(
+            cmd,
+            &mut doc.write()?,
+            expand_tabs,
+            tab_width,
+            viewport_height,
+            last_search_query,
+        )?;
     }
+    Ok(())
+}
+
+pub(crate) fn execute_write_command(
+    cmd: Command,
+    doc: &mut DocumentWrite<'_>,
+    expand_tabs: bool,
+    tab_width: usize,
+    viewport_height: usize,
+    last_search_query: Option<&str>,
+) -> Result<(), RiftError> {
+    doc.clear_selection();
     match cmd {
-        Command::MoveBy(motion, count) => {
-            move_cmd(
-                doc,
-                display_map,
-                motion,
-                count,
-                viewport_height,
-                last_search_query,
-            );
-        }
         Command::DeleteMotion(motion, count) => {
             delete_motion_cmd(doc, motion, count, viewport_height, last_search_query);
         }
@@ -293,7 +165,8 @@ pub(crate) fn execute_command(
                 last_search_query,
             );
         }
-        Command::BeginInsert(_)
+        Command::MoveBy(..)
+        | Command::BeginInsert(_)
         | Command::BeginReplace
         | Command::ReadExLine
         | Command::ReadSearchPattern
@@ -334,14 +207,13 @@ fn move_cmd(
 
 /// Delete over a motion (`Delete`).
 fn delete_motion_cmd(
-    doc: &mut Document,
+    doc: &mut DocumentWrite<'_>,
     motion: Motion,
     count: usize,
     viewport_height: usize,
     last_search_query: Option<&str>,
 ) {
-    let Some(range) = compute_motion_range(motion, count, doc, viewport_height, last_search_query)
-    else {
+    let Some(range) = doc.motion_range(motion, count, viewport_height, last_search_query) else {
         return;
     };
     let (delete_start, delete_end) = range_to_offsets(&range, doc, true);
@@ -354,14 +226,13 @@ fn delete_motion_cmd(
 
 /// Change over a motion (`Change`).
 fn change_motion_cmd(
-    doc: &mut Document,
+    doc: &mut DocumentWrite<'_>,
     motion: Motion,
     count: usize,
     viewport_height: usize,
     last_search_query: Option<&str>,
 ) {
-    let Some(range) = compute_change_range(motion, count, doc, viewport_height, last_search_query)
-    else {
+    let Some(range) = doc.change_range(motion, count, viewport_height, last_search_query) else {
         return;
     };
     let (delete_start, delete_end) = range_to_offsets(&range, doc, false);
@@ -371,7 +242,7 @@ fn change_motion_cmd(
 }
 
 /// Delete `count` whole lines (`DeleteLine`).
-fn delete_line_cmd(doc: &mut Document, count: usize) {
+fn delete_line_cmd(doc: &mut DocumentWrite<'_>, count: usize) {
     if doc.is_clipboard_index() {
         doc.delete_clipboard_rows(count);
         return;
@@ -404,7 +275,7 @@ fn delete_line_cmd(doc: &mut Document, count: usize) {
 }
 
 /// Change `count` lines up to their end (`ChangeLine`).
-fn change_line_cmd(doc: &mut Document, count: usize) {
+fn change_line_cmd(doc: &mut DocumentWrite<'_>, count: usize) {
     doc.move_cursor(crate::action::Motion::StartOfLine);
     let start = doc.buffer().cursor();
     for _ in 0..count.max(1).saturating_sub(1) {
@@ -422,7 +293,7 @@ fn change_line_cmd(doc: &mut Document, count: usize) {
 
 /// Insert a character; `expand_tabs` turns a tab into spaces.
 fn insert_char_cmd(
-    doc: &mut Document,
+    doc: &mut DocumentWrite<'_>,
     expand_tabs: bool,
     tab_width: usize,
     ch: char,
@@ -437,7 +308,7 @@ fn insert_char_cmd(
 }
 
 /// Replace `count` characters under the cursor (`ReplaceChar`).
-fn replace_char_cmd(doc: &mut Document, ch: char, count: usize) -> Result<(), RiftError> {
+fn replace_char_cmd(doc: &mut DocumentWrite<'_>, ch: char, count: usize) -> Result<(), RiftError> {
     let pos = doc.buffer().cursor();
     let avail = doc.buffer().len().saturating_sub(pos);
     let replace_count = count.min(avail);
@@ -456,7 +327,7 @@ fn replace_char_cmd(doc: &mut Document, ch: char, count: usize) -> Result<(), Ri
 }
 
 fn replace_backspace_cmd(
-    doc: &mut Document,
+    doc: &mut DocumentWrite<'_>,
     restore: Option<crate::character::Character>,
 ) -> Result<(), RiftError> {
     let Some(original) = restore else {
@@ -471,7 +342,7 @@ fn replace_backspace_cmd(
     doc.set_cursor(pos, crate::document::ops::CursorCause::Programmatic)
 }
 
-fn delete_surround_cmd(doc: &mut Document, ch: char, count: usize) {
+fn delete_surround_cmd(doc: &mut DocumentWrite<'_>, ch: char, count: usize) {
     if let Some((open_range, close_range)) =
         crate::text_objects::resolve_surround_pair(ch, doc.buffer(), count)
     {
@@ -482,7 +353,7 @@ fn delete_surround_cmd(doc: &mut Document, ch: char, count: usize) {
     }
 }
 
-fn change_surround_cmd(doc: &mut Document, from: char, to: char, count: usize) {
+fn change_surround_cmd(doc: &mut DocumentWrite<'_>, from: char, to: char, count: usize) {
     if let (Some((open_range, close_range)), Some((new_open, new_close))) = (
         crate::text_objects::resolve_surround_pair(from, doc.buffer(), count),
         crate::text_objects::surround_strings(to, count),
@@ -500,7 +371,7 @@ fn change_surround_cmd(doc: &mut Document, from: char, to: char, count: usize) {
 }
 
 fn add_surround_cmd(
-    doc: &mut Document,
+    doc: &mut DocumentWrite<'_>,
     motion: Motion,
     motion_count: usize,
     ch: char,
@@ -511,13 +382,8 @@ fn add_surround_cmd(
     let Some((open, close)) = crate::text_objects::surround_strings(ch, delim_count) else {
         return;
     };
-    let Some(range) = compute_motion_range(
-        motion,
-        motion_count,
-        doc,
-        viewport_height,
-        last_search_query,
-    ) else {
+    let Some(range) = doc.motion_range(motion, motion_count, viewport_height, last_search_query)
+    else {
         return;
     };
     let (start, end) = range_to_offsets(&range, doc, false);

@@ -260,7 +260,7 @@ fn insert_into_a_read_only_background_buffer_is_refused() {
 }
 
 #[test]
-fn rejected_background_write_is_repaired_by_the_next_sync() {
+fn rejected_background_write_is_repaired_when_the_batch_finishes() {
     let (_dir, mut editor, first, _second) = background_file();
     doc_mut(&mut editor, first).set_read_only(true);
 
@@ -272,7 +272,7 @@ fn rejected_background_write_is_repaired_by_the_next_sync() {
              assert(rift.get_lines(1, 1, {{ buf = {first} }})[1] == 'apha')"
         ),
     );
-    sync(&mut editor);
+    editor.apply_plugin_mutations();
 
     assert_eq!(text(&editor, first), "alpha\nbeta");
     lua_ok(
@@ -438,6 +438,26 @@ fn highlight_queued_for_a_closed_buffer_logs_the_drop() {
     assert!(editor.state.notifications.message_log().iter().any(
         |entry| matches!(entry, crate::notification::MessageEntry::Notification { message, .. } if message == &expected)
     ));
+}
+
+#[test]
+fn a_new_fixed_read_only_buffer_rejects_projected_writes() {
+    let (_dir, mut editor, _, _) = background_file();
+    lua_ok(
+        &editor,
+        r"
+        local opts = { read_only = 'fixed_readonly', on_close = function() end }
+        rift.register_buffer_kind('locked', opts)
+        opts.read_only = 'writable'
+        local id = rift.create_buffer('locked', { lines = { 'original' } })
+        rift.insert('X', { buf = id })
+        assert(rift.get_lines(1, 1, { buf = id })[1] == 'original')
+    ",
+    );
+    editor.apply_plugin_mutations();
+    let id = editor.active_document_id().get();
+    assert!(doc(&editor, id).is_read_only());
+    assert_eq!(text(&editor, id), "original");
 }
 
 #[test]

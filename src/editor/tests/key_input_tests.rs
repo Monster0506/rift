@@ -263,7 +263,7 @@ fn bug_replace_mode_paste_overwrites() {
     let mut editor = editor_with_text("abcdef");
     press(&mut editor, &keys("R"));
 
-    editor.handle_paste("xy").unwrap();
+    editor.handle_paste("xy");
 
     assert_eq!(buffer_text(&mut editor), "xycdef");
 }
@@ -273,7 +273,7 @@ fn bug_replace_mode_paste_appends_past_line_end() {
     let mut editor = editor_with_text("ab\ncd");
     press(&mut editor, &keys("lR"));
 
-    editor.handle_paste("xyz").unwrap();
+    editor.handle_paste("xyz");
 
     assert_eq!(buffer_text(&mut editor), "axyz\ncd");
 }
@@ -282,7 +282,7 @@ fn bug_replace_mode_paste_appends_past_line_end() {
 fn bug_replace_mode_backspace_restores_after_paste() {
     let mut editor = editor_with_text("abcdef");
     press(&mut editor, &keys("R"));
-    editor.handle_paste("xy").unwrap();
+    editor.handle_paste("xy");
 
     press(&mut editor, &keys("<BS><Esc>"));
 

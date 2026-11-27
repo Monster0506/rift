@@ -8,13 +8,6 @@ impl<T: TerminalBackend> Editor<T> {
         let current_mode = self.current_mode;
         let is_mutating = command.is_mutating();
 
-        if is_mutating && current_mode.is_visual() {
-            if self.active_document().check_edit_access().is_err() {
-                return false;
-            }
-            self.set_mode(Mode::Normal);
-        }
-
         if current_mode == Mode::Normal
             || current_mode == Mode::Insert
             || current_mode == Mode::Replace
@@ -48,6 +41,9 @@ impl<T: TerminalBackend> Editor<T> {
                 return false;
             }
 
+            if is_mutating && current_mode.is_visual() {
+                self.set_mode(Mode::Normal);
+            }
             let records_dot = match self.current_mode {
                 Mode::Insert => is_mutating,
                 Mode::Replace => {

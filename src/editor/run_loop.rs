@@ -16,7 +16,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.update_and_render()?;
 
         // Main event loop
-        while !self.should_quit {
+        while !self.should_quit() {
             self.tick()?;
         }
 
@@ -71,7 +71,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(deadline) = self.next_deadline(now) {
             timeout = timeout.min(deadline.saturating_duration_since(now));
         }
-        if self.scheduler.frame_request != FrameRequest::None {
+        if self.scheduler.frame_request != FrameRequest::None || self.unrendered_key_count != 0 {
             timeout = std::time::Duration::ZERO;
         }
         #[cfg(feature = "plugins")]
@@ -93,7 +93,7 @@ impl<T: TerminalBackend> Editor<T> {
         if input_ready {
             self.handle_input_event()?;
         } else {
-            self.flush_pending_keys_on_timeout()?;
+            self.flush_pending_keys_on_timeout();
         }
 
         let now = crate::time::Instant::now();
@@ -104,14 +104,19 @@ impl<T: TerminalBackend> Editor<T> {
         #[cfg(feature = "plugins")]
         let idle_frame =
             idle_frame || (!input_ready && (timers_fired || !self.frame_events.is_empty()));
-        if self.scheduler.frame_request != FrameRequest::None
+        let action_frame = if self.unrendered_key_count == 0 {
+            self.scheduler.frame_request == FrameRequest::Paint || self.visible_buffer_replaced()
+        } else {
+            !input_ready
+        };
+        if self.scheduler.frame_request == FrameRequest::Full
+            || action_frame
             || idle_frame
             || self
                 .scheduler
                 .search_refresh
                 .is_some_and(|deadline| deadline <= now)
             || self.scheduler.terminal_frame_delay(now) == Some(std::time::Duration::ZERO)
-            || self.visible_buffer_replaced()
         {
             self.update_and_render()?;
             self.state.notifications.mark_rendered();
@@ -211,7 +216,8 @@ impl<T: TerminalBackend> Editor<T> {
 
         let key_press = match event {
             InputEvent::Paste(text) => {
-                self.handle_paste(&text)?;
+                self.handle_paste(&text);
+                self.flush_coalesced_render_if_idle()?;
                 return Ok(true);
             }
             InputEvent::Resize(cols, rows) => {
@@ -222,6 +228,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         if self.is_git_status_refreshing() || !self.scheduler.deferred_keys.is_empty() {
             self.scheduler.deferred_keys.push_back(key_press);
+            self.flush_coalesced_render_if_idle()?;
             return Ok(true);
         }
 
@@ -275,7 +282,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
         if key_press.is(Key::ESC) {
             self.popup.close();
-            self.update_and_render()?;
+            self.update_state_and_render(key_press, Command::Noop)?;
             return Ok(true);
         }
         let scroll = if key_press.is(Key::char('j')) || key_press.is(Key::DOWN) {
@@ -293,7 +300,7 @@ impl<T: TerminalBackend> Editor<T> {
             return Ok(false);
         };
         self.popup.scroll(delta);
-        self.update_and_render()?;
+        self.update_state_and_render(key_press, Command::Noop)?;
         Ok(true)
     }
 
@@ -304,7 +311,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.input.keys.clear();
             self.input.count = 0;
             self.input.grammar = None;
-            self.update_and_render()?;
+            self.update_state_and_render(key_press, Command::Noop)?;
             return Ok(true);
         }
         Ok(false)
@@ -349,6 +356,7 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
         }
+        self.flush_coalesced_render_if_idle()?;
         Ok(true)
     }
 
@@ -641,9 +649,9 @@ impl<T: TerminalBackend> Editor<T> {
             .lookup_with_parent(context, keys, |ctx| self.resolve_parent_key_context(ctx))
     }
 
-    pub(super) fn handle_paste(&mut self, text: &str) -> Result<(), RiftError> {
+    pub(super) fn handle_paste(&mut self, text: &str) {
         if text.is_empty() {
-            return Ok(());
+            return;
         }
 
         let is_terminal_insert = self.current_mode == Mode::Insert
@@ -658,7 +666,8 @@ impl<T: TerminalBackend> Editor<T> {
                     term.write(text.as_bytes());
                 }
             }
-            return self.update_and_render();
+            self.request_frame();
+            return;
         }
 
         let text = crate::clipboard::normalize_newlines(text);
@@ -692,17 +701,17 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        self.update_and_render()
+        self.request_frame();
     }
 
-    pub(super) fn flush_pending_keys_on_timeout(&mut self) -> Result<(), RiftError> {
+    pub(super) fn flush_pending_keys_on_timeout(&mut self) {
         use crate::keymap::trie::MatchResult;
 
         if !self
             .scheduler
             .key_sequence_expired(crate::time::Instant::now())
         {
-            return Ok(());
+            return;
         }
 
         let context = self.resolve_key_context();
@@ -716,9 +725,8 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(action) = action {
             self.handle_action(&action);
             self.input.count = 0;
-            self.update_and_render()?;
+            self.request_frame();
         }
-        Ok(())
     }
 }
 

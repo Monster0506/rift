@@ -292,7 +292,7 @@ fn set_aware_delete_surround_handles_two_regions_sharing_one_enclosing_pair() {
         doc.bank_region(Region::new(1, 1, RangeKind::Charwise));
     }
 
-    assert!(editor.try_run_set_aware_delete_surround('(', 1));
+    assert!(editor.try_run_set_aware_delete_surround('(', 1).unwrap());
 
     assert_eq!(
         editor.active_document().buffer().to_string(),

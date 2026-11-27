@@ -403,7 +403,7 @@ pub(crate) enum PluginMutation {
     /// Register a custom buffer kind from a plugin.
     RegisterBufferKind {
         name: String,
-        read_only: Option<String>,
+        read_only: crate::document::runtime::ReadOnlyPolicy,
         close: Option<String>,
         key_fallback: Option<String>,
         display_name: Option<String>,
@@ -722,14 +722,33 @@ impl PluginHost {
             .retain(|doc_id, _| live.contains(doc_id));
     }
 
-    pub(crate) fn resync_diverged_lua_state(&self) {
+    pub(crate) fn invalidate_diverged_lua_buffers(&self) {
         let Some(lua) = &self.lua else {
             return;
         };
         let mut synced = self.synced_bufs.borrow_mut();
-        for doc_id in lua.take_divergence() {
-            synced.remove(&doc_id);
-        }
+        lua.for_each_diverged_buffer(|id| {
+            synced.remove(&id);
+        });
+    }
+
+    pub(crate) fn reconcile_lua_buffers(
+        &self,
+        mut current: impl FnMut(u64) -> Option<(BufSyncKey, lua_state::BufUpdate)>,
+    ) {
+        let Some(lua) = &self.lua else {
+            return;
+        };
+        let mut synced = self.synced_bufs.borrow_mut();
+        lua.reconcile_buffers(|id| {
+            if let Some((key, update)) = current(id) {
+                synced.insert(id, key);
+                Some(update)
+            } else {
+                synced.remove(&id);
+                None
+            }
+        });
     }
 
     #[cfg(feature = "treesitter")]

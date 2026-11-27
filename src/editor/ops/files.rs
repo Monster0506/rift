@@ -19,7 +19,12 @@ impl<T: TerminalBackend> Editor<T> {
         self.job_manager
             .register_document_handle(doc.handle(), doc.buffer_kind_id());
         let job = self.job_manager.spawn(FileLoadJob::new(doc_id, path, mode));
-        self.file_load_jobs.insert(job, doc_id);
+        let token = self
+            .job_manager
+            .job_token(job)
+            .expect("registered file loads have a token");
+        self.file_load_jobs
+            .insert(job, super::super::jobs::FileLoad::new(token));
     }
 
     pub(crate) fn open_file_from_input(&mut self, path: Option<String>, force: bool) -> bool {
@@ -51,7 +56,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             doc.sync_terminal_buffer();
         }
-        let _ = self.update_and_render();
+        self.request_frame();
         true
     }
 }

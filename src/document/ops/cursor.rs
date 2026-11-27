@@ -68,6 +68,151 @@ impl Document {
     }
 }
 
+pub(crate) fn compute_motion_range(
+    motion: Motion,
+    count: usize,
+    doc: &mut Document,
+    viewport_height: usize,
+    last_search_query: Option<&str>,
+) -> Option<crate::wrap::MotionRange> {
+    use crate::wrap::{MotionRange, OperatorContext};
+    const MAX_MOTION_REPEAT: usize = 1_000_000;
+
+    if let Motion::TextObject(spec) = motion {
+        #[cfg(feature = "treesitter")]
+        {
+            let needs_tree = crate::text_objects::requires_treesitter(spec.kind);
+            let ts_bytes: Option<Vec<u8>> =
+                if needs_tree && doc.syntax.as_ref().and_then(|s| s.tree.as_ref()).is_some() {
+                    Some(doc.buffer().to_logical_bytes())
+                } else {
+                    None
+                };
+            let syntax_ctx = ts_bytes.as_ref().and_then(|bytes| {
+                doc.syntax
+                    .as_ref()
+                    .and_then(|s| s.tree.as_ref())
+                    .map(|tree| crate::text_objects::treesitter::SyntaxContext {
+                        tree,
+                        source: bytes.as_slice(),
+                    })
+            });
+            return crate::text_objects::resolve(spec, doc.buffer(), count, syntax_ctx.as_ref());
+        }
+        #[cfg(not(feature = "treesitter"))]
+        {
+            return crate::text_objects::resolve(spec, doc.buffer(), count, None);
+        }
+    }
+
+    let is_jump = matches!(
+        motion,
+        Motion::ToLine(_) | Motion::StartOfFile | Motion::EndOfFile
+    );
+    let is_linewise = is_jump
+        || matches!(
+            motion,
+            Motion::Up | Motion::Down | Motion::PageUp | Motion::PageDown
+        );
+    let is_inclusive = matches!(motion, Motion::FindCharForward(_) | Motion::WordEnd);
+
+    let anchor = doc.buffer().cursor();
+
+    let count = count.min(MAX_MOTION_REPEAT);
+
+    for i in 0..count {
+        let iter_start = doc.buffer().cursor();
+
+        doc.apply_motion(
+            motion,
+            None,
+            OperatorContext::Operator,
+            viewport_height,
+            last_search_query,
+        );
+
+        if i + 1 == count && matches!(motion, Motion::NextWord | Motion::NextBigWord) {
+            clamp_to_line_end(doc, iter_start);
+        }
+    }
+
+    let new_cursor = doc.buffer().cursor();
+    let _ = doc.set_cursor(anchor, crate::document::ops::CursorCause::Programmatic);
+
+    if anchor == new_cursor && !is_jump {
+        return None;
+    }
+
+    if is_linewise {
+        Some(MotionRange::linewise(anchor, new_cursor))
+    } else if is_inclusive {
+        Some(MotionRange::charwise_inclusive(anchor, new_cursor))
+    } else {
+        Some(MotionRange::charwise(anchor, new_cursor))
+    }
+}
+
+pub(super) fn compute_change_range(
+    motion: Motion,
+    count: usize,
+    doc: &mut Document,
+    viewport_height: usize,
+    last_search_query: Option<&str>,
+) -> Option<crate::wrap::MotionRange> {
+    if !matches!(motion, Motion::NextWord) || !on_non_blank(doc.buffer()) {
+        return compute_motion_range(motion, count, doc, viewport_height, last_search_query);
+    }
+
+    let cursor = doc.buffer().cursor();
+    let remaining = if on_word_end(doc.buffer()) {
+        count.max(1) - 1
+    } else {
+        count
+    };
+    if remaining == 0 {
+        return Some(crate::wrap::MotionRange::charwise_inclusive(cursor, cursor));
+    }
+
+    compute_motion_range(
+        Motion::WordEnd,
+        remaining,
+        doc,
+        viewport_height,
+        last_search_query,
+    )
+}
+
+fn on_non_blank(buf: &TextBuffer) -> bool {
+    use crate::movement::classify::{classify_character, CharClass};
+    buf.char_at(buf.cursor())
+        .is_some_and(|c| classify_character(c) != CharClass::Whitespace)
+}
+
+fn on_word_end(buf: &TextBuffer) -> bool {
+    use crate::movement::classify::classify_character;
+    let cursor = buf.cursor();
+    let Some(cur) = buf.char_at(cursor) else {
+        return false;
+    };
+
+    buf.char_at(cursor + 1).map(classify_character) != Some(classify_character(cur))
+}
+
+fn clamp_to_line_end(doc: &mut Document, from: usize) {
+    let buf = doc.buffer();
+    let start_line = buf.line_index.get_line_at(from);
+    if buf.line_index.get_line_at(buf.cursor()) <= start_line {
+        return;
+    }
+
+    let Some(end) = buf.line_index.get_end(start_line, buf.len()) else {
+        return;
+    };
+    if from < end {
+        let _ = doc.set_cursor(end, crate::document::ops::CursorCause::Programmatic);
+    }
+}
+
 pub(in crate::document) fn move_buffer(
     buf: &mut TextBuffer,
     motion: Motion,

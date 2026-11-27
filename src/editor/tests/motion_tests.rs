@@ -853,7 +853,7 @@ fn ambiguous_non_operator_binding_flushes_to_the_short_action_after_timeout() {
             .unwrap(),
     );
 
-    editor.flush_pending_keys_on_timeout().unwrap();
+    editor.flush_pending_keys_on_timeout();
 
     assert!(
         editor.input.keys.is_empty(),

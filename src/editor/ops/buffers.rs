@@ -206,7 +206,8 @@ impl<T: TerminalBackend> Editor<T> {
         #[cfg(feature = "lsp")]
         self.lsp_notify_close(id);
 
-        self.file_load_jobs.retain(|_, target_id| *target_id != id);
+        self.file_load_jobs
+            .retain(|_, load| load.token.handle != handle);
         self.clear_git_gutter_state(id);
         self.scheduler.forget_document(id);
         self.git_status_refresh_jobs.remove(&id);

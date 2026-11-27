@@ -10,14 +10,20 @@ use crate::color::Color;
 
 const GHOST_PRIORITY: i32 = 8;
 
+impl super::ops::DocumentWrite<'_> {
+    pub(crate) fn create_ghosts(&mut self, ranges: &[(usize, usize)], clip: Clip) -> bool {
+        self.doc.create_ghosts(ranges, clip)
+    }
+}
+
 impl Document {
-    pub(crate) fn create_ghosts(&mut self, ranges: &[(usize, usize)], clip: Clip) {
+    fn create_ghosts(&mut self, ranges: &[(usize, usize)], clip: Clip) -> bool {
         self.commit_pending_ghost();
 
         let mut ranges: Vec<(usize, usize)> =
             ranges.iter().copied().filter(|&(s, e)| s < e).collect();
         if ranges.is_empty() {
-            return;
+            return false;
         }
         ranges.sort_unstable_by_key(|&(start, _)| std::cmp::Reverse(start));
 
@@ -26,22 +32,29 @@ impl Document {
         let mut ghosts = Vec::with_capacity(ranges.len());
         for &(start, end) in &ranges {
             let text: Vec<Character> = self.buffer.chars(start..end).collect();
-            let _ = self.edit(
-                super::ops::Edit::delete(start..end),
-                super::ops::EditSource::User,
-            );
-            ghosts.push(GhostCut {
-                at: start,
-                text,
-                painted: None,
-            });
+            if self
+                .apply_edit(
+                    super::ops::Edit::delete(start..end),
+                    super::ops::EditSource::User,
+                )
+                .is_ok_and(|changed| changed)
+            {
+                ghosts.push(GhostCut {
+                    at: start,
+                    text,
+                    painted: None,
+                });
+            }
         }
         self.commit_transaction();
 
-        let shift: usize = ranges
+        if ghosts.is_empty() {
+            return false;
+        }
+        let shift: usize = ghosts
             .iter()
-            .filter(|&&(start, _)| start <= cursor_before)
-            .map(|&(start, end)| end.min(cursor_before) - start)
+            .filter(|ghost| ghost.at <= cursor_before)
+            .map(|ghost| ghost.text.len().min(cursor_before - ghost.at))
             .sum();
         let restored = cursor_before.saturating_sub(shift).min(self.buffer.len());
         let _ = self.set_cursor(restored, crate::document::ops::CursorCause::Programmatic);
@@ -49,6 +62,7 @@ impl Document {
         ghosts.sort_unstable_by_key(|g| g.at);
         self.pending_ghost = ghosts;
         self.ghost_clip = Some(clip);
+        true
     }
 
     pub(crate) fn most_recent_ghost(&self) -> Option<(&[Character], usize, &Clip)> {

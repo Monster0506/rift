@@ -37,13 +37,6 @@ impl BufferTarget<'_> {
         }
     }
 
-    fn edit(&mut self, edit: Edit) -> bool {
-        match self {
-            Self::Document(doc) => matches!(doc.edit(edit, EditSource::Plugin), Ok(true)),
-            Self::Snapshot(buffer, policy) => policy.project(buffer, edit),
-        }
-    }
-
     fn set_cursor(&mut self, position: usize) {
         match self {
             Self::Document(doc) => {
@@ -56,8 +49,65 @@ impl BufferTarget<'_> {
     }
 }
 
+enum BufferWriteTarget<'a> {
+    Document(super::DocumentWrite<'a>),
+    Snapshot(&'a mut TextBuffer, EditPolicy),
+}
+
+impl BufferWriteTarget<'_> {
+    fn buffer(&self) -> &TextBuffer {
+        match self {
+            Self::Document(doc) => doc.buffer(),
+            Self::Snapshot(buffer, _) => buffer,
+        }
+    }
+
+    fn edit(&mut self, edit: Edit) -> bool {
+        match self {
+            Self::Document(doc) => matches!(doc.edit(edit, EditSource::Plugin), Ok(true)),
+            Self::Snapshot(buffer, policy) => policy.project(buffer, edit),
+        }
+    }
+
+    fn set_cursor(&mut self, cursor: usize) {
+        match self {
+            Self::Document(doc) => {
+                let _ = doc.set_cursor(cursor, CursorCause::Plugin);
+            }
+            Self::Snapshot(buffer, _) => {
+                let _ = buffer.set_cursor(cursor);
+            }
+        }
+    }
+}
+
 impl BufferChange<'_> {
     pub(crate) fn apply(self, mut target: BufferTarget<'_>) -> Option<(usize, usize)> {
+        match self {
+            Self::Cursor { row, col } => {
+                target.set_cursor(target.buffer().line_col_position(row, col));
+            }
+            Self::Center { row } => {
+                let total = target.buffer().get_total_lines();
+                let row = row.min(total.saturating_sub(1));
+                target.set_cursor(target.buffer().line_col_position(row, 0));
+                return Some((row, total));
+            }
+            edit => {
+                let mut writer = match target {
+                    BufferTarget::Document(doc) => BufferWriteTarget::Document(doc.write().ok()?),
+                    BufferTarget::Snapshot(buffer, policy) if policy.check().is_ok() => {
+                        BufferWriteTarget::Snapshot(buffer, policy)
+                    }
+                    BufferTarget::Snapshot(..) => return None,
+                };
+                edit.apply_edit(&mut writer);
+            }
+        }
+        None
+    }
+
+    fn apply_edit(self, target: &mut BufferWriteTarget<'_>) {
         match self {
             Self::AppendLines(lines) => {
                 let capacity =
@@ -93,16 +143,7 @@ impl BufferChange<'_> {
                     }
                 }
             }
-            Self::Cursor { row, col } => {
-                target.set_cursor(target.buffer().line_col_position(row, col));
-            }
-            Self::Center { row } => {
-                let total = target.buffer().get_total_lines();
-                let row = row.min(total.saturating_sub(1));
-                target.set_cursor(target.buffer().line_col_position(row, 0));
-                return Some((row, total));
-            }
+            Self::Cursor { .. } | Self::Center { .. } => {}
         }
-        None
     }
 }

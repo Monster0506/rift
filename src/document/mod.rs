@@ -210,6 +210,7 @@ pub(crate) struct Document {
     annotation_redo_stack: Vec<AnnotationUndo>,
     content_version: u64,
     buffer_replaced: bool,
+    undo_tree_preview: Option<DocumentId>,
     #[cfg(feature = "lsp")]
     pending_lsp_edits: Vec<crate::history::EditOperation>,
     #[cfg(feature = "lsp")]
@@ -674,7 +675,10 @@ impl Document {
         }
     }
 
-    pub(crate) const fn set_read_only(&mut self, on: bool) {
+    pub(crate) fn set_read_only(&mut self, on: bool) {
+        if on {
+            self.commit_pending_ghost();
+        }
         self.readonly_override = on;
     }
 

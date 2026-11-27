@@ -1,10 +1,8 @@
 use super::Editor;
-#[cfg(feature = "lsp")]
-use crate::buffer::api::BufferView;
 use crate::document::DocumentId;
 use crate::error::RiftError;
 use crate::job_manager::AsyncToken;
-use crate::job_manager::{JobMessage, JobRef, JobTarget};
+use crate::job_manager::{JobMessage, JobPayload, JobRef, JobTarget};
 use crate::term::TerminalBackend;
 #[cfg(feature = "treesitter")]
 use std::sync::Arc;
@@ -20,6 +18,22 @@ fn syntax_for(
         .and_then(|source| tree_sitter::Query::new(&lang.language, &source).ok())
         .map(Arc::new);
     crate::syntax::build_syntax(lang, highlights, loader)
+}
+
+pub(super) struct FileLoad {
+    pub(super) token: AsyncToken,
+    #[cfg(feature = "lsp")]
+    goto: Option<(usize, u32)>,
+}
+
+impl FileLoad {
+    pub(super) fn new(token: AsyncToken) -> Self {
+        Self {
+            token,
+            #[cfg(feature = "lsp")]
+            goto: None,
+        }
+    }
 }
 
 impl<T: TerminalBackend> Editor<T> {
@@ -178,16 +192,40 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    fn on_file_load_failed(&mut self, job_id: usize) {
-        let Some(doc_id) = self.file_load_jobs.remove(&job_id) else {
-            return;
+    #[cfg(feature = "lsp")]
+    pub(super) fn defer_file_load_goto(
+        &mut self,
+        handle: crate::document::runtime::DocumentHandle,
+        line: usize,
+        col_units: u32,
+    ) -> bool {
+        let Some((_, load)) = self.file_load_jobs.iter_mut().find(|(id, load)| {
+            load.token.handle == handle
+                && self.job_manager.is_job_running(**id)
+                && self.job_manager.is_token_current(&load.token)
+                && self
+                    .document_manager
+                    .get_document_by_handle(handle)
+                    .is_some_and(|doc| doc.matches_kind(load.token.expected_kind))
+        }) else {
+            return false;
         };
-        #[cfg(feature = "lsp")]
-        if self.scheduler.goto_after_load.map(|t| t.0) == Some(doc_id) {
-            self.scheduler.goto_after_load = None;
-        }
-        #[cfg(not(feature = "lsp"))]
-        let _ = doc_id;
+        load.goto = Some((line, col_units));
+        true
+    }
+
+    fn take_file_load(
+        &mut self,
+        id: usize,
+        token: Option<AsyncToken>,
+        doc_id: DocumentId,
+    ) -> Option<FileLoad> {
+        self.file_load_jobs.remove(&id).filter(|load| {
+            self.job_manager.is_job_running(id)
+                && load.token.doc_id() == doc_id
+                && token.is_none_or(|token| token == load.token)
+                && self.is_async_token_valid(&load.token)
+        })
     }
 
     pub(super) fn finish_history_syntax(&mut self, doc_id: DocumentId) {
@@ -278,6 +316,7 @@ impl<T: TerminalBackend> Editor<T> {
                 );
             }
             JobMessage::Finished(id, silent) => {
+                self.file_load_jobs.remove(&id);
                 let name = self.job_manager.job_name(id);
                 self.state.notifications.log_job_event(
                     id,
@@ -287,49 +326,51 @@ impl<T: TerminalBackend> Editor<T> {
                 );
             }
             JobMessage::Error(id, err) => {
-                if let Some(t) = self.job_manager.job_token(id) {
-                    if !self.is_async_token_valid(&t) {
-                        return;
-                    }
+                self.file_load_jobs.remove(&id);
+                if self
+                    .job_manager
+                    .job_token(id)
+                    .is_none_or(|token| self.is_async_token_valid(&token))
+                {
+                    self.handle_job_error(id, &err);
                 }
-                self.handle_job_error(id, &err);
             }
             JobMessage::Cancelled(id) => {
-                if let Some(t) = self.job_manager.job_token(id) {
-                    if !self.is_async_token_valid(&t) {
-                        return;
-                    }
+                self.file_load_jobs.remove(&id);
+                if self
+                    .job_manager
+                    .job_token(id)
+                    .is_none_or(|token| self.is_async_token_valid(&token))
+                {
+                    self.handle_job_cancelled(id);
                 }
-                self.handle_job_cancelled(id);
             }
             JobMessage::CustomToken(id, token, payload) => {
-                if !self.is_async_token_valid(&token) {
-                    return;
-                }
-                payload.apply(
-                    self,
-                    JobRef {
-                        id,
-                        token: Some(token),
-                    },
-                );
+                self.apply_job_payload(id, Some(token), payload);
             }
             JobMessage::Custom(id, payload) => {
                 let token = self.job_manager.job_token(id);
-                if let Some(t) = token {
-                    if !self.is_async_token_valid(&t) {
-                        return;
-                    }
-                }
-                payload.apply(self, JobRef { id, token });
+                self.apply_job_payload(id, token, payload);
             }
         }
 
         self.job_manager.cleanup_finished_jobs();
     }
 
+    fn apply_job_payload(
+        &mut self,
+        id: usize,
+        token: Option<AsyncToken>,
+        payload: Box<dyn JobPayload>,
+    ) {
+        if token.is_none_or(|token| self.is_async_token_valid(&token)) {
+            payload.apply(self, JobRef { id, token });
+        } else {
+            self.file_load_jobs.remove(&id);
+        }
+    }
+
     fn handle_job_error(&mut self, id: usize, err: &RiftError) {
-        self.on_file_load_failed(id);
         let silent = self.job_manager.is_job_silent(id);
         let name = self.job_manager.job_name(id);
         self.state.notifications.log_job_event(
@@ -357,43 +398,7 @@ impl<T: TerminalBackend> Editor<T> {
             crate::notification::NotificationType::Warning,
             format!("{name} cancelled"),
         );
-        self.on_file_load_failed(id);
-
         self.cancel_quit_after_save(id);
-    }
-
-    #[cfg(feature = "lsp")]
-    fn apply_pending_goto(&mut self, token: &AsyncToken, document_id: DocumentId) {
-        let Some((goto_doc, goto_line, goto_col)) = self.scheduler.goto_after_load.take() else {
-            return;
-        };
-        if goto_doc != document_id {
-            if self.document_manager.get_document(goto_doc).is_some() {
-                self.scheduler.goto_after_load = Some((goto_doc, goto_line, goto_col));
-            }
-            return;
-        }
-        let doc_path = self
-            .document_manager
-            .get_document_by_handle(token.handle)
-            .and_then(|doc| doc.path().map(std::path::Path::to_path_buf));
-        let encoding = doc_path
-            .as_deref()
-            .map_or_default(|p| self.lsp_manager.position_encoding_for_path(p));
-        if let Some(doc) = self
-            .document_manager
-            .get_document_by_handle_mut(token.handle)
-        {
-            let goto_line = goto_line.min(doc.buffer().last_real_line());
-            let char_col = doc.lsp_char_offset_in_line(
-                goto_line,
-                u32::try_from(goto_col).unwrap_or(u32::MAX),
-                encoding,
-            );
-            let line_offset = doc.buffer().line_start(goto_line);
-            let target = (line_offset + char_col).min(doc.buffer().len());
-            let _ = doc.set_cursor(target, crate::document::ops::CursorCause::Jump);
-        }
     }
 }
 
@@ -885,23 +890,13 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
         token: Option<AsyncToken>,
         res: crate::job_manager::jobs::file_operations::FileLoadResult,
     ) {
-        self.file_load_jobs.remove(&id);
-        let Some(token) = self.resolve_and_validate_token(
-            id,
-            token,
-            res.document_id,
-            crate::job_manager::AsyncOpDomain::FileLoad,
-        ) else {
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
+        let Some(load) = self.take_file_load(id, token, res.document_id) else {
             return;
         };
         let Some(doc) = self
             .document_manager
-            .get_document_by_handle_mut(token.handle)
+            .get_document_by_handle_mut(load.token.handle)
         else {
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
             return;
         };
 
@@ -925,10 +920,9 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
             self.announce_buffer(res.document_id);
         }
         #[cfg(feature = "lsp")]
-        self.apply_pending_goto(&token, res.document_id);
-
-        self.job_manager
-            .update_job_state(&JobMessage::Finished(id, true));
+        if let Some((line, col_units)) = load.goto {
+            self.place_lsp_goto(load.token.handle, line, col_units);
+        }
     }
 
     fn apply_image_load(
@@ -937,39 +931,19 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
         token: Option<AsyncToken>,
         res: crate::job_manager::jobs::file_operations::ImageLoadResult,
     ) {
-        self.file_load_jobs.remove(&id);
-        let Some(token) = self.resolve_and_validate_token(
-            id,
-            token,
-            res.document_id,
-            crate::job_manager::AsyncOpDomain::FileLoad,
-        ) else {
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
+        let Some(load) = self.take_file_load(id, token, res.document_id) else {
             return;
         };
-        if self
-            .document_manager
-            .get_document_by_handle(token.handle)
-            .is_none()
-        {
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
-            return;
-        }
         #[cfg(feature = "lsp")]
         {
             // `:e` from raw bytes: the text buffer may be open with a server.
             if res.is_reload {
                 self.lsp_notify_close(res.document_id);
             }
-            if self.scheduler.goto_after_load.map(|t| t.0) == Some(res.document_id) {
-                self.scheduler.goto_after_load = None;
-            }
         }
         if let Some(doc) = self
             .document_manager
-            .get_document_by_handle_mut(token.handle)
+            .get_document_by_handle_mut(load.token.handle)
         {
             doc.convert_to_image_view(res.image);
         }
@@ -982,9 +956,6 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
         } else {
             self.announce_buffer(res.document_id);
         }
-
-        self.job_manager
-            .update_job_state(&JobMessage::Finished(id, true));
     }
 
     #[cfg(feature = "treesitter")]

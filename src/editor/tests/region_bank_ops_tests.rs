@@ -18,10 +18,12 @@ fn apply_to_each_region_runs_f_once_per_region_highest_offset_first() {
         .bank_region(Region::new(5, 6, RangeKind::Charwise));
 
     let mut seen_starts = Vec::new();
-    let handled = editor.apply_to_each_region(|_editor, region| {
-        seen_starts.push(region.span().0);
-        true
-    });
+    let handled = editor
+        .apply_to_each_region(|_editor, region| {
+            seen_starts.push(region.span().0);
+            true
+        })
+        .unwrap();
 
     assert!(handled);
     assert_eq!(seen_starts, vec![5, 0], "highest-offset-first");
@@ -36,7 +38,9 @@ fn apply_to_each_region_on_empty_set_returns_false() {
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
 
-    let handled = editor.apply_to_each_region(|_editor, _region| true);
+    let handled = editor
+        .apply_to_each_region(|_editor, _region| true)
+        .unwrap();
 
     assert!(!handled);
 }
@@ -55,13 +59,12 @@ fn apply_to_each_region_deletes_are_one_undo_step() {
         .active_document()
         .bank_region(Region::new(5, 6, RangeKind::Charwise));
 
-    editor.apply_to_each_region(|editor, region| {
-        let (start, end) = region.span();
-        editor
-            .document_manager
-            .get_document_mut(editor.active_document_id())
-            .is_some_and(|doc| doc.edit(Edit::delete(start..end), EditSource::User).is_ok())
-    });
+    editor
+        .apply_to_each_region(|doc, region| {
+            let (start, end) = region.span();
+            doc.edit(Edit::delete(start..end), EditSource::User).is_ok()
+        })
+        .unwrap();
     assert_eq!(editor.active_document().buffer().to_string(), "234789");
 
     assert!(editor.active_document().undo());
@@ -88,10 +91,12 @@ fn enter_multi_insert_replays_typed_session_at_every_remaining_anchor() {
         .active_document()
         .bank_region(Region::new(5, 5, RangeKind::Charwise));
 
-    let handled = editor.enter_multi_insert(
-        Command::BeginInsert(crate::command::InsertEntry::AtCursor),
-        |_doc, region| region.span().0,
-    );
+    let handled = editor
+        .enter_multi_insert(
+            Command::BeginInsert(crate::command::InsertEntry::AtCursor),
+            |_doc, region| region.span().0,
+        )
+        .unwrap();
     assert!(handled);
     assert_eq!(editor.current_mode, Mode::Insert);
     assert_eq!(
@@ -116,10 +121,12 @@ fn enter_multi_insert_on_empty_set_returns_false() {
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
 
-    let handled = editor.enter_multi_insert(
-        crate::command::Command::BeginInsert(crate::command::InsertEntry::AtCursor),
-        |_doc, region| region.span().0,
-    );
+    let handled = editor
+        .enter_multi_insert(
+            crate::command::Command::BeginInsert(crate::command::InsertEntry::AtCursor),
+            |_doc, region| region.span().0,
+        )
+        .unwrap();
 
     assert!(!handled);
     assert_eq!(editor.current_mode, Mode::Normal);

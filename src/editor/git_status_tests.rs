@@ -270,7 +270,7 @@ fn wq_on_a_git_commit_message_buffer_commits_and_quits_instead_of_erroring() {
             .is_none(),
         "commit buffer should close after :wq"
     );
-    assert!(editor.should_quit, ":wq must still quit the editor");
+    assert!(editor.should_quit(), ":wq must still quit the editor");
 }
 
 #[test]

@@ -374,27 +374,36 @@ impl<T: TerminalBackend> Editor<T> {
     /// Open `path` and place the cursor at (`line`, `col_units`), where the
     /// column is in the server's position encoding. Deferred if the file loads async.
     pub(super) fn jump_to_location(&mut self, path: &std::path::Path, line: usize, col_units: u32) {
-        let already_open = self.document_manager.find_open_document_id(path).is_some();
-        // Existing files that are not open load through a job.
-        let loads_async = !already_open && path.exists();
+        let target = match self.open_file(Some(path.to_string_lossy().into_owned()), false) {
+            Ok(target) => target,
+            Err(error) => {
+                self.notify_error(error);
+                return;
+            }
+        };
 
-        if let Err(e) = self.open_file(Some(path.to_string_lossy().into_owned()), false) {
-            self.notify_error(e);
-            return;
-        }
-
-        if loads_async {
-            // FileLoadResult applies the jump once the content is in.
-            self.scheduler.goto_after_load =
-                Some((self.active_document_id(), line, col_units as usize));
-            return;
-        }
-
-        let encoding = self.lsp_manager.position_encoding_for_path(path);
-        if let Some(doc) = self
+        let Some(handle) = self
             .document_manager
-            .get_document_mut(self.active_document_id())
-        {
+            .get_document(target)
+            .map(crate::document::Document::handle)
+        else {
+            return;
+        };
+        if !self.defer_file_load_goto(handle, line, col_units) {
+            self.place_lsp_goto(handle, line, col_units);
+        }
+    }
+
+    pub(super) fn place_lsp_goto(
+        &mut self,
+        handle: crate::document::runtime::DocumentHandle,
+        line: usize,
+        col_units: u32,
+    ) {
+        if let Some(doc) = self.document_manager.get_document_by_handle_mut(handle) {
+            let encoding = doc
+                .path()
+                .map_or_default(|path| self.lsp_manager.position_encoding_for_path(path));
             let line = line.min(doc.buffer().last_real_line());
             let target_col = doc.lsp_char_offset_in_line(line, col_units, encoding);
             let target = doc.buffer().line_start(line) + target_col;
@@ -664,7 +673,7 @@ impl<T: TerminalBackend> Editor<T> {
         let cursor_line = doc.buffer().line_index.get_line_at(cursor);
         let cursor_col = cursor.saturating_sub(doc.buffer().line_start(cursor_line));
 
-        doc.edit_group("LSP edit", |doc| {
+        let edit_result = doc.edit_group("LSP edit", |doc| {
             for edit in edits.iter().rev() {
                 let start_line = edit.range.start.line as usize;
                 let end_line = edit.range.end.line as usize;
@@ -692,6 +701,10 @@ impl<T: TerminalBackend> Editor<T> {
             }
             doc.invalidate_syntax();
         });
+        if let Err(error) = edit_result {
+            self.notify_error(error.into());
+            return None;
+        }
 
         // Put the cursor back where the user had it, clamped to the new text.
         let line = cursor_line.min(doc.buffer().get_total_lines().saturating_sub(1));

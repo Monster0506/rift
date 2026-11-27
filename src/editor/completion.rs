@@ -51,7 +51,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        let _ = self.update_and_render();
+        self.request_frame();
     }
 
     pub(super) fn apply_completion_text(&mut self, text: &str, token_start: usize) {

@@ -3,6 +3,44 @@ use super::protocol::*;
 use super::*;
 use std::path::Path;
 
+#[cfg(feature = "plugins")]
+impl LspManager {
+    pub(crate) fn capture_wire_requests(
+        &mut self,
+        paths: &[&Path],
+    ) -> std::sync::mpsc::Receiver<Vec<u8>> {
+        struct Capture(std::sync::mpsc::Sender<Vec<u8>>);
+
+        impl std::io::Write for Capture {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.send(bytes.to_vec()).map_err(std::io::Error::other)?;
+                Ok(bytes.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let language = "wire-test";
+        self.clients.insert(
+            language.into(),
+            LspClient::new_for_test(Box::new(Capture(tx))),
+        );
+        for path in paths {
+            self.open_docs.insert(
+                normalize_uri(&path_to_uri(path)),
+                DocState {
+                    language: language.into(),
+                    version: 1,
+                },
+            );
+        }
+        rx
+    }
+}
+
 // -- protocol helpers --
 
 #[test]

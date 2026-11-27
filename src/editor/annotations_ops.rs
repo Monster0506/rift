@@ -84,7 +84,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let ran =
                     self.call_plugins(|editor| editor.plugin_host.invoke_annotation_action(&ctx));
                 if ran {
-                    let _ = self.update_and_render();
+                    self.request_frame();
                 }
                 ran
             }
@@ -94,7 +94,7 @@ impl<T: TerminalBackend> Editor<T> {
                     return false;
                 }
                 self.execute_command_line(&cmd);
-                let _ = self.update_and_render();
+                self.request_frame();
                 true
             }
             // Remote handler is reserved for IPC; nothing to do in-process.
@@ -114,7 +114,16 @@ impl<T: TerminalBackend> Editor<T> {
                 crate::annotations::Anchor::Range(s, _) => s.offset,
                 crate::annotations::Anchor::Line(_) => 0,
             });
-        let buffer_checked = anchor.and_then(|off| self.toggle_buffer_checkbox(off));
+        let buffer_checked = match anchor
+            .map(|off| self.toggle_buffer_checkbox(off))
+            .transpose()
+        {
+            Ok(checked) => checked.flatten(),
+            Err(error) => {
+                self.notify_error(error);
+                return true;
+            }
+        };
         if let Some(doc) = self
             .document_manager
             .get_document_mut(self.active_document_id())
@@ -137,7 +146,7 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             });
         }
-        let _ = self.update_and_render();
+        self.request_frame();
         true
     }
 
@@ -169,32 +178,29 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    /// Flip a literal `[ ]`/`[x]` at byte offset `byte_off` in place (length-
-    /// preserving, so markers hold), returning the new state, or None if absent.
-    fn toggle_buffer_checkbox(&mut self, byte_off: usize) -> Option<bool> {
-        let doc = self
-            .document_manager
-            .get_document_mut(self.active_document_id())?;
-        let c0 = doc.buffer().byte_to_char(byte_off);
-        let open = doc.buffer().char_at(c0)?.to_char_lossy();
-        let mid = doc.buffer().char_at(c0 + 1)?.to_char_lossy();
-        let close = doc.buffer().char_at(c0 + 2)?.to_char_lossy();
-        if open != '[' || close != ']' {
-            return None;
-        }
-        let checked = match mid {
-            ' ' => false,
-            'x' | 'X' => true,
-            _ => return None,
+    fn toggle_buffer_checkbox(
+        &mut self,
+        byte_off: usize,
+    ) -> Result<Option<bool>, crate::error::RiftError> {
+        let doc = self.active_document();
+        let buffer = doc.buffer();
+        let c0 = buffer.byte_to_char(byte_off);
+        let char_at = |at| {
+            buffer
+                .char_at(at)
+                .map(crate::character::Character::to_char_lossy)
+        };
+        let checked = match (char_at(c0), char_at(c0 + 1), char_at(c0 + 2)) {
+            (Some('['), Some(' '), Some(']')) => false,
+            (Some('['), Some('x' | 'X'), Some(']')) => true,
+            _ => return Ok(None),
         };
         let new_ch = if checked { ' ' } else { 'x' };
-        doc.edit(
+        let applied = doc.edit(
             crate::document::ops::Edit::replace(c0 + 1..c0 + 2, new_ch),
             crate::document::ops::EditSource::User,
-        )
-        .ok()
-        .filter(|applied| *applied)?;
-        Some(!checked)
+        )?;
+        Ok(applied.then_some(!checked))
     }
 
     #[cfg(feature = "plugins")]
@@ -299,7 +305,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         if let Some(off) = doc.buffer().line_index.get_start(line) {
             let _ = doc.set_cursor(off, crate::document::ops::CursorCause::User);
-            let _ = self.update_and_render();
+            self.request_frame();
             true
         } else {
             false
@@ -334,7 +340,7 @@ impl<T: TerminalBackend> Editor<T> {
             {
                 let _ = doc.set_cursor(offset, crate::document::ops::CursorCause::User);
             }
-            let _ = self.update_and_render();
+            self.request_frame();
             true
         } else {
             false

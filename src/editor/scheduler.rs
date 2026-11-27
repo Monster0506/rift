@@ -47,8 +47,6 @@ pub(super) struct Scheduler {
     #[cfg(feature = "plugins")]
     pub(super) held_saves: HashMap<DocumentId, HeldSave>,
     #[cfg(feature = "lsp")]
-    pub(super) goto_after_load: Option<(DocumentId, usize, usize)>,
-    #[cfg(feature = "lsp")]
     pub(super) code_actions: Vec<serde_json::Value>,
 }
 
@@ -89,8 +87,6 @@ impl Scheduler {
             save_pre_in_progress: HashSet::new(),
             #[cfg(feature = "plugins")]
             held_saves: HashMap::new(),
-            #[cfg(feature = "lsp")]
-            goto_after_load: None,
             #[cfg(feature = "lsp")]
             code_actions: Vec::new(),
         }
@@ -138,10 +134,6 @@ impl Scheduler {
         self.git_log_expand_head.remove(&id);
         #[cfg(feature = "plugins")]
         self.held_saves.remove(&id);
-        #[cfg(feature = "lsp")]
-        if self.goto_after_load.is_some_and(|(d, ..)| d == id) {
-            self.goto_after_load = None;
-        }
     }
 }
 

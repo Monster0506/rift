@@ -135,3 +135,23 @@ fn request_detach_sends_on_channel() {
     backend.request_detach();
     assert!(detach_rx.try_recv().is_ok());
 }
+
+#[test]
+fn quit_detaches_only_the_current_remote_client() {
+    let (backend, input, _output, detach) = make_backend(24, 80);
+    let mut editor = crate::editor::Editor::with_file(backend, None).unwrap();
+    editor.set_remote(true);
+
+    for _ in 0..2 {
+        input.send(InputEvent::Key(Key::char('q'))).unwrap();
+        editor.tick().unwrap();
+        detach.try_recv().expect("q detaches the current client");
+
+        input.send(InputEvent::Resize(80, 24)).unwrap();
+        editor.tick().unwrap();
+        assert!(matches!(
+            detach.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
+    }
+}

@@ -139,6 +139,7 @@ impl Document {
             annotation_redo_stack: Vec::new(),
             content_version: 0,
             buffer_replaced: false,
+            undo_tree_preview: None,
             #[cfg(feature = "lsp")]
             pending_lsp_edits: Vec::new(),
             #[cfg(feature = "lsp")]
@@ -395,6 +396,7 @@ impl Document {
             file_path: linked.file_path.clone(),
             readonly_override: true,
             history: linked.history.clone(),
+            undo_tree_preview: Some(linked.id),
             ..Self::skeleton(id, linked.buffer.clone())
         }
     }
