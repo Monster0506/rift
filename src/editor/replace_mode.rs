@@ -41,30 +41,30 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let mut entries = Vec::new();
-        doc.begin_transaction("Paste");
-        for ch in text.chars() {
-            let pos = doc.buffer().cursor();
-            let (original, result) = if ch == '\n' {
-                (
-                    None,
-                    doc.edit(
-                        crate::document::ops::Edit::type_text(ch),
-                        crate::document::ops::EditSource::User,
-                    ),
-                )
-            } else {
-                (doc.char_to_overwrite(), doc.overwrite_char(ch))
-            };
-            if result.is_err() {
-                break;
+        doc.edit_group("Paste", |doc| {
+            for ch in text.chars() {
+                let pos = doc.buffer().cursor();
+                let (original, result) = if ch == '\n' {
+                    (
+                        None,
+                        doc.edit(
+                            crate::document::ops::Edit::type_text(ch),
+                            crate::document::ops::EditSource::User,
+                        ),
+                    )
+                } else {
+                    (doc.char_to_overwrite(), doc.overwrite_char(ch))
+                };
+                if result.is_err() {
+                    break;
+                }
+                entries.push(ReplaceEntry {
+                    pos,
+                    original,
+                    dot: DotRecord::Skipped,
+                });
             }
-            entries.push(ReplaceEntry {
-                pos,
-                original,
-                dot: DotRecord::Skipped,
-            });
-        }
-        doc.commit_transaction();
+        });
 
         self.replace_originals.extend(entries);
     }

@@ -95,17 +95,20 @@ impl<T: TerminalBackend> Editor<T> {
             });
         }
 
-        document.begin_transaction(format!("Substitute: {pattern} -> {replacement}"));
         let mut changes_made = 0;
         let mut errors = Vec::new();
-        for m in matches.into_iter().rev() {
-            match replace_match(document, m.range, replacement) {
-                Ok(true) => changes_made += 1,
-                Ok(false) => {}
-                Err(error) => errors.push(error),
-            }
-        }
-        document.commit_transaction();
+        document.edit_group(
+            format!("Substitute: {pattern} -> {replacement}"),
+            |document| {
+                for m in matches.into_iter().rev() {
+                    match replace_match(document, m.range, replacement) {
+                        Ok(true) => changes_made += 1,
+                        Ok(false) => {}
+                        Err(error) => errors.push(error),
+                    }
+                }
+            },
+        );
         if has_selection {
             document.clear_selection();
         }

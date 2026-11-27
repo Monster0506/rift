@@ -1,6 +1,7 @@
 use super::resolve_display_map;
 use super::Editor;
 use crate::command::{Command, InsertEntry};
+use crate::document::ops::EditSession;
 use crate::executor::execute_command;
 use crate::message::CommandLineMessage;
 use crate::mode::Mode;
@@ -48,7 +49,7 @@ impl<T: TerminalBackend> Editor<T> {
                         Some(crate::action::Motion::EndOfLine)
                     }
                 };
-                doc.begin_transaction(history::INSERT_LABEL);
+                doc.start_edit_session(EditSession::Insert);
                 if let Some(motion) = motion {
                     doc.move_cursor(motion);
                 }
@@ -71,7 +72,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .document_manager
                     .get_document_mut(self.active_document_id())
                     .unwrap();
-                doc.begin_transaction("Replace");
+                doc.start_edit_session(EditSession::Replace);
                 if !self.dot_repeat.is_replaying() {
                     self.dot_repeat.start_insert_recording(command);
                 }
@@ -123,10 +124,8 @@ impl<T: TerminalBackend> Editor<T> {
                         self.state.settings.wrap_width(),
                     )
                 };
-                self.document_manager
-                    .get_document_mut(self.active_document_id())
-                    .unwrap()
-                    .begin_transaction("Change");
+                self.active_document()
+                    .start_edit_session(EditSession::Change);
                 let _ = execute_command(
                     command,
                     self.document_manager
@@ -344,8 +343,4 @@ impl<T: TerminalBackend> Editor<T> {
             });
         }
     }
-}
-
-mod history {
-    pub(super) const INSERT_LABEL: &str = "Insert";
 }

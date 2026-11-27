@@ -714,37 +714,33 @@ impl<T: TerminalBackend> Editor<T> {
         let cursor_line = doc.buffer().line_index.get_line_at(cursor);
         let cursor_col = cursor.saturating_sub(doc.buffer().line_start(cursor_line));
 
-        doc.begin_transaction("LSP edit");
+        doc.edit_group("LSP edit", |doc| {
+            for edit in edits.iter().rev() {
+                let start_line = edit.range.start.line as usize;
+                let end_line = edit.range.end.line as usize;
+                let start_char =
+                    doc.lsp_char_offset_in_line(start_line, edit.range.start.character, encoding);
+                let end_char =
+                    doc.lsp_char_offset_in_line(end_line, edit.range.end.character, encoding);
 
-        for edit in edits.iter().rev() {
-            let start_line = edit.range.start.line as usize;
-            let end_line = edit.range.end.line as usize;
-            let start_char =
-                doc.lsp_char_offset_in_line(start_line, edit.range.start.character, encoding);
-            let end_char =
-                doc.lsp_char_offset_in_line(end_line, edit.range.end.character, encoding);
+                let start_offset = doc.buffer().line_start(start_line) + start_char;
+                let end_offset = doc.buffer().line_start(end_line) + end_char;
 
-            let start_offset = doc.buffer().line_start(start_line) + start_char;
-            let end_offset = doc.buffer().line_start(end_line) + end_char;
+                if end_offset > start_offset {
+                    let _ = doc.edit(
+                        crate::document::ops::Edit::delete(start_offset..end_offset),
+                        crate::document::ops::EditSource::Lsp,
+                    );
+                }
 
-            // Use Document-level API so edits are recorded in the transaction
-            // (for undo) and tree-sitter is updated incrementally (for syntax).
-            if end_offset > start_offset {
-                let _ = doc.edit(
-                    crate::document::ops::Edit::delete(start_offset..end_offset),
-                    crate::document::ops::EditSource::Lsp,
-                );
+                if !edit.new_text.is_empty() {
+                    let _ = doc.edit(
+                        crate::document::ops::Edit::insert(start_offset, &edit.new_text),
+                        crate::document::ops::EditSource::Lsp,
+                    );
+                }
             }
-
-            if !edit.new_text.is_empty() {
-                let _ = doc.edit(
-                    crate::document::ops::Edit::insert(start_offset, &edit.new_text),
-                    crate::document::ops::EditSource::Lsp,
-                );
-            }
-        }
-
-        doc.commit_transaction();
+        });
 
         // Put the cursor back where the user had it, clamped to the new text.
         let line = cursor_line.min(doc.buffer().get_total_lines().saturating_sub(1));

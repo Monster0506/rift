@@ -1,6 +1,7 @@
 use super::Editor;
 use crate::action::Motion;
 use crate::command::Command;
+use crate::document::ops::EditSession;
 use crate::dot_repeat::DotRegister;
 use crate::mode::Mode;
 use crate::term::TerminalBackend;
@@ -107,10 +108,8 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
                 let command = crate::command::Command::Change(motion, count);
-                self.document_manager
-                    .get_document_mut(self.active_document_id())
-                    .unwrap()
-                    .begin_transaction("Change");
+                self.active_document()
+                    .start_edit_session(EditSession::Change);
                 self.set_mode(Mode::Normal);
                 self.execute_buffer_command(command);
                 if !self.dot_repeat.is_replaying() {
@@ -292,10 +291,8 @@ impl<T: TerminalBackend> Editor<T> {
                     return false;
                 }
                 let command = crate::command::Command::ChangeLine(count);
-                self.document_manager
-                    .get_document_mut(self.active_document_id())
-                    .unwrap()
-                    .begin_transaction("Change");
+                self.active_document()
+                    .start_edit_session(EditSession::Change);
                 self.set_mode(Mode::Normal);
                 self.execute_buffer_command(command);
                 if !self.dot_repeat.is_replaying() {
@@ -364,7 +361,7 @@ impl<T: TerminalBackend> Editor<T> {
                             .document_manager
                             .get_document_mut(self.active_document_id())
                         {
-                            doc.commit_transaction();
+                            doc.finish_edit_session();
                         }
                         self.set_mode(Mode::Normal);
                     } else {

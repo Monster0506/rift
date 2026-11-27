@@ -1,7 +1,7 @@
 use super::Editor;
 use crate::character::Character;
 use crate::clipboard::Clip;
-use crate::document::ops::{Edit, EditSource, PutAt};
+use crate::document::ops::{Edit, EditSession, EditSource, PutAt};
 use crate::document::Document;
 use crate::selection::Region;
 use crate::term::TerminalBackend;
@@ -191,38 +191,28 @@ impl<T: TerminalBackend> Editor<T> {
     where
         F: FnMut(&mut Self, crate::selection::Region) -> bool,
     {
-        let batch = {
-            let Some(doc) = self
-                .document_manager
-                .get_document_mut(self.active_document_id())
-            else {
-                return false;
-            };
-            doc.take_selection_batch()
-        };
+        self.edit_region_batch(|editor, batch| {
+            let mut any = false;
+            for region in batch {
+                any |= f(editor, region);
+            }
+            any
+        })
+    }
+
+    fn edit_region_batch(&mut self, edit: impl FnOnce(&mut Self, Vec<Region>) -> bool) -> bool {
+        let doc = self.active_document();
+        let batch = doc.take_selection_batch();
         if batch.is_empty() {
             return false;
         }
-        if let Some(doc) = self
-            .document_manager
-            .get_document_mut(self.active_document_id())
-        {
-            doc.begin_transaction("MultiRegion");
+        let handle = doc.handle();
+        doc.start_edit_session(EditSession::MultiRegion);
+        let result = edit(self, batch);
+        if let Some(doc) = self.document_manager.get_document_by_handle_mut(handle) {
+            doc.finish_edit_session();
         }
-        let mut any = false;
-        for region in batch {
-            if f(self, region) {
-                any = true;
-            }
-        }
-        if let Some(doc) = self
-            .document_manager
-            .get_document_mut(self.active_document_id())
-        {
-            doc.commit_transaction();
-        }
-
-        any
+        result
     }
 
     pub(super) fn enter_multi_insert<F>(
@@ -247,7 +237,7 @@ impl<T: TerminalBackend> Editor<T> {
             if batch.is_empty() {
                 return false;
             }
-            doc.begin_transaction("MultiInsert");
+            doc.start_edit_session(EditSession::MultiInsert);
             let mut anchors: Vec<usize> = Vec::with_capacity(batch.len());
             for region in batch {
                 let len_before = doc.buffer().len();
@@ -514,11 +504,11 @@ impl<T: TerminalBackend> Editor<T> {
                 .document_manager
                 .get_document_mut(self.active_document_id())
             {
-                doc.begin_transaction("MultiRegion");
-                for &(start, end) in &ranges {
-                    let _ = doc.edit(Edit::delete(start..end), EditSource::User);
-                }
-                doc.commit_transaction();
+                doc.edit_group("MultiRegion", |doc| {
+                    for &(start, end) in &ranges {
+                        let _ = doc.edit(Edit::delete(start..end), EditSource::User);
+                    }
+                });
             }
 
             true
@@ -586,59 +576,36 @@ impl<T: TerminalBackend> Editor<T> {
         if is_empty {
             return false;
         }
-        let batch = {
-            let Some(doc) = self
-                .document_manager
-                .get_document_mut(self.active_document_id())
-            else {
-                return false;
-            };
-            doc.take_selection_batch()
-        };
-        if batch.is_empty() {
-            return false;
-        }
-        if let Some(doc) = self
-            .document_manager
-            .get_document_mut(self.active_document_id())
-        {
-            doc.begin_transaction("MultiRegion");
-        }
-        let mut any = false;
-        let mut consumed: Vec<(usize, usize)> = Vec::new();
-        for region in batch {
-            if consumed
-                .iter()
-                .any(|&(s, e)| region.anchor >= s && region.anchor < e)
-            {
-                continue;
+        self.edit_region_batch(|editor, batch| {
+            let mut any = false;
+            let mut consumed: Vec<(usize, usize)> = Vec::new();
+            for region in batch {
+                if consumed
+                    .iter()
+                    .any(|&(s, e)| region.anchor >= s && region.anchor < e)
+                {
+                    continue;
+                }
+                let Some(doc) = editor
+                    .document_manager
+                    .get_document_mut(editor.active_document_id())
+                else {
+                    break;
+                };
+                let (start, _) = region.buffer_span(doc.buffer());
+                let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
+                let Some((open_range, close_range)) =
+                    crate::text_objects::resolve_surround_pair(resolve_ch, doc.buffer(), count)
+                else {
+                    continue;
+                };
+                if exec(editor) {
+                    any = true;
+                    consumed.push((open_range.start, close_range.end));
+                }
             }
-            let Some(doc) = self
-                .document_manager
-                .get_document_mut(self.active_document_id())
-            else {
-                break;
-            };
-            let (start, _) = region.buffer_span(doc.buffer());
-            let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
-            let Some((open_range, close_range)) =
-                crate::text_objects::resolve_surround_pair(resolve_ch, doc.buffer(), count)
-            else {
-                continue;
-            };
-            if exec(self) {
-                any = true;
-                consumed.push((open_range.start, close_range.end));
-            }
-        }
-        if let Some(doc) = self
-            .document_manager
-            .get_document_mut(self.active_document_id())
-        {
-            doc.commit_transaction();
-        }
-
-        any
+            any
+        })
     }
 
     pub(super) fn try_run_set_aware_add_surround(&mut self, ch: char, delim_count: usize) -> bool {

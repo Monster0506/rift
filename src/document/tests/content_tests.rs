@@ -2,6 +2,23 @@ use super::*;
 use crate::document::ops::{ContentKind, Edit, EditSource};
 
 #[test]
+fn an_edit_group_that_returns_an_error_does_not_absorb_the_next_edit() {
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
+    let failed = doc.edit_group("Grouped edit", |doc| {
+        doc.edit(Edit::type_text("first"), EditSource::User)?;
+        doc.edit(Edit::delete(0..100), EditSource::User)
+    });
+    assert!(failed.is_err());
+    doc.edit(Edit::type_text(" second"), EditSource::User)
+        .unwrap();
+
+    assert!(doc.undo());
+    assert_eq!(doc.buffer().to_string(), "first");
+    assert!(doc.undo());
+    assert!(doc.buffer().is_empty());
+}
+
+#[test]
 fn loading_content_advances_the_revision_and_resets_undo_state() {
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.edit(Edit::type_text("abc"), EditSource::User).unwrap();

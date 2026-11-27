@@ -342,9 +342,9 @@ fn delete_motion_cmd(
     };
     let (delete_start, delete_end) = range_to_offsets(&range, doc, true);
     if delete_end > delete_start {
-        doc.begin_transaction("Delete");
-        let _ = doc.edit(Edit::delete(delete_start..delete_end), EditSource::User);
-        doc.commit_transaction();
+        doc.edit_group("Delete", |doc| {
+            let _ = doc.edit(Edit::delete(delete_start..delete_end), EditSource::User);
+        });
     }
 }
 
@@ -372,31 +372,31 @@ fn delete_line_cmd(doc: &mut Document, count: usize) {
         doc.delete_clipboard_rows(count);
         return;
     }
-    doc.begin_transaction("DeleteLine");
-    doc.move_cursor(crate::action::Motion::StartOfLine);
-    let start = doc.buffer().cursor();
-    let mut reached_last_line = false;
-    for _ in 0..count.max(1) {
-        if !doc.move_cursor(crate::action::Motion::Down) {
-            reached_last_line = doc.buffer().get_line() <= doc.buffer().last_real_line();
-            break;
+    doc.edit_group("DeleteLine", |doc| {
+        doc.move_cursor(crate::action::Motion::StartOfLine);
+        let start = doc.buffer().cursor();
+        let mut reached_last_line = false;
+        for _ in 0..count.max(1) {
+            if !doc.move_cursor(crate::action::Motion::Down) {
+                reached_last_line = doc.buffer().get_line() <= doc.buffer().last_real_line();
+                break;
+            }
         }
-    }
-    if reached_last_line {
-        doc.move_cursor(crate::action::Motion::EndOfLine);
-        let end = doc.buffer().cursor();
-        if end > start {
+        if reached_last_line {
+            doc.move_cursor(crate::action::Motion::EndOfLine);
+            let end = doc.buffer().cursor();
+            if end > start {
+                let _ = doc.edit(Edit::delete(start..end), EditSource::User);
+            }
+            if start > 0 {
+                let _ = doc.edit(Edit::DeleteBackward, EditSource::User);
+                doc.move_cursor(crate::action::Motion::StartOfLine);
+            }
+        } else {
+            let end = doc.buffer().cursor();
             let _ = doc.edit(Edit::delete(start..end), EditSource::User);
         }
-        if start > 0 {
-            let _ = doc.edit(Edit::DeleteBackward, EditSource::User);
-            doc.move_cursor(crate::action::Motion::StartOfLine);
-        }
-    } else {
-        let end = doc.buffer().cursor();
-        let _ = doc.edit(Edit::delete(start..end), EditSource::User);
-    }
-    doc.commit_transaction();
+    });
 }
 
 /// Change `count` lines up to their end (`ChangeLine`).
@@ -438,15 +438,15 @@ fn replace_char_cmd(doc: &mut Document, ch: char, count: usize) -> Result<(), Ri
     let avail = doc.buffer().len().saturating_sub(pos);
     let replace_count = count.min(avail);
     if replace_count > 0 {
-        doc.begin_transaction("Replace");
-        doc.edit(
-            Edit::replace(
-                pos..pos + replace_count,
-                vec![crate::character::Character::from(ch); replace_count],
-            ),
-            EditSource::User,
-        )?;
-        doc.commit_transaction();
+        doc.edit_group("Replace", |doc| {
+            doc.edit(
+                Edit::replace(
+                    pos..pos + replace_count,
+                    vec![crate::character::Character::from(ch); replace_count],
+                ),
+                EditSource::User,
+            )
+        })?;
     }
     Ok(())
 }
@@ -471,10 +471,10 @@ fn delete_surround_cmd(doc: &mut Document, ch: char, count: usize) {
     if let Some((open_range, close_range)) =
         crate::text_objects::resolve_surround_pair(ch, doc.buffer(), count)
     {
-        doc.begin_transaction("DeleteSurround");
-        let _ = doc.edit(Edit::delete(close_range), EditSource::User);
-        let _ = doc.edit(Edit::delete(open_range), EditSource::User);
-        doc.commit_transaction();
+        doc.edit_group("DeleteSurround", |doc| {
+            let _ = doc.edit(Edit::delete(close_range), EditSource::User);
+            let _ = doc.edit(Edit::delete(open_range), EditSource::User);
+        });
     }
 }
 
@@ -483,15 +483,15 @@ fn change_surround_cmd(doc: &mut Document, from: char, to: char, count: usize) {
         crate::text_objects::resolve_surround_pair(from, doc.buffer(), count),
         crate::text_objects::surround_strings(to, count),
     ) {
-        doc.begin_transaction("ChangeSurround");
-        let _ = doc.edit(Edit::delete(close_range.clone()), EditSource::User);
-        let _ = doc.edit(
-            Edit::insert(close_range.start, &new_close),
-            EditSource::User,
-        );
-        let _ = doc.edit(Edit::delete(open_range.clone()), EditSource::User);
-        let _ = doc.edit(Edit::insert(open_range.start, &new_open), EditSource::User);
-        doc.commit_transaction();
+        doc.edit_group("ChangeSurround", |doc| {
+            let _ = doc.edit(Edit::delete(close_range.clone()), EditSource::User);
+            let _ = doc.edit(
+                Edit::insert(close_range.start, &new_close),
+                EditSource::User,
+            );
+            let _ = doc.edit(Edit::delete(open_range.clone()), EditSource::User);
+            let _ = doc.edit(Edit::insert(open_range.start, &new_open), EditSource::User);
+        });
     }
 }
 
@@ -517,10 +517,10 @@ fn add_surround_cmd(
         return;
     };
     let (start, end) = range_to_offsets(&range, doc, false);
-    doc.begin_transaction("AddSurround");
-    let _ = doc.edit(Edit::insert(end, &close), EditSource::User);
-    let _ = doc.edit(Edit::insert(start, &open), EditSource::User);
-    doc.commit_transaction();
+    doc.edit_group("AddSurround", |doc| {
+        let _ = doc.edit(Edit::insert(end, &close), EditSource::User);
+        let _ = doc.edit(Edit::insert(start, &open), EditSource::User);
+    });
 }
 
 #[cfg(test)]

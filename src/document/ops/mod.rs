@@ -13,6 +13,7 @@ pub(crate) mod standalone;
 mod text;
 
 pub(crate) use cursor::CursorCause;
+pub(crate) use history::EditSession;
 #[cfg(any(feature = "plugins", feature = "lsp"))]
 pub(crate) use journal::{ChangeJournal, Changes};
 #[cfg(feature = "plugins")]

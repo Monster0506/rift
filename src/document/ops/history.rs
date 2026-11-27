@@ -3,8 +3,42 @@ use super::{Origin, Resolved};
 use crate::character::Character;
 use crate::history::{EditOperation, EditTransaction, Position};
 
+#[derive(Clone, Copy)]
+pub(crate) enum EditSession {
+    Insert,
+    Replace,
+    Change,
+    MultiInsert,
+    MultiRegion,
+}
+
 impl Document {
-    pub(crate) fn begin_transaction(&mut self, description: impl Into<String>) {
+    pub(crate) fn edit_group<R>(
+        &mut self,
+        description: impl Into<String>,
+        edit: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        self.begin_transaction(description);
+        let result = edit(self);
+        self.commit_transaction();
+        result
+    }
+
+    pub(crate) fn start_edit_session(&mut self, session: EditSession) {
+        self.begin_transaction(match session {
+            EditSession::Insert => "Insert",
+            EditSession::Replace => "Replace",
+            EditSession::Change => "Change",
+            EditSession::MultiInsert => "MultiInsert",
+            EditSession::MultiRegion => "MultiRegion",
+        });
+    }
+
+    pub(crate) fn finish_edit_session(&mut self) {
+        self.commit_transaction();
+    }
+
+    pub(in crate::document) fn begin_transaction(&mut self, description: impl Into<String>) {
         if self.transaction_depth == 0 {
             self.commit_pending_ghost();
         }
@@ -17,7 +51,7 @@ impl Document {
         }
     }
 
-    pub(crate) fn commit_transaction(&mut self) {
+    pub(in crate::document) fn commit_transaction(&mut self) {
         if self.transaction_depth == 0 {
             return;
         }

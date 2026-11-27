@@ -304,10 +304,7 @@ fn test_execute_delete_line_single_undo() {
     doc.move_cursor(crate::action::Motion::StartOfFile);
     assert_eq!(doc.buffer().to_string(), "hello world\n");
 
-    // Wrap delete line in transaction (simulating normal mode behavior)
-    doc.begin_transaction("DeleteLine");
     execute_command(Command::DeleteRows(1), &mut doc, false, 8, 24, None, None).unwrap();
-    doc.commit_transaction();
 
     assert_eq!(doc.buffer().to_string(), "");
 
@@ -325,8 +322,6 @@ fn test_execute_delete_motion_single_undo() {
     doc.move_cursor(crate::action::Motion::StartOfFile);
     assert_eq!(doc.buffer().cursor(), 0);
 
-    // Wrap delete word in transaction (simulating d2w)
-    doc.begin_transaction("Delete(NextWord, 2)");
     execute_command(
         Command::DeleteMotion(Motion::NextWord, 2),
         &mut doc,
@@ -337,7 +332,6 @@ fn test_execute_delete_motion_single_undo() {
         None,
     )
     .unwrap();
-    doc.commit_transaction();
 
     // "one two " should be deleted
     assert_eq!(doc.buffer().to_string(), "three");
@@ -351,16 +345,12 @@ fn test_execute_delete_motion_single_undo() {
 fn test_insert_mode_transaction_simulation() {
     let mut doc = create_doc();
 
-    // Simulate entering insert mode
-    doc.begin_transaction("Insert");
-
-    // Type multiple characters (simulating insert mode typing)
-    doc.edit(Edit::type_text('a'), EditSource::User).unwrap();
-    doc.edit(Edit::type_text('b'), EditSource::User).unwrap();
-    doc.edit(Edit::type_text('c'), EditSource::User).unwrap();
-
-    // Simulate exiting insert mode
-    doc.commit_transaction();
+    doc.edit_group("Insert", |doc| {
+        // Type multiple characters (simulating insert mode typing)
+        doc.edit(Edit::type_text('a'), EditSource::User).unwrap();
+        doc.edit(Edit::type_text('b'), EditSource::User).unwrap();
+        doc.edit(Edit::type_text('c'), EditSource::User).unwrap();
+    });
 
     assert_eq!(doc.buffer().to_string(), "abc");
 
@@ -377,16 +367,14 @@ fn test_insert_mode_transaction_simulation() {
 fn test_multiple_insert_sessions() {
     let mut doc = create_doc();
 
-    // First insert mode session
-    doc.begin_transaction("Insert 1");
-    doc.edit(Edit::type_text('X'), EditSource::User).unwrap();
-    doc.edit(Edit::type_text('Y'), EditSource::User).unwrap();
-    doc.commit_transaction();
+    doc.edit_group("Insert 1", |doc| {
+        doc.edit(Edit::type_text('X'), EditSource::User).unwrap();
+        doc.edit(Edit::type_text('Y'), EditSource::User).unwrap();
+    });
 
-    // Second insert mode session
-    doc.begin_transaction("Insert 2");
-    doc.edit(Edit::type_text('Z'), EditSource::User).unwrap();
-    doc.commit_transaction();
+    doc.edit_group("Insert 2", |doc| {
+        doc.edit(Edit::type_text('Z'), EditSource::User).unwrap();
+    });
 
     assert_eq!(doc.buffer().to_string(), "XYZ");
 
@@ -404,14 +392,14 @@ fn test_undo_then_new_insert_creates_branch() {
     let mut doc = create_doc();
 
     // First insert
-    doc.begin_transaction("Insert A");
-    doc.edit(Edit::type_text('A'), EditSource::User).unwrap();
-    doc.commit_transaction();
+    doc.edit_group("Insert A", |doc| {
+        doc.edit(Edit::type_text('A'), EditSource::User).unwrap();
+    });
 
     // Second insert
-    doc.begin_transaction("Insert B");
-    doc.edit(Edit::type_text('B'), EditSource::User).unwrap();
-    doc.commit_transaction();
+    doc.edit_group("Insert B", |doc| {
+        doc.edit(Edit::type_text('B'), EditSource::User).unwrap();
+    });
 
     assert_eq!(doc.buffer().to_string(), "AB");
 
@@ -420,9 +408,9 @@ fn test_undo_then_new_insert_creates_branch() {
     assert_eq!(doc.buffer().to_string(), "A");
 
     // New insert (creates branch)
-    doc.begin_transaction("Insert C");
-    doc.edit(Edit::type_text('C'), EditSource::User).unwrap();
-    doc.commit_transaction();
+    doc.edit_group("Insert C", |doc| {
+        doc.edit(Edit::type_text('C'), EditSource::User).unwrap();
+    });
 
     assert_eq!(doc.buffer().to_string(), "AC");
 

@@ -919,7 +919,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .document_manager
                 .get_document_mut(self.active_document_id())
             {
-                doc.commit_transaction();
+                doc.finish_edit_session();
             }
             if let Some(doc) = self
                 .document_manager
