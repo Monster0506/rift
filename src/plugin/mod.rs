@@ -448,6 +448,70 @@ pub(crate) enum PluginMutation {
     StopJob(u64),
 }
 
+impl PluginMutation {
+    pub(crate) fn buffer_change(
+        &self,
+    ) -> Option<(
+        DocumentId,
+        &'static str,
+        crate::document::ops::BufferChange<'_>,
+    )> {
+        use crate::document::ops::BufferChange;
+        Some(match self {
+            Self::AppendLines { buf, lines } => {
+                (*buf, "text edit", BufferChange::AppendLines(lines))
+            }
+            Self::InsertAtCursor { buf, text } => (*buf, "text edit", BufferChange::Insert(text)),
+            Self::DeleteBefore { buf, count } => (
+                *buf,
+                "text edit",
+                BufferChange::DeleteNear {
+                    count: *count,
+                    backward: true,
+                },
+            ),
+            Self::DeleteForward { buf, count } => (
+                *buf,
+                "text edit",
+                BufferChange::DeleteNear {
+                    count: *count,
+                    backward: false,
+                },
+            ),
+            Self::ReplaceLines {
+                buf,
+                start,
+                end,
+                lines,
+            } => (
+                *buf,
+                "text edit",
+                BufferChange::ReplaceLines {
+                    start: start.saturating_sub(1),
+                    end: end.saturating_sub(1),
+                    lines,
+                },
+            ),
+            Self::SetCursor { buf, row, col } => (
+                *buf,
+                "set_cursor",
+                BufferChange::Cursor {
+                    row: row.saturating_sub(1),
+                    col: *col,
+                },
+            ),
+            Self::CenterOnLine { buf, row } => (
+                *buf,
+                "center_on_line",
+                BufferChange::Center {
+                    row: row.saturating_sub(1),
+                },
+            ),
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum HighlightRange {
     #[cfg(feature = "treesitter")]

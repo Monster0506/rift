@@ -52,6 +52,7 @@ pub(crate) struct BufMeta {
     pub(crate) file_path: Option<String>,
     pub(crate) history: HistoryAvailability,
     pub(crate) is_dirty: bool,
+    pub(crate) edit_policy: crate::document::ops::EditPolicy,
 }
 
 pub(crate) struct BufAnnotations {

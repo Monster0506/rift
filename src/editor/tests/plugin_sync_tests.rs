@@ -913,6 +913,37 @@ fn text_edits_read_back_in_the_same_call_and_match_the_editor() {
 }
 
 #[test]
+fn clipboard_edits_read_back_only_changes_the_document_accepts() {
+    use crate::document::{manager::Placement, Document};
+    use crate::wrap::RangeKind;
+
+    let mut editor = lua_editor("one\n");
+    editor.clipboard_ring.push_str("old", RangeKind::Charwise);
+    editor.clipboard_ring.push_str("new", RangeKind::Charwise);
+    let id = editor.document_manager.next_id();
+    let mut clipboard = Document::new_clipboard(id).unwrap();
+    clipboard.populate_clipboard_buffer(editor.clipboard_ring.entries());
+    editor.open_buffer(clipboard, Placement::Background);
+    editor.focus_document(id).unwrap();
+    editor.update_lua_state();
+
+    lua_ok(
+        &editor,
+        r"
+        local first = rift.get_lines(1, 1)[1]
+        rift.set_cursor(1, 1)
+        rift.insert('x')
+        assert(rift.get_lines(1, 1)[1] == first)
+        rift.insert('9')
+        _G.edited = first:sub(1, 1) .. '9' .. first:sub(2)
+        assert(rift.get_lines(1, 1)[1] == _G.edited)
+        ",
+    );
+    sync_applied_writes(&mut editor);
+    lua_ok(&editor, "assert(rift.get_lines(1, 1)[1] == _G.edited)");
+}
+
+#[test]
 fn unapplied_text_edit_is_replaced_on_next_sync() {
     let mut editor = lua_editor("one\n");
     lua_ok(

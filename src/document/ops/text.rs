@@ -1,4 +1,5 @@
-use super::super::runtime::StructuralEditPolicy;
+use super::super::clipboard::{clipboard_delete_allowed, clipboard_insert_allowed, ClipboardEdit};
+use super::super::runtime::{StructuralEditPolicy, CLIPBOARD_STATE_KEY};
 use super::super::{AnnotationUndo, AnnotationUndoHint, Document};
 use crate::buffer::api::BufferView;
 use crate::buffer::TextBuffer;
@@ -160,6 +161,58 @@ fn splice(buffer: &mut TextBuffer, start: usize, end: usize, text: &[Character])
     let _ = buffer.set_cursor((start + text.len()).min(buffer.len()));
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub(crate) struct EditPolicy {
+    read_only: bool,
+    preserve_rows: bool,
+    clipboard: Option<ClipboardEdit>,
+}
+
+impl EditPolicy {
+    fn prepare(self, buffer: &TextBuffer, edit: Edit) -> Option<Resolved> {
+        if self.read_only {
+            return None;
+        }
+        let char_delete = matches!(edit, Edit::DeleteBackward | Edit::DeleteForward);
+        let resolved = edit.resolve(buffer)?;
+        let Resolved {
+            start,
+            end,
+            ref text,
+        } = resolved;
+        if self.preserve_rows && char_delete && buffer.char_at(start) == Some(Character::Newline) {
+            return None;
+        }
+        if let Some(clipboard) = self.clipboard {
+            if end <= buffer.len()
+                && ((start < end && !clipboard_delete_allowed(buffer, start, end))
+                    || (!text.is_empty()
+                        && !clipboard_insert_allowed(
+                            buffer,
+                            clipboard,
+                            start,
+                            text.iter().copied().map(Character::to_char_lossy),
+                        )))
+            {
+                return None;
+            }
+        }
+        Some(resolved)
+    }
+
+    #[cfg(feature = "plugins")]
+    pub(super) fn project(self, buffer: &mut TextBuffer, edit: Edit) -> bool {
+        let Some(Resolved { start, end, text }) = self.prepare(buffer, edit) else {
+            return false;
+        };
+        if start > end || end > buffer.len() || (start == end && text.is_empty()) {
+            return false;
+        }
+        splice(buffer, start, end, &text);
+        true
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EditSource {
     User,
@@ -234,79 +287,25 @@ impl Document {
         self.reparse_syntax();
     }
 
-    fn resolve_edit(&self, edit: Edit) -> Option<Resolved> {
-        edit.resolve(&self.buffer)
+    pub(crate) fn edit_policy(&self) -> EditPolicy {
+        EditPolicy {
+            read_only: self.is_read_only(),
+            preserve_rows: self.policies().structural_edit == StructuralEditPolicy::PreserveRows,
+            clipboard: self.is_clipboard_index().then(|| {
+                self.state
+                    .try_get(CLIPBOARD_STATE_KEY)
+                    .map_or(ClipboardEdit::Number, |s| s.edit)
+            }),
+        }
     }
 
     pub(crate) fn edit(&mut self, edit: Edit, source: EditSource) -> Result<bool, RiftError> {
-        if self.is_read_only() {
-            return Ok(false);
-        }
-        let char_delete = matches!(edit, Edit::DeleteBackward | Edit::DeleteForward);
-        let Some(resolved) = self.resolve_edit(edit) else {
+        let Some(resolved) = self.edit_policy().prepare(&self.buffer, edit) else {
             return Ok(false);
         };
-        if char_delete
-            && self.policies().structural_edit == StructuralEditPolicy::PreserveRows
-            && self.buffer.char_at(resolved.start) == Some(Character::Newline)
-        {
-            return Ok(false);
-        }
-        if resolved.end <= self.buffer.len()
-            && !self.edit_allowed(resolved.start, resolved.end, &resolved.text)
-        {
-            return Ok(false);
-        }
         let applied = self.apply_resolved(resolved, Origin::Source(source));
         self.settle_syntax();
         applied
-    }
-
-    #[cfg(feature = "plugins")]
-    pub(crate) fn append_lines(&mut self, lines: &[String], source: EditSource) {
-        let capacity = lines.iter().map(String::len).sum::<usize>() + lines.len().saturating_sub(1);
-        let mut text = Vec::with_capacity(capacity);
-        for (index, line) in lines.iter().enumerate() {
-            if index != 0 {
-                text.push(Character::Newline);
-            }
-            text.extend(line.chars().map(Character::from));
-        }
-        let _ = self.edit(Edit::insert(self.buffer.len(), text), source);
-    }
-
-    #[cfg(feature = "plugins")]
-    pub(crate) fn delete_near_cursor(&mut self, count: usize, backward: bool, source: EditSource) {
-        for _ in 0..count {
-            let edit = if backward {
-                Edit::DeleteBackward
-            } else {
-                Edit::DeleteForward
-            };
-            if !matches!(self.edit(edit, source), Ok(true)) {
-                break;
-            }
-        }
-    }
-
-    #[cfg(feature = "plugins")]
-    pub(crate) fn replace_lines(
-        &mut self,
-        start: usize,
-        end: usize,
-        lines: &[String],
-        source: EditSource,
-    ) {
-        let Some(edit) = self.buffer.line_replacement(start, end, lines) else {
-            return;
-        };
-        if matches!(
-            self.edit(Edit::replace(edit.start..edit.end, edit.text), source),
-            Ok(true)
-        ) {
-            let cursor = edit.cursor.min(self.buffer.len());
-            let _ = self.set_cursor(cursor, super::CursorCause::Plugin);
-        }
     }
 
     #[must_use]
@@ -437,19 +436,6 @@ impl Document {
             self.record_text_change();
         }
         Ok(true)
-    }
-
-    fn edit_allowed(&self, start: usize, end: usize, text: &[Character]) -> bool {
-        if start < end && !self.clipboard_delete_allowed(start, end) {
-            return false;
-        }
-        if !text.is_empty()
-            && !self
-                .clipboard_insert_allowed(start, text.iter().copied().map(Character::to_char_lossy))
-        {
-            return false;
-        }
-        true
     }
 
     fn record_edit(

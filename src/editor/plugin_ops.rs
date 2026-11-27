@@ -1,6 +1,6 @@
 use super::Editor;
 use crate::command_line::settings::resolver::OptionScope;
-use crate::document::ops::{Edit, EditSource};
+use crate::document::ops::BufferTarget;
 use crate::document::DocumentId;
 use crate::plugin::lua_host::{
     BufAnnotations, BufEntry, BufMeta, BufUpdate, HistoryAvailability, SyncKeys,
@@ -62,6 +62,7 @@ fn lua_buf_sync_key(doc: &crate::document::Document) -> BufSyncKey {
             doc.history.can_undo(),
             doc.history.can_redo(),
             doc.is_dirty(),
+            doc.edit_policy(),
         )]),
         options: doc.options().revision(),
         annotations: doc.annotations.revision(),
@@ -79,6 +80,7 @@ fn lua_buf_meta(doc: &crate::document::Document) -> BufMeta {
             can_redo: doc.history.can_redo(),
         },
         is_dirty: doc.is_dirty(),
+        edit_policy: doc.edit_policy(),
     }
 }
 
@@ -415,10 +417,10 @@ impl<T: TerminalBackend> Editor<T> {
             | PluginMutation::InsertAtCursor { .. }
             | PluginMutation::DeleteBefore { .. }
             | PluginMutation::DeleteForward { .. }
-            | PluginMutation::ReplaceLines { .. } => self.apply_text_mutation(mutation),
-            PluginMutation::SetCursor { .. }
-            | PluginMutation::CenterOnLine { .. }
-            | PluginMutation::SetScroll(..)
+            | PluginMutation::ReplaceLines { .. }
+            | PluginMutation::SetCursor { .. }
+            | PluginMutation::CenterOnLine { .. } => self.apply_buffer_change(&mutation),
+            PluginMutation::SetScroll(..)
             | PluginMutation::SetLineEnding { .. }
             | PluginMutation::SetBufferVar { .. } => self.apply_cursor_mutation(mutation),
             PluginMutation::MoveWindow { .. }
@@ -513,51 +515,25 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    fn apply_text_mutation(&mut self, mutation: PluginMutation) {
-        let buf = match &mutation {
-            PluginMutation::AppendLines { buf, .. }
-            | PluginMutation::InsertAtCursor { buf, .. }
-            | PluginMutation::DeleteBefore { buf, .. }
-            | PluginMutation::DeleteForward { buf, .. }
-            | PluginMutation::ReplaceLines { buf, .. } => *buf,
-            _ => {
-                self.report_misrouted();
-                return;
-            }
-        };
-        let Some(doc) = self.document_manager.get_document_mut(buf) else {
-            self.drop_plugin_write(buf, "text edit");
+    fn apply_buffer_change(&mut self, mutation: &PluginMutation) {
+        let Some((buf, operation, change)) = mutation.buffer_change() else {
+            self.report_misrouted();
             return;
         };
-        match mutation {
-            PluginMutation::AppendLines { lines, .. } => {
-                doc.append_lines(&lines, EditSource::Plugin);
+        let active = self.document_manager.active_document_id() == Some(buf);
+        let Some(doc) = self.document_manager.get_document_mut(buf) else {
+            self.drop_plugin_write(buf, operation);
+            return;
+        };
+        if let Some((row, total)) = change.apply(BufferTarget::Document(doc)) {
+            if active {
+                self.render_system.viewport.center_on(row, total);
             }
-            PluginMutation::InsertAtCursor { text, .. } => {
-                let _ = doc.edit(Edit::type_text(text), EditSource::Plugin);
-            }
-            PluginMutation::DeleteBefore { count, .. } => {
-                doc.delete_near_cursor(count, true, EditSource::Plugin);
-            }
-            PluginMutation::DeleteForward { count, .. } => {
-                doc.delete_near_cursor(count, false, EditSource::Plugin);
-            }
-            PluginMutation::ReplaceLines {
-                start, end, lines, ..
-            } => doc.replace_lines(
-                start.saturating_sub(1),
-                end.saturating_sub(1),
-                &lines,
-                EditSource::Plugin,
-            ),
-            _ => {}
         }
     }
 
     fn apply_cursor_mutation(&mut self, mutation: PluginMutation) {
         match mutation {
-            PluginMutation::SetCursor { buf, row, col } => self.plugin_set_cursor(buf, row, col),
-            PluginMutation::CenterOnLine { buf, row } => self.plugin_center_on_line(buf, row),
             PluginMutation::SetScroll(top, left) => {
                 self.render_system.viewport.set_scroll(top, left);
             }
@@ -1027,30 +1003,6 @@ impl<T: TerminalBackend> Editor<T> {
         let scope = buf.map_or(OptionScope::Global, OptionScope::Resolve);
         if let Err(err) = self.set_option(name, Some(value), scope) {
             self.notify_error(err);
-        }
-    }
-
-    fn plugin_set_cursor(&mut self, buf: DocumentId, row: usize, col: usize) {
-        let Some(doc) = self.document_manager.get_document_mut(buf) else {
-            self.drop_plugin_write(buf, "set_cursor");
-            return;
-        };
-        let pos = doc.buffer().line_col_position(row.saturating_sub(1), col);
-        let _ = doc.set_cursor(pos, crate::document::ops::CursorCause::Plugin);
-    }
-
-    fn plugin_center_on_line(&mut self, buf: DocumentId, row: usize) {
-        let active = self.document_manager.active_document_id() == Some(buf);
-        let Some(doc) = self.document_manager.get_document_mut(buf) else {
-            self.drop_plugin_write(buf, "center_on_line");
-            return;
-        };
-        let total = doc.buffer().get_total_lines();
-        let row0 = row.saturating_sub(1).min(total.saturating_sub(1));
-        let target = doc.buffer().line_col_position(row0, 0);
-        let _ = doc.set_cursor(target, crate::document::ops::CursorCause::Plugin);
-        if active {
-            self.render_system.viewport.center_on(row0, total);
         }
     }
 

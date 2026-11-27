@@ -1,7 +1,7 @@
 //! Lua 5.4 plugin host - embeds mlua and exposes the `rift.*` API.
 
 use crate::action::{Action, EditorAction};
-use crate::document::ops::Edit;
+use crate::document::ops::{BufferChange, BufferTarget};
 use crate::document::DocumentId;
 use crate::floating_window::popup::PopupContent;
 use crate::job_manager::jobs::plugin_process::{JobCommand, JobSpec, JobStream, PluginJobEvent};
@@ -257,6 +257,9 @@ impl BufSnapshot {
             self.buffer = buffer;
         }
         if let Some(meta) = update.meta {
+            let (row, col) = meta.cursor;
+            let _ = BufferChange::Cursor { row, col }
+                .apply(BufferTarget::Snapshot(&mut self.buffer, meta.edit_policy));
             self.meta = meta;
         }
         if let Some(options) = update.options {
@@ -315,44 +318,31 @@ impl LuaSharedState {
         self.snapshot(buf).map_or(&[], |snap| &snap.annotations)
     }
 
-    fn edit_local_buf(&mut self, buf: u64, edit: impl FnOnce(&mut crate::buffer::TextBuffer)) {
-        let Some(snap) = self.bufs.get_mut(&buf) else {
-            return;
-        };
-        let buffer = &mut snap.buffer;
-        let (row, col) = snap.meta.cursor;
-        let pos = buffer.line_index.get_line_start(row) + col;
-        let _ = crate::document::ops::standalone::place_cursor(buffer, pos.min(buffer.len()));
-        let revision = buffer.revision();
-        edit(buffer);
-        let pos = buffer.cursor();
-        let row = buffer.line_index.get_line_at(pos);
-        snap.meta.cursor = (row, pos - buffer.line_index.get_line_start(row));
-        if buffer.revision() != revision {
-            snap.meta.is_dirty = true;
-            snap.meta.history = HistoryAvailability {
-                can_undo: true,
-                can_redo: false,
-            };
+    fn queue_buffer_change(&mut self, mutation: PluginMutation) {
+        if let Some((id, _, change)) = mutation.buffer_change() {
+            let buf = id.get();
+            if let Some(snap) = self.bufs.get_mut(&buf) {
+                let buffer = &mut snap.buffer;
+                let revision = buffer.revision();
+                let cursor = buffer.cursor();
+                let _ = change.apply(BufferTarget::Snapshot(buffer, snap.meta.edit_policy));
+                let text_changed = buffer.revision() != revision;
+                if text_changed {
+                    snap.meta.is_dirty = true;
+                    snap.meta.history = HistoryAvailability {
+                        can_undo: true,
+                        can_redo: false,
+                    };
+                }
+                if text_changed || buffer.cursor() != cursor {
+                    let pos = buffer.cursor();
+                    let row = buffer.line_index.get_line_at(pos);
+                    snap.meta.cursor = (row, pos - buffer.line_index.get_line_start(row));
+                    self.diverged.insert(buf);
+                }
+            }
         }
-        self.diverged.insert(buf);
-    }
-
-    fn move_local_cursor(&mut self, buf: u64, row: usize, col: usize) {
-        let Some(snap) = self.bufs.get_mut(&buf) else {
-            return;
-        };
-        let buffer = &snap.buffer;
-        let pos = buffer.line_col_position(row, col);
-        let row = buffer.line_index.get_line_at(pos);
-        snap.meta.cursor = (row, pos - buffer.line_index.get_line_start(row));
-        self.diverged.insert(buf);
-    }
-
-    fn local_buf_read_only(&self, buf: u64) -> bool {
-        self.buf_list
-            .iter()
-            .any(|entry| entry.id as u64 == buf && entry.is_read_only)
+        self.mutations.push(mutation);
     }
 
     fn edit_local_snapshot(&mut self, buf: u64, edit: impl FnOnce(&mut BufSnapshot)) {
@@ -1135,13 +1125,7 @@ impl LuaHost {
                     }
                     let buf = opts_target(&sh, opts.as_ref())?;
                     let mut s = sh.borrow_mut();
-                    let text = v.join("\n");
-                    if !s.local_buf_read_only(buf) {
-                        s.edit_local_buf(buf, |buffer| {
-                            Edit::insert(buffer.len(), &text).apply_to(buffer);
-                        });
-                    }
-                    s.mutations.push(PluginMutation::AppendLines {
+                    s.queue_buffer_change(PluginMutation::AppendLines {
                         buf: DocumentId::new(buf),
                         lines: v,
                     });
@@ -1829,12 +1813,7 @@ impl LuaHost {
             let f = lua.create_function(move |_, (text, opts): (String, Option<LuaTable>)| {
                 let buf = opts_target(&sh, opts.as_ref())?;
                 let mut s = sh.borrow_mut();
-                if !s.local_buf_read_only(buf) {
-                    s.edit_local_buf(buf, |buffer| {
-                        Edit::type_text(&text).apply_to(buffer);
-                    });
-                }
-                s.mutations.push(PluginMutation::InsertAtCursor {
+                s.queue_buffer_change(PluginMutation::InsertAtCursor {
                     buf: DocumentId::new(buf),
                     text,
                 });
@@ -1850,14 +1829,7 @@ impl LuaHost {
                 if n > 0 {
                     let mut s = sh.borrow_mut();
                     let count = lua_index(n);
-                    if !s.local_buf_read_only(buf) {
-                        s.edit_local_buf(buf, |buffer| {
-                            for _ in 0..count {
-                                Edit::DeleteBackward.apply_to(buffer);
-                            }
-                        });
-                    }
-                    s.mutations.push(PluginMutation::DeleteBefore {
+                    s.queue_buffer_change(PluginMutation::DeleteBefore {
                         buf: DocumentId::new(buf),
                         count,
                     });
@@ -1874,14 +1846,7 @@ impl LuaHost {
                 if n > 0 {
                     let mut s = sh.borrow_mut();
                     let count = lua_index(n);
-                    if !s.local_buf_read_only(buf) {
-                        s.edit_local_buf(buf, |buffer| {
-                            for _ in 0..count {
-                                Edit::DeleteForward.apply_to(buffer);
-                            }
-                        });
-                    }
-                    s.mutations.push(PluginMutation::DeleteForward {
+                    s.queue_buffer_change(PluginMutation::DeleteForward {
                         buf: DocumentId::new(buf),
                         count,
                     });
@@ -1899,8 +1864,7 @@ impl LuaHost {
                     if row >= 1 {
                         let mut s = sh.borrow_mut();
                         let (row, col) = (lua_index(row), lua_index(col));
-                        s.move_local_cursor(buf, row - 1, col);
-                        s.mutations.push(PluginMutation::SetCursor {
+                        s.queue_buffer_change(PluginMutation::SetCursor {
                             buf: DocumentId::new(buf),
                             row,
                             col,
@@ -1931,20 +1895,7 @@ impl LuaHost {
                     if start >= 1 && end_ >= start {
                         let mut s = sh.borrow_mut();
                         let (start, end) = (lua_index(start), lua_index(end_));
-                        if !s.local_buf_read_only(buf) {
-                            s.edit_local_buf(buf, |buffer| {
-                                if let Some(edit) = buffer.line_replacement(start - 1, end - 1, &v)
-                                {
-                                    Edit::delete(edit.start..edit.end).apply_to(buffer);
-                                    Edit::insert(edit.start, &edit.text).apply_to(buffer);
-                                    let cursor = edit.cursor.min(buffer.len());
-                                    let _ = crate::document::ops::standalone::place_cursor(
-                                        buffer, cursor,
-                                    );
-                                }
-                            });
-                        }
-                        s.mutations.push(PluginMutation::ReplaceLines {
+                        s.queue_buffer_change(PluginMutation::ReplaceLines {
                             buf: DocumentId::new(buf),
                             start,
                             end,
@@ -2569,8 +2520,7 @@ impl LuaHost {
             let f = lua.create_function(move |_, (row, opts): (usize, Option<LuaTable>)| {
                 let buf = opts_target(&sh, opts.as_ref())?;
                 let mut s = sh.borrow_mut();
-                s.move_local_cursor(buf, row.saturating_sub(1), 0);
-                s.mutations.push(PluginMutation::CenterOnLine {
+                s.queue_buffer_change(PluginMutation::CenterOnLine {
                     buf: DocumentId::new(buf),
                     row,
                 });

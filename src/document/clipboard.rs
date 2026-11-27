@@ -1,3 +1,4 @@
+use super::buffer::TextBuffer;
 use super::ops::{Edit, EditSource};
 use super::runtime::CLIPBOARD_STATE_KEY;
 use super::Document;
@@ -20,7 +21,7 @@ pub(crate) enum ClipboardSide {
     After,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub(super) enum ClipboardEdit {
     #[default]
     Number,
@@ -51,7 +52,7 @@ impl Document {
 
     fn clipboard_row(&self, line: usize) -> Option<(usize, usize)> {
         let start = self.buffer.line_index.get_start(line)?;
-        let span = self.clipboard_number_span(start)?;
+        let span = clipboard_number_span(&self.buffer, start)?;
         let closing = self.buffer.char_to_byte(span.end);
         let mut rows = self.annotations.query_at(closing).filter(|annotation| {
             annotation.kind.as_str() == ROW_KIND
@@ -133,41 +134,6 @@ impl Document {
             .collect()
     }
 
-    pub(crate) fn clipboard_number_span(&self, pos: usize) -> Option<Range<usize>> {
-        let line = self.buffer.line_index.get_line_at(pos);
-        let start = self.buffer.line_index.get_start(line)?;
-        let end = self
-            .buffer
-            .line_index
-            .get_start(line + 1)
-            .map_or(self.buffer.len(), |next| next - 1);
-        if end < start + 2
-            || self.buffer.char_at(start) != Some(Character::from('['))
-            || self.buffer.char_at(end - 1) != Some(Character::from(']'))
-        {
-            return None;
-        }
-        Some(start + 1..end - 1)
-    }
-
-    pub(super) fn clipboard_insert_allowed(
-        &self,
-        pos: usize,
-        mut text: impl Iterator<Item = char>,
-    ) -> bool {
-        if !self.is_clipboard_index()
-            || self
-                .state
-                .try_get(CLIPBOARD_STATE_KEY)
-                .is_some_and(|state| state.edit == ClipboardEdit::Rows)
-        {
-            return true;
-        }
-        self.clipboard_number_span(pos).is_some_and(|span| {
-            span.start <= pos && pos <= span.end && text.all(|character| character.is_ascii_digit())
-        })
-    }
-
     fn insert_clipboard_text(&mut self, at: usize, text: &str) {
         if let Some(state) = self.state.try_get_mut(CLIPBOARD_STATE_KEY) {
             state.edit = ClipboardEdit::Rows;
@@ -176,29 +142,6 @@ impl Document {
         if let Some(state) = self.state.try_get_mut(CLIPBOARD_STATE_KEY) {
             state.edit = ClipboardEdit::Number;
         }
-    }
-
-    pub(super) fn clipboard_delete_allowed(&self, start: usize, end: usize) -> bool {
-        if !self.is_clipboard_index() {
-            return true;
-        }
-        if self
-            .clipboard_number_span(start)
-            .is_some_and(|span| span.start <= start && start <= end && end <= span.end)
-        {
-            return true;
-        }
-        let line = self.buffer.line_index.get_line_at(start);
-        let at_start = self.buffer.line_index.get_start(line) == Some(start);
-        let at_end = end == self.buffer.len()
-            || self
-                .buffer
-                .line_index
-                .get_start(self.buffer.line_index.get_line_at(end))
-                == Some(end);
-        let before_final_rows =
-            self.buffer.char_at(start) == Some(Character::Newline) && end == self.buffer.len();
-        (at_start && at_end) || before_final_rows
     }
 
     pub(crate) fn delete_clipboard_rows(&mut self, count: usize) {
@@ -289,4 +232,50 @@ impl Document {
         );
         true
     }
+}
+
+fn clipboard_number_span(buffer: &TextBuffer, pos: usize) -> Option<Range<usize>> {
+    let line = buffer.line_index.get_line_at(pos);
+    let start = buffer.line_index.get_start(line)?;
+    let end = buffer
+        .line_index
+        .get_start(line + 1)
+        .map_or(buffer.len(), |next| next - 1);
+    if end < start + 2
+        || buffer.char_at(start) != Some(Character::from('['))
+        || buffer.char_at(end - 1) != Some(Character::from(']'))
+    {
+        return None;
+    }
+    Some(start + 1..end - 1)
+}
+
+pub(super) fn clipboard_insert_allowed(
+    buffer: &TextBuffer,
+    edit: ClipboardEdit,
+    pos: usize,
+    mut text: impl Iterator<Item = char>,
+) -> bool {
+    edit == ClipboardEdit::Rows
+        || clipboard_number_span(buffer, pos).is_some_and(|span| {
+            span.start <= pos && pos <= span.end && text.all(|character| character.is_ascii_digit())
+        })
+}
+
+pub(super) fn clipboard_delete_allowed(buffer: &TextBuffer, start: usize, end: usize) -> bool {
+    if clipboard_number_span(buffer, start)
+        .is_some_and(|span| span.start <= start && start <= end && end <= span.end)
+    {
+        return true;
+    }
+    let line = buffer.line_index.get_line_at(start);
+    let at_start = buffer.line_index.get_start(line) == Some(start);
+    let at_end = end == buffer.len()
+        || buffer
+            .line_index
+            .get_start(buffer.line_index.get_line_at(end))
+            == Some(end);
+    let before_final_rows =
+        buffer.char_at(start) == Some(Character::Newline) && end == buffer.len();
+    (at_start && at_end) || before_final_rows
 }
