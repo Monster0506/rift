@@ -1,6 +1,10 @@
 pub(crate) mod buffers;
 mod events;
 pub(crate) use events::EditorEvent;
+mod files;
+mod lsp;
 mod notify;
 mod save;
+mod search;
 pub(crate) mod windows;
+mod yank;

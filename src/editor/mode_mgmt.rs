@@ -179,11 +179,8 @@ impl<T: TerminalBackend> Editor<T> {
                     self.state.clear_command_line();
                     self.set_mode(Mode::Normal);
                 } else {
-                    // Add to search history before executing
                     self.state.search_history.add(query.clone());
-                    self.state.last_search_query = Some(query.clone());
-                    self.state.last_find_char = None;
-                    if self.perform_search(&query, SearchDirection::Forward, false) {
+                    if self.search(&query, SearchDirection::Forward, false) {
                         self.state.clear_command_line();
                         self.set_mode(Mode::Normal);
                     }

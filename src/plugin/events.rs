@@ -41,6 +41,13 @@ pub(crate) enum EventPayload {
         path: Option<std::path::PathBuf>,
     },
 
+    SearchChanged {
+        buf: DocumentId,
+    },
+    TextYank {
+        buf: DocumentId,
+    },
+
     /// A buffer was reloaded from disk (e.g. after an external change).
     BufReload {
         buf: DocumentId,
@@ -188,6 +195,8 @@ impl EventPayload {
             | Self::BufLeave { buf }
             | Self::BufReload { buf }
             | Self::TextChangedCoarse { buf }
+            | Self::SearchChanged { buf }
+            | Self::TextYank { buf }
             | Self::SelectionChanged { buf } => {
                 t.set("buf", lua_int(buf.get()))?;
             }
@@ -270,6 +279,8 @@ impl EventPayload {
             Self::BufSavePost { .. } => "BufSavePost",
             Self::BufReload { .. } => "BufReload",
             Self::TextChangedCoarse { .. } => "TextChangedCoarse",
+            Self::SearchChanged { .. } => "SearchChanged",
+            Self::TextYank { .. } => "TextYank",
             Self::SelectionChanged { .. } => "SelectionChanged",
             Self::SyntaxUpdated { .. } => "SyntaxUpdated",
             Self::CursorMoved { .. } => "CursorMoved",

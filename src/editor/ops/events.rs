@@ -23,6 +23,8 @@ fn same_subject(a: &EventPayload, b: &EventPayload) -> bool {
     match (a, b) {
         (E::BufOpen { buf: x, .. }, E::BufOpen { buf: y, .. })
         | (E::TextChangedCoarse { buf: x }, E::TextChangedCoarse { buf: y })
+        | (E::SearchChanged { buf: x }, E::SearchChanged { buf: y })
+        | (E::TextYank { buf: x }, E::TextYank { buf: y })
         | (E::CursorMoved { buf: x, .. }, E::CursorMoved { buf: y, .. })
         | (E::SelectionChanged { buf: x }, E::SelectionChanged { buf: y })
         | (E::SyntaxUpdated { buf: x, .. }, E::SyntaxUpdated { buf: y, .. }) => x == y,
@@ -56,6 +58,8 @@ impl<T: TerminalBackend> Editor<T> {
             event.payload(),
             EventPayload::BufOpen { .. }
                 | EventPayload::TextChangedCoarse { .. }
+                | EventPayload::SearchChanged { .. }
+                | EventPayload::TextYank { .. }
                 | EventPayload::CursorMoved { .. }
                 | EventPayload::SelectionChanged { .. }
                 | EventPayload::SyntaxUpdated { .. }

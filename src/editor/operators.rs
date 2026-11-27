@@ -147,7 +147,7 @@ impl<T: TerminalBackend> Editor<T> {
                 rows,
             });
         } else if !in_clipboard && !clip.text().is_empty() {
-            self.clipboard_ring.push(clip);
+            self.yank(clip);
             self.refresh_clipboard_buffer_if_open();
         }
         cut

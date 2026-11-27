@@ -355,9 +355,7 @@ impl<T: TerminalBackend> Editor<T> {
                     let Some(doc) = editor.document_manager.active_document() else {
                         return false;
                     };
-                    editor
-                        .clipboard_ring
-                        .push(region_clip(doc.buffer(), &region));
+                    editor.yank(region_clip(doc.buffer(), &region));
                     true
                 });
                 self.refresh_clipboard_buffer_if_open();
@@ -386,7 +384,7 @@ impl<T: TerminalBackend> Editor<T> {
                     start
                 });
                 for clip in clips {
-                    self.clipboard_ring.push(clip);
+                    self.yank(clip);
                 }
                 self.refresh_clipboard_buffer_if_open();
                 handled
@@ -438,7 +436,7 @@ impl<T: TerminalBackend> Editor<T> {
         let ghost_cut = self.state.settings.editing.ghost_cut && ghost_allowed;
         let ghost_clip = clips.last().filter(|_| ghost_cut).cloned();
         for clip in clips {
-            self.clipboard_ring.push(clip);
+            self.yank(clip);
         }
         self.refresh_clipboard_buffer_if_open();
         if ranges.is_empty() {

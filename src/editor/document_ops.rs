@@ -3,7 +3,6 @@ use super::Editor;
 use crate::action::{Action, EditorAction};
 use crate::document::DocumentId;
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
-use crate::search::SearchDirection;
 use crate::term::TerminalBackend;
 
 fn resolve_link_path_in(path_str: String, base_dir: Option<&std::path::Path>) -> String {
@@ -238,35 +237,6 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = rx;
 
         Ok(())
-    }
-
-    pub(super) fn perform_search(
-        &mut self,
-        query: &str,
-        direction: SearchDirection,
-        skip_current: bool,
-    ) -> bool {
-        self.update_search_highlights();
-        let _ = self.force_full_redraw();
-
-        let doc = self
-            .document_manager
-            .active_document_mut()
-            .expect("No active document");
-        match doc.perform_search(query, direction, skip_current) {
-            Ok((Some(m), _stats)) => {
-                let _ = doc.set_cursor(m.range.start, crate::document::ops::CursorCause::Jump);
-                true
-            }
-            Ok((None, _stats)) => false,
-            Err(e) => {
-                self.notify(
-                    crate::notification::NotificationType::Error,
-                    format!("Search error: {e}"),
-                );
-                false
-            }
-        }
     }
 
     pub fn goto_line(&mut self, line: usize) {

@@ -396,10 +396,10 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_file_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
             EditorAction::OpenFile { path, force } => {
-                self.action_open_file(path.as_deref(), *force)
+                self.open_file_from_input(path.clone(), *force)
             }
             EditorAction::OpenDirectory(path) => self.action_open_directory(path),
-            EditorAction::OpenTerminal(cmd) => self.action_open_terminal(cmd.as_deref()),
+            EditorAction::OpenTerminal(cmd) => self.open_terminal_from_input(cmd.clone()),
             EditorAction::SplitWindow {
                 direction,
                 subcommand,
@@ -564,7 +564,7 @@ impl<T: TerminalBackend> Editor<T> {
         );
 
         if let Some(selected) = selected {
-            self.clipboard_ring.push(selected);
+            self.yank(selected);
             self.refresh_clipboard_buffer_if_open();
         }
         self.post_paste_state = None;
@@ -585,7 +585,7 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
 
-            EditorAction::TerminalScrollback(delta) => self.action_terminal_scrollback(*delta),
+            EditorAction::TerminalScrollback(delta) => self.scroll_terminal(*delta),
             EditorAction::FindCharPending { forward, till } => {
                 self.action_find_char_pending(*forward, *till)
             }
@@ -608,15 +608,15 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_lsp_action(&mut self, editor_action: &EditorAction) -> bool {
         match editor_action {
-            EditorAction::LspGotoDefinition => self.action_lsp_goto_definition(),
+            EditorAction::LspGotoDefinition => self.request_lsp_goto_definition(),
 
-            EditorAction::LspReferences => self.action_lsp_references(),
+            EditorAction::LspReferences => self.request_lsp_references(),
 
-            EditorAction::LspHover => self.action_lsp_hover(),
+            EditorAction::LspHover => self.request_lsp_hover(),
 
-            EditorAction::LspRename => self.action_lsp_rename(),
+            EditorAction::LspRename => self.request_lsp_rename(),
 
-            EditorAction::LspCodeAction => self.action_lsp_code_action(),
+            EditorAction::LspCodeAction => self.request_lsp_code_action(),
 
             _ => self.handle_diag_annot_action(editor_action),
         }
@@ -624,13 +624,13 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_diag_annot_action(&mut self, editor_action: &EditorAction) -> bool {
         match editor_action {
-            EditorAction::LspFormat => self.action_lsp_format(),
+            EditorAction::LspFormat => self.request_lsp_format(),
 
-            EditorAction::LspDiagnosticNext => self.action_lsp_diagnostic_next(),
+            EditorAction::LspDiagnosticNext => self.request_lsp_diagnostic_next(),
 
-            EditorAction::LspDiagnosticPrev => self.action_lsp_diagnostic_prev(),
+            EditorAction::LspDiagnosticPrev => self.request_lsp_diagnostic_prev(),
 
-            EditorAction::LspDiagnosticsPanel => self.action_lsp_diagnostics_panel(),
+            EditorAction::LspDiagnosticsPanel => self.request_lsp_diagnostics_panel(),
 
             EditorAction::ActivateAnnotation => {
                 self.activate_annotation_at_cursor();
@@ -952,7 +952,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.active_doc_is(super::super::document::Document::is_any_clipboard);
             if let Some(text) = captured.filter(|c| !c.text().is_empty()) {
                 if !in_clipboard {
-                    self.clipboard_ring.push(text);
+                    self.yank(text);
                     self.refresh_clipboard_buffer_if_open();
                 }
             }
@@ -1055,8 +1055,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn action_search(&mut self, pattern: &str) -> bool {
-        let pattern = pattern.to_string();
-        self.perform_search(&pattern, SearchDirection::Forward, false);
+        self.search(pattern, SearchDirection::Forward, false);
         true
     }
 
@@ -1115,33 +1114,9 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    fn action_open_file(&mut self, path: Option<&str>, force: bool) -> bool {
-        let path = path.map(str::to_string);
-        if let Err(e) = self.open_file(path, force) {
-            self.notify_error(e);
-        } else {
-            self.state.clear_command_line();
-            if let Err(e) = self.force_full_redraw() {
-                self.notify_error(e);
-            }
-        }
-        true
-    }
-
     fn action_open_directory(&mut self, path: &std::path::Path) -> bool {
         let path = path.to_path_buf();
         self.open_explorer(path);
-        true
-    }
-
-    fn action_open_terminal(&mut self, cmd: Option<&str>) -> bool {
-        let cmd = cmd.map(str::to_string);
-        if let Err(e) = self.open_terminal(cmd) {
-            self.notify_error(e);
-        } else {
-            self.state.clear_command_line();
-            self.set_mode(Mode::Insert);
-        }
         true
     }
 
@@ -1216,139 +1191,9 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    fn action_terminal_scrollback(&mut self, delta: i32) -> bool {
-        let doc_id = self.active_document_id();
-        if let Some(doc) = self.document_manager.get_document(doc_id) {
-            if let Some(term) = doc.terminal() {
-                term.scroll_display(delta);
-            }
-        }
-        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-            doc.sync_terminal_buffer();
-        }
-        let _ = self.update_and_render();
-        true
-    }
-
     fn action_find_char_pending(&mut self, forward: bool, till: bool) -> bool {
         self.pending_grammar =
             Some(super::pending_grammar::PendingGrammar::FindChar { forward, till });
-        true
-    }
-
-    fn action_lsp_goto_definition(&mut self) -> bool {
-        #[cfg(feature = "lsp")]
-        if let Some((path, line, col)) = self.lsp_request_position() {
-            if self.lsp_manager.goto_definition(&path, line, col).is_none() {
-                self.notify_no_lsp_server();
-            }
-        }
-        true
-    }
-
-    fn action_lsp_references(&mut self) -> bool {
-        #[cfg(feature = "lsp")]
-        if let Some((path, line, col)) = self.lsp_request_position() {
-            if self.lsp_manager.references(&path, line, col).is_none() {
-                self.notify_no_lsp_server();
-            }
-        }
-        true
-    }
-
-    fn action_lsp_hover(&mut self) -> bool {
-        #[cfg(feature = "lsp")]
-        if let Some((path, line, col)) = self.lsp_request_position() {
-            if self.lsp_manager.hover(&path, line, col).is_none() {
-                self.notify_no_lsp_server();
-            }
-        }
-        true
-    }
-
-    fn action_lsp_rename(&mut self) -> bool {
-        #[cfg(feature = "lsp")]
-        {
-            if let Some(ctx) = self.cursor_lsp_position() {
-                self.rename_context = Some(ctx);
-                self.state.clear_command_line();
-                self.set_mode(Mode::Rename);
-            } else {
-                self.notify(
-                    crate::notification::NotificationType::Warning,
-                    "LSP rename: no file open".to_string(),
-                );
-            }
-        }
-        true
-    }
-
-    fn action_lsp_code_action(&mut self) -> bool {
-        #[cfg(feature = "lsp")]
-        if let Some((path, line, col)) = self.lsp_request_position() {
-            let uri = crate::lsp::protocol::path_to_uri(&path);
-            let norm_uri = crate::lsp::protocol::normalize_uri(&uri);
-            let diagnostics: Vec<crate::lsp::protocol::LspDiagnostic> =
-                self.lsp_diagnostics.get(&norm_uri).map_or_default(|diags| {
-                    diags
-                        .iter()
-                        .filter(|d| d.range.start.line == line)
-                        .cloned()
-                        .collect()
-                });
-            if self
-                .lsp_manager
-                .code_action(&path, line, col, diagnostics)
-                .is_none()
-            {
-                self.notify_no_lsp_server();
-            }
-        }
-        true
-    }
-
-    fn action_lsp_format(&mut self) -> bool {
-        #[cfg(feature = "lsp")]
-        {
-            let info = self.document_manager.active_document().and_then(|doc| {
-                let path = doc.path()?.to_path_buf();
-                let tab_size = u32::try_from(doc.options.tab_width).unwrap_or(u32::MAX);
-                let insert_spaces = doc.options.expand_tabs;
-                Some((path, tab_size, insert_spaces))
-            });
-            if let Some((path, tab_size, insert_spaces)) = info {
-                if self.lsp_manager.is_indexing_path(&path) {
-                    self.notify(
-                        crate::notification::NotificationType::Info,
-                        "LSP: still indexing, please wait...".to_string(),
-                    );
-                } else if self
-                    .lsp_manager
-                    .format(&path, tab_size, insert_spaces)
-                    .is_none()
-                {
-                    self.notify_no_lsp_server();
-                }
-            }
-        }
-        true
-    }
-
-    fn action_lsp_diagnostic_next(&mut self) -> bool {
-        #[cfg(feature = "lsp")]
-        self.lsp_diagnostic_next();
-        true
-    }
-
-    fn action_lsp_diagnostic_prev(&mut self) -> bool {
-        #[cfg(feature = "lsp")]
-        self.lsp_diagnostic_prev();
-        true
-    }
-
-    fn action_lsp_diagnostics_panel(&mut self) -> bool {
-        #[cfg(feature = "lsp")]
-        self.open_diagnostics_panel();
         true
     }
 
