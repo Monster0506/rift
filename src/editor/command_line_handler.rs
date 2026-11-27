@@ -103,12 +103,6 @@ impl<T: TerminalBackend> Editor<T> {
         if self.current_mode == Mode::Command {
             self.set_mode(Mode::Normal);
         }
-        // Sync clipboard ring capacity in case clipboard.size was just changed
-        let desired = self.state.settings.clipboard_ring_size();
-        if self.clipboard_ring.capacity() != desired {
-            self.clipboard_ring.set_capacity(desired);
-            self.refresh_clipboard_buffer_if_open();
-        }
     }
 
     fn apply_ex_option(
@@ -117,13 +111,9 @@ impl<T: TerminalBackend> Editor<T> {
         value: Option<&str>,
         scope: crate::command_line::settings::resolver::OptionScope,
     ) -> bool {
-        match self.set_option(name, value, scope) {
-            Ok(true) => self.redraw_from_command(),
-            Ok(false) => {}
-            Err(e) => {
-                self.notify_error(e);
-                return false;
-            }
+        if let Err(error) = self.set_option(name, value, scope) {
+            self.notify_error(error);
+            return false;
         }
         true
     }

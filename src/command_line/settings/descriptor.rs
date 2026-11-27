@@ -115,6 +115,13 @@ type SettingSetter<T> = fn(&mut T, &SettingValue) -> Result<(), SettingError>;
 
 type SettingGetter<T> = fn(&T) -> SettingValue;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SettingEffect {
+    None,
+    Redraw,
+    ResizeClipboard,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct SettingDescriptor<T> {
     pub(crate) name: &'static str,
@@ -123,5 +130,5 @@ pub(crate) struct SettingDescriptor<T> {
     pub(crate) ty: SettingType,
     pub(crate) set: SettingSetter<T>,
     pub(crate) get: SettingGetter<T>,
-    pub(crate) needs_full_redraw: bool,
+    pub(crate) effect: SettingEffect,
 }

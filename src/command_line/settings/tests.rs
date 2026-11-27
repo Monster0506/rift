@@ -1,3 +1,4 @@
+use super::descriptor::SettingEffect;
 use crate::command_line::settings::descriptor::{
     SettingDescriptor, SettingError, SettingType, SettingValue,
 };
@@ -95,7 +96,7 @@ const TEST_SETTINGS: &[SettingDescriptor<TestSettings>] = &[
         ty: SettingType::Boolean,
         set: set_expand_tabs,
         get: get_expand_tabs,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "tabwidth",
@@ -107,7 +108,7 @@ const TEST_SETTINGS: &[SettingDescriptor<TestSettings>] = &[
         },
         set: set_tab_width,
         get: get_tab_width,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "command_line_window.width_ratio",
@@ -119,7 +120,7 @@ const TEST_SETTINGS: &[SettingDescriptor<TestSettings>] = &[
         },
         set: set_width_ratio,
         get: get_width_ratio,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "borderstyle",
@@ -130,7 +131,7 @@ const TEST_SETTINGS: &[SettingDescriptor<TestSettings>] = &[
         },
         set: set_border_style,
         get: get_border_style,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
 ];
 
@@ -392,15 +393,15 @@ fn test_execute_setting_boolean() {
     let mut settings = TestSettings::default();
 
     let result = registry.set("expandtabs", Some("false"), &mut settings);
-    assert!(!result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::None);
     assert!(!settings.expand_tabs);
 
     let result = registry.set("expandtabs", Some("true"), &mut settings);
-    assert!(!result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::None);
     assert!(settings.expand_tabs);
 
     let result = registry.set("et", Some("false"), &mut settings);
-    assert!(!result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::None);
     assert!(!settings.expand_tabs);
 }
 
@@ -410,15 +411,15 @@ fn test_execute_setting_integer() {
     let mut settings = TestSettings::default();
 
     let result = registry.set("tabwidth", Some("4"), &mut settings);
-    assert!(!result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::None);
     assert_eq!(settings.tab_width, 4);
 
     let result = registry.set("tw", Some("8"), &mut settings);
-    assert!(!result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::None);
     assert_eq!(settings.tab_width, 8);
 
     let result = registry.set("tabw", Some("2"), &mut settings);
-    assert!(!result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::None);
     assert_eq!(settings.tab_width, 2);
 }
 
@@ -432,11 +433,11 @@ fn test_execute_setting_float() {
         Some("0.6"),
         &mut settings,
     );
-    assert!(!result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::None);
     assert!((settings.width_ratio - 0.6).abs() < f64::EPSILON);
 
     let result = registry.set("cmdwidth", Some("0.8"), &mut settings);
-    assert!(!result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::None);
     assert!((settings.width_ratio - 0.8).abs() < f64::EPSILON);
 }
 
@@ -446,13 +447,13 @@ fn test_execute_setting_enum() {
     let mut settings = TestSettings::default();
 
     let result = registry.set("borderstyle", Some("unicode"), &mut settings);
-    assert!(!result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::None);
 
     let result = registry.set("borderstyle", Some("ASCII"), &mut settings);
-    assert!(!result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::None);
 
     let result = registry.set("bs", Some("none"), &mut settings);
-    assert!(!result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::None);
 }
 
 #[test]
@@ -521,7 +522,7 @@ fn test_execute_setting_ambiguous() {
             ty: SettingType::Boolean,
             set: set_expand_tabs,
             get: get_expand_tabs,
-            needs_full_redraw: false,
+            effect: SettingEffect::None,
         },
         SettingDescriptor {
             name: "expandspaces",
@@ -530,7 +531,7 @@ fn test_execute_setting_ambiguous() {
             ty: SettingType::Boolean,
             set: set_expand_tabs,
             get: get_expand_tabs,
-            needs_full_redraw: false,
+            effect: SettingEffect::None,
         },
     ];
 
@@ -541,7 +542,7 @@ fn test_execute_setting_ambiguous() {
     assert!(result.is_err());
 
     let result = registry.set("expandtabs", Some("true"), &mut settings);
-    assert!(!result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::None);
 }
 
 #[test]
@@ -551,7 +552,7 @@ fn test_execute_setting_theme_light() {
     let mut state = State::with_settings(settings.clone());
 
     let result = registry.set("appearance.theme", Some("light"), &mut state.settings);
-    assert!(result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::Redraw);
     settings = state.settings.clone();
     assert_eq!(settings.theme(), Some("light"));
     assert_eq!(
@@ -571,7 +572,7 @@ fn test_execute_setting_theme_dark() {
     let mut state = State::with_settings(settings.clone());
 
     let result = registry.set("appearance.theme", Some("dark"), &mut state.settings);
-    assert!(result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::Redraw);
     settings = state.settings.clone();
     assert_eq!(settings.theme(), Some("dark"));
     assert_eq!(
@@ -591,7 +592,7 @@ fn test_execute_setting_theme_gruvbox() {
     let mut state = State::with_settings(settings.clone());
 
     let result = registry.set("appearance.theme", Some("gruvbox"), &mut state.settings);
-    assert!(result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::Redraw);
     settings = state.settings.clone();
     assert_eq!(settings.theme(), Some("gruvbox"));
     assert_eq!(
@@ -611,7 +612,7 @@ fn test_execute_setting_theme_nordic() {
     let mut state = State::with_settings(settings.clone());
 
     let result = registry.set("appearance.theme", Some("nordic"), &mut state.settings);
-    assert!(result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::Redraw);
     settings = state.settings.clone();
     assert_eq!(settings.theme(), Some("nordic"));
     assert_eq!(
@@ -631,12 +632,12 @@ fn test_execute_setting_theme_case_insensitive() {
     let mut state = State::with_settings(settings.clone());
 
     let result = registry.set("appearance.theme", Some("LIGHT"), &mut state.settings);
-    assert!(result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::Redraw);
     settings = state.settings.clone();
     assert_eq!(settings.theme(), Some("light"));
 
     let result = registry.set("appearance.theme", Some("Dark"), &mut state.settings);
-    assert!(result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::Redraw);
     settings = state.settings.clone();
     assert_eq!(settings.theme(), Some("dark"));
 }
@@ -662,13 +663,13 @@ fn test_execute_setting_theme_overwrites_previous() {
     let mut state = State::with_settings(settings.clone());
 
     let result = registry.set("appearance.theme", Some("light"), &mut state.settings);
-    assert!(result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::Redraw);
     settings = state.settings.clone();
     assert_eq!(settings.theme(), Some("light"));
     let light_bg = settings.editor_bg();
 
     let result = registry.set("appearance.theme", Some("dark"), &mut state.settings);
-    assert!(result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::Redraw);
     settings = state.settings.clone();
     assert_eq!(settings.theme(), Some("dark"));
     assert_ne!(settings.editor_bg(), light_bg);
@@ -685,7 +686,7 @@ fn test_execute_setting_theme_alias_colorscheme() {
     let mut state = State::with_settings(settings.clone());
 
     let result = registry.set("colorscheme", Some("light"), &mut state.settings);
-    assert!(result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::Redraw);
     settings = state.settings.clone();
     assert_eq!(settings.theme(), Some("light"));
 }
@@ -697,7 +698,7 @@ fn test_execute_setting_theme_canonical_name() {
     let mut state = State::with_settings(settings.clone());
 
     let result = registry.set("appearance.theme", Some("dark"), &mut state.settings);
-    assert!(result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::Redraw);
     settings = state.settings.clone();
     assert_eq!(settings.theme(), Some("dark"));
 }
@@ -710,12 +711,12 @@ fn test_execute_setting_undofile_toggles_persistent_undo() {
     assert!(state.settings.undo().persistent, "undofile defaults to on");
 
     let result = registry.set("undofile", Some("false"), &mut state.settings);
-    assert!(!result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::None);
     settings = state.settings.clone();
     assert!(!settings.undo().persistent);
 
     let result = registry.set("udf", Some("true"), &mut state.settings);
-    assert!(!result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::None);
     settings = state.settings.clone();
     assert!(settings.undo().persistent);
 }
@@ -728,14 +729,14 @@ fn test_execute_setting_undodir_sets_and_expands_path() {
     assert_eq!(state.settings.undo().dir, None);
 
     let result = registry.set("undodir", Some("/tmp/my-rift-undo"), &mut state.settings);
-    assert!(!result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::None);
     assert_eq!(
         state.settings.undo().dir,
         Some(std::path::PathBuf::from("/tmp/my-rift-undo"))
     );
 
     let result = registry.set("udir", Some(""), &mut state.settings);
-    assert!(!result.unwrap().needs_full_redraw);
+    assert_eq!(result.unwrap().effect, SettingEffect::None);
     assert_eq!(state.settings.undo().dir, None);
 }
 

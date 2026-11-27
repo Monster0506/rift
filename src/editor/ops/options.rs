@@ -1,6 +1,8 @@
 use super::super::Editor;
+use crate::command_line::settings::descriptor::SettingEffect;
 use crate::command_line::settings::resolver::{OptionScope, SettingsResolver};
 use crate::error::{ErrorType, RiftError};
+use crate::plugin::events::EventPayload;
 use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
@@ -9,7 +11,7 @@ impl<T: TerminalBackend> Editor<T> {
         name: &str,
         value: Option<&str>,
         scope: OptionScope,
-    ) -> Result<bool, RiftError> {
+    ) -> Result<(), RiftError> {
         let local = match scope {
             OptionScope::Global => None,
             OptionScope::Local(id) => Some(id),
@@ -19,23 +21,34 @@ impl<T: TerminalBackend> Editor<T> {
                     .then_some(id)
             }
         };
-        let descriptor_redraws = match local {
-            Some(id) => {
-                let doc = self.document_manager.get_document_mut(id).ok_or_else(|| {
-                    RiftError::new(
-                        ErrorType::Internal,
-                        crate::constants::errors::INTERNAL_ERROR,
-                        format!("Document {id} not found"),
-                    )
-                })?;
-                doc.set_option(name, value)?.needs_full_redraw
-            }
-            None => {
-                self.settings_registry
-                    .set(name, value, &mut self.state.settings)?
-                    .needs_full_redraw
-            }
+        let (name, effect) = if let Some(id) = local {
+            let doc = self.document_manager.get_document_mut(id).ok_or_else(|| {
+                RiftError::new(
+                    ErrorType::Internal,
+                    crate::constants::errors::INTERNAL_ERROR,
+                    format!("Document {id} not found"),
+                )
+            })?;
+            let descriptor = doc.set_option(name, value)?;
+            (descriptor.name, descriptor.effect)
+        } else {
+            let descriptor = self
+                .settings_registry
+                .set(name, value, &mut self.state.settings)?;
+            (descriptor.name, descriptor.effect)
         };
-        Ok(descriptor_redraws)
+        match effect {
+            SettingEffect::None => {}
+            SettingEffect::Redraw => self.render_system.viewport.mark_needs_full_redraw(),
+            SettingEffect::ResizeClipboard => {
+                let capacity = self.state.settings.clipboard_ring_size();
+                if capacity != self.clipboard_ring.capacity() {
+                    self.clipboard_ring.set_capacity(capacity);
+                    self.refresh_clipboard_buffer_if_open();
+                }
+            }
+        }
+        self.raise(EventPayload::OptionSet { buf: local, name });
+        Ok(())
     }
 }

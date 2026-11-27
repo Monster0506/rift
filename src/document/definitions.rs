@@ -1,5 +1,5 @@
 use crate::command_line::settings::descriptor::{
-    SettingDescriptor, SettingError, SettingType, SettingValue,
+    SettingDescriptor, SettingEffect, SettingError, SettingType, SettingValue,
 };
 use crate::command_line::settings::registry::SettingsRegistry;
 use crate::document::LineEnding;
@@ -255,7 +255,7 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
         ty: SettingType::Boolean,
         set: set_number,
         get: get_number,
-        needs_full_redraw: true,
+        effect: SettingEffect::Redraw,
     },
     SettingDescriptor {
         name: "line_ending",
@@ -266,7 +266,7 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
         },
         set: set_line_ending,
         get: get_line_ending,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "expandtabs",
@@ -275,7 +275,7 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
         ty: SettingType::Boolean,
         set: set_expand_tabs,
         get: get_expand_tabs,
-        needs_full_redraw: true,
+        effect: SettingEffect::Redraw,
     },
     SettingDescriptor {
         name: "tabwidth",
@@ -287,7 +287,7 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
         },
         set: set_tab_width,
         get: get_tab_width,
-        needs_full_redraw: true,
+        effect: SettingEffect::Redraw,
     },
     SettingDescriptor {
         name: "wrap",
@@ -300,7 +300,7 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
         },
         set: set_wrap,
         get: get_wrap,
-        needs_full_redraw: true,
+        effect: SettingEffect::Redraw,
     },
     SettingDescriptor {
         name: "bomb",
@@ -309,7 +309,7 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
         ty: SettingType::Boolean,
         set: set_bomb,
         get: get_bomb,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
 ];
 

@@ -52,6 +52,29 @@ fn plugin_set_option_global_setting_updates_user_settings() {
 }
 
 #[test]
+fn plugin_clipboard_size_change_trims_existing_entries() {
+    let mut editor = create_editor();
+    for text in ["old", "new"] {
+        editor
+            .clipboard_ring
+            .push_str(text, crate::wrap::RangeKind::Charwise);
+    }
+
+    editor
+        .plugin_host
+        .queue_mutation(PluginMutation::SetOption {
+            buf: None,
+            name: "clipboard.size".to_string(),
+            value: "1".to_string(),
+        });
+    editor.apply_plugin_mutations();
+
+    assert_eq!(editor.clipboard_ring.capacity(), 1);
+    assert_eq!(ring_text(&editor, 0).as_deref(), Some("new"));
+    assert!(ring_text(&editor, 1).is_none());
+}
+
+#[test]
 fn plugin_set_option_unknown_name_reports_error_without_panicking() {
     let mut editor = create_editor();
     load_text(&mut editor, "hello\n");

@@ -1,6 +1,6 @@
 use crate::color::Color;
 use crate::command_line::settings::descriptor::{
-    SettingDescriptor, SettingError, SettingType, SettingValue,
+    SettingDescriptor, SettingEffect, SettingError, SettingType, SettingValue,
 };
 use crate::command_line::settings::registry::SettingsRegistry;
 use crate::floating_window::BorderChars;
@@ -663,7 +663,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         },
         set: set_border_style,
         get: get_border_style,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "command_line.border_chars",
@@ -672,7 +672,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Text,
         set: set_border_chars,
         get: get_border_chars,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "command_line.width_ratio",
@@ -684,7 +684,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         },
         set: set_cmd_window_width_ratio,
         get: get_cmd_window_width_ratio,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "command_line.min_width",
@@ -696,7 +696,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         },
         set: set_cmd_window_min_width,
         get: get_cmd_window_min_width,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "command_line.height",
@@ -708,7 +708,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         },
         set: set_cmd_window_height,
         get: get_cmd_window_height,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "command_line.border",
@@ -717,7 +717,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Boolean,
         set: set_cmd_window_border,
         get: get_cmd_window_border,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "command_line.reverse_video",
@@ -726,7 +726,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Boolean,
         set: set_cmd_window_reverse_video,
         get: get_cmd_window_reverse_video,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "appearance.background",
@@ -735,7 +735,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Color,
         set: set_editor_bg,
         get: get_editor_bg,
-        needs_full_redraw: true,
+        effect: SettingEffect::Redraw,
     },
     SettingDescriptor {
         name: "appearance.foreground",
@@ -744,7 +744,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Color,
         set: set_editor_fg,
         get: get_editor_fg,
-        needs_full_redraw: true,
+        effect: SettingEffect::Redraw,
     },
     SettingDescriptor {
         name: "appearance.cursor_color",
@@ -753,7 +753,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Color,
         set: set_cursor_color,
         get: get_cursor_color,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "appearance.selection_background",
@@ -762,7 +762,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Color,
         set: set_selection_bg,
         get: get_selection_bg,
-        needs_full_redraw: true,
+        effect: SettingEffect::Redraw,
     },
     SettingDescriptor {
         name: "appearance.selection_foreground",
@@ -771,7 +771,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Color,
         set: set_selection_fg,
         get: get_selection_fg,
-        needs_full_redraw: true,
+        effect: SettingEffect::Redraw,
     },
     SettingDescriptor {
         name: "appearance.cursor_speed",
@@ -783,7 +783,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         },
         set: set_cursor_speed,
         get: get_cursor_speed,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "appearance.theme",
@@ -794,7 +794,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         },
         set: set_theme,
         get: get_theme,
-        needs_full_redraw: true,
+        effect: SettingEffect::Redraw,
     },
     SettingDescriptor {
         name: "status_line.show_filename",
@@ -803,7 +803,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Boolean,
         set: set_show_filename,
         get: get_show_filename,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "status_line.reverse_video",
@@ -812,7 +812,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Boolean,
         set: set_status_line_reverse_video,
         get: get_status_line_reverse_video,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "status_line.show_status_line",
@@ -821,7 +821,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Boolean,
         set: set_show_status_line,
         get: get_show_status_line,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "status_line.show_dirty",
@@ -830,7 +830,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Boolean,
         set: set_show_dirty_indicator,
         get: get_show_dirty_indicator,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "clipboard.size",
@@ -842,7 +842,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         },
         set: set_clipboard_size,
         get: get_clipboard_size,
-        needs_full_redraw: false,
+        effect: SettingEffect::ResizeClipboard,
     },
     SettingDescriptor {
         name: "editor.poll_rate",
@@ -854,7 +854,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         },
         set: set_poll_rate,
         get: get_poll_rate,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "editor.soft_wrap",
@@ -863,7 +863,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Boolean,
         set: set_soft_wrap,
         get: get_soft_wrap,
-        needs_full_redraw: true,
+        effect: SettingEffect::Redraw,
     },
     SettingDescriptor {
         name: "editor.wrap_width",
@@ -875,7 +875,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         },
         set: set_wrap_width,
         get: get_wrap_width,
-        needs_full_redraw: true,
+        effect: SettingEffect::Redraw,
     },
     SettingDescriptor {
         name: "split.equalize_proportional",
@@ -884,7 +884,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Boolean,
         set: set_equalize_proportional,
         get: get_equalize_proportional,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "lsp.debug_log",
@@ -893,7 +893,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Boolean,
         set: set_lsp_debug_log,
         get: get_lsp_debug_log,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "lsp.virtual_text",
@@ -902,7 +902,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Boolean,
         set: set_lsp_virtual_text,
         get: get_lsp_virtual_text,
-        needs_full_redraw: true,
+        effect: SettingEffect::Redraw,
     },
     SettingDescriptor {
         name: "lsp.diagnostic_tooltip",
@@ -911,7 +911,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Boolean,
         set: set_lsp_diagnostic_tooltip,
         get: get_lsp_diagnostic_tooltip,
-        needs_full_redraw: true,
+        effect: SettingEffect::Redraw,
     },
     SettingDescriptor {
         name: "ghostcut",
@@ -920,7 +920,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Boolean,
         set: set_ghost_cut,
         get: get_ghost_cut,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "quitonq",
@@ -929,7 +929,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Boolean,
         set: set_quit_on_q,
         get: get_quit_on_q,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "undofile",
@@ -938,7 +938,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Boolean,
         set: set_persistent_undo,
         get: get_persistent_undo,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
     SettingDescriptor {
         name: "undodir",
@@ -947,7 +947,7 @@ const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Path,
         set: set_undo_dir,
         get: get_undo_dir,
-        needs_full_redraw: false,
+        effect: SettingEffect::None,
     },
 ];
 

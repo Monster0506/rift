@@ -47,6 +47,10 @@ pub(crate) enum EventPayload {
     TextYank {
         buf: DocumentId,
     },
+    OptionSet {
+        buf: Option<DocumentId>,
+        name: &'static str,
+    },
 
     /// A buffer was reloaded from disk (e.g. after an external change).
     BufReload {
@@ -200,20 +204,21 @@ impl EventPayload {
             | Self::SelectionChanged { buf } => {
                 t.set("buf", lua_int(buf.get()))?;
             }
+            Self::OptionSet { buf, name } => {
+                t.set("name", *name)?;
+                if let Some(buf) = buf {
+                    t.set("buf", lua_int(buf.get()))?;
+                }
+            }
             Self::BufSavePre { buf, path } | Self::BufSavePost { buf, path } => {
                 t.set("buf", lua_int(buf.get()))?;
                 if let Some(path) = path {
                     t.set("path", path.to_string_lossy().as_ref())?;
                 }
             }
-            Self::CursorMoved { buf, row, col } => {
+            Self::CursorMoved { buf, row, col } | Self::CursorHold { buf, row, col, .. } => {
                 t.set("buf", lua_int(buf.get()))?;
                 t.set("row", lua_int(*row + 1))?; // 1-indexed for Lua
-                t.set("col", lua_int(*col))?;
-            }
-            Self::CursorHold { buf, row, col, .. } => {
-                t.set("buf", lua_int(buf.get()))?;
-                t.set("row", lua_int(*row + 1))?;
                 t.set("col", lua_int(*col))?;
             }
             Self::ModeChanged { from, to } => {
@@ -281,6 +286,7 @@ impl EventPayload {
             Self::TextChangedCoarse { .. } => "TextChangedCoarse",
             Self::SearchChanged { .. } => "SearchChanged",
             Self::TextYank { .. } => "TextYank",
+            Self::OptionSet { .. } => "OptionSet",
             Self::SelectionChanged { .. } => "SelectionChanged",
             Self::SyntaxUpdated { .. } => "SyntaxUpdated",
             Self::CursorMoved { .. } => "CursorMoved",
