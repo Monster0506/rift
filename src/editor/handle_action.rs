@@ -1,3 +1,4 @@
+use super::ops::quit::QuitRequest;
 use super::Editor;
 use super::PostPasteState;
 use crate::action::{Action, EditorAction};
@@ -97,7 +98,7 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::Undo => self.do_undo(None),
             EditorAction::Redo => self.do_redo(None),
             EditorAction::Quit => {
-                self.do_quit(false);
+                self.quit(QuitRequest::Close { force: false });
                 true
             }
             EditorAction::Submit => self.action_submit(),
@@ -1108,11 +1109,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn action_quit_key(&mut self) -> bool {
-        if self.state.settings.editing().quit_on_q {
-            self.should_quit = true;
-        } else {
-            self.do_quit(false);
-        }
+        self.quit(QuitRequest::Key);
         true
     }
 

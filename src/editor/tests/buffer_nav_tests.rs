@@ -101,7 +101,7 @@ fn test_quit_last_buffer_quits_editor() {
     let mut editor = create_editor();
     assert_eq!(editor.document_manager.tab_count(), 1);
 
-    editor.do_quit(false);
+    editor.execute_command_line("q");
 
     assert!(
         editor.should_quit,
@@ -119,7 +119,7 @@ fn test_quit_dirty_last_buffer_refuses() {
         .unwrap();
     assert!(editor.active_document().is_dirty());
 
-    editor.do_quit(false);
+    editor.execute_command_line("q");
     assert!(
         !editor.should_quit,
         ":q should refuse when last buffer is dirty"
@@ -130,7 +130,7 @@ fn test_quit_dirty_last_buffer_refuses() {
         "dirty buffer should remain active"
     );
 
-    editor.do_quit(true);
+    editor.execute_command_line("q!");
     assert!(
         editor.should_quit,
         ":q! should quit even with dirty last buffer"
@@ -167,6 +167,21 @@ fn q_key_quits_dirty_buffer_by_default() {
 }
 
 #[test]
+fn q_key_quits_without_closing_the_dirty_split_first() {
+    let mut editor = create_editor();
+    do_vsplit(&mut editor);
+    editor
+        .active_document()
+        .edit(Edit::type_text('x'), EditSource::User)
+        .unwrap();
+
+    feed_keys(&mut editor, "q");
+
+    assert!(editor.should_quit);
+    assert_eq!(editor.split_tree.window_count(), 2);
+}
+
+#[test]
 fn q_key_closes_split_when_quitonq_off() {
     let mut editor = create_editor();
     editor.execute_command_line("set noquitonq");
@@ -196,7 +211,7 @@ fn test_handle_execution_result_quit_only_checks_current_buffer() {
 
     let clean_id = editor.document_manager.active_document_id().unwrap();
 
-    editor.do_quit(false);
+    editor.execute_command_line("q");
     assert!(!editor.should_quit, ":q should not quit the editor");
     assert_ne!(
         editor.document_manager.active_document_id().unwrap(),

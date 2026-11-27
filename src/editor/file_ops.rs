@@ -127,68 +127,6 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
-    pub(super) fn do_quit(&mut self, force: bool) {
-        let in_clipboard_entry = self
-            .document_manager
-            .active_document()
-            .is_some_and(super::super::document::Document::is_clipboard_entry);
-        if in_clipboard_entry {
-            self.handle_clipboard_entry_close();
-            return;
-        }
-
-        let in_explorer = self.panel_layout.as_ref().is_some_and(|l| {
-            let fid = self.split_tree.focused_window_id();
-            fid == l.dir_win_id || fid == l.preview_win_id
-        });
-        if in_explorer {
-            self.close_split_panel();
-            return;
-        }
-        if self.split_tree.window_count() > 1 {
-            let focused_id = self.split_tree.focused_window_id();
-            self.close_window(focused_id);
-            if let Err(e) = self.force_full_redraw() {
-                self.notify_error(e);
-            }
-        } else if self.document_manager.tab_count() <= 1 {
-            if !force {
-                let doc_id = self.active_document_id();
-                if let Some(doc) = self.document_manager.get_document(doc_id) {
-                    let confirm_dirty = doc.kind.descriptor.policies.close
-                        == crate::document::runtime::ClosePolicy::ConfirmDirty;
-                    if doc.is_dirty() && (confirm_dirty || !doc.is_special()) {
-                        self.notify_error(RiftError::warning(
-                            ErrorType::Execution,
-                            crate::constants::errors::UNSAVED_CHANGES,
-                            crate::constants::errors::MSG_UNSAVED_CHANGES,
-                        ));
-                        return;
-                    }
-                }
-            }
-            self.should_quit = true;
-        } else {
-            let doc_id = self.active_document_id();
-            let result = if force {
-                self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Force)
-            } else {
-                self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Normal)
-            };
-            if let Err(e) = result {
-                self.notify_error(e);
-            } else {
-                if let Some(new_doc_id) = self.document_manager.active_document_id() {
-                    let _ = self.focus_document(new_doc_id);
-                }
-                self.sync_state_with_active_document();
-                if let Err(e) = self.force_full_redraw() {
-                    self.notify_error(e);
-                }
-            }
-        }
-    }
-
     pub(super) fn do_buffer_next(&mut self) {
         self.do_buffer_cycle(true);
     }

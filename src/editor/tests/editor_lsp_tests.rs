@@ -39,7 +39,7 @@ fn closing_a_document_sends_lsp_did_close() {
         "opening the file should start LSP tracking"
     );
 
-    editor.do_quit(false);
+    editor.execute_command_line("q");
 
     assert!(
         !editor.lsp_manager.is_tracking(&path),

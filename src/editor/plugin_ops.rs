@@ -1096,7 +1096,7 @@ impl<T: TerminalBackend> Editor<T> {
         if self.document_manager.get_document(buf).is_none() {
             self.drop_plugin_write(buf, "close_buf");
         } else if self.active_document_id() == buf {
-            self.do_quit(force);
+            self.quit(super::ops::quit::QuitRequest::Close { force });
         } else {
             let result = if force {
                 self.close_buffer(buf, crate::document::manager::RemovalIntent::Force)

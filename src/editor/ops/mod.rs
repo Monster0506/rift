@@ -8,6 +8,7 @@ mod files;
 mod lsp;
 mod notify;
 mod options;
+pub(in crate::editor) mod quit;
 pub(super) mod save;
 mod search;
 pub(crate) mod windows;

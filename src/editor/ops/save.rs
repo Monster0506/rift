@@ -400,21 +400,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    fn quit_if_alone(&mut self) {
-        if self.split_tree.window_count() > 1 || self.panel_layout.is_some() {
-            return;
-        }
-        if self.document_manager.has_unsaved_changes() {
-            self.notify_error(RiftError::warning(
-                ErrorType::Execution,
-                crate::constants::errors::UNSAVED_CHANGES,
-                crate::constants::errors::MSG_UNSAVED_CHANGES,
-            ));
-            return;
-        }
-        self.should_quit = true;
-    }
-
     fn notify_save_quit_aborted(&mut self) {
         self.notify(
             NotificationType::Warning,
@@ -433,9 +418,9 @@ impl<T: TerminalBackend> Editor<T> {
             && self.active_document_id() == handle.doc_id()
             && (kind == SaveKind::Special || doc.is_some_and(|doc| !doc.is_dirty()))
         {
-            self.do_quit(false);
+            self.quit(super::quit::QuitRequest::Close { force: false });
         } else if kind == SaveKind::Special && doc.is_none() {
-            self.quit_if_alone();
+            self.quit(super::quit::QuitRequest::IfAlone);
         } else {
             self.notify_save_quit_aborted();
         }

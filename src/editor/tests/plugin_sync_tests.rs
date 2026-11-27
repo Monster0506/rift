@@ -426,7 +426,7 @@ fn write_and_quit_saves_the_changes_made_by_the_pre_save_hook() {
 fn buffer_kind_on_close_reads_the_edited_lines() {
     let mut editor = editor_with_probe_buffer();
 
-    editor.do_quit(true);
+    editor.execute_command_line("q!");
 
     lua_ok(
         &editor,
@@ -472,7 +472,7 @@ fn buf_enter_after_quit_reads_the_now_active_buffer() {
          end)",
     );
 
-    editor.do_quit(true);
+    editor.execute_command_line("q!");
 
     lua_ok(
         &editor,
@@ -737,7 +737,7 @@ fn editor_quit_reads_the_final_cursor() {
         .active_document()
         .set_cursor(9, crate::document::ops::CursorCause::User)
         .unwrap();
-    editor.should_quit = true;
+    editor.quit(crate::editor::ops::quit::QuitRequest::Key);
 
     editor.run().unwrap();
 

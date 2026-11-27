@@ -1,3 +1,4 @@
+use super::ops::quit::QuitRequest;
 use super::Editor;
 use crate::action::{Action, EditorAction};
 use crate::command_line::commands::types::ParsedCommand;
@@ -117,7 +118,7 @@ impl<T: TerminalBackend> Editor<T> {
             ParsedCommand::Checkpoint { .. } => {
                 self.create_checkpoint();
             }
-            ParsedCommand::Quit { bangs } => self.do_quit(bangs > 0),
+            ParsedCommand::Quit { bangs } => self.quit(QuitRequest::Close { force: bangs > 0 }),
             ParsedCommand::Write { path, bangs } => {
                 self.save_buffer(
                     self.active_document_id(),
