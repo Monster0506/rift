@@ -286,7 +286,8 @@ Search: needle here and another needle over there.";
 
     // --- Search highlighting through annotations ----------------------
     e.state.last_search_query = Some("needle".to_string());
-    e.update_search_highlights();
+    e.schedule_search_refresh(crate::editor::ops::search::SearchRefresh::Immediate);
+    e.update_and_render().unwrap();
 
     // Render the whole thing and print the styled view.
     let view = styled_view(&mut e);
@@ -373,7 +374,8 @@ fn search_highlight_flows_through_annotations() {
     use crate::color::Color;
     let mut e = editor_with_text("foo bar foo");
     e.state.last_search_query = Some("foo".to_string());
-    e.update_search_highlights();
+    e.schedule_search_refresh(crate::editor::ops::search::SearchRefresh::Immediate);
+    e.update_and_render().unwrap();
     // Two ui.search annotations, one per match.
     assert_eq!(
         e.active_document()
@@ -391,7 +393,8 @@ fn search_highlight_flows_through_annotations() {
     );
     // Clearing the search removes the annotations.
     e.state.last_search_query = None;
-    e.update_search_highlights();
+    e.schedule_search_refresh(crate::editor::ops::search::SearchRefresh::Immediate);
+    e.update_and_render().unwrap();
     assert_eq!(
         e.active_document()
             .annotations

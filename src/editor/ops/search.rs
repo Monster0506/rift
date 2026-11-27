@@ -8,8 +8,68 @@ use crate::notification::NotificationType;
 use crate::plugin::events::EventPayload;
 use crate::search::SearchDirection;
 use crate::term::TerminalBackend;
+use crate::time::Instant;
+
+#[derive(Clone, Copy)]
+pub(in crate::editor) enum SearchRefresh {
+    Immediate,
+    Debounced,
+}
 
 impl<T: TerminalBackend> Editor<T> {
+    pub(in crate::editor) fn schedule_search_refresh(&mut self, refresh: SearchRefresh) {
+        self.scheduler.search_refresh = self.state.last_search_query.as_ref().map(|_| {
+            let now = Instant::now();
+            match refresh {
+                SearchRefresh::Immediate => now,
+                SearchRefresh::Debounced => now + super::super::scheduler::SEARCH_REFRESH_DEBOUNCE,
+            }
+        });
+    }
+
+    pub(in crate::editor) fn refresh_search_highlights(&mut self) {
+        let doc_id = self.active_document_id();
+        let Some(query) = self.state.last_search_query.as_deref() else {
+            self.scheduler.search_refresh = None;
+            if self.search_highlights_synced.take().is_some()
+                || !self.state.search_matches.is_empty()
+            {
+                if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                    doc.clear_search_annotations();
+                }
+                self.state.search_matches.clear();
+            }
+            return;
+        };
+        let Some(doc) = self.document_manager.get_document_mut(doc_id) else {
+            return;
+        };
+        let revision = doc.buffer().revision();
+        if self
+            .search_highlights_synced
+            .as_ref()
+            .is_some_and(|(id, rev, q)| *id == doc_id && *rev == revision && q == query)
+        {
+            self.scheduler.search_refresh = None;
+            return;
+        }
+        match self.scheduler.search_refresh {
+            None => self.schedule_search_refresh(SearchRefresh::Debounced),
+            Some(deadline) if Instant::now() >= deadline => {
+                self.scheduler.search_refresh = None;
+                if let Ok((matches, _)) = doc.find_all_matches(query) {
+                    doc.sync_search_annotations(&matches, None);
+                    self.state.search_matches = matches;
+                } else {
+                    doc.clear_search_annotations();
+                    self.state.search_matches.clear();
+                }
+                self.search_highlights_synced = Some((doc_id, revision, query.to_owned()));
+            }
+            Some(_) => {}
+        }
+    }
+
     pub(crate) fn set_search_pattern(&mut self, pattern: Option<&str>) {
         if pattern.is_some() {
             self.state.last_find_char = None;
@@ -26,7 +86,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(crate) fn clear_search(&mut self) -> bool {
         self.set_search_pattern(None);
-        self.scheduler.search_refresh.cancel(());
+        self.scheduler.search_refresh = None;
         self.search_highlights_synced = None;
         self.state.search_matches.clear();
         for doc in self.document_manager.iter_documents_mut() {
@@ -124,7 +184,7 @@ impl<T: TerminalBackend> Editor<T> {
         );
         if changes_made > 0 {
             self.set_search_pattern(Some(pattern));
-            self.update_search_highlights();
+            self.schedule_search_refresh(SearchRefresh::Immediate);
         }
         self.redraw_from_command();
         true
@@ -137,7 +197,7 @@ impl<T: TerminalBackend> Editor<T> {
         skip_current: bool,
     ) -> bool {
         self.set_search_pattern(Some(query));
-        self.update_search_highlights();
+        self.schedule_search_refresh(SearchRefresh::Immediate);
         let _ = self.force_full_redraw();
 
         let Some(doc) = self

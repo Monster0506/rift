@@ -49,7 +49,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.replay_deferred_keys()?;
         self.drain_syntax_sync();
         self.poll_pending_syntax_reparse();
-        self.poll_pending_search_refresh();
         self.poll_git_gutter_diff();
 
         // Poll LSP messages, after pushing every unsent edit so the server
@@ -106,10 +105,13 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        if self
+        let now = crate::time::Instant::now();
+        let search_refresh_due = self
             .scheduler
-            .terminal_frame_delay(crate::time::Instant::now())
-            == Some(std::time::Duration::ZERO)
+            .search_refresh
+            .is_some_and(|deadline| deadline <= now);
+        if search_refresh_due
+            || self.scheduler.terminal_frame_delay(now) == Some(std::time::Duration::ZERO)
         {
             self.update_and_render()?;
         }

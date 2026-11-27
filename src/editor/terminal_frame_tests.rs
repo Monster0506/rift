@@ -306,11 +306,38 @@ fn poll_timeout_shrinks_to_the_cursor_hold_deadline() {
 fn poll_timeout_shrinks_to_the_search_refresh_deadline() {
     let mut editor = editor();
     editor.state.last_search_query = Some("x".to_string());
-    editor.schedule_search_refresh();
+    editor.schedule_search_refresh(crate::editor::ops::search::SearchRefresh::Debounced);
 
     editor.tick().unwrap();
 
     assert!(editor.term.polls[0] <= super::super::scheduler::SEARCH_REFRESH_DEBOUNCE);
+}
+
+#[test]
+fn elapsed_search_deadline_refreshes_matches_without_input() {
+    use crate::document::ops::{ContentKind, Edit, EditSource};
+    let mut editor = editor();
+    editor
+        .active_document()
+        .replace_content("plum", ContentKind::Load);
+    editor.search("plum", crate::search::SearchDirection::Forward, false);
+    editor
+        .active_document()
+        .edit(Edit::insert(0, "plum "), EditSource::User)
+        .unwrap();
+    editor.update_and_render().unwrap();
+    assert_eq!(editor.state.search_matches.len(), 1);
+
+    editor.scheduler.search_refresh = Some(crate::time::Instant::now());
+    editor.tick().unwrap();
+
+    let ranges: Vec<_> = editor
+        .state
+        .search_matches
+        .iter()
+        .map(|m| m.range.clone())
+        .collect();
+    assert_eq!(ranges, [0..4, 5..9]);
 }
 
 #[test]

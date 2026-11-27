@@ -1,3 +1,4 @@
+use super::ops::search::SearchRefresh;
 use super::Editor;
 use crate::error::{ErrorType, RiftError};
 use crate::mode::Mode;
@@ -55,7 +56,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.notify(crate::notification::NotificationType::Info, limit_message);
         }
         self.state.clear_command_line();
-        self.schedule_search_refresh();
+        self.schedule_search_refresh(SearchRefresh::Debounced);
         true
     }
 
@@ -96,7 +97,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
         self.state.clear_command_line();
-        self.schedule_search_refresh();
+        self.schedule_search_refresh(SearchRefresh::Debounced);
     }
 
     /// Navigate to previous (older) history entry

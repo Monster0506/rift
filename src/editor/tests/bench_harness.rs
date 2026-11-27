@@ -301,7 +301,7 @@ fn scroll_latency_wrapped_markdown() {
     measure_scroll(&mut editor, "k back up", crate::action::Motion::Up, 300);
 
     editor.state.last_search_query = Some("the".to_string());
-    editor.update_search_highlights();
+    editor.schedule_search_refresh(crate::editor::ops::search::SearchRefresh::Immediate);
     editor.update_and_render().unwrap();
     eprintln!("search matches: {}", editor.state.search_matches.len());
     measure_scroll(&mut editor, "j with /the", crate::action::Motion::Down, 300);
@@ -315,7 +315,7 @@ fn scroll_latency_wrapped_markdown() {
     measure_type(&mut editor, "type with /the", 200);
     editor.current_mode = crate::mode::Mode::Normal;
     editor.state.last_search_query = None;
-    editor.update_search_highlights();
+    editor.schedule_search_refresh(crate::editor::ops::search::SearchRefresh::Immediate);
     editor.update_and_render().unwrap();
     editor.current_mode = crate::mode::Mode::Insert;
     measure_type(&mut editor, "type no search", 200);

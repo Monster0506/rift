@@ -102,7 +102,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         self.state.update_cursor(cursor_line, cursor_col);
 
-        self.refresh_search_highlights_if_stale();
+        self.refresh_search_highlights();
         self.state.notifications.prune_expired();
         let gutter_width = self.active_gutter_cols(doc_id);
 

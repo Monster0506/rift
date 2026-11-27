@@ -26,7 +26,7 @@ pub(super) struct Scheduler {
     pub(super) terminal_frame_dirty: bool,
     pub(super) last_frame_at: Option<Instant>,
     pub(super) syntax_reparse: Debounced<DocumentId>,
-    pub(super) search_refresh: Debounced<()>,
+    pub(super) search_refresh: Option<Instant>,
     pub(super) git_gutter_diff: Debounced<DocumentId>,
     pub(super) explorer_preview: Option<PendingExplorerPreview>,
     pub(super) explorer_cursor_entry: Option<String>,
@@ -68,7 +68,7 @@ impl Scheduler {
             terminal_frame_dirty: false,
             last_frame_at: None,
             syntax_reparse: Debounced::new(SYNTAX_REPARSE_DEBOUNCE),
-            search_refresh: Debounced::new(SEARCH_REFRESH_DEBOUNCE),
+            search_refresh: None,
             git_gutter_diff: Debounced::new(GIT_GUTTER_DEBOUNCE),
             explorer_preview: None,
             explorer_cursor_entry: None,
@@ -111,7 +111,7 @@ impl Scheduler {
     ) -> Option<Instant> {
         [
             self.syntax_reparse.next_deadline(),
-            self.search_refresh.next_deadline(),
+            self.search_refresh,
             self.git_gutter_diff.deadline(active_document),
             self.key_sequence_deadline(),
             self.terminal_frame_delay(now).map(|delay| now + delay),
