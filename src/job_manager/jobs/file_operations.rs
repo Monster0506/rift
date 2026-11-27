@@ -195,49 +195,27 @@ impl JobPayload for ImageLoadResult {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FileLoadMode {
+    Open,
+    Reload,
+    OpenAsText,
+}
+
 #[derive(Debug)]
 pub(crate) struct FileLoadJob {
     document_id: DocumentId,
     path: PathBuf,
-    is_reload: bool,
-    /// Open supported images as image buffers rather than text.
-    detect_image: bool,
-    token: Option<crate::job_manager::AsyncToken>,
+    mode: FileLoadMode,
 }
 
 impl FileLoadJob {
     #[must_use]
-    pub(crate) const fn new(document_id: DocumentId, path: PathBuf) -> Self {
+    pub(crate) const fn new(document_id: DocumentId, path: PathBuf, mode: FileLoadMode) -> Self {
         Self {
             document_id,
             path,
-            is_reload: false,
-            detect_image: true,
-            token: None,
-        }
-    }
-
-    /// Load of `path` as text even if it is an image (`:e` on an image buffer).
-    #[must_use]
-    pub(crate) const fn new_text(document_id: DocumentId, path: PathBuf) -> Self {
-        Self {
-            document_id,
-            path,
-            is_reload: false,
-            detect_image: false,
-            token: None,
-        }
-    }
-
-    /// Re-reads an open buffer; image files reopen as images, so `:e` toggles picture and bytes.
-    #[must_use]
-    pub(crate) const fn new_reload(document_id: DocumentId, path: PathBuf) -> Self {
-        Self {
-            document_id,
-            path,
-            is_reload: true,
-            detect_image: true,
-            token: None,
+            mode,
         }
     }
 }
@@ -245,10 +223,6 @@ impl FileLoadJob {
 impl Job for FileLoadJob {
     fn name(&self) -> &'static str {
         "file-load"
-    }
-
-    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
-        self.token
     }
 
     fn target_document_id(&self) -> Option<DocumentId> {
@@ -271,12 +245,12 @@ impl Job for FileLoadJob {
                     ));
                 }
 
-                if self.detect_image {
+                if self.mode != FileLoadMode::OpenAsText {
                     if let Some(image) = crate::image_view::decode(&bytes) {
                         return Ok(Box::new(ImageLoadResult {
                             document_id: self.document_id,
                             image: std::sync::Arc::new(image),
-                            is_reload: self.is_reload,
+                            is_reload: self.mode == FileLoadMode::Reload,
                         }));
                     }
                 }
@@ -291,7 +265,7 @@ impl Job for FileLoadJob {
                     line_index,
                     line_ending: decoded.line_ending,
                     has_bom: decoded.has_bom,
-                    is_reload: self.is_reload,
+                    is_reload: self.mode == FileLoadMode::Reload,
                     content_hash,
                 }))
             };
@@ -299,8 +273,6 @@ impl Job for FileLoadJob {
             Ok(result) => {
                 if signal.is_cancelled() {
                     let _ = sender.send(JobMessage::Cancelled(id));
-                } else if let Some(token) = self.token {
-                    crate::job_manager::send_job_result_with_token(&sender, id, token, result);
                 } else {
                     crate::job_manager::send_job_result(&sender, id, result);
                 }

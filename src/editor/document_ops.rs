@@ -3,6 +3,7 @@ use super::Editor;
 use crate::action::{Action, EditorAction};
 use crate::document::DocumentId;
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
+use crate::job_manager::jobs::file_operations::FileLoadMode;
 use crate::term::TerminalBackend;
 
 fn resolve_link_path_in(path_str: String, base_dir: Option<&std::path::Path>) -> String {
@@ -80,12 +81,7 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(Err(e)) => return Err(e),
                 None => {
                     let doc_id = self.open_placeholder(&path_str)?;
-                    let job = crate::job_manager::jobs::file_operations::FileLoadJob::new(
-                        doc_id,
-                        path.clone(),
-                    );
-                    let job_id = self.job_manager.spawn(job);
-                    self.file_load_jobs.insert(job_id, doc_id);
+                    self.start_file_load(doc_id, path, FileLoadMode::Open);
                     doc_id
                 }
             }
@@ -127,12 +123,7 @@ impl<T: TerminalBackend> Editor<T> {
                     message: crate::constants::errors::MSG_UNSAVED_CHANGES.to_string(),
                 });
             }
-            let job = crate::job_manager::jobs::file_operations::FileLoadJob::new_reload(
-                buf,
-                path.to_path_buf(),
-            );
-            let job_id = self.job_manager.spawn(job);
-            self.file_load_jobs.insert(job_id, buf);
+            self.start_file_load(buf, path.to_path_buf(), FileLoadMode::Reload);
         } else {
             let kind_id = doc.buffer_kind_id();
             let dispatch = doc.descriptor().reload_dispatch;

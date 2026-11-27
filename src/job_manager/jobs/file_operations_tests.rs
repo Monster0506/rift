@@ -10,7 +10,7 @@ fn make_signal() -> CancellationSignal {
 fn run_load_job(path: PathBuf) -> FileLoadResult {
     let (tx, rx) = mpsc::channel();
     let doc_id: crate::document::DocumentId = crate::document::DocumentId::new(42);
-    let job = Box::new(FileLoadJob::new(doc_id, path));
+    let job = Box::new(FileLoadJob::new(doc_id, path, FileLoadMode::Open));
     job.run(1, tx, make_signal());
 
     *crate::job_manager::jobs::test_support::recv_custom_payload::<FileLoadResult>(&rx)

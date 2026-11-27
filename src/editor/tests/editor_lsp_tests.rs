@@ -50,6 +50,36 @@ fn closing_a_document_sends_lsp_did_close() {
 }
 
 #[cfg(feature = "lsp")]
+#[test]
+fn failed_split_load_clears_its_pending_jump() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut editor = create_editor();
+    editor.do_split_window(
+        crate::split::tree::SplitDirection::Vertical,
+        crate::command_line::commands::types::SplitSubcommand::File(
+            dir.path().to_string_lossy().into_owned(),
+        ),
+    );
+    let target = editor.active_document_id();
+    editor.scheduler.goto_after_load = Some((target, 2, 0));
+
+    loop {
+        let message = editor
+            .job_manager
+            .receiver()
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        let failed = matches!(message, crate::job_manager::JobMessage::Error(..));
+        editor.handle_job_message(message);
+        if failed {
+            break;
+        }
+    }
+
+    assert!(editor.scheduler.goto_after_load.is_none());
+}
+
+#[cfg(feature = "lsp")]
 fn lsp_edit_json(sl: u32, sc: u32, el: u32, ec: u32, text: &str) -> serde_json::Value {
     serde_json::json!({
         "range": { "start": { "line": sl, "character": sc }, "end": { "line": el, "character": ec } },

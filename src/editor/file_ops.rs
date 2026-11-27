@@ -1,6 +1,7 @@
 use super::Editor;
 use crate::document::DocumentId;
 use crate::error::{ErrorType, RiftError};
+use crate::job_manager::jobs::file_operations::FileLoadMode;
 use crate::term::TerminalBackend;
 
 pub(super) type NativeSaveHandler<T> =
@@ -79,12 +80,7 @@ fn reopen_image_as_text<T: TerminalBackend>(
         .to_path_buf();
     doc.convert_to_file();
     doc.replace_content("", crate::document::ops::ContentKind::Load);
-    // The load's async token records the kind at spawn; it must be FILE now.
-    let (handle, kind) = (doc.handle(), doc.buffer_kind_id());
-    editor.job_manager.register_document_handle(handle, kind);
-    let job = crate::job_manager::jobs::file_operations::FileLoadJob::new_text(doc_id, path);
-    let job_id = editor.job_manager.spawn(job);
-    editor.file_load_jobs.insert(job_id, doc_id);
+    editor.start_file_load(doc_id, path, FileLoadMode::OpenAsText);
     Ok(())
 }
 
@@ -405,9 +401,7 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             match self.open_placeholder(path) {
                 Ok(id) => {
-                    let job =
-                        crate::job_manager::jobs::file_operations::FileLoadJob::new(id, path_buf);
-                    self.job_manager.spawn(job);
+                    self.start_file_load(id, path_buf, FileLoadMode::Open);
                     id
                 }
                 Err(e) => {
