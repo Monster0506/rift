@@ -61,7 +61,10 @@ fn open_git_status_populates_sections_from_a_real_repo() {
     editor.open_git_status();
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(doc.is_git_status());
     let text = doc.buffer().to_string();
     assert!(text.contains("Unstaged changes"), "{text}");
@@ -106,7 +109,10 @@ fn cursor_stage_action_runs_git_add_and_refreshes_the_buffer() {
 }
 
 fn cursor_to_entry<T: crate::term::TerminalBackend>(editor: &mut Editor<T>, path: &str) {
-    let doc = editor.document_manager.active_document_mut().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document_mut(editor.active_document_id())
+        .unwrap();
     let line = (0..doc.buffer().get_total_lines())
         .find(|&l| {
             doc.annotations
@@ -199,14 +205,17 @@ fn git_status_buffer_is_read_only_and_wq_reports_cannot_be_saved() {
     editor.open_git_status();
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(doc.is_read_only(), "GitStatus must be read-only");
 
     let before = doc.buffer().to_string();
     assert!(!editor.execute_buffer_command(crate::command::Command::DeleteRows(1)));
     let after = editor
         .document_manager
-        .active_document()
+        .get_document(editor.active_document_id())
         .unwrap()
         .buffer()
         .to_string();
@@ -308,7 +317,10 @@ fn commit_amend_prefills_head_message_and_amends_in_place() {
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
     editor.open_git_commit_amend();
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert_eq!(doc.buffer().to_string().trim(), "init");
 
     let commit_doc_id = editor.active_document_id();
@@ -667,7 +679,10 @@ fn open_git_blame_populates_one_line_per_source_line() {
     drain_jobs(&mut editor);
 
     let blame_window_id = editor.split_tree.focused_window_id();
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(doc.is_git_blame());
     let text = doc.buffer().to_string();
     let lines: Vec<&str> = text.lines().collect();
@@ -1108,8 +1123,8 @@ fn git_blame_walk_back_re_blames_at_the_parent_commit() {
         .to_string()
         .contains("line one"));
     assert_eq!(
-        editor.document_manager.active_document_id(),
-        Some(doc_id),
+        editor.active_document_id(),
+        doc_id,
         "creating the historical source buffer must not steal focus from blame"
     );
 
@@ -1209,7 +1224,10 @@ fn open_git_log_lists_commits_and_expand_shows_git_show_body() {
     editor.open_git_log(dir.path().to_path_buf(), None);
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(doc.is_git_log());
     let text = doc.buffer().to_string();
     assert!(text.contains("init"), "{text}");
@@ -1217,7 +1235,10 @@ fn open_git_log_lists_commits_and_expand_shows_git_show_body() {
     editor.git_log_toggle_expand();
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     let text = doc.buffer().to_string();
     assert!(
         text.contains("tracked.txt"),
@@ -1235,7 +1256,10 @@ fn git_command_escape_hatch_runs_and_shows_output() {
     editor.run_git_command("log -1".to_string());
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert_eq!(
         doc.display_name(),
         "[Git: log -1]",
@@ -1258,7 +1282,10 @@ fn bare_git_command_opens_the_status_buffer() {
     editor.run_git_command(String::new());
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(
         doc.is_git_status(),
         "bare :Git must open the status buffer: {:?}",
@@ -1276,7 +1303,10 @@ fn bare_git_log_command_opens_the_log_buffer() {
     editor.run_git_command("log".to_string());
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(
         doc.is_git_log(),
         "bare :Git log must open the log buffer: {:?}",
@@ -1295,7 +1325,10 @@ fn bare_git_diff_command_opens_status_with_unstaged_hunks_expanded() {
     editor.run_git_command("diff".to_string());
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(
         doc.is_git_status(),
         "bare :Git diff must open the status buffer: {:?}",
@@ -1320,7 +1353,10 @@ fn bare_git_diff_cached_command_opens_status_with_staged_hunks_expanded() {
     editor.run_git_command("diff --cached".to_string());
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(
         doc.is_git_status(),
         "bare :Git diff --cached must open the status buffer: {:?}",
@@ -1343,7 +1379,10 @@ fn bare_git_blame_command_blames_the_active_file() {
     editor.run_git_command("blame".to_string());
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(
         doc.is_git_blame(),
         "bare :Git blame must open the blame buffer: {:?}",
@@ -1364,7 +1403,10 @@ fn git_blame_command_with_explicit_path_blames_that_file_not_the_active_one() {
     editor.run_git_command("blame other.txt".to_string());
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(doc.is_git_blame(), "{:?}", doc.kind);
     assert_eq!(
         doc.display_name(),
@@ -1383,7 +1425,10 @@ fn git_blame_command_with_a_flag_falls_through_to_raw_output() {
     editor.run_git_command("blame -C".to_string());
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(
         !doc.is_git_blame(),
         "a flag argument must not open the structured blame view"
@@ -1400,7 +1445,10 @@ fn git_log_command_with_a_flag_falls_through_to_raw_output() {
     editor.run_git_command("log -1".to_string());
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(
         !doc.is_git_log(),
         "a flag argument must not open the structured log view"
@@ -1433,7 +1481,10 @@ fn b_key_in_status_buffer_blames_the_file_under_cursor() {
     editor.git_status_blame_cursor();
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(doc.is_git_blame(), "{:?}", doc.kind);
 }
 
@@ -1478,7 +1529,10 @@ fn r_key_in_status_buffer_starts_a_rebase_onto_upstream() {
 
     editor.git_status_rebase_cursor();
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(doc.is_git_rebase_todo(), "{:?}", doc.kind);
 }
 
@@ -1514,7 +1568,10 @@ fn status_buffer_shows_head_summary_line_and_enter_opens_log() {
     editor.git_status_select();
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(
         doc.is_git_log(),
         "Enter on the HEAD line must open the Log browser: {:?}",
@@ -1556,7 +1613,10 @@ fn git_blame_and_log_buffers_block_insert_and_delete() {
     editor.open_git_blame(dir.path().join("tracked.txt"), dir.path().to_path_buf());
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(doc.is_read_only(), "GitBlame must be read-only");
     let before = doc.buffer().to_string();
     editor.handle_mode_management(crate::command::Command::BeginInsert(
@@ -1569,19 +1629,17 @@ fn git_blame_and_log_buffers_block_insert_and_delete() {
     );
     assert!(!editor.execute_buffer_command(crate::command::Command::DeleteRows(1)));
     assert_eq!(
-        editor
-            .document_manager
-            .active_document()
-            .unwrap()
-            .buffer()
-            .to_string(),
+        editor.active_document().buffer().to_string(),
         before,
         "dd must not mutate GitBlame"
     );
 
     editor.open_git_log(dir.path().to_path_buf(), None);
     drain_jobs(&mut editor);
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(doc.is_read_only(), "GitLog must be read-only");
     let before = doc.buffer().to_string();
     editor.handle_mode_management(crate::command::Command::BeginInsert(
@@ -1594,12 +1652,7 @@ fn git_blame_and_log_buffers_block_insert_and_delete() {
     );
     assert!(!editor.execute_buffer_command(crate::command::Command::DeleteRows(1)));
     assert_eq!(
-        editor
-            .document_manager
-            .active_document()
-            .unwrap()
-            .buffer()
-            .to_string(),
+        editor.active_document().buffer().to_string(),
         before,
         "dd must not mutate GitLog"
     );
@@ -1615,7 +1668,10 @@ fn bare_git_show_command_opens_log_with_head_expanded() {
     editor.run_git_command("show".to_string());
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(
         doc.git_log_expanded().is_some(),
         "HEAD's commit must already be expanded"
@@ -1657,7 +1713,10 @@ fn g_question_mark_opens_a_read_only_help_buffer_for_each_git_buffer_kind() {
     editor.open_git_status();
     drain_jobs(&mut editor);
     editor.open_git_help();
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(doc.is_read_only(), "help buffer must be read-only");
     let text = doc.buffer().to_string();
     assert!(text.contains("Git Status"), "expected status help: {text}");
@@ -1672,7 +1731,7 @@ fn g_question_mark_opens_a_read_only_help_buffer_for_each_git_buffer_kind() {
     editor.open_git_help();
     let text = editor
         .document_manager
-        .active_document()
+        .get_document(editor.active_document_id())
         .unwrap()
         .buffer()
         .to_string();
@@ -1687,7 +1746,7 @@ fn g_question_mark_opens_a_read_only_help_buffer_for_each_git_buffer_kind() {
     editor.open_git_help();
     let text = editor
         .document_manager
-        .active_document()
+        .get_document(editor.active_document_id())
         .unwrap()
         .buffer()
         .to_string();

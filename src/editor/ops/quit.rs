@@ -48,7 +48,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn close_scope(&mut self, force: bool) -> bool {
         let in_clipboard_entry = self
             .document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .is_some_and(crate::document::Document::is_clipboard_entry);
         if in_clipboard_entry {
             self.handle_clipboard_entry_close();
@@ -92,9 +92,6 @@ impl<T: TerminalBackend> Editor<T> {
             if let Err(e) = result {
                 self.notify_error(e);
             } else {
-                if let Some(new_doc_id) = self.document_manager.active_document_id() {
-                    let _ = self.focus_document(new_doc_id);
-                }
                 self.sync_state_with_active_document();
                 if let Err(e) = self.force_full_redraw() {
                     self.notify_error(e);

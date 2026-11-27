@@ -19,9 +19,9 @@ impl<T: TerminalBackend> Editor<T> {
         }
         self.state.last_search_query = pattern.map(str::to_string);
         #[cfg(feature = "plugins")]
-        if let Some(buf) = self.document_manager.active_document_id() {
-            self.raise(EventPayload::SearchChanged { buf });
-        }
+        self.raise(EventPayload::SearchChanged {
+            buf: self.active_document_id(),
+        });
     }
 
     pub(crate) fn clear_search(&mut self) -> bool {
@@ -135,7 +135,10 @@ impl<T: TerminalBackend> Editor<T> {
         self.update_search_highlights();
         let _ = self.force_full_redraw();
 
-        let Some(doc) = self.document_manager.active_document_mut() else {
+        let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        else {
             return false;
         };
         match doc.perform_search(query, direction, skip_current) {

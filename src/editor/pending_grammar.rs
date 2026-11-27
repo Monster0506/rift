@@ -166,7 +166,7 @@ impl<T: TerminalBackend> Editor<T> {
         let was_visual = self.current_mode.is_visual();
         let has_regions = self
             .document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .is_some_and(|doc| !doc.selections().is_empty());
         if !was_visual && !has_regions {
             return false;
@@ -177,20 +177,26 @@ impl<T: TerminalBackend> Editor<T> {
 
         let start = self.visual_anchor().and_then(|anchor| {
             self.document_manager
-                .active_document()
+                .get_document(self.active_document_id())
                 .map(|doc| anchor.min(doc.buffer().cursor()).min(doc.buffer().len()))
         });
         if was_visual {
             self.set_mode(Mode::Normal);
         }
         if let Some(start) = start {
-            if let Some(doc) = self.document_manager.active_document_mut() {
+            if let Some(doc) = self
+                .document_manager
+                .get_document_mut(self.active_document_id())
+            {
                 let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
             }
         }
         let result = self.try_run_set_aware_replace_char(ch);
         if let Some(start) = start {
-            if let Some(doc) = self.document_manager.active_document_mut() {
+            if let Some(doc) = self
+                .document_manager
+                .get_document_mut(self.active_document_id())
+            {
                 let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
             }
         }

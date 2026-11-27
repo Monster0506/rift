@@ -185,10 +185,8 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.update_and_render();
         self.startup_first_paint = Some(crate::time::Instant::now());
 
-        if let Some(doc_id) = self.document_manager.active_document_id() {
-            self.announce_buffer(doc_id);
-            self.deliver_frame_events();
-        }
+        self.announce_buffer(self.active_document_id());
+        self.deliver_frame_events();
 
         #[cfg(feature = "plugins")]
         self.raise(crate::plugin::events::EventPayload::EditorStart);
@@ -205,14 +203,17 @@ impl<T: TerminalBackend> Editor<T> {
     /// # Panics
     /// Panics if the focused window's document is missing from the document manager.
     pub(crate) fn active_document(&mut self) -> &mut Document {
-        let doc_id = self.split_tree.focused_window().document_id;
+        let doc_id = self.active_document_id();
         self.document_manager
             .get_document_mut(doc_id)
             .expect("No active document")
     }
 
     pub(super) fn restore_view_state(&mut self) {
-        if let Some(doc) = self.document_manager.active_document() {
+        if let Some(doc) = self
+            .document_manager
+            .get_document(self.active_document_id())
+        {
             let view_state = doc.get_view_state();
             self.render_system
                 .viewport

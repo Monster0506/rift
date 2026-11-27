@@ -136,7 +136,10 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn do_buffer_cycle(&mut self, forward: bool) {
-        if let Some(target) = self.document_manager.neighbor_tab(forward) {
+        if let Some(target) = self
+            .document_manager
+            .neighbor_tab(self.active_document_id(), forward)
+        {
             let _ = self.focus_document(target);
         }
         self.state.clear_command_line();
@@ -219,7 +222,9 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn do_show_buffer_list(&mut self) {
         use std::fmt::Write as _;
-        let buffers = self.document_manager.get_buffer_list();
+        let buffers = self
+            .document_manager
+            .get_buffer_list(self.active_document_id());
         let mut message = String::new();
         for info in buffers {
             let dirty = if info.status.is_dirty { "+" } else { " " };

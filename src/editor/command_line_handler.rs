@@ -39,7 +39,10 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn refresh_search_highlights_if_stale(&mut self) {
         match self.state.last_search_query.as_deref() {
             Some(query) => {
-                let Some(doc) = self.document_manager.active_document() else {
+                let Some(doc) = self
+                    .document_manager
+                    .get_document(self.active_document_id())
+                else {
                     return;
                 };
                 let synced = self
@@ -58,7 +61,10 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn update_search_highlights(&mut self) {
         if let Some(query) = self.state.last_search_query.as_deref() {
-            let doc = self.document_manager.active_document_mut().unwrap();
+            let doc = self
+                .document_manager
+                .get_document_mut(self.active_document_id())
+                .unwrap();
             // Called every frame; skip the full re-search and annotation
             // rebuild when the doc, its content, and the query are unchanged.
             let synced = self
@@ -84,7 +90,10 @@ impl<T: TerminalBackend> Editor<T> {
         } else if self.search_highlights_synced.take().is_some()
             || !self.state.search_matches.is_empty()
         {
-            if let Some(doc) = self.document_manager.active_document_mut() {
+            if let Some(doc) = self
+                .document_manager
+                .get_document_mut(self.active_document_id())
+            {
                 doc.clear_search_annotations();
             }
             self.state.search_matches.clear();

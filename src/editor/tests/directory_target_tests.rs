@@ -33,7 +33,10 @@ fn with_file_targeting_a_file_does_not_open_the_explorer() {
     let editor = Editor::with_file(MockTerminal::new(24, 80), Some(&file_path_str)).unwrap();
 
     assert!(editor.panel_layout.is_none());
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert_eq!(
         doc.path().and_then(|p| p.file_name()),
         Some(file_path.file_name().unwrap())

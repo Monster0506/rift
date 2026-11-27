@@ -41,16 +41,17 @@ fn test_iter_documents_mut_allows_mutation() {
     for doc in manager.iter_documents_mut() {
         doc.set_read_only(true);
     }
-    assert!(manager.active_document().unwrap().is_read_only());
+    assert!(manager
+        .get_document(crate::document::DocumentId::new(1))
+        .unwrap()
+        .is_read_only());
 }
 
 #[test]
 fn test_manager_initial_state() {
     let manager = create_manager();
     assert_eq!(manager.tab_count(), 0);
-    assert_eq!(manager.active_tab_index(), 0);
-    assert!(manager.active_document().is_none());
-    assert!(manager.active_document_id().is_none());
+    assert!(manager.get_document_id_at(0).is_none());
 }
 
 #[test]
@@ -60,12 +61,10 @@ fn test_add_document() {
     manager.insert(doc, crate::document::manager::Placement::Background);
 
     assert_eq!(manager.tab_count(), 1);
-    assert_eq!(manager.active_tab_index(), 0);
     assert_eq!(
-        manager.active_document_id(),
+        manager.get_document_id_at(0),
         Some(crate::document::DocumentId::new(1))
     );
-    assert!(manager.active_document().is_some());
 }
 
 #[test]
@@ -79,7 +78,7 @@ fn test_remove_document() {
         .is_ok());
     assert_eq!(manager.tab_count(), 1); // Should still have 1 doc
     assert_ne!(
-        manager.active_document_id(),
+        manager.get_document_id_at(0),
         Some(crate::document::DocumentId::new(1))
     ); // But different ID
 }
@@ -91,131 +90,61 @@ fn test_remove_specific_document() {
     let doc2 = Document::new(crate::document::DocumentId::new(2)).unwrap();
 
     manager.insert(doc1, crate::document::manager::Placement::Background);
-    let second = manager.insert(doc2, crate::document::manager::Placement::Background);
-    manager.switch_to_document(second.doc_id()).unwrap();
+    manager.insert(doc2, crate::document::manager::Placement::Background);
 
     assert_eq!(manager.tab_count(), 2);
-    assert_eq!(
-        manager.active_document_id(),
-        Some(crate::document::DocumentId::new(2))
-    );
-
     assert!(manager
         .remove_document(crate::document::DocumentId::new(1))
         .is_ok());
     assert_eq!(manager.tab_count(), 1);
     assert_eq!(
-        manager.active_document_id(),
+        manager.get_document_id_at(0),
         Some(crate::document::DocumentId::new(2))
-    ); // doc2 still active
+    );
 
     assert!(manager
         .remove_document(crate::document::DocumentId::new(2))
         .is_ok());
     assert_eq!(manager.tab_count(), 1);
     assert_ne!(
-        manager.active_document_id(),
+        manager.get_document_id_at(0),
         Some(crate::document::DocumentId::new(2))
     );
 }
 
 #[test]
-fn test_switching_tabs() {
+fn neighboring_public_tabs_wrap_in_both_directions() {
     let mut manager = create_manager();
-    let doc1 = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    let doc2 = Document::new(crate::document::DocumentId::new(2)).unwrap();
-    let doc3 = Document::new(crate::document::DocumentId::new(3)).unwrap();
+    let [first, second, third] = [1, 2, 3].map(crate::document::DocumentId::new);
+    for id in [first, second, third] {
+        manager.insert(
+            Document::new(id).unwrap(),
+            crate::document::manager::Placement::Background,
+        );
+    }
 
-    manager.insert(doc1, crate::document::manager::Placement::Background);
-    manager.insert(doc2, crate::document::manager::Placement::Background);
-    let third = manager.insert(doc3, crate::document::manager::Placement::Background);
-    manager.switch_to_document(third.doc_id()).unwrap();
-
-    assert_eq!(
-        manager.active_document_id(),
-        Some(crate::document::DocumentId::new(3))
-    );
-
-    manager
-        .switch_to_document(manager.neighbor_tab(false).unwrap())
-        .unwrap();
-    assert_eq!(
-        manager.active_document_id(),
-        Some(crate::document::DocumentId::new(2))
-    );
-
-    manager
-        .switch_to_document(manager.neighbor_tab(false).unwrap())
-        .unwrap();
-    assert_eq!(
-        manager.active_document_id(),
-        Some(crate::document::DocumentId::new(1))
-    );
-
-    manager
-        .switch_to_document(manager.neighbor_tab(false).unwrap())
-        .unwrap(); // Wrap around
-    assert_eq!(
-        manager.active_document_id(),
-        Some(crate::document::DocumentId::new(3))
-    );
-
-    manager
-        .switch_to_document(manager.neighbor_tab(true).unwrap())
-        .unwrap(); // Wrap around
-    assert_eq!(
-        manager.active_document_id(),
-        Some(crate::document::DocumentId::new(1))
-    );
+    assert_eq!(manager.neighbor_tab(third, false), Some(second));
+    assert_eq!(manager.neighbor_tab(second, false), Some(first));
+    assert_eq!(manager.neighbor_tab(first, false), Some(third));
+    assert_eq!(manager.neighbor_tab(third, true), Some(first));
 }
 
 #[test]
-fn test_switching_tabs_from_private_document_lands_on_first_public_tab() {
+fn neighboring_a_private_tab_returns_the_first_public_tab() {
     let mut manager = create_manager();
+    let [first, second, private] = [1, 2, 3].map(crate::document::DocumentId::new);
+    for id in [first, second] {
+        manager.insert(
+            Document::new(id).unwrap(),
+            crate::document::manager::Placement::Background,
+        );
+    }
     manager.insert(
-        Document::new(crate::document::DocumentId::new(1)).unwrap(),
-        crate::document::manager::Placement::Background,
-    );
-    manager.insert(
-        Document::new(crate::document::DocumentId::new(2)).unwrap(),
-        crate::document::manager::Placement::Background,
-    );
-    let private = manager.insert(
-        Document::new(crate::document::DocumentId::new(3)).unwrap(),
+        Document::new(private).unwrap(),
         crate::document::manager::Placement::Private,
     );
-    manager.switch_to_document(private.doc_id()).unwrap();
 
-    assert_eq!(
-        manager.active_document_id(),
-        Some(crate::document::DocumentId::new(3))
-    );
-
-    manager
-        .switch_to_document(manager.neighbor_tab(true).unwrap())
-        .unwrap();
-    assert_eq!(
-        manager.active_document_id(),
-        Some(crate::document::DocumentId::new(1)),
-        "switch_next_tab from a private doc must land on the first public tab, not no-op"
-    );
-
-    let private = manager.insert(
-        Document::new(crate::document::DocumentId::new(4)).unwrap(),
-        crate::document::manager::Placement::Private,
-    );
-    manager.switch_to_document(private.doc_id()).unwrap();
-    manager
-        .switch_to_document(manager.neighbor_tab(false).unwrap())
-        .unwrap();
-    assert_eq!(
-        manager.active_document_id(),
-        Some(crate::document::DocumentId::new(1)),
-        "switch_prev_tab from a private doc must land on the first public tab, not no-op"
-    );
-}
-
-#[test]
-fn test_open_existing_file_switches_tab() {
-    let _manager = create_manager();
+    assert_eq!(manager.neighbor_tab(private, true), Some(first));
+    assert_eq!(manager.neighbor_tab(private, false), Some(first));
+    assert_eq!(manager.neighbor_tab(second, true), Some(first));
 }

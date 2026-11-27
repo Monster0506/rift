@@ -95,7 +95,7 @@ fn workspace_edit_opens_unopened_file_in_background_and_applies_edits() {
     std::fs::write(&other, "fn old() {}\n").unwrap();
 
     let mut editor = create_editor();
-    let active_before = editor.document_manager.active_document_id().unwrap();
+    let active_before = editor.active_document_id();
     let uri = crate::lsp::protocol::path_to_uri(&other);
     let edit = serde_json::json!({
         "documentChanges": [
@@ -107,8 +107,8 @@ fn workspace_edit_opens_unopened_file_in_background_and_applies_edits() {
     assert_eq!(editor.apply_workspace_edit(&edit), 1);
 
     assert_eq!(
-        editor.document_manager.active_document_id(),
-        Some(active_before),
+        editor.active_document_id(),
+        active_before,
         "a background edit must not switch the active tab"
     );
     let doc_id = editor

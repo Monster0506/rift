@@ -20,7 +20,9 @@ fn resolve_link_path_in(path_str: String, base_dir: Option<&std::path::Path>) ->
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn active_doc_is(&self, pred: impl Fn(&crate::document::Document) -> bool) -> bool {
-        self.document_manager.active_document().is_some_and(pred)
+        self.document_manager
+            .get_document(self.active_document_id())
+            .is_some_and(pred)
     }
 
     pub(super) fn reject_read_only_edit(&mut self) {
@@ -33,7 +35,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn resolve_link_path(&self, path_str: String) -> String {
         let base = self
             .document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .and_then(|d| d.path())
             .and_then(|p| p.parent().map(std::path::Path::to_path_buf));
         resolve_link_path_in(path_str, base.as_deref())
@@ -49,13 +51,7 @@ impl<T: TerminalBackend> Editor<T> {
         force: bool,
     ) -> Result<(), RiftError> {
         let Some(path_str) = file_path else {
-            let Some(buf) = self.document_manager.active_document_id() else {
-                return Err(RiftError::new(
-                    ErrorType::Internal,
-                    crate::constants::errors::INTERNAL_ERROR,
-                    "No active document",
-                ));
-            };
+            let buf = self.active_document_id();
             self.reload_document(buf, force)?;
             return self.focus_document(buf);
         };

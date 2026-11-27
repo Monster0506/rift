@@ -10,7 +10,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// Test-only cursor offset accessor for the active document.
     fn active_cursor(&mut self) -> usize {
         self.document_manager
-            .active_document_mut()
+            .get_document_mut(self.active_document_id())
             .map_or(0, |d| d.buffer().cursor())
     }
 }

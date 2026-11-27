@@ -59,7 +59,7 @@ fn apply_to_each_region_deletes_are_one_undo_step() {
         let (start, end) = region.span();
         editor
             .document_manager
-            .active_document_mut()
+            .get_document_mut(editor.active_document_id())
             .is_some_and(|doc| doc.edit(Edit::delete(start..end), EditSource::User).is_ok())
     });
     assert_eq!(editor.active_document().buffer().to_string(), "234789");

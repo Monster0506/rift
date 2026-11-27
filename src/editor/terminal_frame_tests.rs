@@ -212,7 +212,10 @@ impl Job for CaptureJobSender {
 #[test]
 fn terminal_output_batch_drains_past_ten_without_bypassing_frame_deadline() {
     let mut editor = editor();
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     let handle = doc.handle();
     let kind = doc.buffer_kind_id();
     let token = editor

@@ -135,10 +135,7 @@ impl<T: TerminalBackend> Editor<T> {
         let synced = self.plugin_host.lua_synced_keys();
         let keys = self.lua_sync_keys();
         let mode = self.current_mode.as_str();
-        let buf_id = self
-            .document_manager
-            .active_document_id()
-            .map_or(0, |id| usize::try_from(id.get()).unwrap_or(usize::MAX));
+        let buf_id = usize::try_from(self.active_document_id().get()).unwrap_or(usize::MAX);
         let creation_ids =
             self.refill_plugin_creation_ids(self.plugin_host.lua_take_creation_ids());
         let bufs = self.lua_buf_snapshots();
@@ -284,18 +281,17 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn lua_buf_views(&self) -> impl Iterator<Item = LuaBufView<'_>> {
-        self.document_manager
-            .tabs()
-            .map(|(doc, is_current)| LuaBufView {
-                id: doc.id.get(),
-                name: doc.display_name(),
-                is_dirty: doc.is_dirty(),
-                is_current,
-                kind: doc.kind.kind_str(),
-                path: doc.path(),
-                line_count: doc.buffer().get_total_lines(),
-                is_read_only: doc.is_read_only(),
-            })
+        let active = self.active_document_id();
+        self.document_manager.tabs().map(move |doc| LuaBufView {
+            id: doc.id.get(),
+            name: doc.display_name(),
+            is_dirty: doc.is_dirty(),
+            is_current: doc.id == active,
+            kind: doc.kind.kind_str(),
+            path: doc.path(),
+            line_count: doc.buffer().get_total_lines(),
+            is_read_only: doc.is_read_only(),
+        })
     }
 
     fn lua_win_list(&self) -> Vec<crate::plugin::lua_host::WinEntry> {
@@ -520,7 +516,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.report_misrouted();
             return;
         };
-        let active = self.document_manager.active_document_id() == Some(buf);
+        let active = self.active_document_id() == buf;
         let Some(doc) = self.document_manager.get_document_mut(buf) else {
             self.drop_plugin_write(buf, operation);
             return;

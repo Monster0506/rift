@@ -1,6 +1,26 @@
 use super::common::*;
 
 #[test]
+fn editing_targets_the_buffer_shown_by_the_focused_split() {
+    use crate::document::{manager::Placement, ops::ContentKind, Document};
+
+    let mut editor = editor_with_text("original");
+    editor.execute_command_line("vsplit");
+    let original = editor.active_document_id();
+    let id = editor.document_manager.next_id();
+    let mut preview = Document::new(id).unwrap();
+    preview.replace_content("preview", ContentKind::Load);
+    editor.open_buffer(preview, Placement::Background);
+    editor.show_in_window(editor.split_tree.focused_window_id(), id);
+
+    press(&mut editor, &keys("iX<Esc>"));
+
+    assert_eq!(editor.active_document().buffer().to_string(), "Xpreview");
+    let previous = editor.document_manager.get_document(original).unwrap();
+    assert_eq!(previous.buffer().to_string(), "original");
+}
+
+#[test]
 fn test_vsplit_divider_appears() {
     let mut editor = create_editor_sized(10, 40);
     set_content(&mut editor, "hello world\n");

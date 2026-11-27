@@ -90,7 +90,10 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(anchor) = self.visual_anchor() else {
             return false;
         };
-        let Some(doc) = self.document_manager.active_document() else {
+        let Some(doc) = self
+            .document_manager
+            .get_document(self.active_document_id())
+        else {
             return false;
         };
         let cursor = doc.buffer().cursor();
@@ -126,7 +129,10 @@ impl<T: TerminalBackend> Editor<T> {
         };
         self.expand_history.push(current);
         self.set_visual_anchor(Some(new_start));
-        if let Some(doc) = self.document_manager.active_document_mut() {
+        if let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        {
             let _ = doc.set_cursor(
                 new_end.saturating_sub(1),
                 crate::document::ops::CursorCause::User,
@@ -143,7 +149,10 @@ impl<T: TerminalBackend> Editor<T> {
             return false;
         };
         self.set_visual_anchor(Some(start));
-        if let Some(doc) = self.document_manager.active_document_mut() {
+        if let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        {
             let _ = doc.set_cursor(
                 end.saturating_sub(1),
                 crate::document::ops::CursorCause::User,
@@ -153,7 +162,10 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn cycle_to_region(&mut self, forward: bool) -> bool {
-        let Some(doc) = self.document_manager.active_document_mut() else {
+        let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        else {
             return false;
         };
         if doc.selections().is_empty() {
@@ -180,7 +192,10 @@ impl<T: TerminalBackend> Editor<T> {
         F: FnMut(&mut Self, crate::selection::Region) -> bool,
     {
         let batch = {
-            let Some(doc) = self.document_manager.active_document_mut() else {
+            let Some(doc) = self
+                .document_manager
+                .get_document_mut(self.active_document_id())
+            else {
                 return false;
             };
             doc.take_selection_batch()
@@ -188,7 +203,10 @@ impl<T: TerminalBackend> Editor<T> {
         if batch.is_empty() {
             return false;
         }
-        if let Some(doc) = self.document_manager.active_document_mut() {
+        if let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        {
             doc.begin_transaction("MultiRegion");
         }
         let mut any = false;
@@ -197,7 +215,10 @@ impl<T: TerminalBackend> Editor<T> {
                 any = true;
             }
         }
-        if let Some(doc) = self.document_manager.active_document_mut() {
+        if let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        {
             doc.commit_transaction();
         }
 
@@ -216,7 +237,10 @@ impl<T: TerminalBackend> Editor<T> {
             return false;
         }
         let anchors: Vec<usize> = {
-            let Some(doc) = self.document_manager.active_document_mut() else {
+            let Some(doc) = self
+                .document_manager
+                .get_document_mut(self.active_document_id())
+            else {
                 return false;
             };
             let batch = doc.take_selection_batch();
@@ -242,7 +266,10 @@ impl<T: TerminalBackend> Editor<T> {
         let mut anchors = anchors;
         let first = anchors.remove(0);
         self.pending_multi_insert_anchors = anchors;
-        if let Some(doc) = self.document_manager.active_document_mut() {
+        if let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        {
             let _ = doc.set_cursor(first, crate::document::ops::CursorCause::User);
         }
         if !self.dot_repeat.is_replaying() {
@@ -257,7 +284,10 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
         let kind = self.current_mode.visual_range_kind();
-        if let Some(doc) = self.document_manager.active_document_mut() {
+        if let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        {
             match kind {
                 Some(kind) => doc.bank_selection(kind),
                 None => doc.set_selection(None),
@@ -267,12 +297,15 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn visual_anchor(&self) -> Option<usize> {
         self.document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .and_then(Document::visual_anchor)
     }
 
     pub(super) fn set_visual_anchor(&mut self, anchor: Option<usize>) {
-        if let Some(doc) = self.document_manager.active_document_mut() {
+        if let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        {
             doc.set_selection(anchor);
         }
     }
@@ -283,7 +316,7 @@ impl<T: TerminalBackend> Editor<T> {
         let has_candidate = self.current_mode.is_visual()
             || self
                 .document_manager
-                .active_document()
+                .get_document(self.active_document_id())
                 .is_some_and(|d| !d.selections().is_empty());
         if !has_candidate || self.active_doc_is(super::super::document::Document::is_read_only) {
             return false;
@@ -293,7 +326,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let is_empty = self
             .document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .is_none_or(|d| d.selections().is_empty());
         if is_empty {
             return false;
@@ -344,7 +377,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let is_empty = self
             .document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .is_none_or(|d| d.selections().is_empty());
         if is_empty {
             return false;
@@ -357,7 +390,10 @@ impl<T: TerminalBackend> Editor<T> {
             OperatorType::Delete => self.run_set_delete(),
             OperatorType::Yank => {
                 let handled = self.apply_to_each_region(|editor, region| {
-                    let Some(doc) = editor.document_manager.active_document() else {
+                    let Some(doc) = editor
+                        .document_manager
+                        .get_document(editor.active_document_id())
+                    else {
                         return false;
                     };
                     editor.yank(region_clip(doc.buffer(), &region));
@@ -402,7 +438,10 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn run_set_delete(&mut self) -> bool {
         let batch = {
-            let Some(doc) = self.document_manager.active_document_mut() else {
+            let Some(doc) = self
+                .document_manager
+                .get_document_mut(self.active_document_id())
+            else {
                 return false;
             };
             doc.take_selection_batch()
@@ -411,7 +450,10 @@ impl<T: TerminalBackend> Editor<T> {
             return false;
         }
         let (clips, mut ranges): (Vec<Clip>, Vec<(usize, usize)>) = {
-            let Some(doc) = self.document_manager.active_document() else {
+            let Some(doc) = self
+                .document_manager
+                .get_document(self.active_document_id())
+            else {
                 return false;
             };
             let live: Vec<&crate::selection::Region> = batch
@@ -439,7 +481,7 @@ impl<T: TerminalBackend> Editor<T> {
         ranges.retain(|&(start, end)| start < end);
         let ghost_allowed = self
             .document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .is_some_and(super::super::document::Document::ghost_cut_allowed);
         let ghost_cut = self.state.settings.editing().ghost_cut && ghost_allowed;
         let ghost_clip = clips.last().filter(|_| ghost_cut).cloned();
@@ -452,20 +494,26 @@ impl<T: TerminalBackend> Editor<T> {
         }
         if let Some(ghost_clip) = ghost_clip {
             let cursor_target = ranges.iter().map(|&(s, _)| s).min();
-            let ghosted_doc = self.document_manager.active_document_mut().map(|doc| {
-                doc.create_ghosts(&ranges, ghost_clip);
-                if let Some(pos) = cursor_target {
-                    let _ = doc.set_cursor(pos, crate::document::ops::CursorCause::User);
-                }
-                doc.id
-            });
+            let ghosted_doc = self
+                .document_manager
+                .get_document_mut(self.active_document_id())
+                .map(|doc| {
+                    doc.create_ghosts(&ranges, ghost_clip);
+                    if let Some(pos) = cursor_target {
+                        let _ = doc.set_cursor(pos, crate::document::ops::CursorCause::User);
+                    }
+                    doc.id
+                });
 
             if let Some(id) = ghosted_doc {
                 self.set_recent_ghost(Some(id));
             }
             ghosted_doc.is_some()
         } else {
-            if let Some(doc) = self.document_manager.active_document_mut() {
+            if let Some(doc) = self
+                .document_manager
+                .get_document_mut(self.active_document_id())
+            {
                 doc.begin_transaction("MultiRegion");
                 for &(start, end) in &ranges {
                     let _ = doc.edit(Edit::delete(start..end), EditSource::User);
@@ -480,13 +528,16 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn try_run_set_aware_replace_char(&mut self, ch: char) -> bool {
         let is_empty = self
             .document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .is_none_or(|d| d.selections().is_empty());
         if is_empty {
             return false;
         }
         self.apply_to_each_region(|editor, region| {
-            let Some(doc) = editor.document_manager.active_document_mut() else {
+            let Some(doc) = editor
+                .document_manager
+                .get_document_mut(editor.active_document_id())
+            else {
                 return false;
             };
             let mut any = false;
@@ -530,13 +581,16 @@ impl<T: TerminalBackend> Editor<T> {
     {
         let is_empty = self
             .document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .is_none_or(|d| d.selections().is_empty());
         if is_empty {
             return false;
         }
         let batch = {
-            let Some(doc) = self.document_manager.active_document_mut() else {
+            let Some(doc) = self
+                .document_manager
+                .get_document_mut(self.active_document_id())
+            else {
                 return false;
             };
             doc.take_selection_batch()
@@ -544,7 +598,10 @@ impl<T: TerminalBackend> Editor<T> {
         if batch.is_empty() {
             return false;
         }
-        if let Some(doc) = self.document_manager.active_document_mut() {
+        if let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        {
             doc.begin_transaction("MultiRegion");
         }
         let mut any = false;
@@ -556,7 +613,10 @@ impl<T: TerminalBackend> Editor<T> {
             {
                 continue;
             }
-            let Some(doc) = self.document_manager.active_document_mut() else {
+            let Some(doc) = self
+                .document_manager
+                .get_document_mut(self.active_document_id())
+            else {
                 break;
             };
             let (start, _) = region.buffer_span(doc.buffer());
@@ -571,7 +631,10 @@ impl<T: TerminalBackend> Editor<T> {
                 consumed.push((open_range.start, close_range.end));
             }
         }
-        if let Some(doc) = self.document_manager.active_document_mut() {
+        if let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        {
             doc.commit_transaction();
         }
 
@@ -581,7 +644,7 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn try_run_set_aware_add_surround(&mut self, ch: char, delim_count: usize) -> bool {
         let is_empty = self
             .document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .is_none_or(|d| d.selections().is_empty());
         if is_empty {
             return false;
@@ -590,7 +653,10 @@ impl<T: TerminalBackend> Editor<T> {
             let Some((open, close)) = crate::text_objects::surround_strings(ch, delim_count) else {
                 return false;
             };
-            let Some(doc) = editor.document_manager.active_document_mut() else {
+            let Some(doc) = editor
+                .document_manager
+                .get_document_mut(editor.active_document_id())
+            else {
                 return false;
             };
             let (start, end) = region.buffer_span(doc.buffer());
@@ -603,13 +669,16 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn try_run_set_aware_put(&mut self, before: bool, clip: &Clip) -> bool {
         let is_empty = self
             .document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .is_none_or(|d| d.selections().is_empty());
         if is_empty {
             return false;
         }
         self.apply_to_each_region(|editor, region| {
-            let Some(doc) = editor.document_manager.active_document_mut() else {
+            let Some(doc) = editor
+                .document_manager
+                .get_document_mut(editor.active_document_id())
+            else {
                 return false;
             };
             let (start, end) = region.buffer_span(doc.buffer());
@@ -627,7 +696,10 @@ impl<T: TerminalBackend> Editor<T> {
         let was_replaying = self.dot_repeat.is_replaying();
         self.dot_repeat.set_replaying(true);
         for anchor in anchors {
-            if let Some(doc) = self.document_manager.active_document_mut() {
+            if let Some(doc) = self
+                .document_manager
+                .get_document_mut(self.active_document_id())
+            {
                 let _ = doc.set_cursor(anchor, crate::document::ops::CursorCause::User);
             }
             for &cmd in &commands {
@@ -656,12 +728,16 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        let Some(source_doc_id) = self.document_manager.active_document().map(|d| d.id) else {
+        let Some(source_doc_id) = self
+            .document_manager
+            .get_document(self.active_document_id())
+            .map(|d| d.id)
+        else {
             return;
         };
         let regions = self
             .document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .map_or_default(|d| d.selections().sorted());
         if regions.is_empty() {
             self.notify(
@@ -679,14 +755,17 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
-        if let Some(source) = self.document_manager.active_document() {
+        if let Some(source) = self
+            .document_manager
+            .get_document(self.active_document_id())
+        {
             doc.populate_regions_buffer(source.buffer(), &regions);
         }
         doc.set_regions(source_doc_id);
         self.open_buffer(doc, crate::document::manager::Placement::Private);
 
         let preview_win_id = self.split_tree.focused_window_id();
-        let original_doc_id = self.split_tree.focused_window().document_id;
+        let original_doc_id = self.active_document_id();
         let dir_win_id = self
             .split_window_beside(
                 preview_win_id,
@@ -715,12 +794,15 @@ impl<T: TerminalBackend> Editor<T> {
         if layout.kind != crate::editor::PanelKind::Regions {
             return false;
         }
-        let line = self.document_manager.active_document().map_or(0, |d| {
-            d.buffer().line_index.get_line_at(d.buffer().cursor())
-        });
+        let line = self
+            .document_manager
+            .get_document(self.active_document_id())
+            .map_or(0, |d| {
+                d.buffer().line_index.get_line_at(d.buffer().cursor())
+            });
         let Some(source_doc_id) = self
             .document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .and_then(super::super::document::Document::regions_source_doc_id)
         else {
             return false;
@@ -735,7 +817,10 @@ impl<T: TerminalBackend> Editor<T> {
         source.unbank_region(target);
         let remaining = source.selections().sorted();
         let source_buf = source.buffer().clone();
-        if let Some(doc) = self.document_manager.active_document_mut() {
+        if let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        {
             doc.populate_regions_buffer(&source_buf, &remaining);
         }
         true

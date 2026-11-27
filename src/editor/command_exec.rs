@@ -8,7 +8,7 @@ impl<T: TerminalBackend> Editor<T> {
         if command.is_mutating()
             && self
                 .document_manager
-                .active_document()
+                .get_document(self.active_document_id())
                 .is_some_and(super::super::document::Document::is_read_only)
         {
             return false;
@@ -32,7 +32,10 @@ impl<T: TerminalBackend> Editor<T> {
             let mut display_map =
                 self.resolve_display_map_cached(doc_id, content_width, cursor, viewport_height);
 
-            let doc = self.document_manager.active_document_mut().unwrap();
+            let doc = self
+                .document_manager
+                .get_document_mut(self.active_document_id())
+                .unwrap();
             let expand_tabs = doc.options().expand_tabs();
             let tab_width = doc.options().tab_width();
 
@@ -71,7 +74,10 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn command_content_geometry(&self) -> (crate::document::DocumentId, usize, usize) {
-        let doc = self.document_manager.active_document().unwrap();
+        let doc = self
+            .document_manager
+            .get_document(self.active_document_id())
+            .unwrap();
         let gutter_width = self.state.gutter_cols(doc.options().show_line_numbers());
         let content_width = self
             .split_tree
@@ -91,7 +97,7 @@ impl<T: TerminalBackend> Editor<T> {
     ) {
         let cursor_after = self
             .document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .map_or(0, |d| d.buffer().cursor());
         let _ =
             self.resolve_display_map_cached(doc_id, content_width, cursor_after, viewport_height);

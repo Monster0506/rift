@@ -105,7 +105,7 @@ fn prepare_removal_normal_rejects_dirty_without_side_effects() {
     // Verify side-effect-free: document still in manager and tab order intact
     assert!(mgr.documents.contains_key(&id));
     assert_eq!(mgr.tab_order.len(), 1);
-    assert_eq!(mgr.active_document_id(), Some(id));
+    assert_eq!(mgr.get_document_id_at(0), Some(id));
 }
 
 #[test]
@@ -127,7 +127,7 @@ fn prepare_removal_force_accepts_dirty() {
 }
 
 #[test]
-fn removing_the_last_tab_leaves_a_fresh_replacement_active() {
+fn removing_the_last_tab_leaves_a_fresh_replacement() {
     let mut mgr = DocumentManager::new();
     let doc = Document::new(mgr.next_id()).unwrap();
     let id = doc.id;
@@ -140,7 +140,7 @@ fn removing_the_last_tab_leaves_a_fresh_replacement_active() {
     mgr.remove_document(id).unwrap();
 
     assert_eq!(mgr.tab_order.len(), 1);
-    assert!(mgr.active_document_id().is_some_and(|active| active != id));
+    assert!(mgr.get_document_id_at(0).is_some_and(|active| active != id));
 }
 
 #[test]
@@ -157,9 +157,11 @@ fn creation_reservation_and_draft_commit() {
 
     let handle = mgr.insert(draft, crate::document::manager::Placement::Background);
     assert_eq!(handle, res.handle());
-    assert_eq!(mgr.active_document_id(), Some(res.id()));
-    assert_eq!(mgr.active_document_handle(), Some(handle));
-    assert_eq!(mgr.active_document().map(Document::handle), Some(handle));
+    assert_eq!(mgr.get_document_id_at(0), Some(res.id()));
+    assert_eq!(
+        mgr.get_document_by_handle(handle).map(Document::handle),
+        Some(handle)
+    );
 }
 
 #[test]

@@ -7,7 +7,12 @@ use crate::error::ErrorSeverity;
 fn test_editor_initial_state() {
     let editor = create_editor();
     assert_eq!(editor.document_manager.tab_count(), 1);
-    assert_eq!(editor.document_manager.active_tab_index(), 0);
+    assert_eq!(
+        editor
+            .document_manager
+            .tab_index(editor.active_document_id()),
+        Some(0)
+    );
 }
 
 #[test]
@@ -86,14 +91,24 @@ fn test_editor_open_file() {
         .unwrap();
 
     assert_eq!(editor.document_manager.tab_count(), 2);
-    assert_eq!(editor.document_manager.active_tab_index(), 1);
+    assert_eq!(
+        editor
+            .document_manager
+            .tab_index(editor.active_document_id()),
+        Some(1)
+    );
     assert_eq!(editor.active_document().display_name(), "new_file.txt");
 
     editor
         .open_file(Some("new_file.txt".to_string()), false)
         .unwrap();
     assert_eq!(editor.document_manager.tab_count(), 2);
-    assert_eq!(editor.document_manager.active_tab_index(), 1);
+    assert_eq!(
+        editor
+            .document_manager
+            .tab_index(editor.active_document_id()),
+        Some(1)
+    );
 }
 
 #[test]
@@ -112,7 +127,7 @@ fn test_quit_last_buffer_quits_editor() {
 #[test]
 fn test_quit_dirty_last_buffer_refuses() {
     let mut editor = create_editor();
-    let original_id = editor.document_manager.active_document_id().unwrap();
+    let original_id = editor.active_document_id();
     editor
         .active_document()
         .edit(Edit::type_text('x'), EditSource::User)
@@ -125,7 +140,7 @@ fn test_quit_dirty_last_buffer_refuses() {
         ":q should refuse when last buffer is dirty"
     );
     assert_eq!(
-        editor.document_manager.active_document_id().unwrap(),
+        editor.active_document_id(),
         original_id,
         "dirty buffer should remain active"
     );
@@ -209,12 +224,12 @@ fn test_handle_execution_result_quit_only_checks_current_buffer() {
     assert!(!editor.active_document().is_dirty());
     assert!(editor.document_manager.has_unsaved_changes());
 
-    let clean_id = editor.document_manager.active_document_id().unwrap();
+    let clean_id = editor.active_document_id();
 
     editor.execute_command_line("q");
     assert!(!editor.should_quit, ":q should not quit the editor");
     assert_ne!(
-        editor.document_manager.active_document_id().unwrap(),
+        editor.active_document_id(),
         clean_id,
         "clean buffer should have been closed"
     );
@@ -259,21 +274,46 @@ fn test_handle_execution_result_buffer_navigation() {
         .open_file(Some("doc2.txt".to_string()), false)
         .unwrap();
 
-    assert_eq!(editor.document_manager.active_tab_index(), 2);
+    assert_eq!(
+        editor
+            .document_manager
+            .tab_index(editor.active_document_id()),
+        Some(2)
+    );
 
     editor.do_buffer_prev();
-    assert_eq!(editor.document_manager.active_tab_index(), 1);
+    assert_eq!(
+        editor
+            .document_manager
+            .tab_index(editor.active_document_id()),
+        Some(1)
+    );
     assert_eq!(editor.active_document().display_name(), "doc1.txt");
 
     editor.do_buffer_next();
-    assert_eq!(editor.document_manager.active_tab_index(), 2);
+    assert_eq!(
+        editor
+            .document_manager
+            .tab_index(editor.active_document_id()),
+        Some(2)
+    );
     assert_eq!(editor.active_document().display_name(), "doc2.txt");
 
     editor.do_buffer_next();
-    assert_eq!(editor.document_manager.active_tab_index(), 0);
+    assert_eq!(
+        editor
+            .document_manager
+            .tab_index(editor.active_document_id()),
+        Some(0)
+    );
 
     editor.do_buffer_prev();
-    assert_eq!(editor.document_manager.active_tab_index(), 2);
+    assert_eq!(
+        editor
+            .document_manager
+            .tab_index(editor.active_document_id()),
+        Some(2)
+    );
 }
 
 #[test]
@@ -285,18 +325,38 @@ fn test_buffer_goto_jumps_by_b_list_index() {
     editor
         .open_file(Some("doc2.txt".to_string()), false)
         .unwrap();
-    assert_eq!(editor.document_manager.active_tab_index(), 2);
+    assert_eq!(
+        editor
+            .document_manager
+            .tab_index(editor.active_document_id()),
+        Some(2)
+    );
 
     editor.execute_command_line("b 1");
-    assert_eq!(editor.document_manager.active_tab_index(), 0);
+    assert_eq!(
+        editor
+            .document_manager
+            .tab_index(editor.active_document_id()),
+        Some(0)
+    );
     assert_eq!(editor.active_document().display_name(), "[No Name]");
 
     editor.execute_command_line("buffer 3");
-    assert_eq!(editor.document_manager.active_tab_index(), 2);
+    assert_eq!(
+        editor
+            .document_manager
+            .tab_index(editor.active_document_id()),
+        Some(2)
+    );
     assert_eq!(editor.active_document().display_name(), "doc2.txt");
 
     editor.execute_command_line("b 99");
-    assert_eq!(editor.document_manager.active_tab_index(), 2);
+    assert_eq!(
+        editor
+            .document_manager
+            .tab_index(editor.active_document_id()),
+        Some(2)
+    );
 }
 
 #[test]
@@ -324,12 +384,22 @@ fn test_bd_by_index_deletes_a_non_current_buffer() {
     editor
         .open_file(Some("doc2.txt".to_string()), false)
         .unwrap();
-    assert_eq!(editor.document_manager.active_tab_index(), 2);
+    assert_eq!(
+        editor
+            .document_manager
+            .tab_index(editor.active_document_id()),
+        Some(2)
+    );
 
     editor.execute_command_line("bd 2");
     assert_eq!(editor.document_manager.tab_count(), 2);
     assert_eq!(editor.active_document().display_name(), "doc2.txt");
-    assert_eq!(editor.document_manager.active_tab_index(), 1);
+    assert_eq!(
+        editor
+            .document_manager
+            .tab_index(editor.active_document_id()),
+        Some(1)
+    );
 }
 
 #[test]
@@ -393,7 +463,7 @@ fn test_open_buffer_list_panel_shows_status_and_enter_switches() {
     assert!(editor
         .panel_layout_of(crate::editor::PanelKind::BufferList)
         .is_none());
-    assert_eq!(editor.document_manager.active_document_id(), Some(doc1_id));
+    assert_eq!(editor.active_document_id(), doc1_id);
 }
 
 #[test]

@@ -34,7 +34,10 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_mode_switch(&mut self, command: Command) {
         match command {
             Command::BeginInsert(entry) => {
-                let doc = self.document_manager.active_document_mut().unwrap();
+                let doc = self
+                    .document_manager
+                    .get_document_mut(self.active_document_id())
+                    .unwrap();
                 let motion = match entry {
                     InsertEntry::AtCursor => None,
                     InsertEntry::AfterCursor => Some(crate::action::Motion::Right),
@@ -64,7 +67,10 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Insert);
             }
             Command::BeginReplace => {
-                let doc = self.document_manager.active_document_mut().unwrap();
+                let doc = self
+                    .document_manager
+                    .get_document_mut(self.active_document_id())
+                    .unwrap();
                 doc.begin_transaction("Replace");
                 if !self.dot_repeat.is_replaying() {
                     self.dot_repeat.start_insert_recording(command);
@@ -90,12 +96,18 @@ impl<T: TerminalBackend> Editor<T> {
         match command {
             Command::Change(_, _) | Command::ChangeLine(_) => {
                 let (expand_tabs, tab_width) = {
-                    let doc = self.document_manager.active_document().unwrap();
+                    let doc = self
+                        .document_manager
+                        .get_document(self.active_document_id())
+                        .unwrap();
                     (doc.options().expand_tabs(), doc.options().tab_width())
                 };
                 let viewport_height = self.render_system.viewport.visible_rows();
                 let mut display_map = {
-                    let doc = self.document_manager.active_document().unwrap();
+                    let doc = self
+                        .document_manager
+                        .get_document(self.active_document_id())
+                        .unwrap();
                     let gutter_width = self.state.gutter_cols(doc.options().show_line_numbers());
                     let content_width = self
                         .split_tree
@@ -112,12 +124,14 @@ impl<T: TerminalBackend> Editor<T> {
                     )
                 };
                 self.document_manager
-                    .active_document_mut()
+                    .get_document_mut(self.active_document_id())
                     .unwrap()
                     .begin_transaction("Change");
                 let _ = execute_command(
                     command,
-                    self.document_manager.active_document_mut().unwrap(),
+                    self.document_manager
+                        .get_document_mut(self.active_document_id())
+                        .unwrap(),
                     expand_tabs,
                     tab_width,
                     viewport_height,

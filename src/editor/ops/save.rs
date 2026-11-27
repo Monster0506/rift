@@ -354,7 +354,10 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(crate) fn save_and_quit(&mut self, target: Option<PathBuf>, force: bool) {
-        let Some(doc) = self.document_manager.active_document() else {
+        let Some(doc) = self
+            .document_manager
+            .get_document(self.active_document_id())
+        else {
             self.state.clear_command_line();
             return;
         };

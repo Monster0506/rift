@@ -75,7 +75,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        let doc_id = self.split_tree.focused_window().document_id;
+        let doc_id = self.active_document_id();
         if let Some(doc) = self.document_manager.get_document(doc_id) {
             self.set_window_cursor(self.split_tree.focused_window_id(), doc.buffer().cursor());
         }
@@ -167,7 +167,10 @@ impl<T: TerminalBackend> Editor<T> {
         let is_visual = self.current_mode.is_visual();
         let visual_anchor = self.visual_anchor();
         let visual_kind = self.current_mode.visual_range_kind();
-        let Some(doc) = self.document_manager.active_document_mut() else {
+        let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        else {
             return;
         };
         let active = if is_visual {
@@ -287,7 +290,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .windows()
                 .any(|(_, w)| shows_image(w.document_id))
         } else {
-            shows_image(self.split_tree.focused_window().document_id)
+            shows_image(self.active_document_id())
         };
         if !any_image {
             self.render_system.image_overlay.stage(Vec::new());
@@ -358,7 +361,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn cursor_screen_row(&mut self) -> usize {
         let focused_id = self.split_tree.focused_window_id();
-        let doc_id = self.split_tree.focused_window().document_id;
+        let doc_id = self.active_document_id();
         let (row_off, top_line, top_visual, content_width, rows) =
             if self.split_tree.window_count() > 1 {
                 let Ok(size) = self.term.get_size() else {
@@ -572,6 +575,7 @@ impl<T: TerminalBackend> Editor<T> {
         scroll_hint: Option<(usize, usize, isize)>,
     ) -> Result<(), RiftError> {
         crate::perf_span!("render_single_window", crate::perf::PerfFields::default());
+        let doc_id = self.active_document_id();
         let Self {
             document_manager,
             render_system,
@@ -584,7 +588,7 @@ impl<T: TerminalBackend> Editor<T> {
             ..
         } = self;
 
-        let Some(doc) = document_manager.active_document_mut() else {
+        let Some(doc) = document_manager.get_document_mut(doc_id) else {
             return Ok(());
         };
         doc.recompute_directory_highlights();
@@ -768,7 +772,7 @@ impl<T: TerminalBackend> Editor<T> {
         let focused_window_id = self.split_tree.focused_window_id();
         let focused_is_blame = self
             .document_manager
-            .get_document(self.split_tree.focused_window().document_id)
+            .get_document(self.active_document_id())
             .is_some_and(super::super::document::Document::is_git_blame);
         let (blame_window_id, source_window_id) = if focused_is_blame {
             (focused_window_id, partner_window_id)
@@ -1446,37 +1450,37 @@ impl<T: TerminalBackend> Editor<T> {
 
         let kind_registry = &self.kind_registry;
         let include_lsp = self.state.settings.lsp().diagnostic_tooltip;
-        let (tip, affordance) =
-            self.document_manager
-                .active_document_mut()
-                .map_or((None, None), |doc| {
-                    let cursor = doc.buffer().cursor();
-                    let line = doc.buffer().line_index.get_line_at(cursor);
-                    let cursor_byte = doc.buffer().char_to_byte(cursor);
-                    let line_of = |b: usize| {
-                        doc.buffer()
-                            .line_index
-                            .get_line_at(doc.buffer().byte_to_char(b))
-                    };
-                    let tip = doc
-                        .annotations
-                        .tooltip_at(cursor_byte, Some(kind_registry), include_lsp)
-                        .or_else(|| {
-                            doc.annotations.tooltip_at_line(
-                                line,
-                                Some(kind_registry),
-                                include_lsp,
-                                line_of,
-                            )
-                        })
-                        .map(std::string::ToString::to_string);
-                    let affordance = doc
-                        .annotations
-                        .interactive_at(cursor_byte)
-                        .or_else(|| doc.annotations.interactive_at_line(line))
-                        .and_then(|a| a.affordance_line("Enter"));
-                    (tip, affordance)
-                });
+        let (tip, affordance) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+            .map_or((None, None), |doc| {
+                let cursor = doc.buffer().cursor();
+                let line = doc.buffer().line_index.get_line_at(cursor);
+                let cursor_byte = doc.buffer().char_to_byte(cursor);
+                let line_of = |b: usize| {
+                    doc.buffer()
+                        .line_index
+                        .get_line_at(doc.buffer().byte_to_char(b))
+                };
+                let tip = doc
+                    .annotations
+                    .tooltip_at(cursor_byte, Some(kind_registry), include_lsp)
+                    .or_else(|| {
+                        doc.annotations.tooltip_at_line(
+                            line,
+                            Some(kind_registry),
+                            include_lsp,
+                            line_of,
+                        )
+                    })
+                    .map(std::string::ToString::to_string);
+                let affordance = doc
+                    .annotations
+                    .interactive_at(cursor_byte)
+                    .or_else(|| doc.annotations.interactive_at_line(line))
+                    .and_then(|a| a.affordance_line("Enter"));
+                (tip, affordance)
+            });
 
         self.render_system
             .compositor
@@ -1545,7 +1549,7 @@ impl<T: TerminalBackend> Editor<T> {
             crate::perf::PerfFields::default()
         );
 
-        let doc_id = self.split_tree.focused_window().document_id;
+        let doc_id = self.active_document_id();
         let is_dir = self
             .document_manager
             .get_document(doc_id)

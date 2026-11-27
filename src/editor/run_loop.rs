@@ -312,7 +312,10 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_terminal_insert_key(&mut self, key_press: Key) -> Result<bool, RiftError> {
         // Handle terminal input
-        let is_terminal_insert = if let Some(doc) = self.document_manager.active_document() {
+        let is_terminal_insert = if let Some(doc) = self
+            .document_manager
+            .get_document(self.active_document_id())
+        {
             doc.is_terminal() && self.current_mode == Mode::Insert
         } else {
             false
@@ -335,7 +338,10 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let bytes = key_press.to_vt100_bytes();
-        if let Some(doc) = self.document_manager.active_document_mut() {
+        if let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        {
             if let Some(term) = doc.terminal_mut() {
                 if !bytes.is_empty() {
                     term.scroll_to_bottom();
@@ -564,7 +570,10 @@ impl<T: TerminalBackend> Editor<T> {
             Mode::Normal => {
                 if self.active_doc_is(super::super::document::Document::is_terminal) {
                     KeyContext::TerminalNormal
-                } else if let Some(doc) = self.document_manager.active_document() {
+                } else if let Some(doc) = self
+                    .document_manager
+                    .get_document(self.active_document_id())
+                {
                     KeyContext::Buffer(doc.buffer_kind_id())
                 } else {
                     KeyContext::Normal
@@ -584,7 +593,10 @@ impl<T: TerminalBackend> Editor<T> {
     ) -> Option<crate::keymap::KeyContext> {
         match context {
             crate::keymap::KeyContext::Buffer(id) => {
-                if let Some(doc) = self.document_manager.active_document() {
+                if let Some(doc) = self
+                    .document_manager
+                    .get_document(self.active_document_id())
+                {
                     if doc.buffer_kind_id() == id {
                         return match doc.key_fallback() {
                             crate::document::runtime::KeyFallback::Normal => {
@@ -638,7 +650,10 @@ impl<T: TerminalBackend> Editor<T> {
         let is_terminal_insert = self.current_mode == Mode::Insert
             && self.active_doc_is(super::super::document::Document::is_terminal);
         if is_terminal_insert {
-            if let Some(doc) = self.document_manager.active_document_mut() {
+            if let Some(doc) = self
+                .document_manager
+                .get_document_mut(self.active_document_id())
+            {
                 if let Some(term) = doc.terminal_mut() {
                     term.scroll_to_bottom();
                     term.write(text.as_bytes());

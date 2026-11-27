@@ -47,26 +47,21 @@ impl<T: TerminalBackend> Editor<T> {
 
         let viewport_height = self.render_system.viewport.visible_rows();
         let last_search_query = self.state.last_search_query.clone();
-        let is_change = op == crate::action::OperatorType::Change;
-        let motion_range = self.document_manager.active_document_mut().and_then(|doc| {
-            let compute = if is_change {
-                crate::executor::compute_change_range
-            } else {
-                crate::executor::compute_motion_range
-            };
-            compute(
-                motion,
-                count,
-                doc,
-                viewport_height,
-                last_search_query.as_deref(),
-            )
-        });
-        let captured = motion_range.clone().and_then(|range| {
-            self.document_manager
-                .active_document()
-                .map(|doc| crate::clipboard::capture_text(doc.buffer(), &range))
-        });
+        let compute_range = if op == crate::action::OperatorType::Change {
+            crate::executor::compute_change_range
+        } else {
+            crate::executor::compute_motion_range
+        };
+        let motion_range = compute_range(
+            motion,
+            count,
+            self.active_document(),
+            viewport_height,
+            last_search_query.as_deref(),
+        );
+        let captured = motion_range
+            .as_ref()
+            .map(|range| crate::clipboard::capture_text(self.active_document().buffer(), range));
         let has_range = captured.is_some();
         let cut = self.push_clip(captured, op);
 
@@ -82,8 +77,10 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 if !has_range {
                     if let Motion::TextObject(spec) = motion {
-                        let insert_pos =
-                            self.document_manager.active_document_mut().and_then(|doc| {
+                        let insert_pos = self
+                            .document_manager
+                            .get_document_mut(self.active_document_id())
+                            .and_then(|doc| {
                                 crate::text_objects::resolve_insert_cursor(
                                     spec,
                                     doc.buffer(),
@@ -91,7 +88,10 @@ impl<T: TerminalBackend> Editor<T> {
                                 )
                             });
                         if let Some(pos) = insert_pos {
-                            if let Some(doc) = self.document_manager.active_document_mut() {
+                            if let Some(doc) = self
+                                .document_manager
+                                .get_document_mut(self.active_document_id())
+                            {
                                 let _ =
                                     doc.set_cursor(pos, crate::document::ops::CursorCause::User);
                             }
@@ -108,7 +108,7 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 let command = crate::command::Command::Change(motion, count);
                 self.document_manager
-                    .active_document_mut()
+                    .get_document_mut(self.active_document_id())
                     .unwrap()
                     .begin_transaction("Change");
                 self.set_mode(Mode::Normal);
@@ -137,7 +137,7 @@ impl<T: TerminalBackend> Editor<T> {
         if self.active_doc_is(super::super::document::Document::is_clipboard_index) {
             let rows = if clip.kind() == crate::wrap::RangeKind::Linewise {
                 self.document_manager
-                    .active_document()
+                    .get_document(self.active_document_id())
                     .and_then(|doc| doc.clipboard_row_clips(&clip))
             } else {
                 None
@@ -177,12 +177,15 @@ impl<T: TerminalBackend> Editor<T> {
         self.set_mode(Mode::Normal);
         let ghost_allowed = self
             .document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .is_some_and(super::super::document::Document::ghost_cut_allowed);
         let result = if self.state.settings.editing().ghost_cut && ghost_allowed {
             let mut ghosted_doc = None;
             if let Some((range, clip)) = cut {
-                if let Some(doc) = self.document_manager.active_document_mut() {
+                if let Some(doc) = self
+                    .document_manager
+                    .get_document_mut(self.active_document_id())
+                {
                     let (start, end) = crate::executor::range_to_offsets(&range, doc, true);
                     if end > start {
                         doc.create_ghosts(&[(start, end)], clip);
@@ -222,7 +225,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let captured = self
             .document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .map(|doc| crate::clipboard::capture_current_line(doc.buffer(), count));
         let cut = self.push_clip(captured, op);
 
@@ -232,11 +235,14 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Normal);
                 let ghost_allowed = self
                     .document_manager
-                    .active_document()
+                    .get_document(self.active_document_id())
                     .is_some_and(super::super::document::Document::ghost_cut_allowed);
                 let result = if self.state.settings.editing().ghost_cut && ghost_allowed {
                     let mut ghosted_doc = None;
-                    if let Some((doc, clip)) = self.document_manager.active_document_mut().zip(cut)
+                    if let Some((doc, clip)) = self
+                        .document_manager
+                        .get_document_mut(self.active_document_id())
+                        .zip(cut)
                     {
                         doc.move_cursor(crate::action::Motion::StartOfLine);
                         let start = doc.buffer().cursor();
@@ -287,7 +293,7 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 let command = crate::command::Command::ChangeLine(count);
                 self.document_manager
-                    .active_document_mut()
+                    .get_document_mut(self.active_document_id())
                     .unwrap()
                     .begin_transaction("Change");
                 self.set_mode(Mode::Normal);
@@ -354,7 +360,10 @@ impl<T: TerminalBackend> Editor<T> {
                     }
 
                     if region_actions.is_empty() {
-                        if let Some(doc) = self.document_manager.active_document_mut() {
+                        if let Some(doc) = self
+                            .document_manager
+                            .get_document_mut(self.active_document_id())
+                        {
                             doc.commit_transaction();
                         }
                         self.set_mode(Mode::Normal);

@@ -267,7 +267,10 @@ fn mutation_queued_by_a_nested_dispatch_applies_in_the_same_call() {
     );
     editor.apply_plugin_mutations();
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert_eq!(doc.kind.kind_str(), "probe");
     assert_eq!(doc.buffer().cursor(), 5);
 }
@@ -461,7 +464,7 @@ fn buf_save_pre_reads_the_edit_made_before_write() {
 #[test]
 fn buf_enter_after_quit_reads_the_now_active_buffer() {
     let mut editor = lua_editor("hello\n");
-    let first = editor.document_manager.active_document_id().unwrap().get();
+    let first = editor.active_document_id().get();
     lua_ok(&editor, "rift.create_scratch_buf('second', { 'x' })");
     editor.apply_plugin_mutations();
     lua_ok(
@@ -801,7 +804,7 @@ fn edit_queued_after_switch_buf_lands_in_the_buffer_current_when_queued() {
     );
     editor.apply_plugin_mutations();
 
-    let active = editor.document_manager.active_document_id().unwrap();
+    let active = editor.active_document_id();
     assert_eq!(active.get(), first);
     assert_eq!(buffer_text(&editor, first), "xfirst");
     assert_eq!(buffer_text(&editor, second), "second");
@@ -827,7 +830,7 @@ fn edit_queued_before_switch_buf_lands_in_the_buffer_current_when_queued() {
     );
     editor.apply_plugin_mutations();
 
-    let active = editor.document_manager.active_document_id().unwrap();
+    let active = editor.active_document_id();
     assert_eq!(active.get(), first);
     assert_eq!(buffer_text(&editor, first), "first");
     assert_eq!(buffer_text(&editor, second), "xsecond");

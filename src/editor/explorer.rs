@@ -42,7 +42,10 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let (doc_id, line_text, dir_path, entry_info) = {
-            let Some(doc) = self.document_manager.active_document() else {
+            let Some(doc) = self
+                .document_manager
+                .get_document(self.active_document_id())
+            else {
                 return;
             };
             let diff = doc.parse_directory_diff();
@@ -102,7 +105,10 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let (doc_id, parent) = {
-            let Some(doc) = self.document_manager.active_document() else {
+            let Some(doc) = self
+                .document_manager
+                .get_document(self.active_document_id())
+            else {
                 return;
             };
             let Some(path) = doc.directory_path() else {
@@ -158,7 +164,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.open_buffer(preview_doc, crate::document::manager::Placement::Private);
 
         let dir_win_id = self.split_tree.focused_window_id();
-        let original_doc_id = self.split_tree.focused_window().document_id;
+        let original_doc_id = self.active_document_id();
 
         let Some(preview_win_id) = self.split_window_beside(
             dir_win_id,
@@ -289,7 +295,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.open_buffer(preview_doc, crate::document::manager::Placement::Private);
 
         let index_win_id = self.split_tree.focused_window_id();
-        let original_doc_id = self.split_tree.focused_window().document_id;
+        let original_doc_id = self.active_document_id();
 
         let Some(preview_win_id) = self.split_window_beside(
             index_win_id,
@@ -340,12 +346,14 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
-        let infos = self.document_manager.get_buffer_list();
+        let infos = self
+            .document_manager
+            .get_buffer_list(self.active_document_id());
         dir_doc.populate_buffer_list_buffer(&infos);
         self.open_buffer(dir_doc, crate::document::manager::Placement::Private);
 
         let dir_win_id = self.split_tree.focused_window_id();
-        let original_doc_id = self.split_tree.focused_window().document_id;
+        let original_doc_id = self.active_document_id();
         let preview_target = infos.first().map_or(original_doc_id, |i| i.id);
 
         let Some(preview_win_id) = self.split_window_beside(
@@ -380,7 +388,9 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn refresh_buffer_list(&mut self, doc_id: crate::document::DocumentId) {
-        let infos = self.document_manager.get_buffer_list();
+        let infos = self
+            .document_manager
+            .get_buffer_list(self.active_document_id());
         let cursor_line = self.document_manager.get_document(doc_id).map_or(0, |d| {
             d.buffer().line_index.get_line_at(d.buffer().cursor())
         });
@@ -590,7 +600,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.open_buffer(preview_doc, crate::document::manager::Placement::Private);
 
         let dir_win_id = self.split_tree.focused_window_id();
-        let original_doc_id = self.split_tree.focused_window().document_id;
+        let original_doc_id = self.active_document_id();
 
         let Some(preview_win_id) = self.split_window_beside(
             dir_win_id,
@@ -903,7 +913,10 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         } else {
-            match self.document_manager.active_document() {
+            match self
+                .document_manager
+                .get_document(self.active_document_id())
+            {
                 Some(d) => d.id,
                 None => return,
             }

@@ -291,10 +291,7 @@ fn set_buffer_var_without_buf_targets_the_buffer_current_when_queued() {
     );
     sync(&mut editor);
 
-    assert_eq!(
-        editor.document_manager.active_document_id().unwrap().get(),
-        first
-    );
+    assert_eq!(editor.active_document_id().get(), first);
     assert!(doc(&editor, first).vars().get("probe").is_none());
     assert_eq!(
         doc(&editor, second).vars().get("probe"),

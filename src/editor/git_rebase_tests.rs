@@ -103,7 +103,10 @@ fn open_git_rebase_populates_todo_oldest_first() {
         .unwrap();
     editor.open_git_rebase(dir);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(doc.is_git_rebase_todo());
     let text = doc.buffer().to_string();
     let lines: Vec<&str> = text.lines().collect();
@@ -461,7 +464,10 @@ fn edit_pause_auto_resumes_after_amending_via_ca_in_status_buffer() {
     editor.open_git_status();
     drain_jobs(&mut editor);
     {
-        let status_doc = editor.document_manager.active_document_mut().unwrap();
+        let status_doc = editor
+            .document_manager
+            .get_document_mut(editor.active_document_id())
+            .unwrap();
         let entry_line = (0..status_doc.buffer().get_total_lines())
             .find(|&l| status_doc.annotations.git_status_entry_at_line(l).is_some())
             .expect("must find the a.txt entry line");
@@ -543,7 +549,10 @@ fn conflicting_pick_pauses_and_resolving_then_saving_resumes() {
     editor.open_git_rebase(dir.clone());
     let doc_id = editor.active_document_id();
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     let text = doc.buffer().to_string();
     assert_eq!(
         text.lines().count(),
@@ -670,7 +679,10 @@ fn git_rebase_todo_is_read_only_and_blocks_insert_mode() {
         .unwrap();
     editor.open_git_rebase(dir);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert!(doc.is_read_only(), "GitRebaseTodo must be read-only");
     let before = doc.buffer().to_string();
     editor.handle_mode_management(crate::command::Command::BeginInsert(
@@ -683,12 +695,7 @@ fn git_rebase_todo_is_read_only_and_blocks_insert_mode() {
     );
     assert!(!editor.execute_buffer_command(crate::command::Command::DeleteRows(1)));
     assert_eq!(
-        editor
-            .document_manager
-            .active_document()
-            .unwrap()
-            .buffer()
-            .to_string(),
+        editor.active_document().buffer().to_string(),
         before,
         "dd's plain vim meaning must not mutate text directly"
     );
@@ -708,14 +715,17 @@ fn verb_keys_set_pick_squash_fixup_edit_directly_no_insert_mode() {
     editor.open_git_rebase(dir);
 
     {
-        let doc = editor.document_manager.active_document_mut().unwrap();
+        let doc = editor
+            .document_manager
+            .get_document_mut(editor.active_document_id())
+            .unwrap();
         let start = doc.buffer().line_index.get_start(0).unwrap();
         let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_rebase_set_verb(crate::git::rebase::RebaseVerb::Squash);
     let text = editor
         .document_manager
-        .active_document()
+        .get_document(editor.active_document_id())
         .unwrap()
         .buffer()
         .to_string();
@@ -724,7 +734,7 @@ fn verb_keys_set_pick_squash_fixup_edit_directly_no_insert_mode() {
     editor.git_rebase_set_verb(crate::git::rebase::RebaseVerb::Fixup);
     let text = editor
         .document_manager
-        .active_document()
+        .get_document(editor.active_document_id())
         .unwrap()
         .buffer()
         .to_string();
@@ -733,7 +743,7 @@ fn verb_keys_set_pick_squash_fixup_edit_directly_no_insert_mode() {
     editor.git_rebase_set_verb(crate::git::rebase::RebaseVerb::Edit);
     let text = editor
         .document_manager
-        .active_document()
+        .get_document(editor.active_document_id())
         .unwrap()
         .buffer()
         .to_string();
@@ -742,7 +752,7 @@ fn verb_keys_set_pick_squash_fixup_edit_directly_no_insert_mode() {
     editor.git_rebase_set_verb(crate::git::rebase::RebaseVerb::Pick);
     let text = editor
         .document_manager
-        .active_document()
+        .get_document(editor.active_document_id())
         .unwrap()
         .buffer()
         .to_string();
@@ -768,7 +778,7 @@ fn reorder_via_dedicated_action_is_a_single_undoable_edit() {
 
     let before = editor
         .document_manager
-        .active_document()
+        .get_document(editor.active_document_id())
         .unwrap()
         .buffer()
         .to_string();
@@ -776,14 +786,17 @@ fn reorder_via_dedicated_action_is_a_single_undoable_edit() {
 
     // Land on the 2nd commit ("add b") and move it up one slot.
     {
-        let doc = editor.document_manager.active_document_mut().unwrap();
+        let doc = editor
+            .document_manager
+            .get_document_mut(editor.active_document_id())
+            .unwrap();
         let start = doc.buffer().line_index.get_start(1).unwrap();
         let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_rebase_move(false);
     let moved = editor
         .document_manager
-        .active_document()
+        .get_document(editor.active_document_id())
         .unwrap()
         .buffer()
         .to_string();
@@ -792,7 +805,10 @@ fn reorder_via_dedicated_action_is_a_single_undoable_edit() {
     assert!(moved_lines[1].ends_with("add a"), "{moved}");
 
     // One undo fully reverses the move (a single transaction, not per-char).
-    let doc = editor.document_manager.active_document_mut().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document_mut(editor.active_document_id())
+        .unwrap();
     assert!(doc.undo(), "the reorder must be undoable");
     let restored = doc.buffer().to_string();
     let restored_lines: Vec<&str> = restored.lines().collect();
@@ -820,13 +836,16 @@ fn toggle_fold_shows_and_hides_the_body_preview() {
     editor.open_git_rebase(dir);
 
     {
-        let doc = editor.document_manager.active_document_mut().unwrap();
+        let doc = editor
+            .document_manager
+            .get_document_mut(editor.active_document_id())
+            .unwrap();
         let start = doc.buffer().line_index.get_start(2).unwrap();
         let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     let collapsed = editor
         .document_manager
-        .active_document()
+        .get_document(editor.active_document_id())
         .unwrap()
         .buffer()
         .to_string();
@@ -838,7 +857,7 @@ fn toggle_fold_shows_and_hides_the_body_preview() {
     editor.git_rebase_toggle_fold();
     let expanded = editor
         .document_manager
-        .active_document()
+        .get_document(editor.active_document_id())
         .unwrap()
         .buffer()
         .to_string();
@@ -847,7 +866,7 @@ fn toggle_fold_shows_and_hides_the_body_preview() {
     editor.git_rebase_toggle_fold();
     let collapsed_again = editor
         .document_manager
-        .active_document()
+        .get_document(editor.active_document_id())
         .unwrap()
         .buffer()
         .to_string();
@@ -872,7 +891,10 @@ fn message_editor_round_trip_updates_the_plan_without_touching_git() {
     let rebase_doc_id = editor.active_document_id();
 
     {
-        let doc = editor.document_manager.active_document_mut().unwrap();
+        let doc = editor
+            .document_manager
+            .get_document_mut(editor.active_document_id())
+            .unwrap();
         let start = doc.buffer().line_index.get_start(0).unwrap();
         let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
@@ -881,11 +903,17 @@ fn message_editor_round_trip_updates_the_plan_without_touching_git() {
     let msg_doc_id = editor.active_document_id();
     assert_ne!(msg_doc_id, rebase_doc_id);
     {
-        let doc = editor.document_manager.active_document().unwrap();
+        let doc = editor
+            .document_manager
+            .get_document(editor.active_document_id())
+            .unwrap();
         assert_eq!(doc.buffer().to_string().trim(), "add a");
     }
     {
-        let doc = editor.document_manager.active_document_mut().unwrap();
+        let doc = editor
+            .document_manager
+            .get_document_mut(editor.active_document_id())
+            .unwrap();
         doc.replace_content("reworded a", crate::document::ops::ContentKind::Render);
     }
     editor.apply_git_commit_message(editor.active_document_id());
@@ -894,7 +922,7 @@ fn message_editor_round_trip_updates_the_plan_without_touching_git() {
     assert_eq!(editor.active_document_id(), rebase_doc_id);
     let text = editor
         .document_manager
-        .active_document()
+        .get_document(editor.active_document_id())
         .unwrap()
         .buffer()
         .to_string();
@@ -925,13 +953,19 @@ fn reword_via_pre_edited_message_applies_without_pausing() {
     let doc_id = editor.active_document_id();
 
     {
-        let doc = editor.document_manager.active_document_mut().unwrap();
+        let doc = editor
+            .document_manager
+            .get_document_mut(editor.active_document_id())
+            .unwrap();
         let start = doc.buffer().line_index.get_start(0).unwrap();
         let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_rebase_open_message_editor();
     {
-        let doc = editor.document_manager.active_document_mut().unwrap();
+        let doc = editor
+            .document_manager
+            .get_document_mut(editor.active_document_id())
+            .unwrap();
         doc.replace_content("reworded a", crate::document::ops::ContentKind::Render);
     }
     editor.apply_git_commit_message(editor.active_document_id());
@@ -963,14 +997,20 @@ fn reword_via_a_real_edit_closes_the_message_buffer() {
     let doc_id = editor.active_document_id();
 
     {
-        let doc = editor.document_manager.active_document_mut().unwrap();
+        let doc = editor
+            .document_manager
+            .get_document_mut(editor.active_document_id())
+            .unwrap();
         let start = doc.buffer().line_index.get_start(0).unwrap();
         let _ = doc.set_cursor(start, crate::document::ops::CursorCause::User);
     }
     editor.git_rebase_open_message_editor();
     let msg_doc_id = editor.active_document_id();
     {
-        let doc = editor.document_manager.active_document_mut().unwrap();
+        let doc = editor
+            .document_manager
+            .get_document_mut(editor.active_document_id())
+            .unwrap();
         let len = doc.buffer().len();
         doc.set_cursor(len, crate::document::ops::CursorCause::User)
             .unwrap();
@@ -1011,7 +1051,10 @@ fn squash_with_a_pre_edited_message_uses_it_as_the_incoming_half() {
     let doc_id = editor.active_document_id();
 
     {
-        let doc = editor.document_manager.active_document_mut().unwrap();
+        let doc = editor
+            .document_manager
+            .get_document_mut(editor.active_document_id())
+            .unwrap();
         doc.set_git_rebase_verb(&sha_b, crate::git::rebase::RebaseVerb::Squash);
         doc.remove_git_rebase_step(&sha_c);
         let start = doc.buffer().line_index.get_start(1).unwrap();
@@ -1019,7 +1062,10 @@ fn squash_with_a_pre_edited_message_uses_it_as_the_incoming_half() {
     }
     editor.git_rebase_open_message_editor();
     {
-        let doc = editor.document_manager.active_document_mut().unwrap();
+        let doc = editor
+            .document_manager
+            .get_document_mut(editor.active_document_id())
+            .unwrap();
         doc.replace_content(
             "tidied up incoming message",
             crate::document::ops::ContentKind::Render,

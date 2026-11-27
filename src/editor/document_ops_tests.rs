@@ -38,7 +38,10 @@ fn open_file_on_nonexistent_path_opens_empty_buffer_with_no_error() {
     editor.open_file(Some(path_str), false).unwrap();
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert_eq!(doc.path(), Some(path.as_path()));
     assert_eq!(doc.buffer().len(), 0);
     assert!(!path.exists(), "opening must not touch disk");
@@ -74,12 +77,7 @@ fn open_file_rejects_path_whose_parent_directory_is_missing() {
 
     assert_eq!(err.code, crate::constants::errors::PARENT_DIR_MISSING);
     assert!(
-        editor
-            .document_manager
-            .active_document()
-            .unwrap()
-            .path()
-            .is_none(),
+        editor.active_document().path().is_none(),
         "no document should be created for a path needing a missing directory"
     );
 }
@@ -133,7 +131,10 @@ fn open_file_on_a_persisted_undo_file_shows_a_readonly_view() {
         .open_file(Some(undo_file_path.to_string_lossy().into_owned()), false)
         .unwrap();
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert_eq!(
         doc.buffer_kind_id(),
         crate::document::runtime::BufferKindId::UNDO_FILE_VIEW
@@ -201,7 +202,10 @@ fn reloading_an_open_undo_file_view_re_renders_instead_of_showing_raw_bytes() {
         doc_id_before,
         "reload must update the same document in place, not replace it"
     );
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert_eq!(
         doc.buffer_kind_id(),
         crate::document::runtime::BufferKindId::UNDO_FILE_VIEW
@@ -237,7 +241,10 @@ fn open_file_on_an_image_shows_a_readonly_image_buffer() {
         .unwrap();
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     assert_eq!(
         doc.buffer_kind_id(),
         crate::document::runtime::BufferKindId::IMAGE_VIEW
@@ -275,7 +282,10 @@ fn edit_command_toggles_an_image_between_picture_and_raw_bytes() {
         drain_jobs(&mut editor);
 
         assert_eq!(editor.active_document_id(), doc_id);
-        let doc = editor.document_manager.active_document().unwrap();
+        let doc = editor
+            .document_manager
+            .get_document(editor.active_document_id())
+            .unwrap();
         assert_eq!(doc.buffer_kind_id(), expected);
         let is_image = expected == BufferKindId::IMAGE_VIEW;
         assert_eq!(doc.is_read_only(), is_image);
@@ -317,7 +327,10 @@ fn reload_on_a_directory_buffer_uses_its_own_refresh_mechanism() {
     editor.open_file(None, false).unwrap();
     drain_jobs(&mut editor);
 
-    let doc = editor.document_manager.active_document().unwrap();
+    let doc = editor
+        .document_manager
+        .get_document(editor.active_document_id())
+        .unwrap();
     let text = doc.buffer().to_string();
     assert!(
         text.contains("b.txt"),

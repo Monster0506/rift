@@ -134,7 +134,6 @@ impl From<DocumentDraft> for NewDocument {
 pub(crate) struct DocumentManager {
     documents: BTreeMap<DocumentId, Document>,
     tab_order: Vec<DocumentId>,
-    current_tab: usize,
     next_document_id: DocumentId,
     private_document_ids: BTreeSet<DocumentId>,
     most_recent_ghost_doc: Option<DocumentId>,
@@ -149,7 +148,6 @@ impl DocumentManager {
         Self {
             documents: BTreeMap::new(),
             tab_order: Vec::new(),
-            current_tab: 0,
             next_document_id: DocumentId::new(1),
             private_document_ids: BTreeSet::new(),
             most_recent_ghost_doc: None,
@@ -171,13 +169,6 @@ impl DocumentManager {
     #[cfg(feature = "terminal_emulation")]
     #[must_use]
     pub(crate) fn get_handle(&self, id: DocumentId) -> Option<DocumentHandle> {
-        self.handles.get(&id).copied()
-    }
-
-    #[cfg(test)]
-    #[must_use]
-    fn active_document_handle(&self) -> Option<DocumentHandle> {
-        let id = self.active_document_id()?;
         self.handles.get(&id).copied()
     }
 
@@ -247,26 +238,6 @@ impl DocumentManager {
     }
 
     #[must_use]
-    pub(crate) fn active_document_id(&self) -> Option<DocumentId> {
-        if self.tab_order.is_empty() {
-            None
-        } else {
-            Some(self.tab_order[self.current_tab])
-        }
-    }
-
-    #[must_use]
-    pub(crate) fn active_document(&self) -> Option<&Document> {
-        let id = self.active_document_id()?;
-        self.documents.get(&id)
-    }
-
-    pub(crate) fn active_document_mut(&mut self) -> Option<&mut Document> {
-        let id = self.active_document_id()?;
-        self.documents.get_mut(&id)
-    }
-
-    #[must_use]
     pub(crate) fn get_document(&self, id: DocumentId) -> Option<&Document> {
         self.documents.get(&id)
     }
@@ -298,11 +269,10 @@ impl DocumentManager {
     }
 
     #[cfg(feature = "plugins")]
-    pub(crate) fn tabs(&self) -> impl Iterator<Item = (&Document, bool)> {
+    pub(crate) fn tabs(&self) -> impl Iterator<Item = &Document> {
         self.tab_order
             .iter()
-            .enumerate()
-            .filter_map(|(i, id)| Some((self.documents.get(id)?, i == self.current_tab)))
+            .filter_map(|id| self.documents.get(id))
     }
 
     pub(crate) fn check_invariants(&self) -> Vec<String> {
@@ -313,21 +283,6 @@ impl DocumentManager {
                 out.push(format!("tab_order references missing document {id}"));
             }
         }
-        if self.tab_order.is_empty() {
-            if self.current_tab != 0 {
-                out.push(format!(
-                    "tab_order is empty but current_tab={}",
-                    self.current_tab
-                ));
-            }
-        } else if self.current_tab >= self.tab_order.len() {
-            out.push(format!(
-                "current_tab {} >= tab_order.len() {}",
-                self.current_tab,
-                self.tab_order.len()
-            ));
-        }
-
         for id in self.documents.keys() {
             match self.handles.get(id) {
                 None => out.push(format!("document {id} has no matching handle entry")),
@@ -432,21 +387,6 @@ impl DocumentManager {
     }
 
     /// # Errors
-    /// Returns an error if `id` is not in the tab order.
-    pub(super) fn switch_to_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
-        if let Some(pos) = self.tab_order.iter().position(|&x| x == id) {
-            self.current_tab = pos;
-            Ok(())
-        } else {
-            Err(RiftError::new(
-                ErrorType::Internal,
-                crate::constants::errors::INTERNAL_ERROR,
-                format!("Document {id} not found in tabs"),
-            ))
-        }
-    }
-
-    /// # Errors
     /// Returns an error if the document is missing or not in the tab order, has unsaved changes
     /// under a `Normal` removal, or its replacement cannot be created.
     pub(super) fn prepare_removal(
@@ -462,7 +402,7 @@ impl DocumentManager {
             )
         })?;
 
-        let Some(position) = self.tab_order.iter().position(|&tab| tab == id) else {
+        let Some(position) = self.tab_index(id) else {
             return Err(RiftError::new(
                 ErrorType::Internal,
                 crate::constants::errors::INTERNAL_ERROR,
@@ -492,16 +432,8 @@ impl DocumentManager {
     }
 
     pub(super) fn commit_removal(&mut self, plan: PreparedRemoval) -> Option<Document> {
-        if let Some(pos) = self.tab_order.iter().position(|&x| x == plan.id) {
+        if let Some(pos) = self.tab_index(plan.id) {
             self.tab_order.remove(pos);
-            if pos < self.current_tab {
-                self.current_tab -= 1;
-            } else if pos == self.current_tab && self.current_tab >= self.tab_order.len() {
-                self.current_tab = self.tab_order.len().saturating_sub(1);
-            }
-            if self.current_tab >= self.tab_order.len() {
-                self.current_tab = self.tab_order.len().saturating_sub(1);
-            }
         }
 
         self.private_document_ids.remove(&plan.id);
@@ -531,28 +463,18 @@ impl DocumentManager {
     }
 
     #[must_use]
-    pub(crate) fn neighbor_tab(&self, forward: bool) -> Option<DocumentId> {
-        let public_tabs: Vec<usize> = self
-            .tab_order
-            .iter()
-            .enumerate()
-            .filter(|(_, id)| !self.private_document_ids.contains(*id))
-            .map(|(i, _)| i)
-            .collect();
-        let first = *public_tabs.first()?;
-        let index = match public_tabs.iter().position(|&i| i == self.current_tab) {
-            None => first,
-            Some(pos) => {
-                let len = public_tabs.len();
-                let target = if forward {
-                    (pos + 1) % len
-                } else {
-                    (pos + len - 1) % len
-                };
-                public_tabs[target]
-            }
+    pub(crate) fn neighbor_tab(&self, active: DocumentId, forward: bool) -> Option<DocumentId> {
+        let is_public = |id: &DocumentId| !self.private_document_ids.contains(id);
+        let next = |tabs: &[DocumentId]| tabs.iter().copied().find(is_public);
+        let Some(index) = self.tab_index(active).filter(|_| is_public(&active)) else {
+            return next(&self.tab_order);
         };
-        Some(self.tab_order[index])
+        let previous = |tabs: &[DocumentId]| tabs.iter().rev().copied().find(is_public);
+        if forward {
+            next(&self.tab_order[index + 1..]).or_else(|| next(&self.tab_order[..=index]))
+        } else {
+            previous(&self.tab_order[..index]).or_else(|| previous(&self.tab_order[index..]))
+        }
     }
 
     #[must_use]
@@ -563,10 +485,9 @@ impl DocumentManager {
             .count()
     }
 
-    #[cfg(test)]
     #[must_use]
-    pub(crate) const fn active_tab_index(&self) -> usize {
-        self.current_tab
+    pub(crate) fn tab_index(&self, id: DocumentId) -> Option<usize> {
+        self.tab_order.iter().position(|&tab| tab == id)
     }
 
     pub(crate) fn iter_documents(&self) -> impl Iterator<Item = &Document> {
@@ -602,7 +523,7 @@ impl DocumentManager {
     /// # Panics
     /// Panics if a tab ID has no stored document, which the manager's invariants rule out.
     #[must_use]
-    pub(crate) fn get_buffer_list(&self) -> Vec<BufferInfo> {
+    pub(crate) fn get_buffer_list(&self, active: DocumentId) -> Vec<BufferInfo> {
         self.tab_order
             .iter()
             .enumerate()
@@ -612,7 +533,7 @@ impl DocumentManager {
                     id,
                     index: i,
                     name: doc.display_name().to_string(),
-                    is_current: i == self.current_tab,
+                    is_current: id == active,
                     status: BufferStatus {
                         is_dirty: doc.is_dirty(),
                         is_read_only: doc.is_read_only(),

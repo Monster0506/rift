@@ -132,7 +132,13 @@ impl<T: TerminalBackend> Editor<T> {
         if self.document_manager.get_document(id).is_some() {
             self.leave_entered_document(id);
         }
-        self.document_manager.switch_to_document(id)?;
+        if self.document_manager.get_document(id).is_none() {
+            return Err(RiftError::new(
+                ErrorType::Internal,
+                crate::constants::errors::INTERNAL_ERROR,
+                format!("Document {id} not found"),
+            ));
+        }
         update_view(self);
         self.sync_state_with_active_document();
         #[cfg(feature = "plugins")]

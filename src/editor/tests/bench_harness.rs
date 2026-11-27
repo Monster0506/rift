@@ -140,7 +140,10 @@ fn ttfp_open_huge_treesitter_annotation_doc() {
 
     let t = Instant::now();
     let fresh_map = super::resolve_display_map(
-        editor.document_manager.active_document().unwrap(),
+        editor
+            .document_manager
+            .get_document(editor.active_document_id())
+            .unwrap(),
         178,
         editor.state.settings.soft_wrap(),
         editor.state.settings.wrap_width(),

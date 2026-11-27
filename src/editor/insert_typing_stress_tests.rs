@@ -116,7 +116,7 @@ fn rapid_insert_mode_typing_keeps_up_on_a_large_file() {
 
     let start_len = editor
         .document_manager
-        .active_document()
+        .get_document(editor.active_document_id())
         .unwrap()
         .buffer()
         .len();
@@ -154,7 +154,7 @@ fn rapid_insert_mode_typing_keeps_up_on_a_large_file() {
     assert_eq!(editor.current_mode, Mode::Insert);
     let end_len = editor
         .document_manager
-        .active_document()
+        .get_document(editor.active_document_id())
         .unwrap()
         .buffer()
         .len();

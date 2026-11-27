@@ -34,7 +34,10 @@ impl<T: TerminalBackend> Editor<T> {
         if self.current_mode.is_visual() {
             self.set_mode(Mode::Normal);
         }
-        let Some(doc) = self.document_manager.active_document_mut() else {
+        let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        else {
             return false;
         };
         let doc_id = doc.id;
@@ -60,7 +63,10 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn create_checkpoint(&mut self) -> bool {
-        if let Some(doc) = self.document_manager.active_document_mut() {
+        if let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        {
             doc.checkpoint();
             self.notify(
                 crate::notification::NotificationType::Info,
@@ -71,7 +77,10 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn do_undo_goto(&mut self, seq: u64) {
-        let doc = self.document_manager.active_document_mut().unwrap();
+        let doc = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+            .unwrap();
         match doc.goto_seq(seq) {
             Ok(()) => {
                 self.notify(
@@ -79,9 +88,7 @@ impl<T: TerminalBackend> Editor<T> {
                     format!("Jumped to edit #{seq}"),
                 );
 
-                if let Some(doc_id) = self.document_manager.active_document_id() {
-                    self.spawn_syntax_parse_job_immediate(doc_id);
-                }
+                self.spawn_syntax_parse_job_immediate(self.active_document_id());
             }
             Err(e) => {
                 self.notify_error(RiftError::new(

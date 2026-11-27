@@ -8,8 +8,8 @@ impl<T: TerminalBackend> Editor<T> {
     pub(crate) fn yank(&mut self, clip: Clip) {
         self.clipboard_ring.push(clip);
         #[cfg(feature = "plugins")]
-        if let Some(buf) = self.document_manager.active_document_id() {
-            self.raise(EventPayload::TextYank { buf });
-        }
+        self.raise(EventPayload::TextYank {
+            buf: self.active_document_id(),
+        });
     }
 }

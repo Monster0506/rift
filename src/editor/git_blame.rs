@@ -278,7 +278,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// The pane linked to the focused Git blame or source window.
     pub(super) fn git_blame_partner_window_id(&self) -> Option<crate::split::window::WindowId> {
         let focused_window_id = self.split_tree.focused_window_id();
-        let focused_doc_id = self.split_tree.focused_window().document_id;
+        let focused_doc_id = self.active_document_id();
         if let Some(linked_window_id) = self
             .document_manager
             .get_document(focused_doc_id)

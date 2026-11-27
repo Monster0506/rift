@@ -16,7 +16,10 @@ impl<T: TerminalBackend> Editor<T> {
     /// default action), letting separate keybinds drive verbs. True if dispatched.
     pub(super) fn activate_annotation_verb(&mut self, verb: Option<&str>) -> bool {
         let resolved = {
-            let Some(doc) = self.document_manager.active_document_mut() else {
+            let Some(doc) = self
+                .document_manager
+                .get_document_mut(self.active_document_id())
+            else {
                 return false;
             };
             let cursor = doc.buffer().cursor();
@@ -41,7 +44,7 @@ impl<T: TerminalBackend> Editor<T> {
             Some(Handler::Builtin(Builtin::FollowLink)) => {
                 let href = self
                     .document_manager
-                    .active_document_mut()
+                    .get_document_mut(self.active_document_id())
                     .and_then(|doc| doc.annotations.get(ann_id))
                     .and_then(|a| a.payload.get("href").and_then(|v| v.as_str()))
                     .map(std::string::ToString::to_string);
@@ -54,7 +57,10 @@ impl<T: TerminalBackend> Editor<T> {
             #[cfg(feature = "plugins")]
             Some(Handler::Lua) => {
                 let ctx = {
-                    let Some(doc) = self.document_manager.active_document_mut() else {
+                    let Some(doc) = self
+                        .document_manager
+                        .get_document_mut(self.active_document_id())
+                    else {
                         return false;
                     };
                     let position = doc.buffer().cursor();
@@ -101,7 +107,7 @@ impl<T: TerminalBackend> Editor<T> {
         // fall back to a payload/overlay-only toggle when there is none.
         let anchor = self
             .document_manager
-            .active_document_mut()
+            .get_document_mut(self.active_document_id())
             .and_then(|doc| doc.annotations.get(ann_id))
             .map(|a| match a.anchor {
                 crate::annotations::Anchor::Point(p) => p.offset,
@@ -109,7 +115,10 @@ impl<T: TerminalBackend> Editor<T> {
                 crate::annotations::Anchor::Line(_) => 0,
             });
         let buffer_checked = anchor.and_then(|off| self.toggle_buffer_checkbox(off));
-        if let Some(doc) = self.document_manager.active_document_mut() {
+        if let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        {
             doc.annotations.update(ann_id, |a| {
                 let checked = if let Some(c) = buffer_checked {
                     a.payload
@@ -136,13 +145,16 @@ impl<T: TerminalBackend> Editor<T> {
         // Descend into a directory entry or open a file entry, from the
         // active directory buffer's path + the fs.entry payload.
         let doc_id = self.active_document_id();
-        let info = self.document_manager.active_document_mut().and_then(|doc| {
-            let dir = doc.directory_path()?.clone();
-            let ann = doc.annotations.get(ann_id)?;
-            let name = crate::annotations::payload::fs::name(&ann.payload)?.to_string();
-            let is_dir = crate::annotations::payload::fs::is_dir(&ann.payload).unwrap_or(false);
-            Some((dir, name, is_dir))
-        });
+        let info = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+            .and_then(|doc| {
+                let dir = doc.directory_path()?.clone();
+                let ann = doc.annotations.get(ann_id)?;
+                let name = crate::annotations::payload::fs::name(&ann.payload)?.to_string();
+                let is_dir = crate::annotations::payload::fs::is_dir(&ann.payload).unwrap_or(false);
+                Some((dir, name, is_dir))
+            });
         let Some((dir, name, is_dir)) = info else {
             return false;
         };
@@ -161,7 +173,9 @@ impl<T: TerminalBackend> Editor<T> {
     /// Flip a literal `[ ]`/`[x]` at byte offset `byte_off` in place (length-
     /// preserving, so markers hold), returning the new state, or None if absent.
     fn toggle_buffer_checkbox(&mut self, byte_off: usize) -> Option<bool> {
-        let doc = self.document_manager.active_document_mut()?;
+        let doc = self
+            .document_manager
+            .get_document_mut(self.active_document_id())?;
         let c0 = doc.buffer().byte_to_char(byte_off);
         let open = doc.buffer().char_at(c0)?.to_char_lossy();
         let mid = doc.buffer().char_at(c0 + 1)?.to_char_lossy();
@@ -190,7 +204,10 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn update_annotation_hover(&mut self) {
         // The annotation under the cursor (offset first, then line-anchored).
         let current = {
-            let Some(doc) = self.document_manager.active_document() else {
+            let Some(doc) = self
+                .document_manager
+                .get_document(self.active_document_id())
+            else {
                 self.hovered_annotation = None;
                 return;
             };
@@ -217,7 +234,7 @@ impl<T: TerminalBackend> Editor<T> {
         let make_ctx = |s: &Self,
                         id: crate::annotations::AnnotationId|
          -> Option<crate::plugin::AnnotationHoverCtx> {
-            let doc = s.document_manager.active_document()?;
+            let doc = s.document_manager.get_document(s.active_document_id())?;
             let ann = doc.annotations.get(id)?;
             Some(crate::plugin::AnnotationHoverCtx {
                 annotation_id: id.get(),
@@ -260,7 +277,10 @@ impl<T: TerminalBackend> Editor<T> {
     /// In interface mode, snap the cursor to the next/prev actionable line, skipping
     /// inert ones. False (caller falls back to line motion) if there is none.
     pub(super) fn snap_to_actionable_line(&mut self, forward: bool) -> bool {
-        let Some(doc) = self.document_manager.active_document_mut() else {
+        let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        else {
             return false;
         };
         let cursor = doc.buffer().cursor();
@@ -289,7 +309,10 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn jump_to_interactive(&mut self, forward: bool) -> bool {
         let target = {
-            let Some(doc) = self.document_manager.active_document_mut() else {
+            let Some(doc) = self
+                .document_manager
+                .get_document_mut(self.active_document_id())
+            else {
                 return false;
             };
             let cursor_byte = doc.buffer().char_to_byte(doc.buffer().cursor());
@@ -306,7 +329,10 @@ impl<T: TerminalBackend> Editor<T> {
             .map(|byte_offset| doc.buffer().byte_to_char(byte_offset))
         };
         if let Some(offset) = target {
-            if let Some(doc) = self.document_manager.active_document_mut() {
+            if let Some(doc) = self
+                .document_manager
+                .get_document_mut(self.active_document_id())
+            {
                 let _ = doc.set_cursor(offset, crate::document::ops::CursorCause::User);
             }
             let _ = self.update_and_render();

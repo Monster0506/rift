@@ -72,7 +72,7 @@ fn test_resolve_display_map_cached_reuses_across_moves() {
         &mut editor,
         "this is a fairly long first line that wraps\nsecond long line also wraps here\n",
     );
-    let doc_id = editor.document_manager.active_document_id().unwrap();
+    let doc_id = editor.active_document_id();
 
     let first = editor.resolve_display_map_cached(doc_id, 20, 0, 100);
     let rows_first = first.as_ref().map(|m| m.total_visual_rows());
@@ -109,7 +109,7 @@ fn test_resolve_display_map_cached_rebuilds_on_tab_width_change() {
         &mut editor,
         "\tindented line that is quite long and wraps\n",
     );
-    let doc_id = editor.document_manager.active_document_id().unwrap();
+    let doc_id = editor.active_document_id();
 
     let before = editor
         .resolve_display_map_cached(doc_id, 20, 0, 100)
@@ -139,7 +139,7 @@ fn test_resolve_display_map_cached_keeps_entries_per_width() {
         &mut editor,
         "this is a fairly long first line that wraps\nsecond long line also wraps here\n",
     );
-    let doc_id = editor.document_manager.active_document_id().unwrap();
+    let doc_id = editor.active_document_id();
     editor.display_map_cache.clear();
 
     let narrow = editor.resolve_display_map_cached(doc_id, 15, 0, 100);
@@ -162,7 +162,7 @@ fn test_resolve_display_map_cached_keeps_entries_per_width() {
 #[test]
 fn test_resolve_display_map_cached_detects_placeholder_to_loaded_swap() {
     let mut editor = create_editor_sized(24, 80);
-    let doc_id = editor.document_manager.active_document_id().unwrap();
+    let doc_id = editor.active_document_id();
     editor.resolve_display_map_cached(doc_id, 80, 0, 100);
     assert_eq!(
         editor
@@ -206,7 +206,7 @@ fn test_resolve_display_map_cached_detects_placeholder_to_loaded_swap() {
 #[test]
 fn test_opening_a_file_shows_its_content_immediately_not_after_a_later_edit() {
     let mut editor = create_editor_sized(24, 80);
-    let doc_id = editor.document_manager.active_document_id().unwrap();
+    let doc_id = editor.active_document_id();
     editor.force_full_redraw().unwrap();
 
     let loaded_text = "line one\nline two\nline three\n";
@@ -239,7 +239,7 @@ fn test_display_map_stays_partial_for_large_document_small_viewport() {
         .unwrap();
     editor.update_and_render().unwrap();
 
-    let doc_id = editor.document_manager.active_document_id().unwrap();
+    let doc_id = editor.active_document_id();
     let content_width = editor.split_tree.focused_window().viewport.visible_cols();
     let dm = editor
         .resolve_display_map_cached(doc_id, content_width, 0, 0)
@@ -262,7 +262,7 @@ fn test_lazy_display_map_extends_correctly_for_far_cursor_jump() {
     set_content(&mut editor, &text);
     editor.update_and_render().unwrap();
 
-    let doc_id = editor.document_manager.active_document_id().unwrap();
+    let doc_id = editor.active_document_id();
     let content_width = editor.split_tree.focused_window().viewport.visible_cols();
 
     let far_char = {
@@ -310,7 +310,7 @@ fn test_edit_on_partial_display_map_stays_correct() {
         .unwrap();
     editor.update_and_render().unwrap();
 
-    let doc_id = editor.document_manager.active_document_id().unwrap();
+    let doc_id = editor.active_document_id();
     let content_width = editor.split_tree.focused_window().viewport.visible_cols();
 
     let dm_before = editor
@@ -360,7 +360,7 @@ fn test_large_count_down_motion_matches_full_build_reference() {
     editor.current_mode = Mode::Normal;
     editor.update_and_render().unwrap();
 
-    let doc_id = editor.document_manager.active_document_id().unwrap();
+    let doc_id = editor.active_document_id();
     let content_width = editor.split_tree.focused_window().viewport.visible_cols();
 
     let count = 137usize;

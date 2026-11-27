@@ -84,7 +84,10 @@ impl<T: TerminalBackend> Editor<T> {
         if mode != Mode::Normal {
             return;
         }
-        let Some(doc) = self.document_manager.active_document() else {
+        let Some(doc) = self
+            .document_manager
+            .get_document(self.active_document_id())
+        else {
             return;
         };
         let cursor = doc.buffer().cursor();

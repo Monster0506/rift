@@ -210,7 +210,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn lsp_result_is_current(&mut self, uri: &str, what: &str) -> bool {
         let active = self
             .document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .and_then(|d| d.path())
             .map(|p| crate::lsp::protocol::normalize_uri(&crate::lsp::protocol::path_to_uri(p)));
         if active.as_deref() == Some(uri) {
@@ -228,7 +228,9 @@ impl<T: TerminalBackend> Editor<T> {
     /// Active document's cursor as (path, line, col) in the negotiated LSP
     /// position encoding, for issuing position requests.
     pub(super) fn cursor_lsp_position(&self) -> Option<(std::path::PathBuf, u32, u32)> {
-        let doc = self.document_manager.active_document()?;
+        let doc = self
+            .document_manager
+            .get_document(self.active_document_id())?;
         let path = doc.path()?.to_path_buf();
         let cur_line = doc.buffer().get_line();
         let line_start = doc.buffer().line_start(cur_line);
@@ -393,14 +395,16 @@ impl<T: TerminalBackend> Editor<T> {
 
         if loads_async {
             // FileLoadResult applies the jump once the content is in.
-            if let Some(doc_id) = self.document_manager.active_document_id() {
-                self.scheduler.goto_after_load = Some((doc_id, line, col_units as usize));
-            }
+            self.scheduler.goto_after_load =
+                Some((self.active_document_id(), line, col_units as usize));
             return;
         }
 
         let encoding = self.lsp_manager.position_encoding_for_path(path);
-        if let Some(doc) = self.document_manager.active_document_mut() {
+        if let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        {
             let line = line.min(doc.buffer().last_real_line());
             let target_col = doc.lsp_char_offset_in_line(line, col_units, encoding);
             let target = doc.buffer().line_start(line) + target_col;
@@ -554,7 +558,7 @@ impl<T: TerminalBackend> Editor<T> {
             // Find the language from the active document.
             let language = self
                 .document_manager
-                .active_document()
+                .get_document(self.active_document_id())
                 .and_then(|d| d.path())
                 .and_then(|p| {
                     let uri = crate::lsp::protocol::path_to_uri(p);
@@ -790,7 +794,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn lsp_diagnostic_jump(&mut self, forward: bool) {
         let path = self
             .document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .and_then(|d| d.path())
             .map(std::path::Path::to_path_buf);
 
@@ -812,17 +816,20 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let encoding = self.lsp_manager.position_encoding_for_path(&path);
-        let cursor_pos = self.document_manager.active_document().map_or((0, 0), |d| {
-            let line = d.buffer().get_line();
-            let col = d
-                .buffer()
-                .cursor()
-                .saturating_sub(d.buffer().line_start(line));
-            (
-                u32::try_from(line).unwrap_or(u32::MAX),
-                d.lsp_position_units_in_line(line, col, encoding),
-            )
-        });
+        let cursor_pos = self
+            .document_manager
+            .get_document(self.active_document_id())
+            .map_or((0, 0), |d| {
+                let line = d.buffer().get_line();
+                let col = d
+                    .buffer()
+                    .cursor()
+                    .saturating_sub(d.buffer().line_start(line));
+                (
+                    u32::try_from(line).unwrap_or(u32::MAX),
+                    d.lsp_position_units_in_line(line, col, encoding),
+                )
+            });
 
         let pos = |d: &LspDiagnostic| (d.range.start.line, d.range.start.character);
         let target = if forward {
@@ -840,7 +847,10 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let Some(diag) = target else { return };
 
-        if let Some(doc) = self.document_manager.active_document_mut() {
+        if let Some(doc) = self
+            .document_manager
+            .get_document_mut(self.active_document_id())
+        {
             let line = diag.range.start.line as usize;
             let col = doc.lsp_char_offset_in_line(line, diag.range.start.character, encoding);
             let offset = (doc.buffer().line_start(line) + col).min(doc.buffer().len());
@@ -960,7 +970,7 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn open_diagnostics_panel(&mut self) {
         let info = self
             .document_manager
-            .active_document()
+            .get_document(self.active_document_id())
             .and_then(|doc| doc.path().map(std::path::Path::to_path_buf));
 
         let Some(path) = info else {
@@ -1045,7 +1055,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Split the current window horizontally: location list goes below, main stays above.
         let preview_win_id = self.split_tree.focused_window_id();
-        let original_doc_id = self.split_tree.focused_window().document_id;
+        let original_doc_id = self.active_document_id();
 
         let dir_win_id = self
             .split_window_beside(
