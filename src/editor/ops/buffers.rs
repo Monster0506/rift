@@ -84,16 +84,9 @@ impl<T: TerminalBackend> Editor<T> {
             #[cfg(feature = "lsp")]
             self.lsp_notify_open(id);
         }
-        if let Some(doc) = self.document_manager.get_document_mut(id) {
-            doc.record_open();
-        }
-    }
-
-    pub(crate) fn open_event(
-        &self,
-        buf: DocumentId,
-    ) -> Option<crate::plugin::events::EventPayload> {
-        let doc = self.document_manager.get_document(buf)?;
+        let Some(doc) = self.document_manager.get_document(id) else {
+            return;
+        };
         let path = doc.path().map(std::path::Path::to_path_buf);
         let filetype = doc
             .syntax
@@ -103,11 +96,11 @@ impl<T: TerminalBackend> Editor<T> {
                 path.as_deref()
                     .and_then(|p| self.language_loader.language_name_for_file(p))
             });
-        Some(crate::plugin::events::EventPayload::BufOpen {
-            buf,
+        self.raise(crate::plugin::events::EventPayload::BufOpen {
+            buf: id,
             path,
             filetype,
-        })
+        });
     }
 
     pub(crate) fn open_placeholder(
@@ -231,6 +224,14 @@ impl<T: TerminalBackend> Editor<T> {
             )
         };
 
+        self.deliver_open_before_close(id);
+        if self
+            .document_manager
+            .get_document_by_handle(handle)
+            .is_none()
+        {
+            return Ok(());
+        }
         self.job_manager.cancel_jobs_for_handle(handle);
         match descriptor.on_close {
             crate::document::runtime::CloseHandler::Native(close) => {

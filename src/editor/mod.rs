@@ -216,6 +216,7 @@ pub struct Editor<T: TerminalBackend> {
     terminal_frame_pending: bool,
     last_frame_at: Option<crate::time::Instant>,
     entered_document: DocumentId,
+    frame_events: Vec<EditorEvent>,
 }
 
 struct DisplayMapCacheEntry {

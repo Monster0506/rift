@@ -132,3 +132,27 @@ fn banking_a_visual_selection_raises_selection_changed() {
 
     assert!(!seen.lock().unwrap().is_empty());
 }
+
+#[test]
+fn buffer_open_precedes_close_even_without_a_frame_between_them() {
+    let mut editor = settled("first");
+    let lifecycle = Arc::new(Mutex::new(Vec::new()));
+    for name in ["BufOpen", "BufClose"] {
+        let sink = lifecycle.clone();
+        editor.plugin_host.on(name, move |event| {
+            if let EventPayload::BufOpen { buf, .. } | EventPayload::BufClose { buf } = event {
+                sink.lock().unwrap().push((name, *buf));
+            }
+        });
+    }
+    let doc = crate::document::Document::new(editor.document_manager.next_id()).unwrap();
+    let buf = editor.open_buffer(doc, crate::document::manager::Placement::Background);
+    editor
+        .close_buffer(buf, crate::document::manager::RemovalIntent::Force)
+        .unwrap();
+
+    assert_eq!(
+        *lifecycle.lock().unwrap(),
+        [("BufOpen", buf), ("BufClose", buf)]
+    );
+}

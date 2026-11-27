@@ -9,17 +9,12 @@ pub(crate) struct ChangeJournal {
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Changes {
-    pub(crate) opened: bool,
     pub(crate) text: bool,
     pub(crate) cursor: Option<(usize, usize)>,
     pub(crate) selection: bool,
 }
 
 impl Document {
-    pub(crate) const fn record_open(&mut self) {
-        self.journal.recorded.opened = true;
-    }
-
     pub(in crate::document) const fn record_text_change(&mut self) {
         self.journal.recorded.text = true;
         self.journal.cursor = true;

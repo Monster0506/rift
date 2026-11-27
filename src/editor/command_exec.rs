@@ -110,16 +110,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.lsp_notify_change(*buf);
             }
         }
-        crate::perf_span!(
-            "plugin_dispatch_buffer_changes",
-            crate::perf::PerfFields::default()
-        );
         for (buf, changes) in drained {
-            if changes.opened {
-                if let Some(event) = self.open_event(buf) {
-                    self.raise(event);
-                }
-            }
             if changes.text {
                 self.raise(EventPayload::TextChangedCoarse { buf });
             }

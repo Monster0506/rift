@@ -151,6 +151,7 @@ impl<T: TerminalBackend> Editor<T> {
             terminal_frame_pending: false,
             last_frame_at: None,
             entered_document: initial_doc_id,
+            frame_events: Vec::new(),
         };
 
         crate::keymap::defaults::register_defaults(&mut editor.keymap);
@@ -180,7 +181,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         if let Some(doc_id) = self.document_manager.active_document_id() {
             self.announce_buffer(doc_id);
-            self.deliver_document_changes();
+            self.deliver_frame_events();
         }
 
         self.raise(crate::plugin::events::EventPayload::EditorStart);
