@@ -8,36 +8,22 @@ use crate::test_utils::MockTerminal;
 #[cfg(feature = "treesitter")]
 #[test]
 fn stale_syntax_job_result_does_not_clobber_newer_state() {
-    use crate::syntax::build_syntax;
-    use std::sync::Arc;
     use std::time::Duration;
 
     let mut editor = create_editor();
-    load_text(&mut editor, "fn main() {}\n");
-
-    let loader = editor.language_loader.clone();
-    let grammar = loader.load_language("rust").expect("rust grammar");
-    let highlights = loader
-        .load_query("rust", "highlights")
-        .ok()
-        .and_then(|src| tree_sitter::Query::new(&grammar.language, &src).ok())
-        .map(Arc::new);
-    let syntax = build_syntax(grammar, highlights, &loader);
+    let old = format!(
+        "fn old() {{}}\n//{}",
+        "x".repeat(crate::syntax::SYNC_PARSE_MAX_BYTES)
+    );
+    load_text(&mut editor, &old);
+    let syntax = rust_syntax(&editor);
     editor.active_document().set_syntax(syntax);
-    editor.reparse_syntax(editor.active_document_id());
+    editor.finish_history_syntax(editor.active_document_id());
 
-    let doc_id = editor.active_document_id();
-
-    editor
-        .spawn_syntax_parse_job(doc_id)
-        .expect("job should spawn");
-
-    {
-        let doc = editor.active_document();
-        let end = doc.buffer().len();
-        doc.edit(Edit::insert(end, "\nfn extra() {}\n"), EditSource::User)
-            .unwrap();
-    }
+    editor.active_document().replace_content(
+        "fn main() {}\nfn extra() {}\n",
+        crate::document::ops::ContentKind::Render,
+    );
 
     let doc = editor.active_document();
     let fresh_highlights = doc
@@ -86,7 +72,6 @@ fn undo_keeps_syntax_tree_for_incremental_reuse() {
         .map(Arc::new);
     let syntax = build_syntax(grammar, highlights, &loader);
     editor.active_document().set_syntax(syntax);
-    editor.reparse_syntax(editor.active_document_id());
 
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertModeAtLineEnd));
     editor.handle_action(&Action::Editor(EditorAction::InsertChar(';')));
@@ -132,7 +117,6 @@ fn set_aware_delete_keeps_syntax_highlights_in_sync() {
         .map(Arc::new);
     let syntax = build_syntax(grammar, highlights_query, &loader);
     editor.active_document().set_syntax(syntax);
-    editor.reparse_syntax(editor.active_document_id());
 
     editor
         .active_document()
@@ -183,7 +167,6 @@ fn ghost_paint_keeps_syntax_highlights_in_sync_while_painted() {
         .map(Arc::new);
     let syntax = build_syntax(grammar, highlights_query, &loader);
     editor.active_document().set_syntax(syntax);
-    editor.reparse_syntax(editor.active_document_id());
 
     editor
         .active_document()

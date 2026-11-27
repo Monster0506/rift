@@ -50,15 +50,12 @@ impl<T: TerminalBackend> Editor<T> {
             changed = true;
         }
         if changed {
-            self.drain_syntax_sync();
+            self.finish_history_syntax(doc_id);
         } else {
             self.notify(crate::notification::NotificationType::Info, limit_message);
         }
         self.state.clear_command_line();
         self.schedule_search_refresh();
-        if changed {
-            self.spawn_syntax_parse_job_immediate(doc_id);
-        }
         true
     }
 
@@ -88,7 +85,7 @@ impl<T: TerminalBackend> Editor<T> {
                     format!("Jumped to edit #{seq}"),
                 );
 
-                self.spawn_syntax_parse_job_immediate(self.active_document_id());
+                self.finish_history_syntax(self.active_document_id());
             }
             Err(e) => {
                 self.notify_error(RiftError::new(

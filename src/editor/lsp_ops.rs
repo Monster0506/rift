@@ -60,15 +60,7 @@ impl<T: TerminalBackend> LspTarget for Editor<T> {
             return;
         }
 
-        if let Some(doc_id) = self.apply_lsp_edits_for_uri(uri, edits) {
-            // Invalidate before spawning: format often touches many lines and can
-            // leave the incremental tree in a corrupt state.
-            if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                if let Some(syntax) = &mut doc.syntax {
-                    syntax.invalidate_trees();
-                }
-            }
-            self.spawn_syntax_parse_job(doc_id);
+        if self.apply_lsp_edits_for_uri(uri, edits).is_some() {
             let _ = self.force_full_redraw();
         }
 
@@ -616,14 +608,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let applied = modified_docs.len();
-        for doc_id in modified_docs {
-            if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                if let Some(syntax) = &mut doc.syntax {
-                    syntax.invalidate_trees();
-                }
-            }
-            self.spawn_syntax_parse_job(doc_id);
-        }
         if applied > 0 {
             let _ = self.force_full_redraw();
         }
@@ -652,8 +636,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Apply LSP text edits to the document for `uri`, opening it in the
-    /// background if needed. Returns the `DocumentId` so the caller can re-highlight.
     fn apply_lsp_edits_for_uri(
         &mut self,
         uri: &str,
@@ -716,6 +698,7 @@ impl<T: TerminalBackend> Editor<T> {
                     );
                 }
             }
+            doc.invalidate_syntax();
         });
 
         // Put the cursor back where the user had it, clamped to the new text.
@@ -748,8 +731,6 @@ impl<T: TerminalBackend> Editor<T> {
         let id = self.document_manager.next_id();
         let doc = crate::document::Document::from_file(id, path).ok()?;
         self.open_buffer(doc, crate::document::manager::Placement::Background);
-        #[cfg(feature = "treesitter")]
-        self.attach_syntax_for_document(id);
         Some(id)
     }
 

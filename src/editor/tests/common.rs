@@ -155,7 +155,7 @@ pub(super) fn ensure_syntax_parsed(editor: &mut Editor<MockTerminal>) {
         return;
     }
     let doc_id = editor.active_document().id;
-    editor.spawn_syntax_parse_job_immediate(doc_id);
+    editor.finish_history_syntax(doc_id);
     drain_jobs_until_idle(editor);
 }
 

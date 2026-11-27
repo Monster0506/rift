@@ -76,13 +76,6 @@ impl<T: TerminalBackend> Editor<T> {
         if kind == crate::document::runtime::BufferKindId::FILE {
             #[cfg(feature = "treesitter")]
             self.attach_syntax_for_document(id);
-            if self
-                .document_manager
-                .get_document(id)
-                .is_some_and(|d| d.syntax.is_some())
-            {
-                self.spawn_syntax_parse_job(id);
-            }
             #[cfg(feature = "lsp")]
             self.lsp_notify_open(id);
         }

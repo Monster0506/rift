@@ -317,7 +317,10 @@ fn poll_timeout_shrinks_to_the_search_refresh_deadline() {
 fn poll_timeout_shrinks_to_the_syntax_reparse_deadline() {
     let mut editor = editor();
     let doc_id = editor.active_document_id();
-    editor.debounce_syntax_reparse(doc_id);
+    editor
+        .scheduler
+        .syntax_reparse
+        .arm(doc_id, crate::time::Instant::now());
 
     editor.tick().unwrap();
 

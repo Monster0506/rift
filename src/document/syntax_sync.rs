@@ -4,13 +4,14 @@ use crate::syntax::{ParseOutcome, SYNC_PARSE_BUDGET, SYNC_PARSE_MAX_BYTES};
 #[derive(Debug, Default)]
 pub(crate) struct SyntaxSettle {
     stale: bool,
-    notice: SyntaxNotice,
+    notice: Option<SyntaxNotice>,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SyntaxNotice {
-    pub(crate) completed: bool,
-    pub(crate) deferred: bool,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SyntaxNotice {
+    #[cfg(feature = "treesitter")]
+    Completed,
+    Deferred,
 }
 
 impl Document {
@@ -23,24 +24,25 @@ impl Document {
             return;
         }
         self.syntax_settle.stale = false;
-        let Some(syntax) = self.syntax.as_mut() else {
-            return;
-        };
-        if self.buffer.byte_len() > SYNC_PARSE_MAX_BYTES {
-            self.syntax_settle.notice.deferred = true;
-            return;
-        }
-        match syntax.try_incremental_parse(&self.buffer, SYNC_PARSE_BUDGET) {
-            #[cfg(feature = "treesitter")]
-            ParseOutcome::Completed => {
-                self.syntax_settle.notice = SyntaxNotice {
-                    completed: true,
-                    deferred: false,
-                };
+        self.syntax_settle.notice = self.syntax.as_mut().and_then(|syntax| {
+            if self.buffer.byte_len() > SYNC_PARSE_MAX_BYTES {
+                return Some(SyntaxNotice::Deferred);
             }
-            #[cfg(feature = "treesitter")]
-            ParseOutcome::Aborted => self.syntax_settle.notice.deferred = true,
-            ParseOutcome::NoLanguage => {}
+            match syntax.try_incremental_parse(&self.buffer, SYNC_PARSE_BUDGET) {
+                #[cfg(feature = "treesitter")]
+                ParseOutcome::Completed => Some(SyntaxNotice::Completed),
+                #[cfg(feature = "treesitter")]
+                ParseOutcome::Aborted => Some(SyntaxNotice::Deferred),
+                ParseOutcome::NoLanguage => None,
+            }
+        });
+    }
+
+    #[cfg(feature = "lsp")]
+    pub(crate) fn invalidate_syntax(&mut self) {
+        if let Some(syntax) = &mut self.syntax {
+            syntax.invalidate_trees();
+            self.reparse_syntax();
         }
     }
 
@@ -50,7 +52,6 @@ impl Document {
     }
 
     pub(crate) fn take_syntax_notice(&mut self) -> Option<SyntaxNotice> {
-        let notice = std::mem::take(&mut self.syntax_settle.notice);
-        (notice != SyntaxNotice::default()).then_some(notice)
+        self.syntax_settle.notice.take()
     }
 }

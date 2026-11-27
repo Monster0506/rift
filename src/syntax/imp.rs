@@ -353,7 +353,6 @@ impl Syntax {
     }
 
     /// Discard all cached trees and highlights after a non-incremental change (e.g. undo/redo).
-    /// The next `incremental_parse()` will do a full re-parse from scratch.
     pub(crate) fn invalidate_trees(&mut self) {
         self.tree = None;
         self.highlights.clear();
@@ -466,6 +465,7 @@ impl Syntax {
 
     /// Incremental parse of the host grammar, then injection layers.
     /// Returns `true` if host parsing succeeded.
+    #[cfg(test)]
     pub(crate) fn incremental_parse(&mut self, buffer: &TextBuffer) -> bool {
         let mut parser = Parser::new();
         if parser.set_language(&self.language).is_err() {

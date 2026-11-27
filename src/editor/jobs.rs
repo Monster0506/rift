@@ -22,34 +22,9 @@ fn syntax_for(
     crate::syntax::build_syntax(lang, highlights, loader)
 }
 
-#[cfg(feature = "treesitter")]
-fn attach_syntax(
-    docs: &mut crate::document::manager::DocumentManager,
-    loader: &std::sync::Arc<crate::syntax::loader::LanguageLoader>,
-    doc_id: DocumentId,
-) {
-    let Some(path) = docs
-        .get_document(doc_id)
-        .and_then(|d| d.path())
-        .map(std::path::Path::to_path_buf)
-    else {
-        return;
-    };
-    let Ok(lang) = loader.load_language_for_file(&path) else {
-        return;
-    };
-    let syntax = syntax_for(loader, lang);
-    if let Some(doc) = docs.get_document_mut(doc_id) {
-        doc.set_syntax(syntax);
-    }
-}
-
 impl<T: TerminalBackend> Editor<T> {
     #[cfg(feature = "treesitter")]
-    pub(super) fn spawn_syntax_parse_job(
-        &mut self,
-        doc_id: crate::document::DocumentId,
-    ) -> Option<usize> {
+    fn spawn_syntax_parse_job(&mut self, doc_id: crate::document::DocumentId) -> Option<usize> {
         use crate::job_manager::jobs::syntax::SyntaxParseJob;
         use tree_sitter::Parser;
 
@@ -91,65 +66,73 @@ impl<T: TerminalBackend> Editor<T> {
 
         Some(self.job_manager.spawn_with_token(job, token))
     }
-    #[cfg(not(feature = "treesitter"))]
-    // Same signature as the treesitter build.
-    pub(super) fn spawn_syntax_parse_job(
-        &mut self,
-        doc_id: crate::document::DocumentId,
-    ) -> Option<usize> {
-        self.cancel_pending_syntax_reparse(doc_id);
-        None
+    pub(super) fn drain_syntax_sync(&mut self) {
+        use crate::document::syntax_sync::SyntaxNotice;
+        for (doc_id, notice) in self.document_manager.take_syntax_notices() {
+            self.cancel_pending_syntax_reparse(doc_id);
+            match notice {
+                #[cfg(feature = "treesitter")]
+                SyntaxNotice::Completed => {
+                    #[cfg(feature = "plugins")]
+                    self.raise_syntax_updated(doc_id);
+                }
+                SyntaxNotice::Deferred => self
+                    .scheduler
+                    .syntax_reparse
+                    .arm(doc_id, crate::time::Instant::now()),
+            }
+        }
     }
 
-    pub(super) fn debounce_syntax_reparse(&mut self, doc_id: DocumentId) {
-        self.scheduler
-            .syntax_reparse
-            .arm(doc_id, crate::time::Instant::now());
-    }
-
-    pub(super) fn cancel_pending_syntax_reparse(&mut self, doc_id: DocumentId) {
+    fn cancel_pending_syntax_reparse(&mut self, doc_id: DocumentId) {
         if let Some(job_id) = self.scheduler.syntax_reparse.cancel(doc_id) {
             self.job_manager.cancel_job(job_id);
         }
     }
 
     #[cfg(feature = "treesitter")]
-    pub(super) fn attach_syntax_for_document(&mut self, doc_id: DocumentId) {
-        attach_syntax(&mut self.document_manager, &self.language_loader, doc_id);
+    pub(super) fn attach_syntax_for_document(&mut self, doc_id: DocumentId) -> bool {
+        let Some(doc) = self.document_manager.get_document_mut(doc_id) else {
+            return false;
+        };
+        let Some(loaded) = doc
+            .path()
+            .and_then(|path| self.language_loader.load_language_for_file(path).ok())
+        else {
+            return false;
+        };
+        doc.set_syntax(syntax_for(&self.language_loader, loaded));
+        true
     }
 
-    #[cfg(feature = "treesitter")]
-    #[cfg(feature = "plugins")]
+    #[cfg(all(feature = "treesitter", feature = "plugins"))]
     pub(super) fn start_syntax(&mut self, doc_id: DocumentId, lang: Option<&str>) {
-        self.cancel_pending_syntax_reparse(doc_id);
-        match lang {
-            Some(lang) => {
-                let Ok(loaded) = self.language_loader.load_language(lang) else {
-                    self.notify(
-                        crate::notification::NotificationType::Error,
-                        format!("treesitter: unknown language '{lang}'"),
-                    );
-                    return;
-                };
-                let syntax = syntax_for(&self.language_loader, loaded);
-                if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                    doc.set_syntax(syntax);
-                }
+        if let Some(lang) = lang {
+            let Ok(loaded) = self.language_loader.load_language(lang) else {
+                self.notify(
+                    crate::notification::NotificationType::Error,
+                    format!("treesitter: unknown language '{lang}'"),
+                );
+                return;
+            };
+            if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                doc.set_syntax(syntax_for(&self.language_loader, loaded));
             }
-            None => attach_syntax(&mut self.document_manager, &self.language_loader, doc_id),
+        } else if !self.attach_syntax_for_document(doc_id) {
+            if let Some(doc) = self
+                .document_manager
+                .get_document_mut(doc_id)
+                .filter(|doc| doc.syntax.is_some())
+            {
+                doc.reparse_syntax();
+            } else {
+                self.notify(
+                    crate::notification::NotificationType::Warning,
+                    "treesitter: no grammar matches this buffer",
+                );
+            }
         }
-        if self
-            .document_manager
-            .get_document(doc_id)
-            .is_some_and(|d| d.syntax.is_some())
-        {
-            self.reparse_syntax(doc_id);
-        } else {
-            self.notify(
-                crate::notification::NotificationType::Warning,
-                "treesitter: no grammar matches this buffer".to_string(),
-            );
-        }
+        self.drain_syntax_sync();
     }
 
     #[cfg(feature = "treesitter")]
@@ -158,6 +141,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.cancel_pending_syntax_reparse(doc_id);
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             if doc.syntax.take().is_some() {
+                doc.take_syntax_notice();
                 #[cfg(feature = "plugins")]
                 self.raise_syntax_updated(doc_id);
             }
@@ -206,8 +190,16 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = doc_id;
     }
 
-    pub(super) fn spawn_syntax_parse_job_immediate(&mut self, doc_id: DocumentId) {
+    pub(super) fn finish_history_syntax(&mut self, doc_id: DocumentId) {
+        self.drain_syntax_sync();
+        if self.scheduler.syntax_reparse.is_armed(doc_id) {
+            self.run_syntax_reparse(doc_id);
+        }
+    }
+
+    fn run_syntax_reparse(&mut self, doc_id: DocumentId) {
         self.cancel_pending_syntax_reparse(doc_id);
+        #[cfg(feature = "treesitter")]
         if let Some(job_id) = self.spawn_syntax_parse_job(doc_id) {
             self.scheduler.syntax_reparse.start(doc_id, job_id);
         }
@@ -219,7 +211,7 @@ impl<T: TerminalBackend> Editor<T> {
             .syntax_reparse
             .due(crate::time::Instant::now())
         {
-            self.spawn_syntax_parse_job_immediate(doc_id);
+            self.run_syntax_reparse(doc_id);
         }
     }
 
@@ -368,29 +360,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.on_file_load_failed(id);
 
         self.cancel_quit_after_save(id);
-    }
-
-    #[cfg(feature = "treesitter")]
-    fn attach_preview_syntax(
-        &mut self,
-        token: &AsyncToken,
-        preview_doc_id: DocumentId,
-        preview_path: &std::path::Path,
-    ) {
-        let Ok(loaded) = self.language_loader.load_language_for_file(preview_path) else {
-            return;
-        };
-        let syntax = syntax_for(&self.language_loader, loaded);
-        if let Some(doc) = self
-            .document_manager
-            .get_document_by_handle_mut(token.handle)
-        {
-            doc.set_syntax(syntax);
-            if doc.buffer().byte_len() <= crate::syntax::SYNC_PARSE_MAX_BYTES {
-                doc.with_syntax(crate::syntax::Syntax::incremental_parse);
-            }
-        }
-        self.spawn_syntax_parse_job(preview_doc_id);
     }
 
     #[cfg(feature = "lsp")]
@@ -898,7 +867,7 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
 
         #[cfg(feature = "treesitter")]
         if is_file_preview {
-            self.attach_preview_syntax(&token, res.right_doc_id, &preview_path);
+            self.attach_syntax_for_document(res.right_doc_id);
         }
 
         let _ = self.update_and_render();
@@ -970,7 +939,6 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
         if res.is_reload {
             #[cfg(feature = "treesitter")]
             self.attach_syntax_for_document(res.document_id);
-            self.spawn_syntax_parse_job(res.document_id);
             #[cfg(feature = "plugins")]
             self.raise(crate::plugin::events::EventPayload::BufReload {
                 buf: res.document_id,
@@ -1053,47 +1021,31 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
         result: crate::job_manager::jobs::syntax::SyntaxParseResult,
     ) {
         let doc_id = result.document_id;
-        let Some(token) = self.resolve_and_validate_token(
-            id,
-            token,
-            doc_id,
-            crate::job_manager::AsyncOpDomain::SyntaxParse,
-        ) else {
+        if self.scheduler.syntax_reparse.running(doc_id) == Some(id) {
             self.scheduler.syntax_reparse.finish(doc_id, id);
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
-            return;
-        };
-        let Some(doc) = self
-            .document_manager
-            .get_document_by_handle_mut(token.handle)
-        else {
-            self.scheduler.syntax_reparse.finish(doc_id, id);
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
-            return;
-        };
-
-        let is_current = doc.buffer().revision() == result.revision;
-
-        if is_current
-            && doc
-                .with_syntax(|syntax, buffer| syntax.update_from_result(result, buffer))
-                .is_some()
-        {
-            #[cfg(feature = "plugins")]
-            self.raise_syntax_updated(doc_id);
-        }
-
-        self.scheduler.syntax_reparse.finish(doc_id, id);
-
-        if !is_current {
-            self.debounce_syntax_reparse(doc_id);
-        }
-
-        if let Err(err) = self.update_and_render() {
-            self.notify_error(err);
-            return;
+            let token = self.resolve_and_validate_token(
+                id,
+                token,
+                doc_id,
+                crate::job_manager::AsyncOpDomain::SyntaxParse,
+            );
+            let applied = token
+                .and_then(|token| {
+                    self.document_manager
+                        .get_document_by_handle_mut(token.handle)
+                })
+                .filter(|doc| doc.buffer().revision() == result.revision)
+                .and_then(|doc| {
+                    doc.with_syntax(|syntax, buffer| syntax.update_from_result(result, buffer))
+                })
+                .is_some();
+            if applied {
+                #[cfg(feature = "plugins")]
+                self.raise_syntax_updated(doc_id);
+                if let Err(err) = self.update_and_render() {
+                    self.notify_error(err);
+                }
+            }
         }
         self.job_manager
             .update_job_state(&JobMessage::Finished(id, true));

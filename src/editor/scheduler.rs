@@ -188,6 +188,11 @@ impl<K: Copy + Eq + Hash> Debounced<K> {
         slot.job = Some(job);
     }
 
+    #[cfg(feature = "treesitter")]
+    pub(super) fn running(&self, key: K) -> Option<usize> {
+        self.slots.get(&key).and_then(|slot| slot.job)
+    }
+
     pub(super) fn finish(&mut self, key: K, job: usize) {
         let Some(slot) = self.slots.get_mut(&key) else {
             return;

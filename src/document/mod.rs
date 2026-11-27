@@ -268,6 +268,7 @@ impl Document {
     #[cfg(feature = "treesitter")]
     pub(crate) fn set_syntax(&mut self, syntax: Syntax) {
         self.syntax = Some(syntax);
+        self.reparse_syntax();
     }
 
     pub(crate) fn check_invariants(

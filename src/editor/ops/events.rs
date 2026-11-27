@@ -24,8 +24,9 @@ fn same_subject(a: &EventPayload, b: &EventPayload) -> bool {
         | (E::SearchChanged { buf: x }, E::SearchChanged { buf: y })
         | (E::TextYank { buf: x }, E::TextYank { buf: y })
         | (E::CursorMoved { buf: x, .. }, E::CursorMoved { buf: y, .. })
-        | (E::SelectionChanged { buf: x }, E::SelectionChanged { buf: y })
-        | (E::SyntaxUpdated { buf: x, .. }, E::SyntaxUpdated { buf: y, .. }) => x == y,
+        | (E::SelectionChanged { buf: x }, E::SelectionChanged { buf: y }) => x == y,
+        #[cfg(feature = "treesitter")]
+        (E::SyntaxUpdated { buf: x, .. }, E::SyntaxUpdated { buf: y, .. }) => x == y,
         #[cfg(feature = "lsp")]
         (E::LspDiagnosticsChanged { uri: x, .. }, E::LspDiagnosticsChanged { uri: y, .. }) => {
             x == y
@@ -47,17 +48,18 @@ fn same_subject(a: &EventPayload, b: &EventPayload) -> bool {
 }
 
 fn delivered_at_frame(payload: &EventPayload) -> bool {
-    matches!(
-        payload,
+    match payload {
         EventPayload::BufOpen { .. }
-            | EventPayload::TextChangedCoarse { .. }
-            | EventPayload::SearchChanged { .. }
-            | EventPayload::TextYank { .. }
-            | EventPayload::CursorMoved { .. }
-            | EventPayload::SelectionChanged { .. }
-            | EventPayload::SyntaxUpdated { .. }
-            | EventPayload::WindowResized { .. }
-    ) || is_lsp_frame_event(payload)
+        | EventPayload::TextChangedCoarse { .. }
+        | EventPayload::SearchChanged { .. }
+        | EventPayload::TextYank { .. }
+        | EventPayload::CursorMoved { .. }
+        | EventPayload::SelectionChanged { .. }
+        | EventPayload::WindowResized { .. } => true,
+        #[cfg(feature = "treesitter")]
+        EventPayload::SyntaxUpdated { .. } => true,
+        _ => is_lsp_frame_event(payload),
+    }
 }
 
 #[cfg(feature = "lsp")]
@@ -137,6 +139,7 @@ impl<T: TerminalBackend> Editor<T> {
         });
     }
 
+    #[cfg(feature = "treesitter")]
     pub(crate) fn raise_syntax_updated(&mut self, buf: crate::document::DocumentId) {
         let lang = self
             .document_manager

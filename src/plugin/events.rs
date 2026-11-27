@@ -132,6 +132,7 @@ pub(crate) enum EventPayload {
         buf: DocumentId,
     },
 
+    #[cfg(feature = "treesitter")]
     SyntaxUpdated {
         buf: DocumentId,
         lang: Option<String>,
@@ -256,6 +257,7 @@ impl EventPayload {
                     t.set("filetype", ft.as_str())?;
                 }
             }
+            #[cfg(feature = "treesitter")]
             Self::SyntaxUpdated { buf, lang } => {
                 t.set("buf", lua_int(buf.get()))?;
                 if let Some(lang) = lang {
@@ -358,6 +360,7 @@ impl EventPayload {
             Self::TextYank { .. } => "TextYank",
             Self::OptionSet { .. } => "OptionSet",
             Self::SelectionChanged { .. } => "SelectionChanged",
+            #[cfg(feature = "treesitter")]
             Self::SyntaxUpdated { .. } => "SyntaxUpdated",
             Self::CursorMoved { .. } => "CursorMoved",
             Self::CursorHold { .. } => "CursorHold",

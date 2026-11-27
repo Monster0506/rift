@@ -651,7 +651,6 @@ impl<T: TerminalBackend> Editor<T> {
             let _ = linked_doc.set_cursor(0, crate::document::ops::CursorCause::Programmatic);
         }
         self.follow_document_cursor(layout.preview_win_id);
-        self.spawn_syntax_parse_job(layout.preview_doc_id);
         let _ = self.update_and_render();
     }
 
@@ -768,7 +767,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         }
-        self.spawn_syntax_parse_job(linked_doc_id);
+        self.finish_history_syntax(linked_doc_id);
 
         self.close_split_panel();
     }
