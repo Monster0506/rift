@@ -45,7 +45,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
-        self.open_buffer(blame_doc, crate::document::manager::Placement::Focused);
+        self.open_buffer(blame_doc, crate::document::manager::Placement::Background);
 
         let focused = self.split_tree.focused_window_id();
         let blame_win_id = self

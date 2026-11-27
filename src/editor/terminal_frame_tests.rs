@@ -230,7 +230,7 @@ fn hidden_terminal_output_does_not_schedule_a_frame() {
     let mut editor = editor();
     let hidden_id = editor.document_manager.next_id();
     let hidden = crate::document::Document::new(hidden_id).unwrap();
-    editor.open_buffer(hidden, crate::document::manager::Placement::Focused);
+    editor.open_buffer(hidden, crate::document::manager::Placement::Background);
     let doc = editor.document_manager.get_document(hidden_id).unwrap();
     let handle = doc.handle();
     let kind = doc.buffer_kind_id();

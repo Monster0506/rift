@@ -150,10 +150,11 @@ impl<T: TerminalBackend> Editor<T> {
             unrendered_key_count: 0,
             terminal_frame_pending: false,
             last_frame_at: None,
+            entered_document: initial_doc_id,
         };
 
         crate::keymap::defaults::register_defaults(&mut editor.keymap);
-        editor.insert_buffer(startup_doc, crate::document::manager::Placement::Focused);
+        editor.insert_buffer(startup_doc, crate::document::manager::Placement::Background);
         editor.load_plugins();
         if effective_file_path.is_some() {
             editor.restore_startup_undo(initial_doc_id);

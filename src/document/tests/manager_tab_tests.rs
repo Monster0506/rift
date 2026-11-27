@@ -9,11 +9,11 @@ fn test_iter_documents_visits_all() {
     let mut manager = create_manager();
     manager.insert(
         Document::new(crate::document::DocumentId::new(1)).unwrap(),
-        crate::document::manager::Placement::Focused,
+        crate::document::manager::Placement::Background,
     );
     manager.insert(
         Document::new(crate::document::DocumentId::new(2)).unwrap(),
-        crate::document::manager::Placement::Focused,
+        crate::document::manager::Placement::Background,
     );
     manager.insert(
         Document::new_directory(
@@ -21,7 +21,7 @@ fn test_iter_documents_visits_all() {
             std::path::PathBuf::from("/tmp"),
         )
         .unwrap(),
-        crate::document::manager::Placement::Focused,
+        crate::document::manager::Placement::Background,
     );
 
     let ids: Vec<crate::document::DocumentId> = manager.iter_documents().map(|d| d.id).collect();
@@ -36,7 +36,7 @@ fn test_iter_documents_mut_allows_mutation() {
     let mut manager = create_manager();
     manager.insert(
         Document::new(crate::document::DocumentId::new(1)).unwrap(),
-        crate::document::manager::Placement::Focused,
+        crate::document::manager::Placement::Background,
     );
     for doc in manager.iter_documents_mut() {
         doc.set_read_only(true);
@@ -57,7 +57,7 @@ fn test_manager_initial_state() {
 fn test_add_document() {
     let mut manager = create_manager();
     let doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    manager.insert(doc, crate::document::manager::Placement::Focused);
+    manager.insert(doc, crate::document::manager::Placement::Background);
 
     assert_eq!(manager.tab_count(), 1);
     assert_eq!(manager.active_tab_index(), 0);
@@ -72,7 +72,7 @@ fn test_add_document() {
 fn test_remove_document() {
     let mut manager = create_manager();
     let doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
-    manager.insert(doc, crate::document::manager::Placement::Focused);
+    manager.insert(doc, crate::document::manager::Placement::Background);
 
     assert!(manager
         .remove_document(crate::document::DocumentId::new(1))
@@ -90,14 +90,15 @@ fn test_remove_specific_document() {
     let doc1 = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let doc2 = Document::new(crate::document::DocumentId::new(2)).unwrap();
 
-    manager.insert(doc1, crate::document::manager::Placement::Focused);
-    manager.insert(doc2, crate::document::manager::Placement::Focused);
+    manager.insert(doc1, crate::document::manager::Placement::Background);
+    let second = manager.insert(doc2, crate::document::manager::Placement::Background);
+    manager.switch_to_document(second.doc_id()).unwrap();
 
     assert_eq!(manager.tab_count(), 2);
     assert_eq!(
         manager.active_document_id(),
         Some(crate::document::DocumentId::new(2))
-    ); // doc2 is active (latest added)
+    );
 
     assert!(manager
         .remove_document(crate::document::DocumentId::new(1))
@@ -125,9 +126,10 @@ fn test_switching_tabs() {
     let doc2 = Document::new(crate::document::DocumentId::new(2)).unwrap();
     let doc3 = Document::new(crate::document::DocumentId::new(3)).unwrap();
 
-    manager.insert(doc1, crate::document::manager::Placement::Focused);
-    manager.insert(doc2, crate::document::manager::Placement::Focused);
-    manager.insert(doc3, crate::document::manager::Placement::Focused);
+    manager.insert(doc1, crate::document::manager::Placement::Background);
+    manager.insert(doc2, crate::document::manager::Placement::Background);
+    let third = manager.insert(doc3, crate::document::manager::Placement::Background);
+    manager.switch_to_document(third.doc_id()).unwrap();
 
     assert_eq!(
         manager.active_document_id(),
@@ -172,16 +174,17 @@ fn test_switching_tabs_from_private_document_lands_on_first_public_tab() {
     let mut manager = create_manager();
     manager.insert(
         Document::new(crate::document::DocumentId::new(1)).unwrap(),
-        crate::document::manager::Placement::Focused,
+        crate::document::manager::Placement::Background,
     );
     manager.insert(
         Document::new(crate::document::DocumentId::new(2)).unwrap(),
-        crate::document::manager::Placement::Focused,
+        crate::document::manager::Placement::Background,
     );
-    manager.insert(
+    let private = manager.insert(
         Document::new(crate::document::DocumentId::new(3)).unwrap(),
         crate::document::manager::Placement::Private,
     );
+    manager.switch_to_document(private.doc_id()).unwrap();
 
     assert_eq!(
         manager.active_document_id(),
@@ -197,10 +200,11 @@ fn test_switching_tabs_from_private_document_lands_on_first_public_tab() {
         "switch_next_tab from a private doc must land on the first public tab, not no-op"
     );
 
-    manager.insert(
+    let private = manager.insert(
         Document::new(crate::document::DocumentId::new(4)).unwrap(),
         crate::document::manager::Placement::Private,
     );
+    manager.switch_to_document(private.doc_id()).unwrap();
     manager
         .switch_to_document(manager.neighbor_tab(false).unwrap())
         .unwrap();

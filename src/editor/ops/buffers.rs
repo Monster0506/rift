@@ -8,7 +8,7 @@ use crate::term::TerminalBackend;
 use manager::{CreationReservation, NewDocument, Placement};
 
 impl<T: TerminalBackend> Editor<T> {
-    pub(super) fn select_buffer(&mut self, id: DocumentId) -> Result<(), RiftError> {
+    fn select_buffer(&mut self, id: DocumentId) -> Result<(), RiftError> {
         self.document_manager.switch_to_document(id)
     }
 
@@ -151,20 +151,68 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(crate) fn focus_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
-        let previous = self.split_tree.focused_window().document_id;
+        let window = self.split_tree.focused_window_id();
+        let previous = self.active_document_id();
+        self.focus_document_with(id, |editor| {
+            editor.show_focused_buffer(window, previous, id);
+        })
+    }
+
+    fn show_focused_buffer(
+        &mut self,
+        window: crate::split::window::WindowId,
+        previous: DocumentId,
+        id: DocumentId,
+    ) {
         if previous != id {
             let (top_line, left_col) = self.render_system.viewport.get_scroll();
             if let Some(doc) = self.document_manager.get_document_mut(previous) {
                 doc.save_view_state(top_line, left_col);
             }
-        }
-        self.select_buffer(id)?;
-        self.show_in_window(self.split_tree.focused_window_id(), id);
-        if previous != id {
+            self.show_in_window(window, id);
             self.restore_view_state();
         }
+    }
+
+    pub(super) fn focus_document_with(
+        &mut self,
+        id: DocumentId,
+        update_view: impl FnOnce(&mut Self),
+    ) -> Result<(), RiftError> {
+        if self.document_manager.get_document(id).is_some() {
+            self.leave_entered_document(id);
+        }
+        self.select_buffer(id)?;
+        update_view(self);
         self.sync_state_with_active_document();
+        if self.active_document_id() == id {
+            self.enter_document(id);
+        }
         Ok(())
+    }
+
+    fn leave_entered_document(&mut self, next: DocumentId) {
+        let left = self.entered_document;
+        if left == next || self.document_manager.get_document(left).is_none() {
+            return;
+        }
+        self.call_plugins(|editor| {
+            editor
+                .plugin_host
+                .dispatch(&crate::plugin::events::EditorEvent::BufLeave { buf: left });
+        });
+    }
+
+    fn enter_document(&mut self, id: DocumentId) {
+        if self.entered_document == id {
+            return;
+        }
+        self.entered_document = id;
+        self.call_plugins(|editor| {
+            editor
+                .plugin_host
+                .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: id });
+        });
     }
 
     pub(crate) fn close_buffer(
@@ -219,17 +267,45 @@ impl<T: TerminalBackend> Editor<T> {
             self.search_highlights_synced = None;
         }
 
-        if plan.needs_replacement() {
-            let replacement = crate::document::Document::new(self.document_manager.next_id())?;
-            self.open_buffer(replacement, crate::document::manager::Placement::Focused);
+        if self
+            .document_manager
+            .get_document_by_handle(handle)
+            .is_none()
+        {
+            return Ok(());
         }
-        self.document_manager.commit_removal(plan);
+        if self.active_document_id() == id {
+            let replacement = if let Some(next) = plan.replacement {
+                next
+            } else {
+                let doc = crate::document::Document::new(self.document_manager.next_id())?;
+                self.open_buffer(doc, Placement::Background)
+            };
+            let window = self.split_tree.focused_window_id();
+            self.focus_document_with(replacement, |editor| {
+                editor.show_focused_buffer(window, id, replacement);
+                editor.remove_buffer(plan, kind_id, id, replacement);
+            })
+        } else {
+            self.remove_buffer(plan, kind_id, id, self.active_document_id());
+            Ok(())
+        }
+    }
+
+    fn remove_buffer(
+        &mut self,
+        plan: manager::PreparedRemoval,
+        kind_id: crate::document::runtime::BufferKindId,
+        id: DocumentId,
+        replacement: DocumentId,
+    ) {
+        for window in self.split_tree.windows_for_document(id) {
+            self.show_in_window(window, replacement);
+        }
+        if self.document_manager.commit_removal(plan).is_none() {
+            return;
+        }
         self.buffer_kinds.decrement_open_count(kind_id);
-        if let Some(doc_id) = self.document_manager.active_document_id() {
-            for win_id in self.split_tree.windows_for_document(id) {
-                self.show_in_window(win_id, doc_id);
-            }
-        }
         self.sync_state_with_active_document();
 
         self.call_plugins(|editor| {
@@ -237,7 +313,5 @@ impl<T: TerminalBackend> Editor<T> {
                 .plugin_host
                 .dispatch(&crate::plugin::events::EditorEvent::BufClose { buf: id });
         });
-
-        Ok(())
     }
 }

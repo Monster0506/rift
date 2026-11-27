@@ -203,12 +203,16 @@ impl SplitTree {
     ///
     /// # Panics
     /// Panics only if no window remains to take focus, which the early return rules out.
+    pub(super) fn window_after_close(&self, id: WindowId) -> Option<WindowId> {
+        Self::sibling_first_leaf(&self.root, id)
+    }
+
     pub(super) fn close_window(&mut self, id: WindowId) -> bool {
-        if self.windows.len() <= 1 {
+        if self.windows.len() <= 1 || !self.windows.contains_key(&id) {
             return false;
         }
 
-        let promoted_focus = Self::sibling_first_leaf(&self.root, id);
+        let promoted_focus = self.window_after_close(id);
 
         self.windows.remove(&id);
         self.root = Self::remove_leaf(

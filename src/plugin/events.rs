@@ -137,6 +137,15 @@ pub(crate) enum EditorEvent {
         buf: crate::document::DocumentId,
     },
 
+    WinNew {
+        win: u64,
+        buf: DocumentId,
+    },
+    WinClosed {
+        win: u64,
+        buf: DocumentId,
+    },
+
     /// A window was repositioned via ^WH/J/K/L move.
     WinMoved {
         win: u64,
@@ -232,7 +241,10 @@ impl EditorEvent {
                 t.set("warning_count", lua_int(*warning_count))?;
             }
             Self::EditorStart | Self::EditorQuit => {}
-            Self::WinEnter { win, buf } | Self::WinLeave { win, buf } => {
+            Self::WinEnter { win, buf }
+            | Self::WinLeave { win, buf }
+            | Self::WinNew { win, buf }
+            | Self::WinClosed { win, buf } => {
                 t.set("win", lua_int(*win))?;
                 t.set("buf", lua_int(buf.get()))?;
             }
@@ -269,6 +281,8 @@ impl EditorEvent {
             Self::WindowResized { .. } => "WindowResized",
             Self::WinEnter { .. } => "WinEnter",
             Self::WinLeave { .. } => "WinLeave",
+            Self::WinNew { .. } => "WinNew",
+            Self::WinClosed { .. } => "WinClosed",
             Self::WinMoved { .. } => "WinMoved",
             Self::WinSwapped { .. } => "WinSwapped",
             Self::LspServerConnected { .. } => "LspServerConnected",

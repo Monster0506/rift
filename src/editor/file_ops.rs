@@ -505,12 +505,6 @@ impl<T: TerminalBackend> Editor<T> {
         if self.split_tree.window_count() > 1 {
             let focused_id = self.split_tree.focused_window_id();
             self.close_window(focused_id);
-            let new_doc_id = self.active_document_id();
-            self.call_plugins(|editor| {
-                editor
-                    .plugin_host
-                    .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: new_doc_id });
-            });
             if let Err(e) = self.force_full_redraw() {
                 self.notify_error(e);
             }
@@ -543,11 +537,6 @@ impl<T: TerminalBackend> Editor<T> {
             } else {
                 if let Some(new_doc_id) = self.document_manager.active_document_id() {
                     let _ = self.focus_document(new_doc_id);
-                    self.call_plugins(|editor| {
-                        editor.plugin_host.dispatch(
-                            &crate::plugin::events::EditorEvent::BufEnter { buf: new_doc_id },
-                        );
-                    });
                 }
                 self.sync_state_with_active_document();
                 if let Err(e) = self.force_full_redraw() {
@@ -566,22 +555,10 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn do_buffer_cycle(&mut self, forward: bool) {
-        let old_buf = self.active_document_id();
         if let Some(target) = self.document_manager.neighbor_tab(forward) {
             let _ = self.focus_document(target);
         }
         self.state.clear_command_line();
-        let new_buf = self.active_document_id();
-        if new_buf != old_buf {
-            self.call_plugins(|editor| {
-                editor
-                    .plugin_host
-                    .dispatch(&crate::plugin::events::EditorEvent::BufLeave { buf: old_buf });
-                editor
-                    .plugin_host
-                    .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: new_buf });
-            });
-        }
         if let Err(e) = self.force_full_redraw() {
             self.notify_error(e);
         }
@@ -609,14 +586,6 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
         self.state.clear_command_line();
-        self.call_plugins(|editor| {
-            editor
-                .plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::BufLeave { buf: old_buf });
-            editor
-                .plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: target });
-        });
         if let Err(e) = self.force_full_redraw() {
             self.notify_error(e);
         }

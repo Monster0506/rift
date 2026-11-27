@@ -10,7 +10,7 @@ fn test_remove_directory_buffer_without_dirty_check() {
     )
     .unwrap();
     doc.replace_content("some edit", crate::document::ops::ContentKind::Render);
-    manager.insert(doc, crate::document::manager::Placement::Focused);
+    manager.insert(doc, crate::document::manager::Placement::Background);
 
     assert!(manager
         .remove_document(crate::document::DocumentId::new(1))
@@ -25,7 +25,7 @@ fn test_remove_undotree_buffer_without_dirty_check() {
         crate::document::DocumentId::new(1),
     )
     .unwrap();
-    manager.insert(doc, crate::document::manager::Placement::Focused);
+    manager.insert(doc, crate::document::manager::Placement::Background);
     assert!(manager
         .remove_document(crate::document::DocumentId::new(2))
         .is_ok());
@@ -96,7 +96,7 @@ fn prepare_removal_normal_rejects_dirty_without_side_effects() {
     doc.edit(Edit::type_text("unsaved changes"), EditSource::User)
         .unwrap();
     let id = doc.id;
-    mgr.insert(doc, crate::document::manager::Placement::Focused);
+    mgr.insert(doc, crate::document::manager::Placement::Background);
 
     assert!(mgr.documents.get(&id).unwrap().is_dirty());
     let err = mgr.prepare_removal(id, RemovalIntent::Normal).unwrap_err();
@@ -115,7 +115,7 @@ fn prepare_removal_force_accepts_dirty() {
     doc.edit(Edit::type_text("unsaved changes"), EditSource::User)
         .unwrap();
     let id = doc.id;
-    mgr.insert(doc, crate::document::manager::Placement::Focused);
+    mgr.insert(doc, crate::document::manager::Placement::Background);
 
     let plan = mgr.prepare_removal(id, RemovalIntent::Force).unwrap();
     assert_eq!(plan.id(), id);
@@ -131,7 +131,7 @@ fn removing_the_last_tab_leaves_a_fresh_replacement_active() {
     let mut mgr = DocumentManager::new();
     let doc = Document::new(mgr.next_id()).unwrap();
     let id = doc.id;
-    mgr.insert(doc, crate::document::manager::Placement::Focused);
+    mgr.insert(doc, crate::document::manager::Placement::Background);
 
     assert!(mgr
         .prepare_removal(id, RemovalIntent::Normal)
@@ -155,7 +155,7 @@ fn creation_reservation_and_draft_commit() {
 
     assert!(mgr.get_document(res.id()).is_none());
 
-    let handle = mgr.insert(draft, crate::document::manager::Placement::Focused);
+    let handle = mgr.insert(draft, crate::document::manager::Placement::Background);
     assert_eq!(handle, res.handle());
     assert_eq!(mgr.active_document_id(), Some(res.id()));
     assert_eq!(mgr.active_document_handle(), Some(handle));

@@ -36,7 +36,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return None;
             }
         };
-        self.open_buffer(doc, crate::document::manager::Placement::Focused);
+        self.open_buffer(doc, crate::document::manager::Placement::Background);
         if let Err(e) = self.focus_document(id) {
             self.notify_error(e);
             return None;

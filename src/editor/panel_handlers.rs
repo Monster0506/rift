@@ -125,7 +125,6 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Focus the preview pane so the user can edit
         self.focus_window_showing(layout.preview_win_id, layout.preview_doc_id);
-        self.show_in_window(layout.preview_win_id, layout.preview_doc_id);
 
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
@@ -150,7 +149,6 @@ impl<T: TerminalBackend> Editor<T> {
         preview.set_read_only(false);
 
         self.focus_window_showing(layout.preview_win_id, layout.preview_doc_id);
-        self.show_in_window(layout.preview_win_id, layout.preview_doc_id);
 
         self.set_mode(crate::mode::Mode::Insert);
         self.sync_state_with_active_document();

@@ -831,14 +831,9 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
-        let id = self.open_buffer(draft, crate::document::manager::Placement::Focused);
+        let id = self.open_buffer(draft, crate::document::manager::Placement::Background);
         let _ = self.focus_document(id);
         let _ = self.force_full_redraw();
-        self.call_plugins(|editor| {
-            editor
-                .plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: id });
-        });
     }
 
     fn register_buffer_kind(&mut self, spec: BufferKindSpec, origin: Option<PluginGeneration>) {

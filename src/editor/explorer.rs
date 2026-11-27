@@ -159,7 +159,6 @@ impl<T: TerminalBackend> Editor<T> {
 
         let dir_win_id = self.split_tree.focused_window_id();
         let original_doc_id = self.split_tree.focused_window().document_id;
-        self.show_in_window(dir_win_id, dir_doc_id);
 
         let Some(preview_win_id) = self.split_window_beside(
             dir_win_id,
@@ -209,50 +208,28 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
 
-        match layout.kind {
-            PanelKind::FileExplorer | PanelKind::Clipboard => {
-                self.remove_window(layout.preview_win_id);
-                let _ = self.close_buffer(
-                    layout.preview_doc_id,
-                    crate::document::manager::RemovalIntent::Force,
-                );
-                self.show_in_window(layout.dir_win_id, layout.original_doc_id);
-                let _ = self.close_buffer(
-                    layout.dir_doc_id,
-                    crate::document::manager::RemovalIntent::Force,
-                );
-                self.focus_window_showing(layout.dir_win_id, layout.original_doc_id);
+        let (keep, close) = match layout.kind {
+            PanelKind::UndoTree | PanelKind::LocationList | PanelKind::Regions => {
+                (layout.preview_win_id, layout.dir_win_id)
             }
-            PanelKind::UndoTree => {
-                self.show_in_window(layout.preview_win_id, layout.original_doc_id);
-                self.remove_window(layout.dir_win_id);
-                let _ = self.close_buffer(
-                    layout.dir_doc_id,
-                    crate::document::manager::RemovalIntent::Force,
-                );
-                let _ = self.close_buffer(
-                    layout.preview_doc_id,
-                    crate::document::manager::RemovalIntent::Force,
-                );
-                self.focus_window_showing(layout.preview_win_id, layout.original_doc_id);
+            PanelKind::FileExplorer | PanelKind::Clipboard | PanelKind::BufferList => {
+                (layout.dir_win_id, layout.preview_win_id)
             }
-            PanelKind::LocationList | PanelKind::Regions => {
-                self.remove_window(layout.dir_win_id);
-                let _ = self.close_buffer(
-                    layout.dir_doc_id,
-                    crate::document::manager::RemovalIntent::Force,
-                );
-                self.focus_window_showing(layout.preview_win_id, layout.original_doc_id);
-            }
-            PanelKind::BufferList => {
-                self.remove_window(layout.preview_win_id);
-                self.show_in_window(layout.dir_win_id, layout.original_doc_id);
-                let _ = self.close_buffer(
-                    layout.dir_doc_id,
-                    crate::document::manager::RemovalIntent::Force,
-                );
-                self.focus_window_showing(layout.dir_win_id, layout.original_doc_id);
-            }
+        };
+        self.focus_window_showing(keep, layout.original_doc_id);
+        self.close_window(close);
+        let _ = self.close_buffer(
+            layout.dir_doc_id,
+            crate::document::manager::RemovalIntent::Force,
+        );
+        if matches!(
+            layout.kind,
+            PanelKind::FileExplorer | PanelKind::Clipboard | PanelKind::UndoTree
+        ) {
+            let _ = self.close_buffer(
+                layout.preview_doc_id,
+                crate::document::manager::RemovalIntent::Force,
+            );
         }
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
@@ -276,7 +253,7 @@ impl<T: TerminalBackend> Editor<T> {
             crate::document::ops::CursorCause::User,
         );
 
-        self.open_buffer(doc, crate::document::manager::Placement::Focused);
+        self.open_buffer(doc, crate::document::manager::Placement::Background);
         if let Err(e) = self.focus_document(id) {
             self.notify_error(e);
             return;
@@ -313,7 +290,6 @@ impl<T: TerminalBackend> Editor<T> {
 
         let index_win_id = self.split_tree.focused_window_id();
         let original_doc_id = self.split_tree.focused_window().document_id;
-        self.show_in_window(index_win_id, index_doc_id);
 
         let Some(preview_win_id) = self.split_window_beside(
             index_win_id,
@@ -371,7 +347,6 @@ impl<T: TerminalBackend> Editor<T> {
         let dir_win_id = self.split_tree.focused_window_id();
         let original_doc_id = self.split_tree.focused_window().document_id;
         let preview_target = infos.first().map_or(original_doc_id, |i| i.id);
-        self.show_in_window(dir_win_id, dir_doc_id);
 
         let Some(preview_win_id) = self.split_window_beside(
             dir_win_id,
@@ -611,7 +586,6 @@ impl<T: TerminalBackend> Editor<T> {
 
         let dir_win_id = self.split_tree.focused_window_id();
         let original_doc_id = self.split_tree.focused_window().document_id;
-        self.show_in_window(dir_win_id, ut_id);
 
         let Some(preview_win_id) = self.split_window_beside(
             dir_win_id,

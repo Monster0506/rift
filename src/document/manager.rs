@@ -90,7 +90,7 @@ impl DocumentDraft {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PreparedRemoval {
     id: DocumentId,
-    needs_replacement: bool,
+    pub(super) replacement: Option<DocumentId>,
 }
 
 impl PreparedRemoval {
@@ -99,14 +99,14 @@ impl PreparedRemoval {
         self.id
     }
 
-    pub(crate) const fn needs_replacement(&self) -> bool {
-        self.needs_replacement
+    #[cfg(test)]
+    const fn needs_replacement(&self) -> bool {
+        self.replacement.is_none()
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Placement {
-    Focused,
     Background,
     Private,
 }
@@ -236,13 +236,8 @@ impl DocumentManager {
 
         self.documents.insert(id, document);
         self.tab_order.push(id);
-        match placement {
-            Placement::Focused => self.current_tab = self.tab_order.len() - 1,
-            Placement::Background => {}
-            Placement::Private => {
-                self.current_tab = self.tab_order.len() - 1;
-                self.private_document_ids.insert(id);
-            }
+        if placement == Placement::Private {
+            self.private_document_ids.insert(id);
         }
         handle
     }
@@ -457,13 +452,13 @@ impl DocumentManager {
             )
         })?;
 
-        if !self.tab_order.contains(&id) {
+        let Some(position) = self.tab_order.iter().position(|&tab| tab == id) else {
             return Err(RiftError::new(
                 ErrorType::Internal,
                 crate::constants::errors::INTERNAL_ERROR,
                 format!("Document {id} in storage but not in tab order"),
             ));
-        }
+        };
 
         if intent == RemovalIntent::Normal
             && doc.policies().close == crate::document::runtime::ClosePolicy::ConfirmDirty
@@ -478,7 +473,11 @@ impl DocumentManager {
 
         Ok(PreparedRemoval {
             id,
-            needs_replacement: self.tab_order.len() == 1,
+            replacement: self
+                .tab_order
+                .get(position + 1)
+                .or_else(|| position.checked_sub(1).and_then(|p| self.tab_order.get(p)))
+                .copied(),
         })
     }
 
@@ -515,7 +514,7 @@ impl DocumentManager {
         let plan = self.prepare_removal(id, RemovalIntent::Normal)?;
         if plan.needs_replacement() {
             let replacement = Document::new(self.next_id())?;
-            self.insert(replacement, Placement::Focused);
+            self.insert(replacement, Placement::Background);
         }
         self.commit_removal(plan);
         Ok(())

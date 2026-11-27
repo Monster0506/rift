@@ -17,7 +17,7 @@ fn save_does_not_write_another_buffers_content_when_a_bufsavepre_hook_closes_the
         "doc2".to_string(),
         &["doc two content".to_string()],
     );
-    editor.open_buffer(doc2, crate::document::manager::Placement::Focused);
+    editor.open_buffer(doc2, crate::document::manager::Placement::Background);
     editor.focus_document(doc1_id).unwrap();
     assert_eq!(editor.active_document().id, doc1_id);
 

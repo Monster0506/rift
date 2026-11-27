@@ -180,7 +180,7 @@ impl<T: TerminalBackend> Editor<T> {
         let mut doc = crate::document::Document::new_scratch(id, title, lines);
         doc.set_handle(reservation.handle());
         let draft = crate::document::manager::DocumentDraft::new(reservation, doc)?;
-        self.open_buffer(draft, crate::document::manager::Placement::Focused);
+        self.open_buffer(draft, crate::document::manager::Placement::Background);
         self.focus_document(id)?;
         let _ = self.force_full_redraw();
         Ok(id)
@@ -215,7 +215,7 @@ impl<T: TerminalBackend> Editor<T> {
             shell_cmd,
         )?;
 
-        self.open_buffer(doc, crate::document::manager::Placement::Focused);
+        self.open_buffer(doc, crate::document::manager::Placement::Background);
 
         self.focus_document(id)?;
         let _ = self.force_full_redraw();

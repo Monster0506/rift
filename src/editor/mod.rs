@@ -214,6 +214,7 @@ pub struct Editor<T: TerminalBackend> {
     unrendered_key_count: usize,
     terminal_frame_pending: bool,
     last_frame_at: Option<crate::time::Instant>,
+    entered_document: DocumentId,
 }
 
 struct DisplayMapCacheEntry {

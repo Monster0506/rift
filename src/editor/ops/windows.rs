@@ -40,13 +40,18 @@ impl<T: TerminalBackend> Editor<T> {
             .term
             .get_size()
             .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
-        self.split_tree.split(
+        let opened = self.split_tree.split(
             direction,
             win,
             doc_id,
             size.rows as usize,
             size.cols as usize,
-        )
+        )?;
+        self.dispatch_window_event(&EditorEvent::WinNew {
+            win: opened.get(),
+            buf: doc_id,
+        });
+        Some(opened)
     }
 
     pub(crate) fn split_window_before(
@@ -60,38 +65,69 @@ impl<T: TerminalBackend> Editor<T> {
             .term
             .get_size()
             .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
-        self.split_tree.split_before_with_ratio(
+        let opened = self.split_tree.split_before_with_ratio(
             direction,
             win,
             doc_id,
             size.rows as usize,
             size.cols as usize,
             ratio,
-        )
-    }
-
-    pub(crate) fn remove_window(&mut self, id: WindowId) -> bool {
-        self.split_tree.close_window(id)
-    }
-
-    fn adopt_focused_window(&mut self) -> DocumentId {
-        let window = self.split_tree.focused_window();
-        let (doc_id, cursor) = (window.document_id, window.cursor_position);
-        let _ = self.select_buffer(doc_id);
-        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-            let _ = doc.set_cursor(cursor, crate::document::ops::CursorCause::User);
-        }
-        self.sync_state_with_active_document();
-        doc_id
+        )?;
+        self.dispatch_window_event(&EditorEvent::WinNew {
+            win: opened.get(),
+            buf: doc_id,
+        });
+        Some(opened)
     }
 
     pub(crate) fn close_window(&mut self, id: WindowId) -> bool {
-        if !self.remove_window(id) {
+        let Some(buf) = self
+            .split_tree
+            .get_window(id)
+            .map(|window| window.document_id)
+        else {
+            return false;
+        };
+        if id == self.split_tree.focused_window_id() {
+            let Some(next_id) = self.split_tree.window_after_close(id) else {
+                return false;
+            };
+            let next_buf = self
+                .split_tree
+                .get_window(next_id)
+                .expect("window in layout")
+                .document_id;
+            self.dispatch_window_event(&EditorEvent::WinLeave { win: id.get(), buf });
+            if self
+                .focus_document_with(next_buf, |editor| {
+                    editor.split_tree.close_window(id);
+                    editor.restore_window_cursor(next_buf);
+                })
+                .is_err()
+            {
+                return false;
+            }
+            self.dispatch_window_event(&EditorEvent::WinEnter {
+                win: next_id.get(),
+                buf: next_buf,
+            });
+        } else if !self.split_tree.close_window(id) {
             return false;
         }
-        self.adopt_focused_window();
         self.render_system.viewport.mark_needs_full_redraw();
+        self.dispatch_window_event(&EditorEvent::WinClosed { win: id.get(), buf });
         true
+    }
+
+    fn restore_window_cursor(&mut self, buf: DocumentId) {
+        let cursor = self.split_tree.focused_window().cursor_position;
+        if let Some(doc) = self.document_manager.get_document_mut(buf) {
+            let _ = doc.set_cursor(cursor, crate::document::ops::CursorCause::User);
+        }
+    }
+
+    fn dispatch_window_event(&mut self, event: &EditorEvent) {
+        self.call_plugins(|editor| editor.plugin_host.dispatch(event));
     }
 
     pub(crate) fn move_window(&mut self, direction: Direction) -> bool {
@@ -114,10 +150,23 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(prev_id) = self.split_tree.previous_window() else {
             return false;
         };
-        if !self.split_tree.exchange_windows(focused_id, prev_id) {
+        let Some(next_buf) = self
+            .split_tree
+            .get_window(prev_id)
+            .map(|window| window.document_id)
+        else {
+            return false;
+        };
+        if focused_id == prev_id
+            || self
+                .focus_document_with(next_buf, |editor| {
+                    editor.split_tree.exchange_windows(focused_id, prev_id);
+                    editor.restore_window_cursor(next_buf);
+                })
+                .is_err()
+        {
             return false;
         }
-        self.adopt_focused_window();
         self.render_system.viewport.mark_needs_full_redraw();
         self.call_plugins(|editor| {
             editor.plugin_host.dispatch(&EditorEvent::WinSwapped {
@@ -154,35 +203,52 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(crate) fn focus_window(&mut self, target_id: WindowId) {
-        let old_win_id = self.split_tree.focused_window_id();
-        let old_doc_id = self.split_tree.focused_window().document_id;
-        if let Some(doc) = self.document_manager.get_document(old_doc_id) {
-            let cursor = doc.buffer().cursor();
-            self.set_window_cursor(old_win_id, cursor);
+    pub(crate) fn focus_window(&mut self, target: WindowId) {
+        if let Some(window) = self.split_tree.get_window(target) {
+            self.focus_window_showing(target, window.document_id);
         }
-
-        self.call_plugins(|editor| {
-            editor.plugin_host.dispatch(&EditorEvent::WinLeave {
-                win: old_win_id.get(),
-                buf: old_doc_id,
-            });
-        });
-
-        self.split_tree.set_focus(target_id);
-        let new_doc_id = self.adopt_focused_window();
-
-        self.call_plugins(|editor| {
-            editor.plugin_host.dispatch(&EditorEvent::WinEnter {
-                win: target_id.get(),
-                buf: new_doc_id,
-            });
-        });
     }
 
-    pub(crate) fn focus_window_showing(&mut self, target_id: WindowId, doc_id: DocumentId) {
-        self.split_tree.set_focus(target_id);
-        let _ = self.select_buffer(doc_id);
+    pub(crate) fn focus_window_showing(&mut self, target: WindowId, buf: DocumentId) {
+        let Some(target_buf) = self
+            .split_tree
+            .get_window(target)
+            .map(|window| window.document_id)
+        else {
+            return;
+        };
+        let old_win = self.split_tree.focused_window_id();
+        let old_buf = self.active_document_id();
+        if old_win == target {
+            if old_buf != buf {
+                let _ = self.focus_document(buf);
+            }
+            return;
+        }
+        if let Some(doc) = self.document_manager.get_document(old_buf) {
+            self.set_window_cursor(old_win, doc.buffer().cursor());
+        }
+        self.dispatch_window_event(&EditorEvent::WinLeave {
+            win: old_win.get(),
+            buf: old_buf,
+        });
+        if self
+            .focus_document_with(buf, |editor| {
+                editor.split_tree.set_focus(target);
+                if target_buf == buf {
+                    editor.restore_window_cursor(buf);
+                } else {
+                    editor.show_in_window(target, buf);
+                    editor.restore_view_state();
+                }
+            })
+            .is_ok()
+        {
+            self.dispatch_window_event(&EditorEvent::WinEnter {
+                win: target.get(),
+                buf,
+            });
+        }
     }
 
     pub(crate) fn set_window_cursor(&mut self, id: WindowId, cursor: usize) {
