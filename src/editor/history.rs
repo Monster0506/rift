@@ -28,7 +28,7 @@ impl<T: TerminalBackend> Editor<T> {
         step: fn(&mut crate::document::Document) -> bool,
         limit_message: &'static str,
     ) -> bool {
-        if self.active_doc_is(crate::document::Document::is_read_only) {
+        if self.active_document().check_edit_access().is_err() {
             return false;
         }
         if self.current_mode.is_visual() {

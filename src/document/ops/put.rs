@@ -25,7 +25,7 @@ pub(crate) enum PutAt {
 
 impl Document {
     pub(crate) fn put(&mut self, clip: &Clip, at: PutAt) -> bool {
-        if self.is_read_only() {
+        if self.check_edit_access().is_err() {
             return false;
         }
         match at {

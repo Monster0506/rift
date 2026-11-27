@@ -171,7 +171,7 @@ impl<T: TerminalBackend> Editor<T> {
         if !was_visual && !has_regions {
             return false;
         }
-        if self.active_doc_is(crate::document::Document::is_read_only) {
+        if self.active_document().check_edit_access().is_err() {
             return true;
         }
 

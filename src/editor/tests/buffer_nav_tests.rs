@@ -498,10 +498,10 @@ fn test_buffer_list_j_snaps_between_entries_and_updates_preview() {
         .unwrap()
         .buffer()
         .to_string();
-    editor
+    assert!(editor
         .active_document()
         .edit(Edit::type_text('z'), EditSource::User)
-        .unwrap();
+        .is_err());
     let after = editor
         .document_manager
         .get_document(layout.dir_doc_id)

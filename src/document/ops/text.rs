@@ -161,6 +161,28 @@ fn splice(buffer: &mut TextBuffer, start: usize, end: usize, text: &[Character])
     let _ = buffer.set_cursor((start + text.len()).min(buffer.len()));
 }
 
+pub(crate) struct ReadOnlyEdit;
+
+impl ReadOnlyEdit {
+    fn check(read_only: bool) -> Result<(), Self> {
+        if read_only {
+            Err(Self)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl From<ReadOnlyEdit> for RiftError {
+    fn from(_: ReadOnlyEdit) -> Self {
+        Self::warning(
+            crate::error::ErrorType::Execution,
+            "READ_ONLY",
+            "Cannot make changes: buffer is read-only",
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub(crate) struct EditPolicy {
     read_only: bool,
@@ -170,9 +192,6 @@ pub(crate) struct EditPolicy {
 
 impl EditPolicy {
     fn prepare(self, buffer: &TextBuffer, edit: Edit) -> Option<Resolved> {
-        if self.read_only {
-            return None;
-        }
         let char_delete = matches!(edit, Edit::DeleteBackward | Edit::DeleteForward);
         let resolved = edit.resolve(buffer)?;
         let Resolved {
@@ -202,6 +221,9 @@ impl EditPolicy {
 
     #[cfg(feature = "plugins")]
     pub(super) fn project(self, buffer: &mut TextBuffer, edit: Edit) -> bool {
+        if ReadOnlyEdit::check(self.read_only).is_err() {
+            return false;
+        }
         let Some(Resolved { start, end, text }) = self.prepare(buffer, edit) else {
             return false;
         };
@@ -287,6 +309,10 @@ impl Document {
         self.reparse_syntax();
     }
 
+    pub(crate) fn check_edit_access(&self) -> Result<(), ReadOnlyEdit> {
+        ReadOnlyEdit::check(self.is_read_only())
+    }
+
     pub(crate) fn edit_policy(&self) -> EditPolicy {
         EditPolicy {
             read_only: self.is_read_only(),
@@ -300,7 +326,9 @@ impl Document {
     }
 
     pub(crate) fn edit(&mut self, edit: Edit, source: EditSource) -> Result<bool, RiftError> {
-        let Some(resolved) = self.edit_policy().prepare(&self.buffer, edit) else {
+        let policy = self.edit_policy();
+        ReadOnlyEdit::check(policy.read_only)?;
+        let Some(resolved) = policy.prepare(&self.buffer, edit) else {
             return Ok(false);
         };
         let applied = self.apply_resolved(resolved, Origin::Source(source));

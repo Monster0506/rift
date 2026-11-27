@@ -5,18 +5,13 @@ use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn execute_buffer_command(&mut self, command: crate::command::Command) -> bool {
-        if command.is_mutating()
-            && self
-                .document_manager
-                .get_document(self.active_document_id())
-                .is_some_and(super::super::document::Document::is_read_only)
-        {
-            return false;
-        }
         let current_mode = self.current_mode;
         let is_mutating = command.is_mutating();
 
         if is_mutating && current_mode.is_visual() {
+            if self.active_document().check_edit_access().is_err() {
+                return false;
+            }
             self.set_mode(Mode::Normal);
         }
 
@@ -39,11 +34,7 @@ impl<T: TerminalBackend> Editor<T> {
             let expand_tabs = doc.options().expand_tabs();
             let tab_width = doc.options().tab_width();
 
-            if is_mutating {
-                doc.clear_selection();
-            }
-
-            let _ = execute_command(
+            if execute_command(
                 command,
                 doc,
                 expand_tabs,
@@ -51,7 +42,11 @@ impl<T: TerminalBackend> Editor<T> {
                 viewport_height,
                 self.state.last_search_query.as_deref(),
                 display_map.as_mut().map(std::sync::Arc::make_mut),
-            );
+            )
+            .is_err()
+            {
+                return false;
+            }
 
             let records_dot = match self.current_mode {
                 Mode::Insert => is_mutating,

@@ -39,9 +39,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.pending_operator = None;
         self.pending_operator_count = 0;
         self.pending_count = 0;
-        if op != crate::action::OperatorType::Yank
-            && self.active_doc_is(crate::document::Document::is_read_only)
-        {
+        if !self.can_execute_operator(op) {
             self.set_mode(Mode::Normal);
             return false;
         }
@@ -71,11 +69,6 @@ impl<T: TerminalBackend> Editor<T> {
                 self.execute_delete_operator(motion, count, motion_range.zip(cut))
             }
             crate::action::OperatorType::Change => {
-                if self.active_doc_is(super::super::document::Document::is_read_only) {
-                    self.reject_read_only_edit();
-                    self.set_mode(Mode::Normal);
-                    return false;
-                }
                 if !has_range {
                     if let Motion::TextObject(spec) = motion {
                         let insert_pos = self
@@ -122,6 +115,16 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Normal);
                 true
             }
+        }
+    }
+
+    fn can_execute_operator(&mut self, op: crate::action::OperatorType) -> bool {
+        match op {
+            crate::action::OperatorType::Change => self.can_enter_edit_mode(),
+            crate::action::OperatorType::Delete => {
+                self.active_document().check_edit_access().is_ok()
+            }
+            crate::action::OperatorType::Yank => true,
         }
     }
 
@@ -215,9 +218,7 @@ impl<T: TerminalBackend> Editor<T> {
             .saturating_mul(self.pending_count.max(1));
         self.pending_operator_count = 0;
         self.pending_count = 0;
-        if op != crate::action::OperatorType::Yank
-            && self.active_doc_is(crate::document::Document::is_read_only)
-        {
+        if !self.can_execute_operator(op) {
             self.set_mode(Mode::Normal);
             return false;
         }
@@ -285,11 +286,6 @@ impl<T: TerminalBackend> Editor<T> {
                 result
             }
             crate::action::OperatorType::Change => {
-                if self.active_doc_is(super::super::document::Document::is_read_only) {
-                    self.reject_read_only_edit();
-                    self.set_mode(Mode::Normal);
-                    return false;
-                }
                 let command = crate::command::Command::ChangeLine(count);
                 self.active_document()
                     .start_edit_session(EditSession::Change);

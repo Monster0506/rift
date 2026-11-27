@@ -223,7 +223,7 @@ impl<T: TerminalBackend> Editor<T> {
     where
         F: FnMut(&mut crate::document::Document, crate::selection::Region) -> usize,
     {
-        if self.active_doc_is(Document::is_read_only) {
+        if !self.can_enter_edit_mode() {
             return false;
         }
         let anchors: Vec<usize> = {
@@ -308,8 +308,11 @@ impl<T: TerminalBackend> Editor<T> {
                 .document_manager
                 .get_document(self.active_document_id())
                 .is_some_and(|d| !d.selections().is_empty());
-        if !has_candidate || self.active_doc_is(super::super::document::Document::is_read_only) {
+        if !has_candidate {
             return false;
+        }
+        if !self.can_enter_edit_mode() {
+            return true;
         }
 
         self.bank_visual_selection();
@@ -372,7 +375,7 @@ impl<T: TerminalBackend> Editor<T> {
         if is_empty {
             return false;
         }
-        if op != OperatorType::Yank && self.active_doc_is(Document::is_read_only) {
+        if op != OperatorType::Yank && self.active_document().check_edit_access().is_err() {
             return true;
         }
 

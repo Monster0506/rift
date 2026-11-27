@@ -97,18 +97,20 @@ impl<T: TerminalBackend> Editor<T> {
 
         let mut changes_made = 0;
         let mut errors = Vec::new();
-        document.edit_group(
-            format!("Substitute: {pattern} -> {replacement}"),
-            |document| {
-                for m in matches.into_iter().rev() {
-                    match replace_match(document, m.range, replacement) {
-                        Ok(true) => changes_made += 1,
-                        Ok(false) => {}
-                        Err(error) => errors.push(error),
+        if document.check_edit_access().is_ok() {
+            document.edit_group(
+                format!("Substitute: {pattern} -> {replacement}"),
+                |document| {
+                    for m in matches.into_iter().rev() {
+                        match replace_match(document, m.range, replacement) {
+                            Ok(true) => changes_made += 1,
+                            Ok(false) => {}
+                            Err(error) => errors.push(error),
+                        }
                     }
-                }
-            },
-        );
+                },
+            );
+        }
         if has_selection {
             document.clear_selection();
         }

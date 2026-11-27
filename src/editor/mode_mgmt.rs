@@ -20,16 +20,21 @@ const fn enters_edit_mode(command: &Command) -> bool {
 }
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn handle_mode_management(&mut self, command: crate::command::Command) {
-        if enters_edit_mode(&command)
-            && self.active_doc_is(super::super::document::Document::is_read_only)
-        {
-            self.reject_read_only_edit();
+        if enters_edit_mode(&command) && !self.can_enter_edit_mode() {
             return;
         }
         self.handle_mode_switch(command);
         self.handle_change_command(command);
         self.handle_search_completion(command);
         self.handle_command_line_edit(command);
+    }
+
+    pub(super) fn can_enter_edit_mode(&mut self) -> bool {
+        if let Err(error) = self.active_document().check_edit_access() {
+            self.notify_error(error.into());
+            return false;
+        }
+        true
     }
 
     fn handle_mode_switch(&mut self, command: Command) {

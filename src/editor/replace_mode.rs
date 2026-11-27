@@ -36,9 +36,6 @@ impl<T: TerminalBackend> Editor<T> {
         else {
             return;
         };
-        if doc.is_read_only() {
-            return;
-        }
 
         let mut entries = Vec::new();
         doc.edit_group("Paste", |doc| {

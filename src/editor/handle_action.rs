@@ -347,7 +347,7 @@ impl<T: TerminalBackend> Editor<T> {
             && self
                 .document_manager
                 .get_document(self.active_document_id())
-                .is_some_and(|doc| !doc.is_read_only());
+                .is_some_and(|doc| doc.check_edit_access().is_ok());
         if self.current_mode.is_visual() {
             self.set_mode(Mode::Normal);
         }
@@ -543,7 +543,7 @@ impl<T: TerminalBackend> Editor<T> {
         else {
             return false;
         };
-        if doc.is_read_only() {
+        if doc.check_edit_access().is_err() {
             return false;
         }
         let clip = self
@@ -577,14 +577,16 @@ impl<T: TerminalBackend> Editor<T> {
                 },
             )
         });
-        doc.put(
+        if !doc.put(
             &clip,
             PutAt::Selection {
                 anchor,
                 kind,
                 count,
             },
-        );
+        ) {
+            return false;
+        }
 
         if let Some(selected) = selected {
             self.yank(selected);
@@ -982,7 +984,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return true;
             }
         }
-        if self.active_doc_is(crate::document::Document::is_read_only) {
+        if self.active_document().check_edit_access().is_err() {
             return false;
         }
         let count = if self.pending_count > 0 {

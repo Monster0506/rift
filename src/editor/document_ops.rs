@@ -25,13 +25,6 @@ impl<T: TerminalBackend> Editor<T> {
             .is_some_and(pred)
     }
 
-    pub(super) fn reject_read_only_edit(&mut self) {
-        self.notify(
-            crate::notification::NotificationType::Warning,
-            "Cannot make changes: buffer is read-only".to_string(),
-        );
-    }
-
     fn resolve_link_path(&self, path_str: String) -> String {
         let base = self
             .document_manager

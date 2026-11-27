@@ -237,6 +237,10 @@ pub(crate) fn execute_command(
     last_search_query: Option<&str>,
     display_map: Option<&mut DisplayMap>,
 ) -> Result<(), RiftError> {
+    if cmd.is_mutating() {
+        doc.check_edit_access()?;
+        doc.clear_selection();
+    }
     match cmd {
         Command::MoveBy(motion, count) => {
             move_cmd(

@@ -2,6 +2,21 @@ use super::*;
 use crate::document::ops::{ContentKind, Edit, EditSource};
 
 #[test]
+fn a_read_only_edit_is_distinguishable_from_a_boundary_no_op() {
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
+    assert!(!doc.edit(Edit::DeleteBackward, EditSource::User).unwrap());
+    doc.set_read_only(true);
+
+    let error = doc
+        .edit(Edit::type_text('x'), EditSource::User)
+        .unwrap_err();
+
+    assert_eq!(error.code, "READ_ONLY");
+    assert!(doc.buffer().is_empty());
+    assert!(!doc.is_dirty());
+}
+
+#[test]
 fn an_edit_group_that_returns_an_error_does_not_absorb_the_next_edit() {
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let failed = doc.edit_group("Grouped edit", |doc| {
