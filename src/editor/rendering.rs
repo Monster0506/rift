@@ -76,10 +76,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let doc_id = self.active_document_id();
-        if let Some(doc) = self.document_manager.get_document(doc_id) {
-            self.set_window_cursor(self.split_tree.focused_window_id(), doc.buffer().cursor());
-        }
-
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             doc.recompute_directory_highlights();
         }
@@ -362,6 +358,9 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn cursor_screen_row(&mut self) -> usize {
         let focused_id = self.split_tree.focused_window_id();
         let doc_id = self.active_document_id();
+        let Some(doc) = self.document_manager.get_document(doc_id) else {
+            return 0;
+        };
         let (row_off, top_line, top_visual, content_width, rows) =
             if self.split_tree.window_count() > 1 {
                 let Ok(size) = self.term.get_size() else {
@@ -373,9 +372,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let Some(layout) = layouts.iter().find(|l| l.window_id == focused_id) else {
                     return 0;
                 };
-                let Some((_, content_width)) = self.window_map_key(doc_id, layout.cols) else {
-                    return 0;
-                };
+                let content_width = Self::window_content_width(doc, layout.cols);
                 let vp = &self.split_tree.focused_window().viewport;
                 (
                     layout.row,
@@ -395,9 +392,6 @@ impl<T: TerminalBackend> Editor<T> {
                     vp.visible_rows(),
                 )
             };
-        let Some(doc) = self.document_manager.get_document(doc_id) else {
-            return 0;
-        };
         let cursor = doc.buffer().cursor();
         let line = doc.buffer().line_index.get_line_at(cursor);
         let row = self
@@ -510,14 +504,9 @@ impl<T: TerminalBackend> Editor<T> {
         map
     }
 
-    fn window_map_key(
-        &self,
-        doc_id: crate::document::DocumentId,
-        cols: usize,
-    ) -> Option<(crate::document::DocumentId, usize)> {
-        let doc = self.document_manager.get_document(doc_id)?;
-        let gutter_width = Self::line_number_gutter_width(doc);
-        Some((doc_id, cols.saturating_sub(gutter_width).max(1)))
+    fn window_content_width(doc: &crate::document::Document, cols: usize) -> usize {
+        cols.saturating_sub(Self::line_number_gutter_width(doc))
+            .max(1)
     }
 
     fn render_clipboard_tooltip(&mut self) {
@@ -854,8 +843,7 @@ impl<T: TerminalBackend> Editor<T> {
                     });
                 if let Some(blame_doc) = self.document_manager.get_document_mut(blame_doc_id) {
                     blame_doc.set_git_blame_wrap_rows(wrap_key, wrap_rows);
-                    let cursor = blame_doc.buffer().cursor();
-                    self.set_window_cursor(blame_window_id, cursor);
+                    self.follow_document_cursor(blame_window_id);
                 }
             }
         }
@@ -865,21 +853,13 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(window) = self.split_tree.get_window(layout.window_id) else {
             return;
         };
-        let cursor_pos = window.cursor_position;
         let doc_id = window.document_id;
 
-        let (
-            _tab_width,
-            cursor_line,
-            _cursor_col,
-            total_lines,
-            viewport_col,
-            gutter_width,
-            terminal_resize,
-        ) = {
+        let (cursor_pos, cursor_line, total_lines, viewport_col, gutter_width, terminal_resize) = {
             let Some(doc) = self.document_manager.get_document(doc_id) else {
                 return;
             };
+            let cursor_pos = window.view_cursor(doc.buffer());
             let tab_width = doc.options().tab_width();
             let cursor_line = doc.buffer().line_index.get_line_at(cursor_pos);
             let line_start = doc.buffer().line_index.get_start(cursor_line).unwrap_or(0);
@@ -907,9 +887,8 @@ impl<T: TerminalBackend> Editor<T> {
                 None
             };
             (
-                tab_width,
+                cursor_pos,
                 cursor_line,
-                cursor_col,
                 total_lines,
                 viewport_col,
                 gutter_width,
@@ -957,17 +936,18 @@ impl<T: TerminalBackend> Editor<T> {
                 .iter()
                 .find(|layout| layout.window_id == window_id)?;
             let window = self.split_tree.get_window(window_id)?;
+            let doc = self.document_manager.get_document(window.document_id)?;
             Some((
-                layout.cols,
+                Self::window_content_width(doc, layout.cols),
                 layout.rows,
                 window.document_id,
-                window.cursor_position,
+                window.view_cursor(doc.buffer()),
                 window.viewport.top_line(),
                 window.viewport.top_visual_row(),
             ))
         };
         let Some((
-            focused_cols,
+            focused_width,
             focused_rows,
             focused_doc_id,
             focused_cursor,
@@ -978,7 +958,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
         let Some((
-            partner_cols,
+            partner_width,
             partner_rows,
             partner_doc_id,
             partner_cursor,
@@ -989,11 +969,12 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
 
-        let focused_map =
-            self.window_map_key(focused_doc_id, focused_cols)
-                .and_then(|(doc_id, width)| {
-                    self.resolve_display_map_cached(doc_id, width, focused_cursor, focused_rows + 1)
-                });
+        let focused_map = self.resolve_display_map_cached(
+            focused_doc_id,
+            focused_width,
+            focused_cursor,
+            focused_rows + 1,
+        );
         let top_line = if soft_wrap {
             focused_map
                 .as_ref()
@@ -1005,11 +986,12 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             focused_top_line
         };
-        let partner_map =
-            self.window_map_key(partner_doc_id, partner_cols)
-                .and_then(|(doc_id, width)| {
-                    self.resolve_display_map_cached(doc_id, width, partner_cursor, partner_rows + 1)
-                });
+        let partner_map = self.resolve_display_map_cached(
+            partner_doc_id,
+            partner_width,
+            partner_cursor,
+            partner_rows + 1,
+        );
         let partner_top_visual = if soft_wrap {
             partner_map
                 .as_ref()
@@ -1043,6 +1025,19 @@ impl<T: TerminalBackend> Editor<T> {
             .then(|| (layout.row, layout.row + layout.rows - 1, delta))
     }
 
+    fn display_map_for_window(
+        &mut self,
+        id: crate::split::window::WindowId,
+        cols: usize,
+        rows: usize,
+    ) -> Option<std::sync::Arc<crate::wrap::DisplayMap>> {
+        let window = self.split_tree.get_window(id)?;
+        let doc = self.document_manager.get_document(window.document_id)?;
+        let width = Self::window_content_width(doc, cols);
+        let cursor = window.view_cursor(doc.buffer());
+        self.resolve_display_map_cached(window.document_id, width, cursor, rows + 1)
+    }
+
     fn render_multi_window(&mut self, needs_clear: bool) -> Result<(), RiftError> {
         use crate::layer::LayerPriority;
         crate::perf_span!("render_multi_window", crate::perf::PerfFields::default());
@@ -1056,30 +1051,16 @@ impl<T: TerminalBackend> Editor<T> {
         let content_rows = total_rows.saturating_sub(1);
         let layouts = self.split_tree.compute_layout(content_rows, total_cols);
 
-        let mut window_maps: Vec<Option<std::sync::Arc<crate::wrap::DisplayMap>>> =
-            Vec::with_capacity(layouts.len());
-        for layout in &layouts {
-            let window = self.split_tree.get_window(layout.window_id);
-            let cursor_pos = window.map_or(0, |w| w.cursor_position);
-            let key = window
-                .map(|w| w.document_id)
-                .and_then(|doc_id| self.window_map_key(doc_id, layout.cols));
-            window_maps.push(key.and_then(|(doc_id, cw)| {
-                self.resolve_display_map_cached(doc_id, cw, cursor_pos, layout.rows + 1)
-            }));
-        }
+        let window_maps: Vec<_> = layouts
+            .iter()
+            .map(|layout| self.display_map_for_window(layout.window_id, layout.cols, layout.rows))
+            .collect();
         let focused_display_map = {
             let focused_id = self.split_tree.focused_window_id();
             if let Some(i) = layouts.iter().position(|l| l.window_id == focused_id) {
                 window_maps[i].clone()
             } else {
-                let focused = self.split_tree.focused_window();
-                let doc_id = focused.document_id;
-                let cursor_pos = focused.cursor_position;
-                self.window_map_key(doc_id, total_cols)
-                    .and_then(|(doc_id, cw)| {
-                        self.resolve_display_map_cached(doc_id, cw, cursor_pos, content_rows + 1)
-                    })
+                self.display_map_for_window(focused_id, total_cols, content_rows)
             }
         };
 

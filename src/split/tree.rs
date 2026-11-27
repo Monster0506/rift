@@ -115,17 +115,10 @@ impl SplitTree {
         let new_id = self.next_window_id;
         self.next_window_id = self.next_window_id.next();
 
-        let cursor_pos = self.windows.get(&target_id).map_or(0, |w| {
-            if w.document_id == new_doc_id {
-                w.cursor_position
-            } else {
-                0
-            }
-        });
-
-        let mut new_window = Window::new(new_doc_id, viewport_rows, viewport_cols);
-        new_window.cursor_position = cursor_pos;
-        self.windows.insert(new_id, new_window);
+        self.windows.insert(
+            new_id,
+            Window::new(new_doc_id, viewport_rows, viewport_cols),
+        );
 
         self.root = Self::replace_leaf(
             std::mem::replace(&mut self.root, SplitNode::Leaf(WindowId::new(0))),
@@ -491,8 +484,6 @@ impl SplitTree {
         }
     }
 
-    /// Swaps the documents and cursors of two windows.
-    ///
     /// # Panics
     /// Does not panic: both ids are verified present before the lookups.
     pub(super) fn exchange_windows(&mut self, id1: WindowId, id2: WindowId) -> bool {
@@ -501,18 +492,18 @@ impl SplitTree {
         }
         let (doc1, cursor1) = {
             let w = &self.windows[&id1];
-            (w.document_id, w.cursor_position)
+            (w.document_id, w.saved_cursor)
         };
         let (doc2, cursor2) = {
             let w = &self.windows[&id2];
-            (w.document_id, w.cursor_position)
+            (w.document_id, w.saved_cursor)
         };
         let w1 = self.windows.get_mut(&id1).unwrap();
         w1.document_id = doc2;
-        w1.cursor_position = cursor2;
+        w1.saved_cursor = cursor2;
         let w2 = self.windows.get_mut(&id2).unwrap();
         w2.document_id = doc1;
-        w2.cursor_position = cursor1;
+        w2.saved_cursor = cursor1;
         true
     }
 
@@ -649,8 +640,13 @@ impl SplitTree {
 
     /// Point `id`'s window at `doc_id`, if that window exists.
     pub(super) fn set_window_document(&mut self, id: WindowId, doc_id: DocumentId) {
-        if let Some(w) = self.windows.get_mut(&id) {
+        if let Some(w) = self
+            .windows
+            .get_mut(&id)
+            .filter(|w| w.document_id != doc_id)
+        {
             w.document_id = doc_id;
+            w.saved_cursor = None;
         }
     }
 

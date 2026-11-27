@@ -30,7 +30,7 @@ impl std::fmt::Display for WindowId {
 pub(crate) struct Window {
     pub(crate) document_id: DocumentId,
     pub(crate) viewport: Viewport,
-    pub(crate) cursor_position: usize,
+    pub(super) saved_cursor: Option<usize>,
 }
 
 impl Window {
@@ -39,7 +39,12 @@ impl Window {
         Self {
             document_id,
             viewport: Viewport::new(rows, cols),
-            cursor_position: 0,
+            saved_cursor: None,
         }
+    }
+
+    pub(in crate::editor) fn view_cursor(&self, buffer: &crate::buffer::TextBuffer) -> usize {
+        self.saved_cursor
+            .map_or_else(|| buffer.cursor(), |position| position.min(buffer.len()))
     }
 }

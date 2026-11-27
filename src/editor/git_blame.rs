@@ -272,7 +272,7 @@ impl<T: TerminalBackend> Editor<T> {
         target_doc
             .set_cursor(cursor, crate::document::ops::CursorCause::User)
             .expect("line index must return a valid cursor offset");
-        self.set_window_cursor(target_window_id, cursor);
+        self.follow_document_cursor(target_window_id);
     }
 
     /// The pane linked to the focused Git blame or source window.

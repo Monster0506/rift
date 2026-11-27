@@ -12,7 +12,6 @@ fn single_window_tree() {
         tree.focused_window().document_id,
         crate::document::DocumentId::new(1)
     );
-    assert_eq!(tree.focused_window().cursor_position, 0);
 }
 
 #[test]
@@ -353,67 +352,6 @@ fn all_window_ids_returns_all() {
     let mut ids = tree.all_window_ids();
     ids.sort();
     assert_eq!(ids, vec![w1, w2, w3]);
-}
-
-// --- Per-window cursor ---
-
-#[test]
-fn new_split_copies_cursor_for_same_doc() {
-    let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
-    let w1 = tree.focused_window_id();
-
-    tree.get_window_mut(w1).unwrap().cursor_position = 42;
-
-    let w2 = tree
-        .split(
-            SplitDirection::Horizontal,
-            w1,
-            crate::document::DocumentId::new(1),
-            12,
-            80,
-        )
-        .unwrap();
-    assert_eq!(tree.get_window(w2).unwrap().cursor_position, 42);
-}
-
-#[test]
-fn new_split_zero_cursor_for_different_doc() {
-    let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
-    let w1 = tree.focused_window_id();
-
-    tree.get_window_mut(w1).unwrap().cursor_position = 42;
-
-    let w2 = tree
-        .split(
-            SplitDirection::Horizontal,
-            w1,
-            crate::document::DocumentId::new(2),
-            12,
-            80,
-        )
-        .unwrap();
-    assert_eq!(tree.get_window(w2).unwrap().cursor_position, 0);
-}
-
-#[test]
-fn independent_cursor_positions() {
-    let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
-    let w1 = tree.focused_window_id();
-    let w2 = tree
-        .split(
-            SplitDirection::Horizontal,
-            w1,
-            crate::document::DocumentId::new(1),
-            12,
-            80,
-        )
-        .unwrap();
-
-    tree.get_window_mut(w1).unwrap().cursor_position = 10;
-    tree.get_window_mut(w2).unwrap().cursor_position = 50;
-
-    assert_eq!(tree.get_window(w1).unwrap().cursor_position, 10);
-    assert_eq!(tree.get_window(w2).unwrap().cursor_position, 50);
 }
 
 // --- Layout computation ---
@@ -998,21 +936,16 @@ fn exchange_windows_swaps_documents() {
         )
         .unwrap();
 
-    tree.get_window_mut(w1).unwrap().cursor_position = 10;
-    tree.get_window_mut(w2).unwrap().cursor_position = 20;
-
     assert!(tree.exchange_windows(w1, w2));
 
     assert_eq!(
         tree.get_window(w1).unwrap().document_id,
         crate::document::DocumentId::new(2)
     );
-    assert_eq!(tree.get_window(w1).unwrap().cursor_position, 20);
     assert_eq!(
         tree.get_window(w2).unwrap().document_id,
         crate::document::DocumentId::new(1)
     );
-    assert_eq!(tree.get_window(w2).unwrap().cursor_position, 10);
 }
 
 #[test]

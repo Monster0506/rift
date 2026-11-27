@@ -1,6 +1,49 @@
 use super::common::*;
 
 #[test]
+fn splits_of_one_buffer_restore_their_own_cursor_positions() {
+    let mut editor = editor_with_text("abcdefgh");
+    let left = editor.split_tree.focused_window_id();
+    let cause = crate::document::ops::CursorCause::User;
+    editor.active_document().set_cursor(3, cause).unwrap();
+    let doc = editor.active_document_id();
+    let right = editor
+        .split_window(crate::split::tree::SplitDirection::Vertical, doc)
+        .unwrap();
+    assert_eq!(editor.active_document().buffer().cursor(), 3);
+
+    editor.active_document().set_cursor(6, cause).unwrap();
+    editor.focus_window(left);
+    assert_eq!(editor.active_document().buffer().cursor(), 3);
+    editor.focus_window(right);
+    assert_eq!(editor.active_document().buffer().cursor(), 6);
+}
+
+#[test]
+fn showing_a_buffer_again_preserves_its_cursor_update_while_unfocused() {
+    use crate::document::{manager::Placement, Document};
+
+    let mut editor = editor_with_text("abcdefgh");
+    let left = editor.split_tree.focused_window_id();
+    let original = editor.active_document_id();
+    let id = editor.document_manager.next_id();
+    editor.open_buffer(Document::new(id).unwrap(), Placement::Background);
+    editor
+        .split_window(crate::split::tree::SplitDirection::Vertical, id)
+        .unwrap();
+    editor
+        .document_manager
+        .get_document_mut(original)
+        .unwrap()
+        .set_cursor(4, crate::document::ops::CursorCause::User)
+        .unwrap();
+
+    editor.focus_window(left);
+
+    assert_eq!(editor.active_document().buffer().cursor(), 4);
+}
+
+#[test]
 fn editing_targets_the_buffer_shown_by_the_focused_split() {
     use crate::document::{manager::Placement, ops::ContentKind, Document};
 
