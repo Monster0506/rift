@@ -6,20 +6,49 @@ use crate::term::TerminalBackend;
 impl<T: TerminalBackend> Editor<T> {
     #[cfg(all(feature = "lsp", feature = "plugins"))]
     pub(crate) fn rename_lsp_symbol(&mut self, new_name: String) {
-        match self.cursor_lsp_position() {
-            Some((path, line, col)) => {
-                if self
-                    .lsp_manager
-                    .rename(&path, line, col, new_name)
-                    .is_none()
-                {
-                    self.notify_no_lsp_server();
-                }
-            }
-            None => self.notify(
+        if let Some(position) = self.rename_cursor_position() {
+            self.dispatch_lsp_rename(position, new_name);
+        }
+    }
+
+    #[cfg(feature = "lsp")]
+    fn rename_cursor_position(&mut self) -> Option<(std::path::PathBuf, u32, u32)> {
+        let position = self.cursor_lsp_position();
+        if position.is_none() {
+            self.notify(
                 crate::notification::NotificationType::Warning,
-                "LSP rename: no file open".to_string(),
-            ),
+                "LSP rename: no file open",
+            );
+        }
+        position
+    }
+
+    #[cfg(feature = "lsp")]
+    fn dispatch_lsp_rename(
+        &mut self,
+        (path, line, col): (std::path::PathBuf, u32, u32),
+        new_name: String,
+    ) {
+        if self
+            .lsp_manager
+            .rename(&path, line, col, new_name)
+            .is_none()
+        {
+            self.notify_no_lsp_server();
+        }
+    }
+
+    #[cfg(feature = "lsp")]
+    pub(in crate::editor) fn execute_lsp_rename(&mut self) {
+        let new_name = std::mem::take(&mut self.state.command_line);
+        let position = self.rename_context.take();
+        self.state.clear_command_line();
+        self.set_mode(Mode::Normal);
+
+        if !new_name.is_empty() {
+            if let Some(position) = position {
+                self.dispatch_lsp_rename(position, new_name);
+            }
         }
     }
 
@@ -65,17 +94,10 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(crate) fn request_lsp_rename(&mut self) -> bool {
         #[cfg(feature = "lsp")]
-        {
-            if let Some(ctx) = self.cursor_lsp_position() {
-                self.rename_context = Some(ctx);
-                self.state.clear_command_line();
-                self.set_mode(Mode::Rename);
-            } else {
-                self.notify(
-                    crate::notification::NotificationType::Warning,
-                    "LSP rename: no file open".to_string(),
-                );
-            }
+        if let Some(position) = self.rename_cursor_position() {
+            self.rename_context = Some(position);
+            self.state.clear_command_line();
+            self.set_mode(Mode::Rename);
         }
         true
     }

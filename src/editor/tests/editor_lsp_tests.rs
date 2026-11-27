@@ -205,6 +205,34 @@ fn goto_with_multiple_definitions_opens_a_location_list() {
     assert_eq!(doc.buffer().get_total_lines(), 2);
 }
 
+#[cfg(all(feature = "lsp", feature = "plugins"))]
+#[test]
+fn rename_prompt_keeps_its_file_while_direct_rename_uses_current_buffer() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("symbol.txt");
+    std::fs::write(&path, "original").unwrap();
+    let mut editor = create_editor();
+    let scratch = editor.active_document_id();
+    open_and_load(&mut editor, &path);
+
+    editor.request_lsp_rename();
+    editor.focus_document(scratch).unwrap();
+    editor.state.command_line = "replacement".into();
+    editor.handle_action(&crate::action::Action::Editor(
+        crate::action::EditorAction::Submit,
+    ));
+    editor.rename_lsp_symbol("replacement".into());
+
+    let messages: Vec<_> = editor
+        .state
+        .notifications
+        .iter_active()
+        .map(|notice| notice.message.as_str())
+        .collect();
+    assert!(messages.contains(&"LSP: no server available for this file"));
+    assert!(messages.contains(&"LSP rename: no file open"));
+}
+
 #[cfg(feature = "lsp")]
 #[test]
 fn goto_past_last_line_lands_on_last_text_line() {

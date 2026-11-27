@@ -526,30 +526,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.open_location_list_panel(entries);
     }
 
-    /// Submit the rename dialog: read new name from command line, fire LSP rename.
-    pub(super) fn execute_lsp_rename(&mut self) {
-        let new_name = self.state.command_line.clone();
-        let ctx = self.rename_context.take();
-        self.state.clear_command_line();
-        self.set_mode(crate::mode::Mode::Normal);
-
-        if new_name.is_empty() {
-            return;
-        }
-
-        let Some((path, line, col)) = ctx else {
-            return;
-        };
-
-        if self
-            .lsp_manager
-            .rename(&path, line, col, new_name)
-            .is_none()
-        {
-            self.notify_no_lsp_server();
-        }
-    }
-
     pub(super) fn execute_code_action(&mut self, action: serde_json::Value) {
         if let Some(edit) = action.get("edit").cloned() {
             self.apply_code_action_edit(&edit);
