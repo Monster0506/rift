@@ -336,8 +336,8 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         if mode != Mode::OperatorPending {
-            self.pending_operator = None;
-            self.pending_operator_count = 0;
+            self.input.operator = None;
+            self.input.operator_count = 0;
         }
 
         #[cfg(feature = "plugins")]

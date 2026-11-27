@@ -24,21 +24,26 @@ const fn with_count_override(cmd: Command, count: usize) -> Option<Command> {
 }
 
 impl<T: TerminalBackend> Editor<T> {
-    pub(super) fn execute_operator(&mut self, op: super::PendingOperator, motion: Motion) -> bool {
+    pub(super) fn execute_operator(
+        &mut self,
+        op: super::pending_grammar::PendingOperator,
+        motion: Motion,
+    ) -> bool {
         let op = match op {
-            super::PendingOperator::SurroundAdd(delim_count) => {
+            super::pending_grammar::PendingOperator::SurroundAdd(delim_count) => {
                 self.begin_surround_add(motion, delim_count);
                 return true;
             }
-            super::PendingOperator::Op(op) => op,
+            super::pending_grammar::PendingOperator::Op(op) => op,
         };
         let count = self
-            .pending_operator_count
+            .input
+            .operator_count
             .max(1)
-            .saturating_mul(self.pending_count.max(1));
-        self.pending_operator = None;
-        self.pending_operator_count = 0;
-        self.pending_count = 0;
+            .saturating_mul(self.input.count.max(1));
+        self.input.operator = None;
+        self.input.operator_count = 0;
+        self.input.count = 0;
         if !self.can_execute_operator(op) {
             self.set_mode(Mode::Normal);
             return false;
@@ -159,11 +164,12 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn begin_surround_add(&mut self, motion: Motion, delim_count: usize) {
         let count = self
-            .pending_operator_count
+            .input
+            .operator_count
             .max(1)
-            .saturating_mul(self.pending_count.max(1));
-        self.pending_count = 0;
-        self.pending_grammar = Some(super::pending_grammar::PendingGrammar::AddSurroundChar {
+            .saturating_mul(self.input.count.max(1));
+        self.input.count = 0;
+        self.input.grammar = Some(super::pending_grammar::PendingGrammar::AddSurroundChar {
             motion,
             count,
             delim_count,
@@ -214,13 +220,14 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn execute_operator_linewise(&mut self, op: crate::action::OperatorType) -> bool {
-        self.pending_operator = None;
+        self.input.operator = None;
         let count = self
-            .pending_operator_count
+            .input
+            .operator_count
             .max(1)
-            .saturating_mul(self.pending_count.max(1));
-        self.pending_operator_count = 0;
-        self.pending_count = 0;
+            .saturating_mul(self.input.count.max(1));
+        self.input.operator_count = 0;
+        self.input.count = 0;
         if !self.can_execute_operator(op) {
             self.set_mode(Mode::Normal);
             return false;
@@ -315,8 +322,8 @@ impl<T: TerminalBackend> Editor<T> {
             None => return false,
         };
 
-        let count = if self.pending_count > 0 {
-            self.pending_count
+        let count = if self.input.count > 0 {
+            self.input.count
         } else {
             1
         };
@@ -325,7 +332,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         match register {
             DotRegister::Single(cmd) => {
-                match (self.pending_count > 0, with_count_override(cmd, count)) {
+                match (self.input.count > 0, with_count_override(cmd, count)) {
                     (true, Some(overridden)) => {
                         self.execute_buffer_command(overridden);
                     }

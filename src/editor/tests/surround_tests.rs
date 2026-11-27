@@ -1,5 +1,6 @@
 use super::common::*;
 use super::*;
+use crate::editor::pending_grammar::PendingOperator;
 
 #[test]
 fn treesitter_object_without_parse_tree_silently_no_ops() {
@@ -17,10 +18,10 @@ fn treesitter_object_without_parse_tree_silently_no_ops() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
-    editor.pending_grammar = Some(pending_grammar::PendingGrammar::TextObject(
+    editor.input.grammar = Some(pending_grammar::PendingGrammar::TextObject(
         text_object_input::PendingTextObject::new(Modifier::Inner),
     ));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('f'));
 
     assert_eq!(editor.active_document().buffer().to_string(), "foo(a, b)");
@@ -40,9 +41,9 @@ fn surround_delete_strips_enclosing_parens() {
         .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('d'));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('('));
 
     assert_eq!(editor.active_document().buffer().to_string(), "foobarbaz");
@@ -62,9 +63,9 @@ fn surround_delete_via_bracket_alias() {
         .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('d'));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('b'));
 
     assert_eq!(editor.active_document().buffer().to_string(), "foobarbaz");
@@ -83,11 +84,11 @@ fn surround_change_swaps_parens_for_quotes() {
         .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('c'));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('('));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('"'));
 
     assert_eq!(
@@ -110,11 +111,11 @@ fn surround_change_pads_opening_bracket_char() {
         .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('c'));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('('));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('{'));
 
     assert_eq!(
@@ -137,24 +138,21 @@ fn surround_add_wraps_inner_word_with_padding() {
         .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('g'));
-    assert_eq!(
-        editor.pending_operator,
-        Some(PendingOperator::SurroundAdd(1))
-    );
+    assert_eq!(editor.input.operator, Some(PendingOperator::SurroundAdd(1)));
 
-    editor.pending_grammar = Some(pending_grammar::PendingGrammar::TextObject(
+    editor.input.grammar = Some(pending_grammar::PendingGrammar::TextObject(
         text_object_input::PendingTextObject::new(Modifier::Inner),
     ));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('w'));
     assert!(!matches!(
-        editor.pending_operator,
+        editor.input.operator,
         Some(PendingOperator::SurroundAdd(_))
     ));
 
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('('));
 
     assert_eq!(
@@ -177,11 +175,11 @@ fn surround_add_sgg_wraps_current_line() {
         .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('g'));
     editor.handle_action(&Action::Editor(EditorAction::SurroundGiveLine));
 
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('"'));
 
     assert_eq!(
@@ -203,9 +201,9 @@ fn surround_delete_dot_repeat_reresolves_at_new_cursor() {
         .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('d'));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('('));
     assert_eq!(editor.active_document().buffer().to_string(), "a (b)");
 
@@ -231,15 +229,15 @@ fn surround_escape_cancels_pending_grammar() {
         .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
-    assert!(editor.pending_grammar.is_some());
+    assert!(editor.input.grammar.is_some());
 
     editor.set_mode(Mode::Normal);
-    editor.pending_count = 0;
-    editor.pending_grammar = None;
-    editor.pending_operator = None;
+    editor.input.count = 0;
+    editor.input.grammar = None;
+    editor.input.operator = None;
 
-    assert!(editor.pending_grammar.is_none());
-    let grammar = editor.pending_grammar.take();
+    assert!(editor.input.grammar.is_none());
+    let grammar = editor.input.grammar.take();
     assert!(grammar.is_none());
     assert_eq!(editor.active_document().buffer().to_string(), "foo(bar)baz");
     let _ = Key::char('j');
@@ -257,11 +255,11 @@ fn surround_delete_count_removes_doubled_delimiter() {
         .set_cursor(3, crate::document::ops::CursorCause::User)
         .unwrap();
 
-    editor.pending_count = 2;
+    editor.input.count = 2;
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('d'));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('('));
 
     assert_eq!(editor.active_document().buffer().to_string(), "text");
@@ -279,13 +277,13 @@ fn surround_change_count_doubles_both_sides() {
         .set_cursor(3, crate::document::ops::CursorCause::User)
         .unwrap();
 
-    editor.pending_count = 2;
+    editor.input.count = 2;
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('c'));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('"'));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('('));
 
     assert_eq!(
@@ -306,12 +304,12 @@ fn surround_add_count_doubles_delimiter_for_sgg() {
         .set_cursor(0, crate::document::ops::CursorCause::User)
         .unwrap();
 
-    editor.pending_count = 2;
+    editor.input.count = 2;
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('g'));
     editor.handle_action(&Action::Editor(EditorAction::SurroundGiveLine));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('"'));
 
     assert_eq!(
@@ -332,13 +330,13 @@ fn surround_add_outer_and_inner_counts_compose_for_sgg() {
         .set_cursor(0, crate::document::ops::CursorCause::User)
         .unwrap();
 
-    editor.pending_count = 2;
+    editor.input.count = 2;
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('g'));
-    editor.pending_count = 2;
+    editor.input.count = 2;
     editor.handle_action(&Action::Editor(EditorAction::SurroundGiveLine));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('"'));
 
     assert_eq!(
@@ -361,33 +359,33 @@ fn surround_interrupted_sg_does_not_corrupt_later_yank() {
         .unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('g'));
     assert!(matches!(
-        editor.pending_operator,
+        editor.input.operator,
         Some(PendingOperator::SurroundAdd(_))
     ));
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
     assert!(!matches!(
-        editor.pending_operator,
+        editor.input.operator,
         Some(PendingOperator::SurroundAdd(_))
     ));
 
     editor.set_mode(Mode::Normal);
-    editor.pending_operator = None;
+    editor.input.operator = None;
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
-    editor.pending_grammar = Some(pending_grammar::PendingGrammar::TextObject(
+    editor.input.grammar = Some(pending_grammar::PendingGrammar::TextObject(
         text_object_input::PendingTextObject::new(Modifier::Inner),
     ));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('w'));
 
     assert_eq!(editor.active_document().buffer().to_string(), "foo bar");
     assert_eq!(editor.current_mode, Mode::Normal);
-    assert!(editor.pending_grammar.is_none());
+    assert!(editor.input.grammar.is_none());
     assert_eq!(ring_text(&editor, 0), Some("foo".to_string()));
 }
 
@@ -402,6 +400,6 @@ fn surround_give_line_without_pending_add_cancels_like_unrecognized_key() {
     editor.handle_action(&Action::Editor(EditorAction::SurroundGiveLine));
 
     assert_eq!(editor.current_mode, Mode::Normal);
-    assert!(editor.pending_operator.is_none());
-    assert!(editor.pending_grammar.is_none());
+    assert!(editor.input.operator.is_none());
+    assert!(editor.input.grammar.is_none());
 }

@@ -6,6 +6,22 @@ use crate::key::Key;
 use crate::mode::Mode;
 use crate::term::TerminalBackend;
 
+#[derive(Default)]
+pub(super) struct InputState {
+    pub(super) keys: Vec<Key>,
+    pub(super) count: usize,
+    pub(super) operator_count: usize,
+    pub(super) operator: Option<PendingOperator>,
+    pub(super) grammar: Option<PendingGrammar>,
+    pub(super) multi_insert_anchors: Vec<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PendingOperator {
+    Op(crate::action::OperatorType),
+    SurroundAdd(usize),
+}
+
 /// A multi-key input grammar in progress: the next keypress is consumed by
 /// the grammar itself rather than going through the normal keymap trie.
 #[derive(Debug, PartialEq, Eq)]
@@ -47,7 +63,7 @@ pub(super) enum PendingGrammar {
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn read_replace_char(&mut self) -> bool {
-        self.pending_grammar = Some(PendingGrammar::ReplaceChar);
+        self.input.grammar = Some(PendingGrammar::ReplaceChar);
         true
     }
 
@@ -64,16 +80,16 @@ impl<T: TerminalBackend> Editor<T> {
                     };
                     self.handle_action(&Action::Editor(EditorAction::Move(motion)));
                 }
-                self.pending_count = 0;
+                self.input.count = 0;
             }
             PendingGrammar::TextObject(mut pending) => match pending.advance(key) {
                 TextObjectStep::Continue => {
-                    self.pending_grammar = Some(PendingGrammar::TextObject(pending));
+                    self.input.grammar = Some(PendingGrammar::TextObject(pending));
                 }
                 TextObjectStep::Finalize(spec) => self.dispatch_text_object_spec(spec),
                 TextObjectStep::Cancel => {
                     self.set_mode(Mode::Normal);
-                    self.pending_count = 0;
+                    self.input.count = 0;
                 }
             },
             PendingGrammar::SurroundVerb { count } => self.advance_surround_verb(count, key),
@@ -87,14 +103,14 @@ impl<T: TerminalBackend> Editor<T> {
                         self.execute_and_record(command);
                     }
                 }
-                self.pending_count = 0;
+                self.input.count = 0;
             }
             PendingGrammar::ChangeSurroundFrom { count } => {
                 if let Some(from) = key.text() {
-                    self.pending_grammar = Some(PendingGrammar::ChangeSurroundTo { from, count });
+                    self.input.grammar = Some(PendingGrammar::ChangeSurroundTo { from, count });
                 } else {
                     self.set_mode(Mode::Normal);
-                    self.pending_count = 0;
+                    self.input.count = 0;
                 }
             }
             PendingGrammar::ChangeSurroundTo { from, count } => {
@@ -107,7 +123,7 @@ impl<T: TerminalBackend> Editor<T> {
                         self.execute_and_record(command);
                     }
                 }
-                self.pending_count = 0;
+                self.input.count = 0;
             }
             PendingGrammar::AddSurroundChar {
                 motion,
@@ -125,7 +141,7 @@ impl<T: TerminalBackend> Editor<T> {
                         self.execute_and_record(command);
                     }
                 }
-                self.pending_count = 0;
+                self.input.count = 0;
             }
         }
     }
@@ -150,8 +166,8 @@ impl<T: TerminalBackend> Editor<T> {
         });
         if let Some(ch) = ch {
             if !self.handle_action(&Action::Editor(EditorAction::ReplaceSelection(ch))) {
-                let count = if self.pending_count > 0 {
-                    self.pending_count
+                let count = if self.input.count > 0 {
+                    self.input.count
                 } else {
                     1
                 };
@@ -159,7 +175,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.execute_and_record(command);
             }
         }
-        self.pending_count = 0;
+        self.input.count = 0;
     }
 
     pub(super) fn replace_selection(&mut self, ch: char) -> bool {
@@ -209,22 +225,22 @@ impl<T: TerminalBackend> Editor<T> {
         match key.text() {
             Some('d') => {
                 let count = if count > 0 { count } else { 1 };
-                self.pending_grammar = Some(PendingGrammar::DeleteSurround { count });
+                self.input.grammar = Some(PendingGrammar::DeleteSurround { count });
             }
             Some('c') => {
                 let count = if count > 0 { count } else { 1 };
-                self.pending_grammar = Some(PendingGrammar::ChangeSurroundFrom { count });
+                self.input.grammar = Some(PendingGrammar::ChangeSurroundFrom { count });
             }
             Some('g') => {
                 let delim_count = if count > 0 { count } else { 1 };
-                self.pending_operator = Some(super::PendingOperator::SurroundAdd(delim_count));
+                self.input.operator = Some(PendingOperator::SurroundAdd(delim_count));
                 self.set_mode(Mode::OperatorPending);
             }
             _ => {
                 self.set_mode(Mode::Normal);
             }
         }
-        self.pending_count = 0;
+        self.input.count = 0;
     }
 
     fn execute_and_record(&mut self, command: Command) {

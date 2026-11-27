@@ -279,13 +279,13 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_goto_line(&mut self, n: usize) -> bool {
         use crate::action::Motion;
-        let target_n = if self.pending_count > 0 {
-            self.pending_count
+        let target_n = if self.input.count > 0 {
+            self.input.count
         } else {
             n
         };
         if self.current_mode == Mode::OperatorPending {
-            if let Some(op) = self.pending_operator {
+            if let Some(op) = self.input.operator {
                 let target_line = {
                     if let Some(doc) = self
                         .document_manager
@@ -391,13 +391,14 @@ impl<T: TerminalBackend> Editor<T> {
             return true;
         }
         if self.current_mode == Mode::OperatorPending {
-            if let Some(super::PendingOperator::Op(pending)) = self.pending_operator {
+            if let Some(super::pending_grammar::PendingOperator::Op(pending)) = self.input.operator
+            {
                 if pending == op {
                     return self.execute_operator_linewise(pending);
                 }
             }
         }
-        self.pending_operator = Some(super::PendingOperator::Op(op));
+        self.input.operator = Some(super::pending_grammar::PendingOperator::Op(op));
         self.set_mode(Mode::OperatorPending);
         true
     }
@@ -562,7 +563,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         self.commit_all_pending_ghosts();
 
-        let count = self.pending_count.max(1);
+        let count = self.input.count.max(1);
         let Some(doc) = self
             .document_manager
             .get_document_mut(self.active_document_id())
@@ -801,12 +802,12 @@ impl<T: TerminalBackend> Editor<T> {
         let resolved = self.resolve_motion(motion);
 
         if self.current_mode == Mode::OperatorPending {
-            if let Some(op) = self.pending_operator {
+            if let Some(op) = self.input.operator {
                 return self.execute_operator(op, resolved);
             }
         }
-        let count = if self.pending_count > 0 {
-            self.pending_count
+        let count = if self.input.count > 0 {
+            self.input.count
         } else {
             1
         };
@@ -917,7 +918,7 @@ impl<T: TerminalBackend> Editor<T> {
             if !self.dot_repeat.is_replaying() {
                 self.dot_repeat.finish_insert_recording();
             }
-            if !self.pending_multi_insert_anchors.is_empty() {
+            if !self.input.multi_insert_anchors.is_empty() {
                 self.replay_multi_insert_at_remaining_anchors();
             }
             if let Some(doc) = self
@@ -948,9 +949,9 @@ impl<T: TerminalBackend> Editor<T> {
         self.set_mode(Mode::Normal);
         self.state.clear_command_line();
         self.state.search_matches.clear();
-        self.pending_operator = None;
-        self.pending_keys.clear();
-        self.pending_count = 0;
+        self.input.operator = None;
+        self.input.keys.clear();
+        self.input.count = 0;
         true
     }
 
@@ -990,8 +991,8 @@ impl<T: TerminalBackend> Editor<T> {
         if self.active_document().check_edit_access().is_err() {
             return false;
         }
-        let count = if self.pending_count > 0 {
-            self.pending_count
+        let count = if self.input.count > 0 {
+            self.input.count
         } else {
             1
         };
@@ -1029,8 +1030,8 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn action_delete_line(&mut self) -> bool {
-        let count = if self.pending_count > 0 {
-            self.pending_count
+        let count = if self.input.count > 0 {
+            self.input.count
         } else {
             1
         };
@@ -1237,41 +1238,42 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn action_find_char_pending(&mut self, forward: bool, till: bool) -> bool {
-        self.pending_grammar =
+        self.input.grammar =
             Some(super::pending_grammar::PendingGrammar::FindChar { forward, till });
         true
     }
 
     fn action_surround_start(&mut self) -> bool {
-        let count = self.pending_count;
-        self.pending_count = 0;
-        self.pending_grammar = Some(super::pending_grammar::PendingGrammar::SurroundVerb { count });
+        let count = self.input.count;
+        self.input.count = 0;
+        self.input.grammar = Some(super::pending_grammar::PendingGrammar::SurroundVerb { count });
         true
     }
 
     fn action_surround_give_line(&mut self) -> bool {
         use crate::text_objects::{Direction, Modifier, ObjectKind, TextObjectSpec};
-        let Some(super::PendingOperator::SurroundAdd(delim_count)) = self.pending_operator.take()
+        let Some(super::pending_grammar::PendingOperator::SurroundAdd(delim_count)) =
+            self.input.operator.take()
         else {
-            self.pending_operator = None;
+            self.input.operator = None;
             self.set_mode(Mode::Normal);
-            self.pending_count = 0;
+            self.input.count = 0;
             return false;
         };
-        let line_span = if self.pending_count > 0 {
-            self.pending_count
+        let line_span = if self.input.count > 0 {
+            self.input.count
         } else {
             1
         };
-        self.pending_count = 0;
-        self.pending_operator = None;
+        self.input.count = 0;
+        self.input.operator = None;
         let spec = TextObjectSpec {
             modifier: Modifier::Inner,
             direction: Direction::Current,
             nesting: 1,
             kind: ObjectKind::Line,
         };
-        self.pending_grammar = Some(super::pending_grammar::PendingGrammar::AddSurroundChar {
+        self.input.grammar = Some(super::pending_grammar::PendingGrammar::AddSurroundChar {
             motion: crate::action::Motion::TextObject(spec),
             count: line_span,
             delim_count,

@@ -203,7 +203,7 @@ fn rapid_ctrl_w_hjkl_toggle_matches_ctrl_held_form() {
         "should be back on window A after an even number of round-trips"
     );
     assert_eq!(editor.current_mode, Mode::Normal);
-    assert!(editor.pending_keys.is_empty());
+    assert!(editor.input.keys.is_empty());
 
     let total_chords = ROUNDS * 2;
     let total_keys = total_chords * 2; // each chord is 2 Key events
@@ -262,7 +262,7 @@ fn rapid_ctrl_w_four_pane_survives_random_walk_without_corruption() {
         "rapid window navigation must never leave a stray mode"
     );
     assert!(
-        editor.pending_keys.is_empty(),
+        editor.input.keys.is_empty(),
         "must not end mid-sequence after the burst fully drains"
     );
     assert!(

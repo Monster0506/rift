@@ -108,7 +108,7 @@ fn enter_multi_insert_replays_typed_session_at_every_remaining_anchor() {
         "X01234X56789",
         "X inserted at both original anchors: live at 5, replayed at 0"
     );
-    assert!(editor.pending_multi_insert_anchors.is_empty());
+    assert!(editor.input.multi_insert_anchors.is_empty());
 }
 
 #[test]
@@ -527,7 +527,7 @@ fn set_aware_replace_char_fills_each_region_to_its_own_length() {
         .bank_region(Region::new(5, 8, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::ReplaceCharPending));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('x'));
 
     assert_eq!(editor.active_document().buffer().to_string(), "xx234xxxx9");
@@ -551,9 +551,9 @@ fn set_aware_sd_strips_surrounding_parens_from_every_region() {
         .bank_region(Region::new(5, 5, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('d'));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('('));
 
     assert_eq!(editor.active_document().buffer().to_string(), "a b");
@@ -581,14 +581,14 @@ fn set_aware_sg_wraps_each_region_independently() {
         .bank_region(Region::new(8, 10, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('g'));
-    editor.pending_grammar = Some(pending_grammar::PendingGrammar::AddSurroundChar {
+    editor.input.grammar = Some(pending_grammar::PendingGrammar::AddSurroundChar {
         motion: Motion::NextWord,
         count: 1,
         delim_count: 1,
     });
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('"'));
 
     assert_eq!(
@@ -856,7 +856,7 @@ fn dot_repeat_leading_count_overrides_embedded_command_count() {
         "three four five six seven"
     );
 
-    editor.pending_count = 3;
+    editor.input.count = 3;
     editor.execute_dot_repeat();
 
     assert_eq!(
@@ -920,14 +920,14 @@ fn dot_repeat_sg_fully_replays_using_addsurroundtoset() {
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, crate::key::Key::char('g'));
-    editor.pending_grammar = Some(pending_grammar::PendingGrammar::AddSurroundChar {
+    editor.input.grammar = Some(pending_grammar::PendingGrammar::AddSurroundChar {
         motion: Motion::NextWord,
         count: 1,
         delim_count: 1,
     });
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, crate::key::Key::char('"'));
 
     assert_eq!(
@@ -1251,7 +1251,7 @@ fn linewise_replace_char_keeps_newline() {
         .bank_region(Region::new(0, 0, RangeKind::Linewise));
 
     editor.handle_action(&Action::Editor(EditorAction::ReplaceCharPending));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('x'));
 
     assert_eq!(editor.active_document().buffer().to_string(), "xxx\ndef");
@@ -1271,7 +1271,7 @@ fn linewise_replace_char_on_last_line_without_newline() {
         .bank_region(Region::new(4, 4, RangeKind::Linewise));
 
     editor.handle_action(&Action::Editor(EditorAction::ReplaceCharPending));
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('x'));
 
     assert_eq!(editor.active_document().buffer().to_string(), "abc\nxxx");

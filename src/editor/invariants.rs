@@ -49,12 +49,12 @@ impl<T: TerminalBackend> Editor<T> {
     fn check_pending_input_state(&self, out: &mut Vec<Violation>) {
         let mode = self.mode();
 
-        if self.pending_operator.is_some() != (mode == Mode::OperatorPending) {
+        if self.input.operator.is_some() != (mode == Mode::OperatorPending) {
             out.push(Violation::new(
-                "editor.pending_operator",
+                "editor.input.operator",
                 format!(
-                    "pending_operator.is_some()={} but mode={mode:?}",
-                    self.pending_operator.is_some()
+                    "input.operator.is_some()={} but mode={mode:?}",
+                    self.input.operator.is_some()
                 ),
             ));
         }
@@ -69,14 +69,14 @@ impl<T: TerminalBackend> Editor<T> {
             ));
         }
 
-        if !self.pending_multi_insert_anchors.is_empty()
+        if !self.input.multi_insert_anchors.is_empty()
             && !matches!(mode, Mode::Insert | Mode::Replace)
         {
             out.push(Violation::new(
-                "editor.pending_multi_insert_anchors",
+                "editor.input.multi_insert_anchors",
                 format!(
                     "{} pending multi-insert anchors but mode={mode:?}, not Insert/Replace",
-                    self.pending_multi_insert_anchors.len()
+                    self.input.multi_insert_anchors.len()
                 ),
             ));
         }

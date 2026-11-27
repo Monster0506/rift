@@ -72,11 +72,11 @@ impl PendingTextObject {
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn dispatch_text_object_spec(&mut self, spec: TextObjectSpec) {
-        self.pending_keys.clear();
+        self.input.keys.clear();
         let action = Action::Editor(EditorAction::Move(Motion::TextObject(spec)));
         self.handle_action(&action);
         if self.current_mode != Mode::OperatorPending {
-            self.pending_count = 0;
+            self.input.count = 0;
         }
     }
 }

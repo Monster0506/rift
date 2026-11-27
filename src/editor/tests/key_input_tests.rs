@@ -385,7 +385,7 @@ fn escape_in_normal_mode_cancels_a_pending_operator() {
     press(&mut editor, &keys("d<Esc>l"));
 
     assert_eq!(editor.current_mode, Mode::Normal);
-    assert!(editor.pending_keys.is_empty());
+    assert!(editor.input.keys.is_empty());
     assert_eq!(buffer_text(&mut editor), "abc");
 }
 
@@ -396,7 +396,7 @@ fn ctrl_right_bracket_in_normal_mode_changes_nothing() {
     press(&mut editor, &[Key::ctrl(']')]);
 
     assert_eq!(editor.current_mode, Mode::Normal);
-    assert!(editor.pending_keys.is_empty());
+    assert!(editor.input.keys.is_empty());
     assert_eq!(buffer_text(&mut editor), "abc");
 }
 

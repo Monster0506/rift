@@ -40,7 +40,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn tick_inner(&mut self) -> Result<(), RiftError> {
         // Pending-key timer only applies while a sequence is in progress.
-        if self.pending_keys.is_empty() {
+        if self.input.keys.is_empty() {
             self.scheduler.key_sequence_started_at = None;
         }
 
@@ -303,9 +303,9 @@ impl<T: TerminalBackend> Editor<T> {
         // Escape always cancels OperatorPending, regardless of keymap overrides.
         if key_press.is(Key::ESC) && self.current_mode == Mode::OperatorPending {
             self.set_mode(Mode::Normal);
-            self.pending_keys.clear();
-            self.pending_count = 0;
-            self.pending_grammar = None;
+            self.input.keys.clear();
+            self.input.count = 0;
+            self.input.grammar = None;
             self.update_and_render()?;
             return Ok(true);
         }
@@ -355,7 +355,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn feed_pending_grammar(&mut self, key_press: Key) -> Result<bool, RiftError> {
-        let Some(grammar) = self.pending_grammar.take() else {
+        let Some(grammar) = self.input.grammar.take() else {
             return Ok(false);
         };
         self.advance_pending_grammar(grammar, key_press);
@@ -366,7 +366,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn start_text_object_grammar(&mut self, key_press: Key) -> Result<bool, RiftError> {
         // 'i'/'a'/'I'/'A' in OperatorPending start the text-object grammar.
-        if self.current_mode != Mode::OperatorPending || !self.pending_keys.is_empty() {
+        if self.current_mode != Mode::OperatorPending || !self.input.keys.is_empty() {
             return Ok(false);
         }
         let Some(ch) = key_press.text() else {
@@ -375,7 +375,7 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(modifier) = crate::text_objects::modifier_for_key(ch) else {
             return Ok(false);
         };
-        self.pending_grammar = Some(pending_grammar::PendingGrammar::TextObject(
+        self.input.grammar = Some(pending_grammar::PendingGrammar::TextObject(
             text_object_input::PendingTextObject::new(modifier),
         ));
         self.update_state_and_render(key_press, crate::command::Command::Noop)?;
@@ -384,11 +384,11 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn feed_surround_line(&mut self, key_press: Key) -> Result<bool, RiftError> {
         let is_surround_add = matches!(
-            self.pending_operator,
-            Some(super::PendingOperator::SurroundAdd(_))
+            self.input.operator,
+            Some(super::pending_grammar::PendingOperator::SurroundAdd(_))
         );
         let is_second_g = self.current_mode == Mode::OperatorPending
-            && self.pending_keys.is_empty()
+            && self.input.keys.is_empty()
             && key_press.is(Key::char('g'));
         if !is_surround_add || !is_second_g {
             return Ok(false);
@@ -403,10 +403,10 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(ch) = key_press.text() else {
             return Ok(false);
         };
-        if !ch.is_ascii_digit() || (ch == '0' && self.pending_count == 0) {
+        if !ch.is_ascii_digit() || (ch == '0' && self.input.count == 0) {
             return Ok(false);
         }
-        if !self.pending_keys.is_empty()
+        if !self.input.keys.is_empty()
             || matches!(
                 self.current_mode,
                 Mode::Insert | Mode::Replace | Mode::Command | Mode::Search | Mode::Rename
@@ -415,11 +415,11 @@ impl<T: TerminalBackend> Editor<T> {
             return Ok(false);
         }
         let digit = ch.to_digit(10).unwrap() as usize;
-        if self.current_mode == Mode::OperatorPending && self.pending_operator_count == 0 {
-            self.pending_operator_count = self.pending_count.max(1);
-            self.pending_count = digit;
+        if self.current_mode == Mode::OperatorPending && self.input.operator_count == 0 {
+            self.input.operator_count = self.input.count.max(1);
+            self.input.count = digit;
         } else {
-            self.pending_count = self.pending_count.saturating_mul(10).saturating_add(digit);
+            self.input.count = self.input.count.saturating_mul(10).saturating_add(digit);
         }
         // Update UI? (Render pending count)
         self.update_state_and_render(key_press, crate::command::Command::Noop)?;
@@ -430,28 +430,28 @@ impl<T: TerminalBackend> Editor<T> {
         use crate::keymap::trie::MatchResult;
 
         // Push key to pending buffer
-        self.pending_keys.push(key_press);
+        self.input.keys.push(key_press);
 
         // Input Processing Loop (allows backtracking)
         loop {
             let context = self.resolve_key_context();
 
-            let match_result = self.lookup_key_sequence(context, &self.pending_keys);
+            let match_result = self.lookup_key_sequence(context, &self.input.keys);
 
             match match_result {
                 MatchResult::Exact(action) => {
                     let action = action.clone();
-                    self.pending_keys.clear();
+                    self.input.keys.clear();
 
                     let _handled = self.handle_action(&action);
 
                     if self.current_mode != Mode::OperatorPending
                         && !matches!(
-                            self.pending_grammar,
+                            self.input.grammar,
                             Some(pending_grammar::PendingGrammar::ReplaceChar)
                         )
                     {
-                        self.pending_count = 0;
+                        self.input.count = 0;
                     }
 
                     self.update_state_and_render(key_press, crate::command::Command::Noop)?;
@@ -460,10 +460,9 @@ impl<T: TerminalBackend> Editor<T> {
                 MatchResult::Ambiguous(action) => {
                     if let Action::Editor(EditorAction::Operator(_)) = action {
                         let action = action.clone();
-                        self.pending_keys.clear();
+                        self.input.keys.clear();
                         self.scheduler.key_sequence_started_at = None;
                         self.handle_action(&action);
-                        // Don't clear pending_count for operators
                         self.update_state_and_render(key_press, crate::command::Command::Noop)?;
                         break;
                     }
@@ -481,7 +480,7 @@ impl<T: TerminalBackend> Editor<T> {
                     break;
                 }
                 MatchResult::None => {
-                    if self.pending_keys.len() > 1 {
+                    if self.input.keys.len() > 1 {
                         if self.retry_without_last_key(context) {
                             continue;
                         }
@@ -501,16 +500,16 @@ impl<T: TerminalBackend> Editor<T> {
     fn retry_without_last_key(&mut self, context: crate::keymap::KeyContext) -> bool {
         use crate::keymap::trie::MatchResult;
 
-        let last = self.pending_keys.pop().unwrap();
-        match self.lookup_key_sequence(context, &self.pending_keys) {
+        let last = self.input.keys.pop().unwrap();
+        match self.lookup_key_sequence(context, &self.input.keys) {
             MatchResult::Ambiguous(action) | MatchResult::Exact(action) => {
                 let action = action.clone();
-                self.pending_keys.clear();
+                self.input.keys.clear();
                 let mode_before = self.current_mode;
                 self.handle_action(&action);
-                self.pending_count = 0;
+                self.input.count = 0;
 
-                self.pending_keys.push(last);
+                self.input.keys.push(last);
                 if self.current_mode == mode_before {
                     // Mode unchanged: normal re-dispatch.
                     return true;
@@ -518,17 +517,17 @@ impl<T: TerminalBackend> Editor<T> {
                 match self.lookup_key_sequence(context, &[last]) {
                     MatchResult::Exact(a) | MatchResult::Ambiguous(a) => {
                         let a = a.clone();
-                        self.pending_keys.clear();
+                        self.input.keys.clear();
                         self.handle_action(&a);
-                        self.pending_count = 0;
+                        self.input.count = 0;
                         false
                     }
                     _ => true,
                 }
             }
             _ => {
-                self.pending_keys.clear();
-                self.pending_keys.push(last);
+                self.input.keys.clear();
+                self.input.keys.push(last);
                 true
             }
         }
@@ -536,8 +535,8 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_single_unmatched_key(&mut self) {
         if matches!(self.current_mode, Mode::Insert | Mode::Replace) {
-            let k = self.pending_keys[0];
-            self.pending_keys.clear();
+            let k = self.input.keys[0];
+            self.input.keys.clear();
             if let Some(ch) = k.text() {
                 self.handle_action(&Action::Editor(EditorAction::InsertChar(ch)));
             }
@@ -546,8 +545,8 @@ impl<T: TerminalBackend> Editor<T> {
             || self.current_mode == Mode::Search
             || self.current_mode == Mode::Rename
         {
-            let k = self.pending_keys[0];
-            self.pending_keys.clear();
+            let k = self.input.keys[0];
+            self.input.keys.clear();
             if k == Key::SHIFT_TAB {
                 self.handle_mode_management(Command::TabCompletePrev);
             } else if k.is(Key::TAB) {
@@ -556,11 +555,11 @@ impl<T: TerminalBackend> Editor<T> {
                 self.handle_action(&Action::Editor(EditorAction::InsertChar(ch)));
             }
         } else {
-            self.pending_keys.clear();
+            self.input.keys.clear();
             // Unrecognized key cancels any pending operator.
             if self.current_mode == Mode::OperatorPending {
                 self.set_mode(Mode::Normal);
-                self.pending_count = 0;
+                self.input.count = 0;
             }
         }
     }
@@ -709,16 +708,16 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let context = self.resolve_key_context();
-        let action = match self.lookup_key_sequence(context, &self.pending_keys) {
+        let action = match self.lookup_key_sequence(context, &self.input.keys) {
             MatchResult::Exact(action) | MatchResult::Ambiguous(action) => Some(action.clone()),
             _ => None,
         };
-        self.pending_keys.clear();
+        self.input.keys.clear();
         self.scheduler.key_sequence_started_at = None;
 
         if let Some(action) = action {
             self.handle_action(&action);
-            self.pending_count = 0;
+            self.input.count = 0;
             self.update_and_render()?;
         }
         Ok(())

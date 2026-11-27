@@ -16,6 +16,6 @@ fn operator_pending_runs_normal_command() {
 
         assert_eq!(buffer_text(&mut editor), TEXT, "{seq}");
         assert_eq!(editor.current_mode, Mode::Normal, "{seq}");
-        assert_eq!(editor.pending_count, 0, "{seq}");
+        assert_eq!(editor.input.count, 0, "{seq}");
     }
 }

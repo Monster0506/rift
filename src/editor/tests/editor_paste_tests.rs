@@ -96,7 +96,7 @@ fn pasting_a_shell_command_into_normal_mode_does_not_panic_or_hang() {
     let content = editor.active_document().buffer().to_string();
     eprintln!(
         "after Normal-mode paste: mode={:?} pending_keys={:?} buffer={:?}",
-        editor.current_mode, editor.pending_keys, content
+        editor.current_mode, editor.input.keys, content
     );
 }
 

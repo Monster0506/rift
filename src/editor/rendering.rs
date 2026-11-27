@@ -580,8 +580,7 @@ impl<T: TerminalBackend> Editor<T> {
             state,
             current_mode,
             term,
-            pending_keys,
-            pending_count,
+            input,
             kind_registry,
             ..
         } = self;
@@ -636,8 +635,8 @@ impl<T: TerminalBackend> Editor<T> {
             buf: doc.buffer(),
             state,
             current_mode: *current_mode,
-            pending_key: pending_keys.last().copied(),
-            pending_count: *pending_count,
+            pending_key: input.keys.last().copied(),
+            pending_count: input.count,
             needs_clear,
             tab_width: doc.options().tab_width(),
             intrinsic: render::IntrinsicLayers {
@@ -1158,8 +1157,7 @@ impl<T: TerminalBackend> Editor<T> {
             render_system,
             state,
             current_mode,
-            pending_keys,
-            pending_count,
+            input,
             split_tree,
             kind_registry,
             ..
@@ -1215,8 +1213,8 @@ impl<T: TerminalBackend> Editor<T> {
             buf: doc.buffer(),
             viewport: &window.viewport,
             current_mode: *current_mode,
-            pending_key: pending_keys.last().copied(),
-            pending_count: *pending_count,
+            pending_key: input.keys.last().copied(),
+            pending_count: input.count,
             state,
             needs_clear,
             tab_width,
@@ -1338,8 +1336,7 @@ impl<T: TerminalBackend> Editor<T> {
             state,
             current_mode,
             term,
-            pending_keys,
-            pending_count,
+            input,
             split_tree,
             ..
         } = self;
@@ -1398,8 +1395,8 @@ impl<T: TerminalBackend> Editor<T> {
             buf: focused_doc.buffer(),
             state,
             current_mode: *current_mode,
-            pending_key: pending_keys.last().copied(),
-            pending_count: *pending_count,
+            pending_key: input.keys.last().copied(),
+            pending_count: input.count,
             needs_clear,
             tab_width: focused_tab_width,
             intrinsic: render::IntrinsicLayers {

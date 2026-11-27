@@ -24,7 +24,7 @@ fn test_g_with_count_jumps_to_line() {
     let mut editor = create_editor();
     load_text(&mut editor, "alpha\nbeta\ngamma\ndelta\n");
 
-    editor.pending_count = 3;
+    editor.input.count = 3;
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
     let doc = editor.active_document();
@@ -39,7 +39,7 @@ fn test_g_count_beyond_last_line_clamps() {
     let mut editor = create_editor();
     load_text(&mut editor, "one\ntwo\nthree\n");
 
-    editor.pending_count = 999;
+    editor.input.count = 999;
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
     let doc = editor.active_document();
@@ -54,9 +54,9 @@ fn test_g_count_one_goes_to_first_line() {
     let mut editor = create_editor();
     load_text(&mut editor, "first\nsecond\nthird\n");
 
-    editor.pending_count = 0;
+    editor.input.count = 0;
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
-    editor.pending_count = 1;
+    editor.input.count = 1;
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
     let doc = editor.active_document();
@@ -135,7 +135,7 @@ fn test_find_char_pending_sets_state() {
     }));
 
     assert!(matches!(
-        editor.pending_grammar,
+        editor.input.grammar,
         Some(super::pending_grammar::PendingGrammar::FindChar {
             forward: true,
             till: false
@@ -155,7 +155,7 @@ fn test_find_char_pending_backward_sets_state() {
     }));
 
     assert!(matches!(
-        editor.pending_grammar,
+        editor.input.grammar,
         Some(super::pending_grammar::PendingGrammar::FindChar {
             forward: false,
             till: false
@@ -431,7 +431,7 @@ fn test_dg_with_count_deletes_to_specific_line() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
-    editor.pending_count = 2;
+    editor.input.count = 2;
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
     assert!(editor.active_document().buffer().get_total_lines() < lines_before);
@@ -675,22 +675,22 @@ fn leading_count_composes_with_nest_count_through_full_key_path() {
         .set_cursor(4, crate::document::ops::CursorCause::User)
         .unwrap();
 
-    editor.pending_count = 2;
+    editor.input.count = 2;
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
     assert_eq!(editor.current_mode, Mode::OperatorPending);
-    assert_eq!(editor.pending_count, 2);
+    assert_eq!(editor.input.count, 2);
 
-    editor.pending_grammar = Some(pending_grammar::PendingGrammar::TextObject(
+    editor.input.grammar = Some(pending_grammar::PendingGrammar::TextObject(
         text_object_input::PendingTextObject::new(Modifier::Inner),
     ));
 
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('2'));
-    assert!(editor.pending_grammar.is_some());
+    assert!(editor.input.grammar.is_some());
 
-    let grammar = editor.pending_grammar.take().unwrap();
+    let grammar = editor.input.grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::char('('));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
@@ -704,7 +704,7 @@ fn dd_with_leading_count_deletes_n_lines() {
     let mut editor = create_editor();
     load_text(&mut editor, "one\ntwo\nthree\nfour\n");
 
-    editor.pending_count = 3;
+    editor.input.count = 3;
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
@@ -723,14 +723,14 @@ fn dd_count_does_not_leak_into_next_motion() {
     let mut editor = create_editor();
     load_text(&mut editor, "one\ntwo\nthree\nfour\nfive\n");
 
-    editor.pending_count = 2;
+    editor.input.count = 2;
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
-    assert_eq!(editor.pending_count, 0, "count must not survive past dd");
+    assert_eq!(editor.input.count, 0, "count must not survive past dd");
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(
@@ -757,7 +757,7 @@ fn x_with_leading_count_deletes_n_chars() {
         .set_cursor(0, crate::document::ops::CursorCause::User)
         .unwrap();
 
-    editor.pending_count = 3;
+    editor.input.count = 3;
     editor.handle_action(&Action::Editor(EditorAction::Delete(Motion::Right)));
 
     assert_eq!(editor.active_document().buffer().to_string(), "lo world");
@@ -774,12 +774,12 @@ fn operator_count_and_motion_count_multiply_not_concatenate() {
         .set_cursor(0, crate::document::ops::CursorCause::User)
         .unwrap();
 
-    editor.pending_count = 2;
+    editor.input.count = 2;
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
-    editor.pending_operator_count = editor.pending_count.max(1);
-    editor.pending_count = 3;
+    editor.input.operator_count = editor.input.count.max(1);
+    editor.input.count = 3;
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::NextWord)));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
@@ -846,7 +846,7 @@ fn ambiguous_non_operator_binding_flushes_to_the_short_action_after_timeout() {
         MatchResult::Ambiguous(&Action::Editor(EditorAction::Move(Motion::Down)))
     );
 
-    editor.pending_keys.push(Key::char('Q'));
+    editor.input.keys.push(Key::char('Q'));
     editor.scheduler.key_sequence_started_at = Some(
         std::time::Instant::now()
             .checked_sub(std::time::Duration::from_millis(1500))
@@ -856,7 +856,7 @@ fn ambiguous_non_operator_binding_flushes_to_the_short_action_after_timeout() {
     editor.flush_pending_keys_on_timeout().unwrap();
 
     assert!(
-        editor.pending_keys.is_empty(),
+        editor.input.keys.is_empty(),
         "timeout flush should clear pending_keys"
     );
     assert!(
@@ -926,7 +926,7 @@ fn do_act(editor: &mut Editor<crate::test_utils::MockTerminal>, action: EditorAc
 fn cursor_after_move(motion: Motion, count: usize) -> usize {
     let mut editor = create_editor();
     load_text(&mut editor, HUGE_COUNT_TEXT);
-    editor.pending_count = count;
+    editor.input.count = count;
     do_act(&mut editor, EditorAction::Move(motion));
     editor.active_document().buffer().cursor()
 }
@@ -935,7 +935,7 @@ fn text_after_visual_delete(count: usize) -> String {
     let mut editor = create_editor();
     load_text(&mut editor, HUGE_COUNT_TEXT);
     do_act(&mut editor, EditorAction::EnterVisualChar);
-    editor.pending_count = count;
+    editor.input.count = count;
     do_act(&mut editor, EditorAction::Move(Motion::Right));
     do_act(&mut editor, EditorAction::Operator(OperatorType::Delete));
     editor.active_document().buffer().to_string()
@@ -945,7 +945,7 @@ fn text_after_dot_repeat(count: usize) -> String {
     let mut editor = create_editor();
     load_text(&mut editor, HUGE_COUNT_TEXT);
     do_act(&mut editor, EditorAction::Delete(Motion::Right));
-    editor.pending_count = count;
+    editor.input.count = count;
     do_act(&mut editor, EditorAction::DotRepeat);
     editor.active_document().buffer().to_string()
 }
@@ -1023,7 +1023,7 @@ fn editor_with_line_text(text: &str) -> Editor<crate::test_utils::MockTerminal> 
 
 fn cursor_after_line_action(text: &str, count: usize, action: EditorAction) -> usize {
     let mut editor = editor_with_line_text(text);
-    editor.pending_count = count;
+    editor.input.count = count;
     editor.handle_action(&Action::Editor(action));
     editor.active_document().buffer().cursor()
 }
@@ -1031,7 +1031,7 @@ fn cursor_after_line_action(text: &str, count: usize, action: EditorAction) -> u
 fn text_after_line_keys(count: usize, keys: &str) -> String {
     let mut editor = editor_with_line_text(LINE_TEXT);
     feed_keys(&mut editor, "G");
-    editor.pending_count = count;
+    editor.input.count = count;
     feed_keys(&mut editor, keys);
     editor.active_document().buffer().to_string()
 }

@@ -173,7 +173,7 @@ fn consumed_count_key_does_not_strand_a_due_terminal_frame() {
     editor.scheduler.terminal_frame_dirty = true;
     editor.scheduler.last_frame_at = crate::time::Instant::now().checked_sub(FRAME_INTERVAL);
     editor.tick().unwrap();
-    assert_eq!(editor.pending_count, 2);
+    assert_eq!(editor.input.count, 2);
     assert_eq!(editor.term.inner.flushes, 1);
     assert!(!editor.scheduler.terminal_frame_dirty);
 }
@@ -357,7 +357,7 @@ fn poll_timeout_shrinks_to_the_syntax_reparse_deadline() {
 #[test]
 fn poll_timeout_shrinks_to_the_key_sequence_timeout() {
     let mut editor = editor();
-    editor.pending_keys.push(Key::char('g'));
+    editor.input.keys.push(Key::char('g'));
     editor.scheduler.key_sequence_started_at =
         crate::time::Instant::now().checked_sub(KEY_SEQUENCE_TIMEOUT - Duration::from_millis(50));
 

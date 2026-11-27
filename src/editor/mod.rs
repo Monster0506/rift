@@ -163,12 +163,7 @@ pub struct Editor<T: TerminalBackend> {
     scheduler: scheduler::Scheduler,
     keymap: KeyMap,
     split_tree: SplitTree,
-    pending_keys: Vec<crate::key::Key>,
-    pending_count: usize,
-    pending_operator_count: usize,
-    pending_operator: Option<PendingOperator>,
-    pending_grammar: Option<pending_grammar::PendingGrammar>,
-    pending_multi_insert_anchors: Vec<usize>,
+    input: pending_grammar::InputState,
     replace_originals: Vec<replace_mode::ReplaceEntry>,
     region_build_recording: Vec<crate::action::Action>,
     expand_history: Vec<(usize, usize)>,
@@ -231,12 +226,6 @@ struct PostPasteState {
     ring_index: usize,
     before: bool,
     original_cursor: usize,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PendingOperator {
-    Op(crate::action::OperatorType),
-    SurroundAdd(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

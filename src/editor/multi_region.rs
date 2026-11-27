@@ -255,7 +255,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let mut anchors = anchors;
         let first = anchors.remove(0);
-        self.pending_multi_insert_anchors = anchors;
+        self.input.multi_insert_anchors = anchors;
         if let Some(doc) = self
             .document_manager
             .get_document_mut(self.active_document_id())
@@ -658,7 +658,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn replay_multi_insert_at_remaining_anchors(&mut self) {
-        let anchors = std::mem::take(&mut self.pending_multi_insert_anchors);
+        let anchors = std::mem::take(&mut self.input.multi_insert_anchors);
         let Some(crate::dot_repeat::DotRegister::InsertSession { commands, .. }) =
             self.dot_repeat.register().cloned()
         else {

@@ -120,7 +120,7 @@ fn same_location_paste_restores_the_cut_byte_identical() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
-    editor.pending_count = 3;
+    editor.input.count = 3;
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
     assert_eq!(editor.active_document().buffer().to_string(), "def");
 
@@ -248,7 +248,7 @@ fn same_location_paste_before_does_not_move_the_cursor_either() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
-    editor.pending_count = 3;
+    editor.input.count = 3;
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
 
     editor.handle_action(&Action::Editor(EditorAction::Put { before: true }));
@@ -277,7 +277,7 @@ fn set_noghostcut_makes_dw_delete_immediately() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
-    editor.pending_count = 3;
+    editor.input.count = 3;
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
 
     assert_eq!(

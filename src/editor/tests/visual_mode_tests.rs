@@ -198,7 +198,7 @@ fn mixed_banked_change_preserves_kinds_boundaries_and_one_undo_step() {
     press(&mut editor, "!<Esc>");
 
     assert_eq!(editor.active_document().buffer().to_string(), "!\n!f\nghi");
-    assert!(editor.pending_multi_insert_anchors.is_empty());
+    assert!(editor.input.multi_insert_anchors.is_empty());
     for (index, expected, kind) in [
         (0, "abc\n", RangeKind::Linewise),
         (1, "de", RangeKind::Charwise),

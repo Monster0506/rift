@@ -88,7 +88,7 @@ fn plugin_highlight_survives_a_ghost_cut_paint_cycle() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
-    editor.pending_count = 4;
+    editor.input.count = 4;
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
 
     editor.update_and_render().unwrap();
