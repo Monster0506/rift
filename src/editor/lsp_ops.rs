@@ -362,7 +362,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
         if locations.len() > 1 {
             let entries = Self::location_entries(locations);
-            self.open_location_list_panel(entries, "LSP Definitions");
+            self.open_location_list_panel(entries);
             return;
         }
 
@@ -448,7 +448,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
         let entries = Self::location_entries(locations);
-        self.open_location_list_panel(entries, "LSP References");
+        self.open_location_list_panel(entries);
     }
 
     fn handle_hover_result(&mut self, contents: &str) {
@@ -523,7 +523,7 @@ impl<T: TerminalBackend> Editor<T> {
             .collect();
 
         self.scheduler.code_actions = actions;
-        self.open_location_list_panel(entries, "Code Actions");
+        self.open_location_list_panel(entries);
     }
 
     /// Submit the rename dialog: read new name from command line, fire LSP rename.
@@ -1016,21 +1016,14 @@ impl<T: TerminalBackend> Editor<T> {
             })
             .collect();
 
-        self.open_location_list_panel(entries, "LSP Diagnostics");
+        self.open_location_list_panel(entries);
     }
 
-    /// Create a location list split panel with the given entries.
-    fn open_location_list_panel(
-        &mut self,
-        entries: Vec<crate::document::LocationEntry>,
-        title: &str,
-    ) {
-        // Close any existing panel first.
+    fn open_location_list_panel(&mut self, entries: Vec<crate::document::LocationEntry>) {
         if self.panel_layout.is_some() {
             self.close_split_panel();
         }
 
-        // Create the location list document.
         let loc_doc_id = self.document_manager.next_id();
         let mut doc = match crate::document::Document::new(loc_doc_id) {
             Ok(d) => d,
@@ -1047,32 +1040,13 @@ impl<T: TerminalBackend> Editor<T> {
         doc.replace_content(&content, crate::document::ops::ContentKind::Load);
         let _ = doc.set_cursor(0, crate::document::ops::CursorCause::Lsp);
         doc.set_location_list(entries);
-        self.open_buffer(doc, crate::document::manager::Placement::Private);
-
-        // Split the current window horizontally: location list goes below, main stays above.
-        let preview_win_id = self.split_tree.focused_window_id();
-        let original_doc_id = self.active_document_id();
-
-        let dir_win_id = self
-            .split_window_beside(
-                preview_win_id,
-                crate::split::tree::SplitDirection::Horizontal,
-                loc_doc_id,
-            )
-            .expect("preview_win_id is the focused window, which is always a valid leaf");
-
-        self.focus_window_showing(dir_win_id, loc_doc_id);
-
-        self.panel_layout = Some(crate::editor::PanelLayout {
-            kind: crate::editor::PanelKind::LocationList,
-            dir_win_id,
-            preview_win_id,
-            dir_doc_id: loc_doc_id,
-            preview_doc_id: original_doc_id,
-            original_doc_id,
-        });
-
-        let _ = title;
-        let _ = self.force_full_redraw();
+        if self.open_split_panel(
+            crate::editor::PanelKind::LocationList,
+            doc,
+            None,
+            super::ops::windows::PanelSplit::Below,
+        ) {
+            let _ = self.force_full_redraw();
+        }
     }
 }

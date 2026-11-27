@@ -1,3 +1,4 @@
+use super::ops::windows::PanelSplit;
 use super::Editor;
 use super::{PanelKind, PanelLayout};
 use crate::term::TerminalBackend;
@@ -122,18 +123,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    fn abort_panel_open(
-        &mut self,
-        win_id: crate::split::window::WindowId,
-        original_doc_id: crate::document::DocumentId,
-        private_docs: &[crate::document::DocumentId],
-    ) {
-        self.show_in_window(win_id, original_doc_id);
-        for id in private_docs {
-            let _ = self.close_buffer(*id, crate::document::manager::RemovalIntent::Force);
-        }
-    }
-
     pub(super) fn open_explorer(&mut self, dir: std::path::PathBuf) {
         if let Some(ref layout) = self.panel_layout.clone() {
             self.focus_window_showing(layout.dir_win_id, layout.dir_doc_id);
@@ -148,9 +137,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
-        self.open_buffer(dir_doc, crate::document::manager::Placement::Private);
-
-        let preview_doc_id = self.document_manager.next_id();
+        let preview_doc_id = dir_doc_id.next();
         let preview_doc = match crate::document::Document::new_directory(
             preview_doc_id,
             std::path::PathBuf::from("[preview]"),
@@ -161,30 +148,14 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
-        self.open_buffer(preview_doc, crate::document::manager::Placement::Private);
-
-        let dir_win_id = self.split_tree.focused_window_id();
-        let original_doc_id = self.active_document_id();
-
-        let Some(preview_win_id) = self.split_window_beside(
-            dir_win_id,
-            crate::split::tree::SplitDirection::Vertical,
-            preview_doc_id,
-        ) else {
-            self.abort_panel_open(dir_win_id, original_doc_id, &[dir_doc_id, preview_doc_id]);
+        if !self.open_split_panel(
+            PanelKind::FileExplorer,
+            dir_doc,
+            Some(preview_doc),
+            PanelSplit::Beside(preview_doc_id),
+        ) {
             return;
-        };
-
-        self.focus_window_showing(dir_win_id, dir_doc_id);
-
-        self.panel_layout = Some(PanelLayout {
-            kind: PanelKind::FileExplorer,
-            dir_win_id,
-            preview_win_id,
-            dir_doc_id,
-            preview_doc_id,
-            original_doc_id,
-        });
+        }
 
         let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(dir_doc_id, dir, false);
         self.job_manager.spawn(job);
@@ -285,38 +256,16 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
         index_doc.populate_clipboard_buffer(self.clipboard_ring.entries());
-        self.open_buffer(index_doc, crate::document::manager::Placement::Private);
-
-        let preview_doc_id = self.document_manager.next_id();
+        let preview_doc_id = index_doc_id.next();
         let preview_doc = crate::document::Document::new_clipboard_preview(preview_doc_id);
-        self.open_buffer(preview_doc, crate::document::manager::Placement::Private);
-
-        let index_win_id = self.split_tree.focused_window_id();
-        let original_doc_id = self.active_document_id();
-
-        let Some(preview_win_id) = self.split_window_beside(
-            index_win_id,
-            crate::split::tree::SplitDirection::Vertical,
-            preview_doc_id,
-        ) else {
-            self.abort_panel_open(
-                index_win_id,
-                original_doc_id,
-                &[index_doc_id, preview_doc_id],
-            );
+        if !self.open_split_panel(
+            PanelKind::Clipboard,
+            index_doc,
+            Some(preview_doc),
+            PanelSplit::Beside(preview_doc_id),
+        ) {
             return;
-        };
-
-        self.focus_window_showing(index_win_id, index_doc_id);
-
-        self.panel_layout = Some(PanelLayout {
-            kind: PanelKind::Clipboard,
-            dir_win_id: index_win_id,
-            preview_win_id,
-            dir_doc_id: index_doc_id,
-            preview_doc_id,
-            original_doc_id,
-        });
+        }
 
         self.update_clipboard_preview();
         let _ = self.force_full_redraw();
@@ -346,31 +295,15 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .get_buffer_list(self.active_document_id());
         dir_doc.populate_buffer_list_buffer(&infos);
-        self.open_buffer(dir_doc, crate::document::manager::Placement::Private);
-
-        let dir_win_id = self.split_tree.focused_window_id();
-        let original_doc_id = self.active_document_id();
-        let preview_target = infos.first().map_or(original_doc_id, |i| i.id);
-
-        let Some(preview_win_id) = self.split_window_beside(
-            dir_win_id,
-            crate::split::tree::SplitDirection::Vertical,
-            preview_target,
-        ) else {
-            self.abort_panel_open(dir_win_id, original_doc_id, &[dir_doc_id]);
+        let preview_target = infos.first().map_or(self.active_document_id(), |i| i.id);
+        if !self.open_split_panel(
+            PanelKind::BufferList,
+            dir_doc,
+            None,
+            PanelSplit::Beside(preview_target),
+        ) {
             return;
-        };
-
-        self.focus_window_showing(dir_win_id, dir_doc_id);
-
-        self.panel_layout = Some(PanelLayout {
-            kind: PanelKind::BufferList,
-            dir_win_id,
-            preview_win_id,
-            dir_doc_id,
-            preview_doc_id: original_doc_id,
-            original_doc_id,
-        });
+        }
 
         let _ = self.force_full_redraw();
     }
@@ -575,53 +508,29 @@ impl<T: TerminalBackend> Editor<T> {
         let linked_id = self.active_document_id();
 
         let ut_id = self.document_manager.next_id();
-        let ut_doc = match crate::document::Document::new_undotree(ut_id, linked_id) {
+        let mut ut_doc = match crate::document::Document::new_undotree(ut_id, linked_id) {
             Ok(d) => d,
             Err(e) => {
                 self.notify_error(e);
                 return;
             }
         };
-        self.open_buffer(ut_doc, crate::document::manager::Placement::Private);
-
-        let preview_id = self.document_manager.next_id();
-        let preview_doc = {
-            let Some(linked) = self.document_manager.get_document(linked_id) else {
-                return;
-            };
-            crate::document::Document::new_undotree_preview(preview_id, linked)
-        };
-        self.open_buffer(preview_doc, crate::document::manager::Placement::Private);
-
-        let dir_win_id = self.split_tree.focused_window_id();
-        let original_doc_id = self.active_document_id();
-
-        let Some(preview_win_id) = self.split_window_beside(
-            dir_win_id,
-            crate::split::tree::SplitDirection::Vertical,
-            preview_id,
-        ) else {
-            self.abort_panel_open(dir_win_id, original_doc_id, &[ut_id, preview_id]);
+        let preview_id = ut_id.next();
+        let Some(linked) = self.document_manager.get_document(linked_id) else {
             return;
         };
+        let preview_doc = crate::document::Document::new_undotree_preview(preview_id, linked);
+        let (text, seqs, lc) = crate::undotree_view::render_tree_to_text(&linked.history);
+        ut_doc.populate_undotree_buffer(&text, seqs, lc);
 
-        if let Some(linked_doc) = self.document_manager.get_document(linked_id) {
-            let (text, seqs, lc) = crate::undotree_view::render_tree_to_text(&linked_doc.history);
-            if let Some(ut_doc) = self.document_manager.get_document_mut(ut_id) {
-                ut_doc.populate_undotree_buffer(&text, seqs, lc);
-            }
+        if !self.open_split_panel(
+            PanelKind::UndoTree,
+            ut_doc,
+            Some(preview_doc),
+            PanelSplit::Beside(preview_id),
+        ) {
+            return;
         }
-
-        self.focus_window_showing(dir_win_id, ut_id);
-
-        self.panel_layout = Some(PanelLayout {
-            kind: PanelKind::UndoTree,
-            dir_win_id,
-            preview_win_id,
-            dir_doc_id: ut_id,
-            preview_doc_id: preview_id,
-            original_doc_id: linked_id,
-        });
 
         let _ = self.update_and_render();
     }

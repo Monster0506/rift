@@ -732,28 +732,14 @@ impl<T: TerminalBackend> Editor<T> {
             doc.populate_regions_buffer(source.buffer(), &regions);
         }
         doc.set_regions(source_doc_id);
-        self.open_buffer(doc, crate::document::manager::Placement::Private);
-
-        let preview_win_id = self.split_tree.focused_window_id();
-        let original_doc_id = self.active_document_id();
-        let dir_win_id = self
-            .split_window_beside(
-                preview_win_id,
-                crate::split::tree::SplitDirection::Horizontal,
-                list_doc_id,
-            )
-            .expect("preview_win_id is the focused window, which is always a valid leaf");
-        self.focus_window_showing(dir_win_id, list_doc_id);
-
-        self.panel_layout = Some(crate::editor::PanelLayout {
-            kind: crate::editor::PanelKind::Regions,
-            dir_win_id,
-            preview_win_id,
-            dir_doc_id: list_doc_id,
-            preview_doc_id: original_doc_id,
-            original_doc_id,
-        });
-        let _ = self.force_full_redraw();
+        if self.open_split_panel(
+            crate::editor::PanelKind::Regions,
+            doc,
+            None,
+            super::ops::windows::PanelSplit::Below,
+        ) {
+            let _ = self.force_full_redraw();
+        }
     }
 
     pub(super) fn drop_regions_window_entry(&mut self) -> bool {

@@ -154,3 +154,39 @@ fn buffer_list_open_rolls_back_when_split_fails() {
 fn undotree_open_rolls_back_when_split_fails() {
     assert_failed_split_rolls_back(super::Editor::open_undotree_split);
 }
+
+#[test]
+fn regions_panel_rolls_back_when_split_fails() {
+    assert_failed_split_rolls_back(|editor| {
+        editor
+            .active_document()
+            .bank_region(crate::selection::Region::new(
+                0,
+                0,
+                crate::wrap::RangeKind::Charwise,
+            ));
+        editor.toggle_regions_window();
+    });
+}
+
+#[cfg(feature = "lsp")]
+#[test]
+fn location_panel_rolls_back_when_split_fails() {
+    use crate::lsp::protocol::{LspLocation, LspPosition, LspRange};
+    assert_failed_split_rolls_back(|editor| {
+        let location = LspLocation {
+            uri: String::new(),
+            range: LspRange {
+                start: LspPosition {
+                    line: 0,
+                    character: 0,
+                },
+                end: LspPosition {
+                    line: 0,
+                    character: 1,
+                },
+            },
+        };
+        editor.handle_goto_result(&[location.clone(), location]);
+    });
+}

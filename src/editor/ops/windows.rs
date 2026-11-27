@@ -3,7 +3,8 @@ pub(crate) mod tree;
 #[path = "../../split/window.rs"]
 pub(crate) mod window;
 
-use super::super::Editor;
+use super::super::{Editor, PanelKind, PanelLayout};
+use crate::document::manager::{Placement, RemovalIntent};
 use crate::document::DocumentId;
 #[cfg(feature = "plugins")]
 use crate::plugin::events::EventPayload;
@@ -15,6 +16,12 @@ use crate::term::TerminalBackend;
 use crate::viewport::ScrollPosition;
 use crate::viewport::Viewport;
 
+#[derive(Clone, Copy)]
+pub(in crate::editor) enum PanelSplit {
+    Beside(DocumentId),
+    Below,
+}
+
 impl<T: TerminalBackend> Editor<T> {
     fn window_layouts(&self) -> Vec<crate::split::layout::WindowLayout> {
         let size = self
@@ -23,6 +30,43 @@ impl<T: TerminalBackend> Editor<T> {
             .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
         self.split_tree
             .compute_layout(size.rows as usize, size.cols as usize)
+    }
+
+    pub(in crate::editor) fn open_split_panel(
+        &mut self,
+        kind: PanelKind,
+        list: crate::document::Document,
+        private_preview: Option<crate::document::Document>,
+        placement: PanelSplit,
+    ) -> bool {
+        let original_win = self.split_tree.focused_window_id();
+        let original_doc_id = self.active_document_id();
+        let dir_doc_id = self.open_buffer(list, Placement::Private);
+        let private_preview = private_preview.map(|doc| self.open_buffer(doc, Placement::Private));
+        let (direction, target) = match placement {
+            PanelSplit::Beside(target) => (SplitDirection::Vertical, target),
+            PanelSplit::Below => (SplitDirection::Horizontal, dir_doc_id),
+        };
+        let Some(new_win) = self.split_window_beside(original_win, direction, target) else {
+            for id in [Some(dir_doc_id), private_preview].into_iter().flatten() {
+                let _ = self.close_buffer(id, RemovalIntent::Force);
+            }
+            return false;
+        };
+        let (dir_win_id, preview_win_id) = match placement {
+            PanelSplit::Beside(_) => (original_win, new_win),
+            PanelSplit::Below => (new_win, original_win),
+        };
+        self.focus_window_showing(dir_win_id, dir_doc_id);
+        self.panel_layout = Some(PanelLayout {
+            kind,
+            dir_win_id,
+            preview_win_id,
+            dir_doc_id,
+            preview_doc_id: private_preview.unwrap_or(original_doc_id),
+            original_doc_id,
+        });
+        true
     }
 
     pub(crate) fn split_window(
