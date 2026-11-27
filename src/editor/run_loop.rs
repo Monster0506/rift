@@ -76,6 +76,9 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(deadline) = self.next_deadline(now) {
             timeout = timeout.min(deadline.saturating_duration_since(now));
         }
+        if !self.frame_events.is_empty() {
+            timeout = std::time::Duration::ZERO;
+        }
         let input_ready = self.term.poll(timeout).map_err(|e| {
             RiftError::new(
                 ErrorType::Internal,
@@ -98,6 +101,7 @@ impl<T: TerminalBackend> Editor<T> {
                 || notif_changed
                 || notif_tick
                 || timers_fired
+                || !self.frame_events.is_empty()
                 || self.render_system.needs_animation_frame()
             {
                 self.update_and_render()?;

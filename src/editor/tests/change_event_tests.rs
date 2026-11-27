@@ -123,6 +123,31 @@ fn two_buffers_changed_in_one_frame_each_raise_text_changed() {
 }
 
 #[test]
+fn idle_frame_delivers_one_progress_event_per_server() {
+    let mut editor = settled("text");
+    let seen = record(&mut editor, "LspProgress");
+
+    for language in ["rust", "python", "rust"] {
+        editor.handle_lsp_message(crate::lsp::LspMessage::Progress {
+            language: language.to_string(),
+        });
+    }
+    assert!(seen.lock().unwrap().is_empty());
+
+    editor.tick().unwrap();
+
+    let seen = seen.lock().unwrap();
+    let languages: Vec<_> = seen
+        .iter()
+        .filter_map(|event| match event {
+            EventPayload::LspProgress { language, .. } => Some(language.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(languages, ["rust", "python"]);
+}
+
+#[test]
 fn banking_a_visual_selection_raises_selection_changed() {
     let mut editor = settled("hello world");
     let seen = record(&mut editor, "SelectionChanged");

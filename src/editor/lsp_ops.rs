@@ -320,8 +320,6 @@ impl<T: TerminalBackend> Editor<T> {
             error_count,
             warning_count,
         });
-
-        let _ = self.update_and_render();
     }
 
     pub(super) fn handle_goto_result(&mut self, locations: &[LspLocation]) {

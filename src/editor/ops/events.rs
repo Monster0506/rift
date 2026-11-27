@@ -18,6 +18,32 @@ impl EditorEvent {
     }
 }
 
+fn same_subject(a: &EventPayload, b: &EventPayload) -> bool {
+    use EventPayload as E;
+    match (a, b) {
+        (E::BufOpen { buf: x, .. }, E::BufOpen { buf: y, .. })
+        | (E::TextChangedCoarse { buf: x }, E::TextChangedCoarse { buf: y })
+        | (E::CursorMoved { buf: x, .. }, E::CursorMoved { buf: y, .. })
+        | (E::SelectionChanged { buf: x }, E::SelectionChanged { buf: y })
+        | (E::SyntaxUpdated { buf: x, .. }, E::SyntaxUpdated { buf: y, .. }) => x == y,
+        (E::LspDiagnosticsChanged { uri: x, .. }, E::LspDiagnosticsChanged { uri: y, .. }) => {
+            x == y
+        }
+        (
+            E::LspProgress {
+                language: lx,
+                server_name: sx,
+            },
+            E::LspProgress {
+                language: ly,
+                server_name: sy,
+            },
+        ) => lx == ly && sx == sy,
+        (E::WindowResized { .. }, E::WindowResized { .. }) => true,
+        _ => false,
+    }
+}
+
 impl<T: TerminalBackend> Editor<T> {
     pub(crate) fn raise(&mut self, payload: EventPayload) {
         let event = EditorEvent(payload);
@@ -37,7 +63,15 @@ impl<T: TerminalBackend> Editor<T> {
                 | EventPayload::LspProgress { .. }
                 | EventPayload::WindowResized { .. }
         ) {
-            self.frame_events.push(event);
+            if let Some(queued) = self
+                .frame_events
+                .iter_mut()
+                .find(|queued| same_subject(queued.payload(), event.payload()))
+            {
+                *queued = event;
+            } else {
+                self.frame_events.push(event);
+            }
         } else {
             self.dispatch_events(&[event]);
         }
@@ -56,12 +90,16 @@ impl<T: TerminalBackend> Editor<T> {
         self.deliver_document_changes();
         self.drain_syntax_sync();
         self.flush_pending_syntax_updated();
-        let events = std::mem::take(&mut self.frame_events);
+        let mut events = std::mem::take(&mut self.frame_events);
         crate::perf_span!(
             "plugin_dispatch_buffer_changes",
             crate::perf::PerfFields::default()
         );
         self.dispatch_events(&events);
+        if self.frame_events.is_empty() && events.capacity() > self.frame_events.capacity() {
+            events.clear();
+            self.frame_events = events;
+        }
     }
 
     fn dispatch_events(&mut self, events: &[EditorEvent]) {
