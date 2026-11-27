@@ -17,6 +17,27 @@ fn lua_ok<T: crate::term::TerminalBackend>(editor: &Editor<T>, code: &str) {
 }
 
 #[test]
+fn mode_changed_handler_can_start_an_operator() {
+    use crate::action::{Action, EditorAction, Motion};
+    use crate::mode::Mode;
+
+    let mut editor = lua_editor("one two\n");
+    lua_ok(
+        &editor,
+        "rift.on('ModeChanged', function(ev) \
+           if ev.from == 'insert' and ev.to == 'normal' then \
+             rift.exec_action('operator:delete') \
+           end \
+         end)",
+    );
+    editor.set_mode(Mode::Insert);
+    editor.set_mode(Mode::Normal);
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::NextWord)));
+
+    assert_eq!(editor.active_document().buffer().to_string(), "two\n");
+}
+
+#[test]
 fn global_setting_change_reaches_get_option() {
     let mut editor = lua_editor("hello\n");
     lua_ok(&editor, "assert(rift.get_option('clipboard.size') ~= 42)");

@@ -351,12 +351,6 @@ impl<T: TerminalBackend> Editor<T> {
             self.replace_originals.clear();
         }
 
-        if old_mode != mode {
-            self.raise(crate::plugin::events::EventPayload::ModeChanged {
-                from: old_mode,
-                to: mode,
-            });
-        }
         if (old_mode == Mode::Command || old_mode == Mode::Search || old_mode == Mode::Rename)
             && mode != old_mode
         {
@@ -369,6 +363,13 @@ impl<T: TerminalBackend> Editor<T> {
         if mode != Mode::OperatorPending {
             self.pending_operator = None;
             self.pending_operator_count = 0;
+        }
+
+        if old_mode != mode {
+            self.raise(crate::plugin::events::EventPayload::ModeChanged {
+                from: old_mode,
+                to: mode,
+            });
         }
     }
 }
