@@ -273,14 +273,10 @@ fn test_gutter_width_follows_the_digit_count() {
 }
 
 #[test]
-fn test_gutter_cols_needs_the_document_and_the_global_setting() {
-    let mut state = State::new();
-    state.update_buffer_stats(120, 100, crate::document::LineEnding::LF);
-
-    assert_eq!(state.gutter_cols(true), 5);
-    assert_eq!(state.gutter_cols(false), 0);
+fn line_numbers_use_the_current_document_line_count() {
+    assert_eq!(State::doc_gutter_cols(true, 120), 5);
     assert_eq!(State::doc_gutter_cols(true, 9), 3);
-    assert_eq!(State::doc_gutter_cols(false, 9), 0);
+    assert_eq!(State::doc_gutter_cols(false, 120), 0);
 }
 
 fn selection_style(settings: &UserSettings) -> Option<crate::layer::CellStyle> {

@@ -45,7 +45,6 @@ impl<T: TerminalBackend> Editor<T> {
         let job = crate::job_manager::jobs::git::GitLogJob::new(id, repo_root, path);
         self.job_manager.spawn(job);
 
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
         Some(id)
     }

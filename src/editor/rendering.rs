@@ -88,12 +88,21 @@ impl<T: TerminalBackend> Editor<T> {
             let line_start = doc.buffer().line_index.get_start(line).unwrap_or(0);
             let col = render::calculate_cursor_column_at(doc.buffer(), line, tw, cursor)
                 + doc.annotations.leading_width_in(line_start, cursor + 1);
+            doc.display_name()
+                .as_ref()
+                .clone_into(&mut self.state.file_name);
+            self.state.is_dirty = doc.is_dirty();
+            self.state.update_buffer_stats(
+                doc.buffer().last_real_line() + 1,
+                doc.buffer().len(),
+                doc.options().line_ending(),
+            );
             let total = doc.buffer().get_total_lines();
             (line, col, total, doc.is_terminal())
         };
         self.state.update_cursor(cursor_line, cursor_col);
 
-        self.sync_state_with_active_document();
+        self.refresh_search_highlights_if_stale();
         self.state.notifications.prune_expired();
         let gutter_width = self.active_gutter_cols(doc_id);
 
@@ -1245,12 +1254,12 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn active_gutter_cols(&self, doc_id: crate::document::DocumentId) -> usize {
-        self.document_manager.get_document(doc_id).map_or(0, |doc| {
-            self.state.gutter_cols(doc.options().show_line_numbers())
-        })
+        self.document_manager
+            .get_document(doc_id)
+            .map_or(0, Self::line_number_gutter_width)
     }
 
-    fn line_number_gutter_width(doc: &crate::document::Document) -> usize {
+    pub(super) fn line_number_gutter_width(doc: &crate::document::Document) -> usize {
         let lines = doc.buffer().last_real_line() + 1;
         crate::state::State::doc_gutter_cols(doc.options().show_line_numbers(), lines)
     }

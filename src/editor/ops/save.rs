@@ -267,9 +267,7 @@ impl<T: TerminalBackend> Editor<T> {
                 };
                 doc.mark_as_saved(result.saved_seq);
                 doc.set_path(&result.path);
-                let display_name = doc.display_name().into_owned();
                 self.persist_undo_after_save(result.document_id, result.content_hash);
-                self.state.update_filename(display_name);
                 self.notify(
                     NotificationType::Success,
                     format!("Written to {}", result.path.display()),
@@ -302,7 +300,6 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some((_, window)) = self.scheduler.quit_after_job.take_if(|(id, _)| *id == job) {
                 self.quit_after_completed_save(handle, window, SaveKind::File);
             }
-            self.sync_state_with_active_document();
             let _ = self.update_and_render();
         }
         #[cfg(not(feature = "plugins"))]
@@ -363,14 +360,6 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let handle = doc.handle();
         let implicit_target = target.is_none();
-        let target = if implicit_target
-            && doc.descriptor().save_dispatch == SaveDispatch::File
-            && doc.path().is_none()
-        {
-            self.state.file_path.as_ref().map(PathBuf::from)
-        } else {
-            target
-        };
         let message = target
             .as_deref()
             .or_else(|| doc.path())

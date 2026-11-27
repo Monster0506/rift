@@ -450,7 +450,6 @@ impl CompletionSession {
 pub struct State {
     pub(crate) settings: crate::tracked::Tracked<UserSettings>,
     pub(crate) debug_mode: bool,
-    pub(crate) file_path: Option<String>,
     pub(crate) file_name: String,
     pub(crate) last_keypress: Option<Key>,
     last_command: Option<Command>,
@@ -491,7 +490,6 @@ impl State {
         Self {
             settings: crate::tracked::Tracked::new(UserSettings::new()),
             debug_mode: false,
-            file_path: None,
             file_name: "[No Name]".to_string(),
             last_keypress: None,
             last_command: None,
@@ -521,7 +519,6 @@ impl State {
         Self {
             settings: crate::tracked::Tracked::new(settings),
             debug_mode: false,
-            file_path: None,
             file_name: "[No Name]".to_string(),
             last_keypress: None,
             last_command: None,
@@ -543,10 +540,6 @@ impl State {
             lsp_status: None,
             is_remote: false,
         }
-    }
-
-    pub(crate) fn set_file_path(&mut self, path: Option<String>) {
-        self.file_path = path;
     }
 
     pub(crate) const fn toggle_debug(&mut self) {
@@ -576,16 +569,6 @@ impl State {
         self.total_lines = total_lines;
         self.buffer_size = buffer_size;
         self.line_ending = line_ending;
-    }
-
-    /// Gutter columns of the active document, 0 when its line numbers are hidden.
-    #[must_use]
-    pub(crate) fn gutter_cols(&self, doc_enabled: bool) -> usize {
-        if doc_enabled {
-            self.gutter_width
-        } else {
-            0
-        }
     }
 
     /// Gutter columns of any document with `total_lines` lines, 0 when hidden.
@@ -685,14 +668,6 @@ impl State {
 
     pub(crate) const fn move_command_line_end(&mut self) {
         self.command_line_cursor = self.command_line.len();
-    }
-
-    pub(crate) fn update_filename(&mut self, filename: String) {
-        self.file_name = filename;
-    }
-
-    pub(crate) const fn update_dirty(&mut self, is_dirty: bool) {
-        self.is_dirty = is_dirty;
     }
 }
 

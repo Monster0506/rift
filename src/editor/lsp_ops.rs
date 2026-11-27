@@ -1073,7 +1073,6 @@ impl<T: TerminalBackend> Editor<T> {
         });
 
         let _ = title;
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
 }

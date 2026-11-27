@@ -91,11 +91,8 @@ impl<T: TerminalBackend> Editor<T> {
             };
             if let Err(e) = result {
                 self.notify_error(e);
-            } else {
-                self.sync_state_with_active_document();
-                if let Err(e) = self.force_full_redraw() {
-                    self.notify_error(e);
-                }
+            } else if let Err(e) = self.force_full_redraw() {
+                self.notify_error(e);
             }
         }
         false

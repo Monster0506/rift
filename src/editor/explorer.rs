@@ -189,7 +189,6 @@ impl<T: TerminalBackend> Editor<T> {
         let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(dir_doc_id, dir, false);
         self.job_manager.spawn(job);
 
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
 
@@ -237,7 +236,6 @@ impl<T: TerminalBackend> Editor<T> {
                 crate::document::manager::RemovalIntent::Force,
             );
         }
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
 
@@ -267,7 +265,6 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.last_notification_generation = self.state.notifications.generation;
 
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
 
@@ -322,7 +319,6 @@ impl<T: TerminalBackend> Editor<T> {
         });
 
         self.update_clipboard_preview();
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
 
@@ -376,7 +372,6 @@ impl<T: TerminalBackend> Editor<T> {
             original_doc_id,
         });
 
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
 
@@ -565,7 +560,6 @@ impl<T: TerminalBackend> Editor<T> {
             crate::notification::NotificationType::Info,
             format!("{} clipboard entries", self.clipboard_ring.len()),
         );
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
         SaveResult::Saved
     }
@@ -629,7 +623,6 @@ impl<T: TerminalBackend> Editor<T> {
             original_doc_id: linked_id,
         });
 
-        self.sync_state_with_active_document();
         let _ = self.update_and_render();
     }
 

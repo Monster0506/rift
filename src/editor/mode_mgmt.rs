@@ -114,7 +114,7 @@ impl<T: TerminalBackend> Editor<T> {
                         .document_manager
                         .get_document(self.active_document_id())
                         .unwrap();
-                    let gutter_width = self.state.gutter_cols(doc.options().show_line_numbers());
+                    let gutter_width = Self::line_number_gutter_width(doc);
                     let content_width = self
                         .split_tree
                         .focused_window()

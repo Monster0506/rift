@@ -475,7 +475,6 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
                 "Terminal closed".to_string(),
             );
         }
-        self.sync_state_with_active_document();
         let _ = self.update_and_render();
     }
 
@@ -548,7 +547,6 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
                 let _ = doc.set_cursor(pos, crate::document::ops::CursorCause::User);
             }
         }
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
         self.update_explorer_preview();
         self.job_manager
@@ -592,7 +590,6 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
             self.spawn_expand_all_git_status_hunks(doc_id, staged_side);
         }
         if self.active_document_id() == doc_id {
-            self.sync_state_with_active_document();
             let _ = self.force_full_redraw();
         }
         self.job_manager
@@ -628,7 +625,6 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
             doc.set_git_status_expanded(result.path, result.staged_side, result.hunks);
         }
         if self.active_document_id() == doc_id {
-            self.sync_state_with_active_document();
             let _ = self.force_full_redraw();
         }
         self.job_manager
@@ -664,7 +660,6 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
             doc.populate_git_blame_buffer(result.lines);
         }
         if self.active_document_id() == doc_id {
-            self.sync_state_with_active_document();
             let _ = self.force_full_redraw();
         }
         self.job_manager
@@ -720,7 +715,6 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
             }
         }
         if self.active_document_id() == doc_id {
-            self.sync_state_with_active_document();
             let _ = self.force_full_redraw();
         }
         self.job_manager
@@ -756,7 +750,6 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
             doc.set_git_log_expanded(Some(result.sha), Some(result.body));
         }
         if self.active_document_id() == doc_id {
-            self.sync_state_with_active_document();
             let _ = self.force_full_redraw();
         }
         self.job_manager
@@ -835,7 +828,6 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
             return;
         };
         ut_doc.populate_undotree_buffer(&res.text, res.sequences, res.highlights);
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
         self.job_manager
             .update_job_state(&JobMessage::Finished(id, true));
@@ -909,7 +901,6 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
             self.attach_preview_syntax(&token, res.right_doc_id, &preview_path);
         }
 
-        self.sync_state_with_active_document();
         let _ = self.update_and_render();
         self.job_manager
             .update_job_state(&JobMessage::Finished(id, true));
@@ -990,7 +981,6 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
         #[cfg(feature = "lsp")]
         self.apply_pending_goto(&token, res.document_id);
 
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
 
         self.job_manager
@@ -1049,7 +1039,6 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
             self.announce_buffer(res.document_id);
         }
 
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
 
         self.job_manager

@@ -67,7 +67,6 @@ impl<T: TerminalBackend> Editor<T> {
             crate::job_manager::jobs::git::GitBlameJob::new(blame_doc_id, repo_root, path, None);
         self.job_manager.spawn(job);
 
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
 
@@ -333,7 +332,6 @@ impl<T: TerminalBackend> Editor<T> {
         if self.document_manager.get_document(linked_doc_id).is_some() {
             let _ = self.focus_document(linked_doc_id);
         }
-        self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
 }

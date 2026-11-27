@@ -136,7 +136,6 @@ impl<T: TerminalBackend> Editor<T> {
             ));
         }
         update_view(self);
-        self.sync_state_with_active_document();
         #[cfg(feature = "plugins")]
         if self.active_document_id() == id {
             self.enter_document(id);
@@ -266,7 +265,6 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
         self.buffer_kinds.decrement_open_count(kind_id);
-        self.sync_state_with_active_document();
 
         #[cfg(feature = "plugins")]
         self.raise(crate::plugin::events::EventPayload::BufClose { buf: id });

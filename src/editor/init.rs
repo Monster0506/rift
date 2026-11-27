@@ -51,13 +51,6 @@ fn startup_document(effective_file_path: Option<&str>) -> Result<Document, RiftE
     }
 }
 
-fn startup_state(effective_file_path: Option<&str>, document: &Document) -> State {
-    let mut state = State::new();
-    state.set_file_path(effective_file_path.map(str::to_string));
-    state.update_filename(document.display_name().to_string());
-    state
-}
-
 impl<T: TerminalBackend> Editor<T> {
     #[cfg(test)]
     /// # Errors
@@ -87,7 +80,7 @@ impl<T: TerminalBackend> Editor<T> {
         let settings_registry = create_settings_registry();
         let command_parser = CommandParser::new(settings_registry);
 
-        let state = startup_state(effective_file_path, &startup_doc);
+        let state = State::new();
         let initial_doc_id = startup_doc.id;
         let split_tree = SplitTree::new(initial_doc_id, size.rows as usize, size.cols as usize);
 
@@ -207,29 +200,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.document_manager
             .get_document_mut(doc_id)
             .expect("No active document")
-    }
-
-    pub(super) fn sync_state_with_active_document(&mut self) {
-        let (display_name, file_path, is_dirty, line_ending) = {
-            let doc = self.active_document();
-            (
-                doc.display_name().to_string(),
-                doc.path().map(|p| p.to_string_lossy().to_string()),
-                doc.is_dirty(),
-                doc.options().line_ending(),
-            )
-        };
-
-        self.state.update_filename(display_name);
-        self.state.set_file_path(file_path);
-        self.state.update_dirty(is_dirty);
-
-        let total_lines = self.active_document().buffer().last_real_line() + 1;
-        let buffer_size = self.active_document().buffer().len();
-        self.state
-            .update_buffer_stats(total_lines, buffer_size, line_ending);
-
-        self.refresh_search_highlights_if_stale();
     }
 
     pub(super) fn force_full_redraw(&mut self) -> Result<(), RiftError> {
