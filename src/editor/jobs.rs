@@ -367,13 +367,7 @@ impl<T: TerminalBackend> Editor<T> {
         );
         self.on_file_load_failed(id);
 
-        if self.scheduler.quit_after_job == Some(id) {
-            self.scheduler.quit_after_job = None;
-            self.notify(
-                crate::notification::NotificationType::Warning,
-                "Quit aborted: save was cancelled".to_string(),
-            );
-        }
+        self.cancel_quit_after_save(id);
     }
 
     #[cfg(feature = "treesitter")]
@@ -937,42 +931,11 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
                 .update_job_state(&JobMessage::Finished(id, true));
             return;
         };
-        let Some(doc) = self
-            .document_manager
-            .get_document_by_handle_mut(token.handle)
-        else {
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
-            return;
-        };
-
-        doc.mark_as_saved(res.saved_seq);
-        doc.set_path(res.path.clone());
-
-        let display_name = doc.display_name().to_string();
-        self.persist_undo_after_save(res.document_id, res.content_hash);
-        self.state.update_filename(display_name);
-
-        self.notify(
-            crate::notification::NotificationType::Success,
-            format!("Written to {}", res.path.display()),
-        );
-
-        #[cfg(feature = "plugins")]
-        self.raise(crate::plugin::events::EventPayload::BufSavePost {
-            buf: res.document_id,
-            path: Some(res.path.clone()),
+        self.finish_save(super::ops::save::CompletedSave::File {
+            job: id,
+            handle: token.handle,
+            result: res,
         });
-        #[cfg(feature = "lsp")]
-        self.lsp_manager.did_save(&res.path, None);
-
-        if self.scheduler.quit_after_job == Some(id) {
-            self.scheduler.quit_after_job = None;
-            self.quit_after_save(res.document_id);
-        }
-
-        self.sync_state_with_active_document();
-        let _ = self.update_and_render();
 
         self.job_manager
             .update_job_state(&JobMessage::Finished(id, true));

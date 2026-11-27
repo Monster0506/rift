@@ -32,8 +32,7 @@ pub(super) struct Scheduler {
     pub(super) explorer_cursor_entry: Option<String>,
     pub(super) git_status_expand_all: HashMap<DocumentId, bool>,
     pub(super) git_log_expand_head: HashSet<DocumentId>,
-    pub(super) quit_after_job: Option<usize>,
-    pub(super) quit_after_job_window: Option<WindowId>,
+    pub(super) quit_after_job: Option<(usize, WindowId)>,
     #[cfg(feature = "plugins")]
     pub(super) save_pre_in_progress: HashSet<DocumentId>,
     #[cfg(feature = "plugins")]
@@ -76,7 +75,6 @@ impl Scheduler {
             git_status_expand_all: HashMap::new(),
             git_log_expand_head: HashSet::new(),
             quit_after_job: None,
-            quit_after_job_window: None,
             #[cfg(feature = "plugins")]
             save_pre_in_progress: HashSet::new(),
             #[cfg(feature = "plugins")]

@@ -5,7 +5,7 @@ use super::super::Editor;
 use crate::document::runtime::{BufferKindId, DocumentHandle, SaveDispatch, SaveResult};
 use crate::document::DocumentId;
 use crate::error::{ErrorType, RiftError};
-use crate::job_manager::jobs::file_operations::FileSaveJob;
+use crate::job_manager::jobs::file_operations::{FileSaveJob, FileSaveResult};
 use crate::notification::NotificationType;
 #[cfg(feature = "plugins")]
 use crate::plugin::events::{EventPayload, SaveDecision, SaveRequestId};
@@ -17,6 +17,24 @@ pub(crate) enum SaveOutcome {
     Queued(usize),
     Saved,
     NotSaved,
+}
+
+pub(in crate::editor) enum CompletedSave {
+    File {
+        job: usize,
+        handle: DocumentHandle,
+        result: FileSaveResult,
+    },
+    Special {
+        buf: DocumentId,
+        path: Option<PathBuf>,
+    },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SaveKind {
+    File,
+    Special,
 }
 
 impl<T: TerminalBackend> Editor<T> {
@@ -235,9 +253,77 @@ impl<T: TerminalBackend> Editor<T> {
         if self.save_special_buffer(handle) != SaveResult::Saved {
             return SaveOutcome::NotSaved;
         }
-        #[cfg(feature = "plugins")]
-        self.raise(EventPayload::BufSavePost { buf, path });
+        self.finish_save(CompletedSave::Special { buf, path });
         SaveOutcome::Saved
+    }
+
+    pub(in crate::editor) fn finish_save(&mut self, completion: CompletedSave) {
+        let (buf, path, file) = match completion {
+            CompletedSave::Special { buf, path } => (buf, path, None),
+            CompletedSave::File {
+                job,
+                handle,
+                result,
+            } => {
+                let Some(doc) = self.document_manager.get_document_by_handle_mut(handle) else {
+                    return;
+                };
+                doc.mark_as_saved(result.saved_seq);
+                doc.set_path(&result.path);
+                let display_name = doc.display_name().into_owned();
+                self.persist_undo_after_save(result.document_id, result.content_hash);
+                self.state.update_filename(display_name);
+                self.notify(
+                    NotificationType::Success,
+                    format!("Written to {}", result.path.display()),
+                );
+                (result.document_id, Some(result.path), Some((job, handle)))
+            }
+        };
+        #[cfg(feature = "plugins")]
+        let path = {
+            let (event_path, lsp_path) = if cfg!(feature = "lsp") && file.is_some() {
+                (path.clone(), path)
+            } else {
+                (path, None)
+            };
+            self.raise(EventPayload::BufSavePost {
+                buf,
+                path: event_path,
+            });
+            lsp_path
+        };
+        #[cfg(feature = "lsp")]
+        if let Some(path) = path {
+            if file.is_some() {
+                self.lsp_manager.did_save(&path, None);
+            }
+        }
+        #[cfg(not(feature = "lsp"))]
+        drop(path);
+        if let Some((job, handle)) = file {
+            if let Some((_, window)) = self.scheduler.quit_after_job.take_if(|(id, _)| *id == job) {
+                self.quit_after_completed_save(handle, window, SaveKind::File);
+            }
+            self.sync_state_with_active_document();
+            let _ = self.update_and_render();
+        }
+        #[cfg(not(feature = "plugins"))]
+        let _ = buf;
+    }
+
+    pub(in crate::editor) fn cancel_quit_after_save(&mut self, job: usize) {
+        if self
+            .scheduler
+            .quit_after_job
+            .take_if(|(id, _)| *id == job)
+            .is_some()
+        {
+            self.notify(
+                NotificationType::Warning,
+                "Quit aborted: save was cancelled",
+            );
+        }
     }
 
     fn save_special_buffer(&mut self, handle: DocumentHandle) -> SaveResult {
@@ -309,27 +395,14 @@ impl<T: TerminalBackend> Editor<T> {
     fn finish_save_quit(&mut self, outcome: SaveOutcome, quit: SaveQuit) {
         match outcome {
             SaveOutcome::Queued(job) => {
-                self.scheduler.quit_after_job = Some(job);
-                self.scheduler.quit_after_job_window = Some(quit.window);
+                self.scheduler.quit_after_job = Some((job, quit.window));
                 if let Some(message) = quit.message {
                     self.notify(NotificationType::Info, message);
                 }
             }
-            SaveOutcome::Saved
-                if self.active_document_id() == quit.handle.doc_id()
-                    && self.split_tree.focused_window_id() == quit.window =>
-            {
-                self.do_quit(false);
+            SaveOutcome::Saved => {
+                self.quit_after_completed_save(quit.handle, quit.window, SaveKind::Special);
             }
-            SaveOutcome::Saved
-                if self
-                    .document_manager
-                    .get_document_by_handle(quit.handle)
-                    .is_none() =>
-            {
-                self.quit_if_alone();
-            }
-            SaveOutcome::Saved => self.notify_save_quit_aborted(),
             SaveOutcome::NotSaved => {}
         }
     }
@@ -356,22 +429,22 @@ impl<T: TerminalBackend> Editor<T> {
         );
     }
 
-    pub(crate) fn quit_after_save(&mut self, doc_id: DocumentId) {
-        let same_window = self
-            .scheduler
-            .quit_after_job_window
-            .take()
-            .is_none_or(|window| self.split_tree.focused_window_id() == window);
-        let unchanged = same_window
-            && self.active_document_id() == doc_id
-            && self
-                .document_manager
-                .get_document(doc_id)
-                .is_some_and(|doc| !doc.is_dirty());
-        if !unchanged {
+    fn quit_after_completed_save(
+        &mut self,
+        handle: DocumentHandle,
+        window: crate::split::window::WindowId,
+        kind: SaveKind,
+    ) {
+        let doc = self.document_manager.get_document_by_handle(handle);
+        if self.split_tree.focused_window_id() == window
+            && self.active_document_id() == handle.doc_id()
+            && (kind == SaveKind::Special || doc.is_some_and(|doc| !doc.is_dirty()))
+        {
+            self.do_quit(false);
+        } else if kind == SaveKind::Special && doc.is_none() {
+            self.quit_if_alone();
+        } else {
             self.notify_save_quit_aborted();
-            return;
         }
-        self.do_quit(false);
     }
 }

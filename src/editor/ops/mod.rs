@@ -8,7 +8,7 @@ mod files;
 mod lsp;
 mod notify;
 mod options;
-mod save;
+pub(super) mod save;
 mod search;
 pub(crate) mod windows;
 mod yank;

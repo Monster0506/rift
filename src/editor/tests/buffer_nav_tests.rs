@@ -209,7 +209,7 @@ fn test_handle_execution_result_quit_only_checks_current_buffer() {
 fn test_cancelled_save_clears_quit_after_job() {
     let mut editor = create_editor();
     let job_id = 42;
-    editor.scheduler.quit_after_job = Some(job_id);
+    editor.scheduler.quit_after_job = Some((job_id, editor.split_tree.focused_window_id()));
 
     editor.handle_job_message(crate::job_manager::JobMessage::Cancelled(job_id));
 
