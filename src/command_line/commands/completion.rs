@@ -3,6 +3,7 @@ use crate::command_line::commands::definitions::{CompletionHint, COMMANDS};
 use crate::command_line::commands::registry::MatchResult;
 use crate::command_line::settings::descriptor::SettingType;
 use crate::command_line::settings::registry::SettingsRegistry;
+use crate::command_line::settings::resolver::SettingsResolver;
 use crate::document::definitions::DocumentOptions;
 use crate::state::UserSettings;
 
@@ -188,38 +189,36 @@ pub(crate) fn parse_context(
                 CompletionHint::Directory => {
                     file_context(file_prefix, token_start, PathFilter::DirectoriesOnly)
                 }
-                CompletionHint::Setting => {
+                CompletionHint::Setting | CompletionHint::LocalSetting => {
+                    let local_only = matches!(desc.completion, CompletionHint::LocalSetting);
                     if has_trailing_space && !rest.is_empty() {
-                        let setting_token = rest[0];
-                        let canonical = resolve_setting_name(setting_token, settings_registry)
-                            .unwrap_or_else(|| setting_token.to_string());
+                        let resolver =
+                            SettingsResolver::new(*document_settings_registry, *settings_registry);
+                        let (matched, local) = resolver.match_name(rest[0], local_only);
+                        let name = match matched {
+                            MatchResult::Exact(name)
+                            | MatchResult::Prefix(name)
+                            | MatchResult::Unknown(name) => name,
+                            MatchResult::Ambiguous { prefix, .. } => prefix,
+                        };
+                        let context = if local {
+                            CompletionContext::LocalSettingValue { name }
+                        } else {
+                            CompletionContext::SettingValue { name }
+                        };
                         ParsedContext {
-                            context: CompletionContext::SettingValue { name: canonical },
+                            context,
                             prefix: String::new(),
                             token_start,
                         }
                     } else {
+                        let context = if local_only {
+                            CompletionContext::LocalSettingName
+                        } else {
+                            CompletionContext::SettingName
+                        };
                         ParsedContext {
-                            context: CompletionContext::SettingName,
-                            prefix: current_token,
-                            token_start,
-                        }
-                    }
-                }
-                CompletionHint::LocalSetting => {
-                    if has_trailing_space && !rest.is_empty() {
-                        let setting_token = rest[0];
-                        let canonical =
-                            resolve_setting_name(setting_token, document_settings_registry)
-                                .unwrap_or_else(|| setting_token.to_string());
-                        ParsedContext {
-                            context: CompletionContext::LocalSettingValue { name: canonical },
-                            prefix: String::new(),
-                            token_start,
-                        }
-                    } else {
-                        ParsedContext {
-                            context: CompletionContext::LocalSettingName,
+                            context,
                             prefix: current_token,
                             token_start,
                         }
@@ -313,13 +312,38 @@ pub(crate) fn complete_setting_name<T: 'static>(
     prefix: &str,
     settings_registry: &SettingsRegistry<T>,
 ) -> CompletionResult {
-    let prefix_lower = prefix.to_lowercase();
-    let no_inner = prefix_lower
-        .strip_prefix("no")
-        .filter(|rest| !rest.is_empty())
-        .map(str::to_string);
+    let mut candidates = Vec::new();
+    extend_setting_name_candidates(&prefix.to_lowercase(), settings_registry, &mut candidates);
+    CompletionResult::from_candidates(candidates)
+}
 
-    let mut candidates: Vec<CompletionCandidate> = Vec::new();
+#[must_use]
+pub(crate) fn complete_resolved_setting_name(
+    prefix: &str,
+    document_settings_registry: &SettingsRegistry<DocumentOptions>,
+    settings_registry: &SettingsRegistry<UserSettings>,
+) -> CompletionResult {
+    let prefix_lower = prefix.to_lowercase();
+    let resolver = SettingsResolver::new(*document_settings_registry, *settings_registry);
+    let mut candidates = Vec::new();
+    extend_setting_name_candidates(&prefix_lower, settings_registry, &mut candidates);
+    candidates.retain(|candidate| {
+        !resolver.is_local(&candidate.text)
+            && !candidate
+                .text
+                .strip_prefix("no")
+                .is_some_and(|name| resolver.is_local(name))
+    });
+    extend_setting_name_candidates(&prefix_lower, document_settings_registry, &mut candidates);
+    CompletionResult::from_candidates(candidates)
+}
+
+fn extend_setting_name_candidates<T: 'static>(
+    prefix_lower: &str,
+    settings_registry: &SettingsRegistry<T>,
+    candidates: &mut Vec<CompletionCandidate>,
+) {
+    let no_inner = prefix_lower.strip_prefix("no").unwrap_or("");
 
     for desc in settings_registry.descriptors() {
         let type_hint = type_hint_for(&desc.ty);
@@ -334,24 +358,23 @@ pub(crate) fn complete_setting_name<T: 'static>(
         candidates.extend(candidates_from_name_aliases(
             desc.name,
             desc.aliases,
-            &prefix_lower,
+            prefix_lower,
             &desc_name,
             desc_alias,
         ));
 
         if matches!(desc.ty, SettingType::Boolean) {
-            let no_inner_str = no_inner.as_deref().unwrap_or("");
             let no_candidates = candidates_from_name_aliases(
                 desc.name,
                 desc.aliases,
-                no_inner_str,
+                no_inner,
                 &format!("{} (boolean off)", desc.description),
                 |_| format!("{} (boolean off)", desc.description),
             );
             let name_lower = desc.name.to_lowercase();
             for c in no_candidates {
                 let no_text = format!("no{}", c.text);
-                if no_text.to_lowercase().starts_with(&prefix_lower)
+                if no_text.to_lowercase().starts_with(prefix_lower)
                     && !prefix_lower.starts_with(name_lower.as_str())
                 {
                     candidates.push(CompletionCandidate {
@@ -363,8 +386,6 @@ pub(crate) fn complete_setting_name<T: 'static>(
             }
         }
     }
-
-    CompletionResult::from_candidates(candidates)
 }
 
 #[must_use]
@@ -569,17 +590,6 @@ fn resolve_command_descriptor(token: &str) -> Option<&'static CommandDescriptor>
         Some(alias_matches[0])
     } else {
         None
-    }
-}
-
-fn resolve_setting_name<T: 'static>(
-    token: &str,
-    settings_registry: &SettingsRegistry<T>,
-) -> Option<String> {
-    let registry = settings_registry.build_option_registry();
-    match registry.match_command(token) {
-        MatchResult::Exact(name) | MatchResult::Prefix(name) => Some(name),
-        MatchResult::Ambiguous { .. } | MatchResult::Unknown(_) => None,
     }
 }
 

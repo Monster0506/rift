@@ -32,6 +32,7 @@ impl<T> SettingsRegistry<T> {
         self.settings
     }
 
+    #[cfg(test)]
     #[must_use]
     pub(in crate::command_line) fn build_option_registry(&self) -> CommandRegistry {
         (*self.cached_option_registry()).clone()
@@ -58,9 +59,13 @@ impl<T> SettingsRegistry<T> {
             .clone()
     }
 
+    pub(in crate::command_line) fn match_option(&self, name: &str) -> MatchResult {
+        self.cached_option_registry().match_command(name)
+    }
+
     #[must_use]
     pub(super) fn find_descriptor(&self, name: &str) -> Option<&SettingDescriptor<T>> {
-        let matched_name = match self.cached_option_registry().match_command(name) {
+        let matched_name = match self.match_option(name) {
             MatchResult::Exact(n) | MatchResult::Prefix(n) => n,
             MatchResult::Ambiguous { .. } | MatchResult::Unknown(_) => return None,
         };
@@ -278,7 +283,7 @@ impl<T> SettingsRegistry<T> {
             code: "UNKNOWN_SETTING".to_string(),
             message: format!("Unknown option: {name}"),
         };
-        let matched_name = match self.cached_option_registry().match_command(name) {
+        let matched_name = match self.match_option(name) {
             MatchResult::Exact(n) | MatchResult::Prefix(n) => n,
             MatchResult::Ambiguous { prefix, matches } => {
                 let matches_str = matches.join(", ");

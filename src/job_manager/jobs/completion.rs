@@ -2,8 +2,9 @@
 //! Handles filesystem enumeration; in-memory lookups run inline.
 
 use crate::command_line::commands::completion::{
-    complete_command_name, complete_setting_name, complete_setting_value, complete_subcommand,
-    parse_context, CompletionCandidate, CompletionContext, CompletionResult, PathFilter,
+    complete_command_name, complete_resolved_setting_name, complete_setting_name,
+    complete_setting_value, complete_subcommand, parse_context, CompletionCandidate,
+    CompletionContext, CompletionResult, PathFilter,
 };
 use crate::command_line::settings::registry::SettingsRegistry;
 use crate::document::definitions::{create_document_settings_registry, DocumentOptions};
@@ -92,9 +93,11 @@ impl Job for CompletionJob {
                 }
                 result
             }
-            CompletionContext::SettingName => {
-                complete_setting_name(&parsed.prefix, &SETTINGS_REGISTRY)
-            }
+            CompletionContext::SettingName => complete_resolved_setting_name(
+                &parsed.prefix,
+                &DOCUMENT_SETTINGS_REGISTRY,
+                &SETTINGS_REGISTRY,
+            ),
             CompletionContext::SettingValue { name } => {
                 complete_setting_value(name, &SETTINGS_REGISTRY, self.current_settings.as_ref())
             }
@@ -360,4 +363,45 @@ fn complete_filepath(
     }
 
     CompletionResult::from_candidates(candidates)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::job_manager::jobs::test_support::recv_custom_payload;
+    use std::sync::mpsc;
+
+    #[test]
+    fn option_completion_follows_command_scope() {
+        for (input, expected) in [
+            (":set nu", &["number"][..]),
+            (":set nu ", &["false", "true"][..]),
+            (":set tw ", &["4"][..]),
+            (":set command_line.height ", &["3"][..]),
+            (":setlocal nu ", &["false", "true"][..]),
+            (":setlocal command_line.h", &[][..]),
+            (":setlocal command_line.height ", &[][..]),
+        ] {
+            let (tx, rx) = mpsc::channel();
+            let job = CompletionJob {
+                input: input.into(),
+                current_settings: Some(UserSettings::new()),
+                current_doc_options: Some(DocumentOptions::default()),
+                plugin_commands: Vec::new(),
+                line_count: 0,
+                buf_words: Vec::new(),
+            };
+
+            Box::new(job).run(0, tx, CancellationSignal::new_uncancelled());
+
+            let payload = recv_custom_payload::<CompletionPayload>(&rx).unwrap();
+            let candidates: Vec<_> = payload
+                .result
+                .candidates
+                .iter()
+                .map(|candidate| candidate.text.as_str())
+                .collect();
+            assert_eq!(candidates, expected, "{input}");
+        }
+    }
 }

@@ -1,5 +1,6 @@
 use super::descriptor::SettingValue;
 use super::registry::SettingsRegistry;
+use crate::command_line::commands::registry::MatchResult;
 use crate::error::RiftError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,7 +31,18 @@ impl<L, G> SettingsResolver<L, G> {
 
     #[must_use]
     pub(crate) fn is_local(&self, name: &str) -> bool {
-        self.local.find_descriptor(name).is_some()
+        !matches!(self.local.match_option(name), MatchResult::Unknown(_))
+    }
+
+    pub(in crate::command_line) fn match_name(
+        &self,
+        name: &str,
+        local_only: bool,
+    ) -> (MatchResult, bool) {
+        match self.local.match_option(name) {
+            MatchResult::Unknown(_) if !local_only => (self.global.match_option(name), false),
+            matched => (matched, true),
+        }
     }
 
     pub(crate) fn set(
@@ -55,9 +67,11 @@ impl<L, G> SettingsResolver<L, G> {
         local_target: &L,
         global_target: &G,
     ) -> Option<SettingValue> {
-        self.local
-            .get_setting(name, local_target)
-            .or_else(|| self.global.get_setting(name, global_target))
+        if self.is_local(name) {
+            self.local.get_setting(name, local_target)
+        } else {
+            self.global.get_setting(name, global_target)
+        }
     }
 }
 

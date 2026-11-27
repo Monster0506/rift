@@ -202,7 +202,7 @@ impl CommandExecutor {
             } => ExecutionResult::SetOption {
                 name: option,
                 value,
-                scope: OptionScope::Global,
+                scope: OptionScope::Resolve(document.id),
             },
             ParsedCommand::SetLocal {
                 option,

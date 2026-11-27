@@ -4,6 +4,7 @@
 use crate::command_line::commands::registry::MatchResult;
 use crate::command_line::commands::types::{ParsedCommand, SplitSubcommand};
 use crate::command_line::settings::registry::SettingsRegistry;
+use crate::command_line::settings::resolver::SettingsResolver;
 use crate::split::navigation::Direction;
 use crate::state::UserSettings;
 
@@ -18,7 +19,6 @@ pub(super) enum CompletionHint {
     FilePath,
     /// Directories only (e.g. :file)
     Directory,
-    /// Global settings (e.g. :set)
     Setting,
     /// Document-local settings (e.g. :setlocal)
     LocalSetting,
@@ -412,7 +412,11 @@ fn parse_set_impl(
     }
 
     let option_str = args[0];
-    let option_registry = registry.build_option_registry();
+    let resolver = SettingsResolver::new(
+        crate::document::definitions::create_document_settings_registry(),
+        *registry,
+    );
+    let match_option = |name: &str| resolver.match_name(name, local).0;
 
     // Check for "no" prefix (boolean off) - case insensitive
     let option_lower = option_str.to_lowercase();
@@ -420,7 +424,7 @@ fn parse_set_impl(
         .strip_prefix("no")
         .filter(|rest| !rest.is_empty())
     {
-        match option_registry.match_command(option_without_no) {
+        match match_option(option_without_no) {
             MatchResult::Exact(name) | MatchResult::Prefix(name) => {
                 return set_command(local, name, Some("false".to_string()), bangs);
             }
@@ -440,7 +444,7 @@ fn parse_set_impl(
     if let Some((option_part, value)) = option_str.split_once('=') {
         let value = value.to_string();
 
-        match option_registry.match_command(option_part) {
+        match match_option(option_part) {
             MatchResult::Exact(name) | MatchResult::Prefix(name) => {
                 return set_command(local, name, Some(value), bangs);
             }
@@ -460,7 +464,7 @@ fn parse_set_impl(
     if args.len() > 1 {
         let value = args[1].to_string();
 
-        match option_registry.match_command(option_str) {
+        match match_option(option_str) {
             MatchResult::Exact(name) | MatchResult::Prefix(name) => {
                 return set_command(local, name, Some(value), bangs);
             }
@@ -474,7 +478,7 @@ fn parse_set_impl(
     }
 
     // Boolean on (no value specified)
-    match option_registry.match_command(option_str) {
+    match match_option(option_str) {
         MatchResult::Exact(name) | MatchResult::Prefix(name) => {
             set_command(local, name, Some("true".to_string()), bangs)
         }

@@ -20,6 +20,20 @@ fn plugin_set_option_document_local_setting_updates_active_document() {
 }
 
 #[test]
+fn set_uses_the_same_local_scope_and_aliases_as_plugin_options() {
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello\n");
+
+    editor.execute_command_line("set tab_width=8");
+    editor.execute_command_line("set noet");
+    editor.execute_command_line("set ghostcut=false");
+
+    assert_eq!(editor.active_document().options().tab_width(), 8);
+    assert!(!editor.active_document().options().expand_tabs());
+    assert!(!editor.state.settings.editing().ghost_cut);
+}
+
+#[test]
 fn plugin_set_option_global_setting_updates_user_settings() {
     let mut editor = create_editor();
     load_text(&mut editor, "hello\n");
