@@ -295,11 +295,26 @@ fn set_buffer_var_without_buf_targets_the_buffer_current_when_queued() {
         editor.document_manager.active_document_id().unwrap().get(),
         first
     );
-    assert!(doc(&editor, first).vars.get("probe").is_none());
+    assert!(doc(&editor, first).vars().get("probe").is_none());
     assert_eq!(
-        doc(&editor, second).vars.get("probe"),
+        doc(&editor, second).vars().get("probe"),
         Some(&crate::annotations::value::Value::Str("queued".to_string()))
     );
+}
+
+#[test]
+fn plugin_replace_lines_is_undone_as_one_edit() {
+    let (_dir, mut editor, first, _) = background_file();
+    lua_ok(
+        &editor,
+        &format!("rift.replace_lines(1, 1, {{ 'changed' }}, {{ buf = {first} }})"),
+    );
+    sync(&mut editor);
+    assert_eq!(text(&editor, first), "changed\nbeta");
+
+    editor.focus_document(DocumentId::new(first)).unwrap();
+    editor.execute_command_line("undo");
+    assert_eq!(text(&editor, first), "alpha\nbeta");
 }
 
 #[test]
@@ -332,6 +347,64 @@ fn reloading_a_background_buffer_updates_only_its_document() {
     assert_eq!(text(&editor, first), "reloaded");
     assert_eq!(text(&editor, second), "second");
     assert_eq!(editor.active_document_id().get(), second);
+}
+
+#[test]
+fn native_background_save_keeps_the_foreground_buffer_visible_to_hooks() {
+    use crate::document::{manager::Placement, ops::ContentKind, Document};
+    use crate::wrap::RangeKind;
+
+    let (_dir, mut editor, _, foreground) = background_file();
+    editor.clipboard_ring.push_str("old", RangeKind::Charwise);
+    editor.clipboard_ring.push_str("new", RangeKind::Charwise);
+    let target = editor.document_manager.next_id();
+    let mut clipboard = Document::new_clipboard(target).unwrap();
+    clipboard.populate_clipboard_buffer(editor.clipboard_ring.entries());
+    clipboard.replace_content("[0]", ContentKind::Render);
+    lua_ok(
+        &editor,
+        &format!(
+            "rift.on('BufOpen', function(ev) if ev.buf == {} then _G.save_focus = rift.current_buf() end end)",
+            target.get()
+        ),
+    );
+    editor.open_buffer(clipboard, Placement::Background);
+    editor.update_lua_state();
+    lua_ok(&editor, &format!("rift.save({{ buf = {} }})", target.get()));
+    sync(&mut editor);
+
+    assert_eq!(ring_text(&editor, 0).as_deref(), Some("new"));
+    assert_eq!(editor.clipboard_ring.len(), 1);
+    lua_ok(
+        &editor,
+        &format!("assert(save_focus == {foreground}, tostring(save_focus))"),
+    );
+}
+
+#[test]
+fn native_reload_refreshes_the_requested_messages_buffer() {
+    use crate::document::{manager::Placement, Document};
+
+    let (_dir, mut editor, _, foreground) = background_file();
+    let first = Document::new_messages(editor.document_manager.next_id(), false).unwrap();
+    let first = editor.open_buffer(first, Placement::Background);
+    let second = Document::new_messages(editor.document_manager.next_id(), false).unwrap();
+    let second = editor.open_buffer(second, Placement::Background);
+    let first_before = text(&editor, first.get());
+    editor.notify(
+        crate::notification::NotificationType::Info,
+        "native reload probe",
+    );
+    editor.update_lua_state();
+    lua_ok(
+        &editor,
+        &format!("rift.reload_buf(true, {{ buf = {} }})", second.get()),
+    );
+    sync(&mut editor);
+
+    assert_eq!(text(&editor, first.get()), first_before);
+    assert!(text(&editor, second.get()).contains("native reload probe"));
+    assert_eq!(editor.active_document_id().get(), foreground);
 }
 
 #[test]

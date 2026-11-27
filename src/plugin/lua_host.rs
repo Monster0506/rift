@@ -5,7 +5,7 @@ use crate::document::ops::Edit;
 use crate::document::DocumentId;
 use crate::job_manager::jobs::plugin_process::{JobCommand, JobSpec, JobStream, PluginJobEvent};
 use crate::notification::NotificationType;
-use crate::plugin::events::EventPayload;
+use crate::plugin::events::{EventPayload, SaveDecision, SaveHold, SaveRequestId};
 pub(crate) use crate::plugin::lua_state::{
     AnnotationView, BufAnnotations, BufEntry, BufMeta, BufUpdate, HistoryAvailability,
     LspDiagnosticsSnapshot, StateUpdate, SyncKeys, WinEntry,
@@ -210,6 +210,7 @@ struct LuaSharedState {
     current_plugin: Option<String>,
     plugin_health: std::collections::HashMap<String, PluginHealth>,
     is_active: bool,
+    save_holds: std::collections::HashMap<DocumentId, (Option<String>, SaveRequestId)>,
     buffer_vars: std::collections::HashMap<
         u64,
         std::collections::HashMap<String, crate::annotations::value::Value>,
@@ -431,6 +432,7 @@ impl LuaSharedState {
             current_plugin: None,
             plugin_health: std::collections::HashMap::new(),
             is_active: true,
+            save_holds: std::collections::HashMap::new(),
             buffer_vars: std::collections::HashMap::new(),
             user_settings: crate::state::UserSettings::new(),
             synced: SyncKeys::default(),
@@ -1059,6 +1061,14 @@ impl LuaHost {
                 let mut s = sh.borrow_mut();
                 s.plugin_health.remove(&owner);
                 s.timers.remove_owned(&owner);
+                s.save_holds.retain(|_, (plugin, request)| {
+                    if plugin.as_deref() == Some(owner.as_str()) {
+                        request.revoke();
+                        false
+                    } else {
+                        true
+                    }
+                });
                 s.mutations.push(PluginMutation::UnloadPlugin { owner });
                 Ok(())
             })?,
@@ -3253,6 +3263,9 @@ impl LuaHost {
     pub(super) fn mark_retiring(&self) {
         let mut s = self.shared.borrow_mut();
         s.is_active = false;
+        for (_, (_, request)) in s.save_holds.drain() {
+            request.revoke();
+        }
     }
 
     pub(super) fn synced_keys(&self) -> SyncKeys {
@@ -3461,6 +3474,40 @@ impl LuaHost {
     /// Returns error strings for any handlers that raised a Lua error.
     #[must_use]
     pub(super) fn dispatch_event(&self, event: &EventPayload) -> Vec<String> {
+        match event {
+            EventPayload::BufClose { buf } => self.revoke_save_hold(*buf),
+            EventPayload::EditorQuit => {
+                for (_, (_, request)) in self.shared.borrow_mut().save_holds.drain() {
+                    request.revoke();
+                }
+            }
+            _ => {}
+        }
+        self.dispatch_event_impl(event, None)
+    }
+
+    pub(super) fn dispatch_save_pre(
+        &self,
+        event: &EventPayload,
+        buf: DocumentId,
+    ) -> (Vec<String>, SaveDecision) {
+        self.revoke_save_hold(buf);
+        let mut decision = SaveDecision::Proceed;
+        let errors = self.dispatch_event_impl(event, Some((buf, &mut decision)));
+        (errors, decision)
+    }
+
+    fn revoke_save_hold(&self, buf: DocumentId) {
+        if let Some((_, request)) = self.shared.borrow_mut().save_holds.remove(&buf) {
+            request.revoke();
+        }
+    }
+
+    fn dispatch_event_impl(
+        &self,
+        event: &EventPayload,
+        mut save_pre: Option<(DocumentId, &mut SaveDecision)>,
+    ) -> Vec<String> {
         let handlers: LuaTable = match self.lua.globals().get("_rift_handlers") {
             Ok(t) => t,
             Err(_) => return vec![],
@@ -3472,15 +3519,19 @@ impl LuaHost {
         let Some(list) = list else {
             return vec![];
         };
-        let ev_table = match event.to_lua_table(&self.lua) {
-            Ok(t) => t,
-            Err(e) => {
-                return vec![format!(
-                    "failed to build event table for {}: {}",
-                    event.name(),
-                    e
-                )]
+        let ev_table = if save_pre.is_none() {
+            match event.to_lua_table(&self.lua) {
+                Ok(t) => Some(t),
+                Err(e) => {
+                    return vec![format!(
+                        "failed to build event table for {}: {}",
+                        event.name(),
+                        e
+                    )];
+                }
             }
+        } else {
+            None
         };
 
         // Snapshot the handler list before dispatch so handlers that call
@@ -3505,10 +3556,32 @@ impl LuaHost {
                             continue;
                         }
                     };
-                    let call_result =
+                    let call_result = if let Some((buf, decision)) = save_pre.as_mut() {
+                        let can_hold = match &**decision {
+                            SaveDecision::Proceed => true,
+                            SaveDecision::Hold(hold) => !hold.is_held(),
+                            SaveDecision::Cancel => false,
+                        };
+                        entry.get("slot").and_then(|slot| {
+                            self.call_save_pre_handler(
+                                event,
+                                *buf,
+                                slot,
+                                plugin.as_deref(),
+                                &f,
+                                can_hold,
+                            )
+                            .map(|requested| {
+                                if !matches!(requested, SaveDecision::Proceed) {
+                                    **decision = requested;
+                                }
+                            })
+                        })
+                    } else {
                         self.call_plugin(plugin.as_deref(), Self::AUTO_DISPATCH_BUDGET, || {
                             f.call::<()>(ev_table.clone())
-                        });
+                        })
+                    };
                     if let Err(e) = call_result {
                         errors.push(Self::plugin_error(plugin.as_deref(), event.name(), &e));
                     }
@@ -3521,6 +3594,72 @@ impl LuaHost {
             }
         }
         errors
+    }
+
+    fn call_save_pre_handler(
+        &self,
+        event: &EventPayload,
+        buf: DocumentId,
+        slot: i64,
+        plugin: Option<&str>,
+        f: &LuaFunction,
+        can_hold: bool,
+    ) -> LuaResult<SaveDecision> {
+        let ev = event.to_lua_table(&self.lua)?;
+        let decision = Rc::new(RefCell::new(Some(SaveDecision::Proceed)));
+        let cancel = Rc::clone(&decision);
+        ev.set(
+            "cancel",
+            self.lua.create_function(move |_, ()| {
+                let mut cancel = cancel.borrow_mut();
+                if matches!(*cancel, None | Some(SaveDecision::Cancel)) {
+                    return Ok(false);
+                }
+                *cancel = Some(SaveDecision::Cancel);
+                Ok(true)
+            })?,
+        )?;
+        let hold = Rc::clone(&decision);
+        let shared = Rc::clone(&self.shared);
+        let owner = plugin.map(str::to_owned);
+        ev.set(
+            "hold",
+            self.lua.create_function(move |lua, ()| {
+                let mut decision = hold.borrow_mut();
+                if !can_hold || !matches!(*decision, Some(SaveDecision::Proceed)) {
+                    return Ok(None);
+                }
+                let slots: LuaTable = lua.globals().get("_rift_slot_events")?;
+                if !slots.contains_key(slot)? {
+                    return Ok(None);
+                }
+                let (hold, request) = SaveHold::new(buf);
+                let continuation = request.clone();
+                let shared_resume = Rc::clone(&shared);
+                let resume = lua.create_function(move |_, ()| {
+                    if !continuation.queue_resume() {
+                        return Ok(false);
+                    }
+                    shared_resume
+                        .borrow_mut()
+                        .mutations
+                        .push(PluginMutation::ResumeSave {
+                            request: continuation.clone(),
+                        });
+                    Ok(true)
+                })?;
+                shared
+                    .borrow_mut()
+                    .save_holds
+                    .insert(buf, (owner.clone(), request));
+                *decision = Some(SaveDecision::Hold(hold));
+                Ok(Some(resume))
+            })?,
+        )?;
+
+        let result = self.call_plugin(plugin, Self::AUTO_DISPATCH_BUDGET, || f.call::<()>(ev));
+        let requested = decision.borrow_mut().take().unwrap_or_default();
+        result.map(|()| requested)
     }
 
     /// Invoke the Lua handler registered for an annotation (kind, verb) with a

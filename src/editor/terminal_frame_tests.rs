@@ -1,4 +1,5 @@
 use super::*;
+use crate::editor::scheduler::{FRAME_INTERVAL, KEY_SEQUENCE_TIMEOUT};
 use crate::job_manager::{AsyncOpDomain, CancellationSignal, Job, JobMessage};
 use crate::test_utils::MockTerminal;
 use std::collections::VecDeque;
@@ -90,12 +91,15 @@ fn editor() -> Editor<FrameTerminal> {
 fn terminal_frame_delay_respects_exact_frame_boundary() {
     let mut editor = editor();
     let start = crate::time::Instant::now();
-    editor.last_frame_at = Some(start);
-    editor.terminal_frame_pending = true;
+    editor.scheduler.last_frame_at = Some(start);
+    editor.scheduler.terminal_frame_dirty = true;
 
-    assert_eq!(editor.terminal_frame_delay(start), Some(FRAME_INTERVAL));
     assert_eq!(
-        editor.terminal_frame_delay(
+        editor.scheduler.terminal_frame_delay(start),
+        Some(FRAME_INTERVAL)
+    );
+    assert_eq!(
+        editor.scheduler.terminal_frame_delay(
             (start + FRAME_INTERVAL)
                 .checked_sub(Duration::from_nanos(1))
                 .unwrap()
@@ -103,7 +107,9 @@ fn terminal_frame_delay_respects_exact_frame_boundary() {
         Some(Duration::from_nanos(1))
     );
     assert_eq!(
-        editor.terminal_frame_delay(start + FRAME_INTERVAL),
+        editor
+            .scheduler
+            .terminal_frame_delay(start + FRAME_INTERVAL),
         Some(Duration::ZERO)
     );
 }
@@ -112,44 +118,47 @@ fn terminal_frame_delay_respects_exact_frame_boundary() {
 fn terminal_frame_delay_requires_an_owed_frame() {
     let mut editor = editor();
     let now = crate::time::Instant::now();
-    editor.last_frame_at = None;
-    assert_eq!(editor.terminal_frame_delay(now), None);
-    editor.terminal_frame_pending = true;
-    assert_eq!(editor.terminal_frame_delay(now), Some(Duration::ZERO));
+    editor.scheduler.last_frame_at = None;
+    assert_eq!(editor.scheduler.terminal_frame_delay(now), None);
+    editor.scheduler.terminal_frame_dirty = true;
+    assert_eq!(
+        editor.scheduler.terminal_frame_delay(now),
+        Some(Duration::ZERO)
+    );
 }
 
 #[test]
 fn pending_terminal_frame_waits_then_renders_without_new_messages() {
     let mut editor = editor();
-    editor.terminal_frame_pending = true;
-    editor.last_frame_at = Some(crate::time::Instant::now() + Duration::from_secs(60));
+    editor.scheduler.terminal_frame_dirty = true;
+    editor.scheduler.last_frame_at = Some(crate::time::Instant::now() + Duration::from_secs(60));
     editor.tick().unwrap();
     assert_eq!(editor.term.inner.flushes, 0);
-    assert!(editor.terminal_frame_pending);
+    assert!(editor.scheduler.terminal_frame_dirty);
     assert!(editor.term.polls[0] <= FRAME_INTERVAL);
 
-    editor.last_frame_at = crate::time::Instant::now().checked_sub(FRAME_INTERVAL);
+    editor.scheduler.last_frame_at = crate::time::Instant::now().checked_sub(FRAME_INTERVAL);
     editor.tick().unwrap();
     assert_eq!(editor.term.inner.flushes, 1);
-    assert!(!editor.terminal_frame_pending);
+    assert!(!editor.scheduler.terminal_frame_dirty);
 
     // A new output notification immediately after the frame must wait again.
-    editor.terminal_frame_pending = true;
-    editor.last_frame_at = Some(crate::time::Instant::now() + Duration::from_secs(60));
+    editor.scheduler.terminal_frame_dirty = true;
+    editor.scheduler.last_frame_at = Some(crate::time::Instant::now() + Duration::from_secs(60));
     editor.tick().unwrap();
     assert_eq!(editor.term.inner.flushes, 1);
-    assert!(editor.terminal_frame_pending);
+    assert!(editor.scheduler.terminal_frame_dirty);
 }
 
 #[test]
 fn filtered_input_does_not_strand_a_due_terminal_frame() {
     let mut editor = editor();
     editor.term.events.push_back(None);
-    editor.terminal_frame_pending = true;
-    editor.last_frame_at = crate::time::Instant::now().checked_sub(FRAME_INTERVAL);
+    editor.scheduler.terminal_frame_dirty = true;
+    editor.scheduler.last_frame_at = crate::time::Instant::now().checked_sub(FRAME_INTERVAL);
     editor.tick().unwrap();
     assert_eq!(editor.term.inner.flushes, 1);
-    assert!(!editor.terminal_frame_pending);
+    assert!(!editor.scheduler.terminal_frame_dirty);
 }
 
 #[test]
@@ -159,12 +168,12 @@ fn consumed_count_key_does_not_strand_a_due_terminal_frame() {
         .term
         .events
         .extend([Some(InputEvent::Key(Key::char('2'))), None]);
-    editor.terminal_frame_pending = true;
-    editor.last_frame_at = crate::time::Instant::now().checked_sub(FRAME_INTERVAL);
+    editor.scheduler.terminal_frame_dirty = true;
+    editor.scheduler.last_frame_at = crate::time::Instant::now().checked_sub(FRAME_INTERVAL);
     editor.tick().unwrap();
     assert_eq!(editor.pending_count, 2);
     assert_eq!(editor.term.inner.flushes, 1);
-    assert!(!editor.terminal_frame_pending);
+    assert!(!editor.scheduler.terminal_frame_dirty);
 }
 
 #[test]
@@ -174,12 +183,12 @@ fn key_render_does_not_wait_for_terminal_frame_deadline() {
         .term
         .events
         .push_back(Some(InputEvent::Key(Key::char('i'))));
-    editor.terminal_frame_pending = true;
-    editor.last_frame_at = Some(crate::time::Instant::now() + Duration::from_secs(60));
+    editor.scheduler.terminal_frame_dirty = true;
+    editor.scheduler.last_frame_at = Some(crate::time::Instant::now() + Duration::from_secs(60));
     editor.tick().unwrap();
     assert_eq!(editor.current_mode, Mode::Insert);
     assert_eq!(editor.term.inner.flushes, 1);
-    assert!(!editor.terminal_frame_pending);
+    assert!(!editor.scheduler.terminal_frame_dirty);
 }
 
 #[derive(Debug)]
@@ -213,7 +222,7 @@ fn terminal_output_batch_drains_past_ten_without_bypassing_frame_deadline() {
     editor.update_and_render().unwrap();
     editor.last_notification_generation = editor.state.notifications.generation;
     editor.term.inner.clear();
-    editor.last_frame_at = Some(crate::time::Instant::now() + Duration::from_secs(60));
+    editor.scheduler.last_frame_at = Some(crate::time::Instant::now() + Duration::from_secs(60));
 
     for _ in 0..64 {
         sender
@@ -227,13 +236,13 @@ fn terminal_output_batch_drains_past_ten_without_bypassing_frame_deadline() {
     editor.tick().unwrap();
 
     assert!(editor.job_manager.receiver().try_recv().is_err());
-    assert!(editor.terminal_frame_pending);
+    assert!(editor.scheduler.terminal_frame_dirty);
     assert_eq!(editor.term.inner.flushes, 0);
 
-    editor.last_frame_at = crate::time::Instant::now().checked_sub(FRAME_INTERVAL);
+    editor.scheduler.last_frame_at = crate::time::Instant::now().checked_sub(FRAME_INTERVAL);
     editor.tick().unwrap();
     assert_eq!(editor.term.inner.flushes, 1);
-    assert!(!editor.terminal_frame_pending);
+    assert!(!editor.scheduler.terminal_frame_dirty);
 }
 
 #[cfg(feature = "terminal_emulation")]
@@ -256,7 +265,7 @@ fn hidden_terminal_output_does_not_schedule_a_frame() {
         Box::new(crate::job_manager::jobs::terminal_job::TerminalOutput),
     ));
 
-    assert!(!editor.terminal_frame_pending);
+    assert!(!editor.scheduler.terminal_frame_dirty);
     assert_eq!(editor.term.inner.flushes, 0);
 }
 
@@ -311,8 +320,8 @@ fn poll_timeout_shrinks_to_the_syntax_reparse_deadline() {
 fn poll_timeout_shrinks_to_the_key_sequence_timeout() {
     let mut editor = editor();
     editor.pending_keys.push(Key::char('g'));
-    editor.pending_keys_started_at = crate::time::Instant::now()
-        .checked_sub(Duration::from_millis(KEY_SEQUENCE_TIMEOUT_MS - 50));
+    editor.scheduler.key_sequence_started_at =
+        crate::time::Instant::now().checked_sub(KEY_SEQUENCE_TIMEOUT - Duration::from_millis(50));
 
     editor.tick().unwrap();
 

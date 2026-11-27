@@ -136,15 +136,14 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             let kind_id = doc.buffer_kind_id();
             let dispatch = doc.descriptor().reload_dispatch;
-            self.with_document_target(buf, |editor| {
-                editor.reload_native_document(kind_id, dispatch)
-            })?;
+            self.reload_native_document(buf, kind_id, dispatch)?;
         }
         Ok(())
     }
 
     fn reload_native_document(
         &mut self,
+        buf: DocumentId,
         kind_id: crate::document::runtime::BufferKindId,
         reload_dispatch: crate::document::runtime::ReloadDispatch,
     ) -> Result<(), RiftError> {
@@ -152,8 +151,8 @@ impl<T: TerminalBackend> Editor<T> {
             crate::document::runtime::ReloadDispatch::Native => {
                 let handler = self.native_reload_handlers.get(&kind_id).copied();
                 match handler {
-                    Some(NativeReloadHandler::Infallible(handler)) => handler(self),
-                    Some(NativeReloadHandler::Fallible(handler)) => handler(self)?,
+                    Some(NativeReloadHandler::Infallible(handler)) => handler(self, buf),
+                    Some(NativeReloadHandler::Fallible(handler)) => handler(self, buf)?,
                     None => {
                         return Err(RiftError::new(
                             ErrorType::Execution,

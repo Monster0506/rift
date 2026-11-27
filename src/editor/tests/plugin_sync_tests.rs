@@ -184,7 +184,7 @@ fn lsp_diagnostics_changes_reach_plugin() {
 #[test]
 fn buffer_var_set_by_editor_reaches_plugin() {
     let mut editor = lua_editor("hello\n");
-    editor.active_document().vars.insert(
+    editor.active_document().set_var(
         "probe".to_string(),
         crate::annotations::value::Value::Str("editor".to_string()),
     );

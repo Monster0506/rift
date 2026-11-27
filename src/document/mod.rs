@@ -200,7 +200,7 @@ pub(crate) struct Document {
     view_state: ViewState,
     pub(crate) kind: BufferKind,
     pub(crate) state: StateSlot,
-    pub(crate) vars: crate::tracked::Tracked<
+    vars: crate::tracked::Tracked<
         std::collections::HashMap<String, crate::annotations::value::Value>,
     >,
     pub(crate) annotations: AnnotationStore,

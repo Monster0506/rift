@@ -266,6 +266,284 @@ fn wq_then_typing_before_save_completes_quits_with_unsaved_edit() {
     assert!(editor.active_document().is_dirty());
 }
 
+#[cfg(feature = "plugins")]
+mod save_pre {
+    use super::*;
+
+    fn editable_file() -> (tempfile::TempDir, PathBuf, Editor<MockTerminal>) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("file.txt");
+        std::fs::write(&path, "original\n").unwrap();
+        let mut editor = create_editor();
+        let startup = editor.active_document_id();
+        open_and_load(&mut editor, &path);
+        editor
+            .close_buffer(startup, crate::document::manager::RemovalIntent::Force)
+            .unwrap();
+        editor.plugin_host.mark_lua_used();
+        editor.update_lua_state();
+        (dir, path, editor)
+    }
+
+    fn lua(editor: &Editor<MockTerminal>, code: &str) {
+        let error = editor.plugin_host.lua_exec(code);
+        assert!(error.is_none(), "{error:?}");
+    }
+
+    #[test]
+    fn cancel_prevents_write_post_and_quit_but_preserves_hook_edits() {
+        let (_dir, path, mut editor) = editable_file();
+        let buf = editor.active_document_id();
+        lua(
+            &editor,
+            "rift.on('BufSavePre', function(ev)
+               _G.resume = assert(ev.hold())
+             end)
+             rift.on('BufSavePre', function(ev)
+               _G.cancelled = ev.cancel()
+             end)
+             rift.on('BufSavePre', function()
+               rift.append_lines({ 'hook edit' })
+             end)
+             rift.on('BufSavePost', function() _G.post = true end)",
+        );
+
+        editor.execute_command_line("wq");
+        drain_jobs(&mut editor);
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "original\n");
+        assert!(editor
+            .active_document()
+            .buffer()
+            .to_string()
+            .contains("hook edit"));
+        assert!(editor.active_document().is_dirty());
+        assert_eq!(editor.active_document_id(), buf);
+        assert!(!editor.should_quit);
+        lua(
+            &editor,
+            "assert(_G.cancelled and _G.post == nil and not _G.resume())",
+        );
+    }
+
+    #[test]
+    fn held_write_and_quit_resumes_once_with_current_text() {
+        let (_dir, path, mut editor) = editable_file();
+        lua(
+            &editor,
+            "rift.on('BufSavePre', function(ev)
+               _G.pre = (_G.pre or 0) + 1
+               _G.event = ev
+               _G.resume = assert(ev.hold())
+               assert(not _G.resume())
+               rift.append_lines({ 'pre hook' })
+             end)
+             rift.on('BufSavePost', function()
+               _G.post = (_G.post or 0) + 1
+             end)",
+        );
+
+        editor.execute_command_line("wq");
+        drain_jobs(&mut editor);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "original\n");
+        assert!(!editor.should_quit);
+        lua(&editor, "assert(_G.pre == 1 and _G.post == nil)");
+
+        lua(
+            &editor,
+            "assert(not _G.event.cancel() and _G.event.hold() == nil)
+             rift.append_lines({ 'after hold' })
+             assert(_G.resume())
+             assert(not _G.resume())",
+        );
+        editor.apply_plugin_mutations();
+        drain_jobs(&mut editor);
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(written.contains("pre hook"));
+        assert!(written.contains("after hold"));
+        assert!(editor.should_quit);
+        lua(
+            &editor,
+            "assert(_G.pre == 1 and _G.post == 1 and not _G.resume())",
+        );
+    }
+
+    #[test]
+    fn closing_and_reopening_buffer_invalidates_held_quit() {
+        let (_dir, path, mut editor) = editable_file();
+        let original = editor.active_document_id();
+        lua(
+            &editor,
+            "rift.on('BufSavePre', function(ev) _G.resume = assert(ev.hold()) end)",
+        );
+
+        type_text(&mut editor, "discarded");
+        editor.execute_command_line("wq");
+        editor.execute_command_line("bdelete!");
+        assert!(editor.document_manager.get_document(original).is_none());
+        open_and_load(&mut editor, &path);
+        assert_ne!(editor.active_document_id(), original);
+        type_text(&mut editor, "new buffer");
+
+        lua(&editor, "assert(not _G.resume())");
+        editor.apply_plugin_mutations();
+        drain_jobs(&mut editor);
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "original\n");
+        assert!(editor.active_document().is_dirty());
+        assert!(!editor.should_quit);
+    }
+
+    #[test]
+    fn resumed_write_and_quit_does_not_close_another_split_showing_the_same_buffer() {
+        let (_dir, path, mut editor) = editable_file();
+        let original_window = editor.split_tree.focused_window_id();
+        editor.execute_command_line("split");
+        let buf = editor.active_document_id();
+        assert_ne!(editor.split_tree.focused_window_id(), original_window);
+        lua(
+            &editor,
+            "rift.on('BufSavePre', function(ev) _G.resume = assert(ev.hold()) end)",
+        );
+
+        type_text(&mut editor, "updated ");
+        editor.execute_command_line("wq");
+        editor.focus_window(original_window);
+        assert_eq!(editor.active_document_id(), buf);
+        lua(&editor, "assert(_G.resume())");
+        editor.apply_plugin_mutations();
+        drain_jobs(&mut editor);
+
+        assert!(std::fs::read_to_string(&path).unwrap().contains("updated "));
+        assert_eq!(editor.split_tree.window_count(), 2);
+        assert_eq!(editor.split_tree.focused_window_id(), original_window);
+        assert!(!editor.should_quit);
+    }
+
+    #[test]
+    fn newer_write_supersedes_a_held_write_and_quit() {
+        let (_dir, path, mut editor) = editable_file();
+        lua(
+            &editor,
+            "rift.on('BufSavePre', function(ev)
+               _G.previous_resume = _G.resume
+               _G.resume = assert(ev.hold())
+             end)",
+        );
+
+        type_text(&mut editor, "updated ");
+        editor.execute_command_line("wq");
+        editor.execute_command_line("w");
+        lua(&editor, "assert(not _G.previous_resume() and _G.resume())");
+        editor.apply_plugin_mutations();
+        drain_jobs(&mut editor);
+
+        assert!(std::fs::read_to_string(&path).unwrap().contains("updated "));
+        assert!(!editor.should_quit);
+    }
+
+    #[test]
+    fn special_buffer_resumes_its_save_handler_but_cannot_resume_while_closing() {
+        let mut editor = create_editor();
+        editor.plugin_host.mark_lua_used();
+        lua(
+            &editor,
+            "rift.register_buffer_kind('held', {
+               on_save = function() _G.saved = (_G.saved or 0) + 1 end,
+               on_close = function() _G.resumed_during_close = _G.resume() end,
+             })
+             rift.on('BufSavePre', function(ev)
+               assert(ev.path == nil)
+               _G.resume = assert(ev.hold())
+             end)
+             rift.on('BufSavePost', function()
+               _G.post = (_G.post or 0) + 1
+             end)",
+        );
+        editor.apply_plugin_mutations();
+        editor.update_lua_state();
+        lua(
+            &editor,
+            "rift.create_buffer('held', { lines = { 'body' } })",
+        );
+        editor.apply_plugin_mutations();
+        let buf = editor.active_document_id();
+
+        editor.execute_command_line("w");
+        lua(
+            &editor,
+            "assert(_G.saved == nil and _G.post == nil and _G.resume())",
+        );
+        editor.apply_plugin_mutations();
+        lua(&editor, "assert(_G.saved == 1 and _G.post == 1)");
+
+        editor.execute_command_line("w");
+        editor.execute_command_line("bdelete!");
+
+        assert!(editor.document_manager.get_document(buf).is_none());
+        lua(
+            &editor,
+            "assert(_G.saved == 1 and _G.post == 1 and _G.resumed_during_close == false)",
+        );
+    }
+
+    #[test]
+    fn unload_invalidates_even_a_queued_resume() {
+        let (dir, path, mut editor) = editable_file();
+        let plugin = dir.path().join("hold.lua");
+        std::fs::write(
+            &plugin,
+            "_G.hold_owner = _rift_current_plugin_file
+             rift.on('BufSavePre', function(ev) _G.resume = assert(ev.hold()) end)",
+        )
+        .unwrap();
+        assert!(editor.plugin_host.lua_load_file(&plugin).is_none());
+        type_text(&mut editor, "discarded");
+        editor.execute_command_line("wq");
+
+        lua(
+            &editor,
+            "assert(_G.resume())
+             rift.plugins.unload(_G.hold_owner)
+             assert(not _G.resume())",
+        );
+        editor.apply_plugin_mutations();
+        drain_jobs(&mut editor);
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "original\n");
+        assert!(editor.active_document().is_dirty());
+        assert!(!editor.should_quit);
+    }
+
+    #[test]
+    fn failed_callback_does_not_strand_the_save_it_requested_to_hold() {
+        let (_dir, path, mut editor) = editable_file();
+        lua(
+            &editor,
+            "rift.on('BufSavePre', function(ev)
+               _G.resume = assert(ev.hold())
+               rift.append_lines({ 'hook edit' })
+               error('failed pre-save hook')
+             end)
+             rift.on('BufSavePost', function() _G.post = true end)",
+        );
+
+        editor.execute_command_line("w");
+        drain_jobs(&mut editor);
+
+        assert!(std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("hook edit"));
+        assert!(editor
+            .state
+            .notifications
+            .iter_active()
+            .any(|notification| { notification.message.contains("failed pre-save hook") }));
+        lua(&editor, "assert(_G.post and not _G.resume())");
+    }
+}
+
 #[test]
 fn all_open_frontends_keep_dirty_buffers_when_opening_another_file() {
     use crate::action::{Action, EditorAction};

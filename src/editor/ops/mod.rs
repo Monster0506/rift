@@ -1,6 +1,7 @@
 pub(crate) mod buffers;
 mod events;
 pub(crate) use events::EditorEvent;
+mod ex;
 mod files;
 mod lsp;
 mod notify;

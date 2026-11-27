@@ -46,6 +46,11 @@ pub(super) enum PendingGrammar {
 }
 
 impl<T: TerminalBackend> Editor<T> {
+    pub(super) fn read_replace_char(&mut self) -> bool {
+        self.pending_grammar = Some(PendingGrammar::ReplaceChar);
+        true
+    }
+
     pub(super) fn advance_pending_grammar(&mut self, grammar: PendingGrammar, key: Key) {
         match grammar {
             PendingGrammar::ReplaceChar => self.handle_replace_char_grammar(key),

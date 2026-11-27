@@ -2,7 +2,7 @@
 
 use super::Editor;
 use crate::buffer::api::BufferView;
-use crate::document::{GitCommitTarget, GitStatusAction};
+use crate::document::{DocumentId, GitCommitTarget, GitStatusAction};
 use crate::error::{ErrorType, RiftError};
 use crate::term::TerminalBackend;
 use std::path::{Path, PathBuf};
@@ -558,10 +558,13 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    pub(super) fn apply_git_commit_message(&mut self) -> crate::document::runtime::SaveResult {
+    pub(super) fn apply_git_commit_message(
+        &mut self,
+        doc_id: DocumentId,
+    ) -> crate::document::runtime::SaveResult {
         use crate::document::runtime::SaveResult;
-        let (repo_root, target, message, doc_id) = {
-            let Some(doc) = self.document_manager.active_document() else {
+        let (repo_root, target, message) = {
+            let Some(doc) = self.document_manager.get_document(doc_id) else {
                 return SaveResult::Rejected;
             };
             if !doc.is_git_commit_message() {
@@ -578,7 +581,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .chars(0..doc.buffer().len())
                 .map(super::super::character::Character::to_char_lossy)
                 .collect();
-            (repo_root, target, message, doc.id)
+            (repo_root, target, message)
         };
 
         if let GitCommitTarget::RebasePlanReword { rebase_doc_id, sha } = target {

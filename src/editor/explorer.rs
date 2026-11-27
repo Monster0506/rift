@@ -376,14 +376,15 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(layout) = self.panel_layout_of(PanelKind::BufferList) else {
             return;
         };
+        self.refresh_buffer_list(layout.dir_doc_id);
+    }
+
+    pub(super) fn refresh_buffer_list(&mut self, doc_id: crate::document::DocumentId) {
         let infos = self.document_manager.get_buffer_list();
-        let cursor_line = self
-            .document_manager
-            .get_document(layout.dir_doc_id)
-            .map_or(0, |d| {
-                d.buffer().line_index.get_line_at(d.buffer().cursor())
-            });
-        if let Some(doc) = self.document_manager.get_document_mut(layout.dir_doc_id) {
+        let cursor_line = self.document_manager.get_document(doc_id).map_or(0, |d| {
+            d.buffer().line_index.get_line_at(d.buffer().cursor())
+        });
+        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             doc.populate_buffer_list_buffer(&infos);
             let target_line = cursor_line.min(infos.len().saturating_sub(1));
             if let Some(start) = doc.buffer().line_index.get_start(target_line) {
@@ -498,11 +499,15 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    pub(super) fn apply_clipboard_diff(&mut self) -> crate::document::runtime::SaveResult {
+    pub(super) fn apply_clipboard_diff(
+        &mut self,
+        doc_id: crate::document::DocumentId,
+    ) -> crate::document::runtime::SaveResult {
         use crate::document::runtime::SaveResult;
 
         if self.panel_layout.as_ref().is_some_and(|layout| {
             layout.kind == PanelKind::Clipboard
+                && layout.dir_doc_id == doc_id
                 && self
                     .document_manager
                     .get_document(layout.preview_doc_id)
@@ -514,7 +519,7 @@ impl<T: TerminalBackend> Editor<T> {
             );
             return SaveResult::Failed;
         }
-        let Some(doc) = self.document_manager.active_document() else {
+        let Some(doc) = self.document_manager.get_document(doc_id) else {
             return SaveResult::Rejected;
         };
         let snapshot_matches = doc
@@ -539,7 +544,7 @@ impl<T: TerminalBackend> Editor<T> {
             ring.push(entry);
         }
         self.clipboard_ring = ring;
-        if let Some(doc) = self.document_manager.active_document_mut() {
+        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             doc.populate_clipboard_buffer(self.clipboard_ring.entries());
             let line = cursor_line.min(doc.buffer().get_total_lines().saturating_sub(1));
             let cursor = doc.buffer().line_index.get_start(line).unwrap_or(0);
@@ -940,19 +945,20 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn handle_explorer_refresh(&mut self) {
-        let dir_doc_id = if let Some(l) = self.panel_layout.as_ref() {
-            if l.kind == PanelKind::FileExplorer {
-                l.dir_doc_id
-            } else {
-                return;
-            }
-        } else {
-            match self.document_manager.active_document() {
-                Some(d) => d.id,
-                None => return,
-            }
+        let id = match self.panel_layout.as_ref() {
+            Some(layout) if layout.kind == PanelKind::FileExplorer => layout.dir_doc_id,
+            Some(_) => return,
+            None => self.active_document_id(),
         };
+        self.refresh_directory(id);
+    }
 
+    pub(super) fn refresh_directory(&mut self, id: crate::document::DocumentId) {
+        let dir_doc_id = self
+            .panel_layout
+            .as_ref()
+            .filter(|layout| layout.kind == PanelKind::FileExplorer && layout.preview_doc_id == id)
+            .map_or(id, |layout| layout.dir_doc_id);
         let Some(doc) = self.document_manager.get_document(dir_doc_id) else {
             return;
         };
@@ -983,22 +989,34 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn handle_undotree_refresh(&mut self) {
-        let Some(layout) = self.panel_layout_of(PanelKind::UndoTree) else {
-            return;
-        };
-        if let Some(linked_doc) = self.document_manager.get_document(layout.original_doc_id) {
-            let job = crate::job_manager::jobs::undotree::UndoTreeRenderJob::new(
-                layout.dir_doc_id,
-                linked_doc.history.clone(),
-            );
-            self.job_manager.spawn(job);
+        if let Some(layout) = self.panel_layout_of(PanelKind::UndoTree) {
+            self.refresh_undotree(layout.dir_doc_id);
         }
     }
 
-    pub(super) fn apply_directory_diff(&mut self) -> crate::document::runtime::SaveResult {
+    pub(super) fn refresh_undotree(&mut self, id: crate::document::DocumentId) {
+        let Some(linked) = self
+            .document_manager
+            .get_document(id)
+            .and_then(crate::document::Document::undotree_linked_doc_id)
+            .and_then(|linked| self.document_manager.get_document(linked))
+        else {
+            return;
+        };
+        self.job_manager
+            .spawn(crate::job_manager::jobs::undotree::UndoTreeRenderJob::new(
+                id,
+                linked.history.clone(),
+            ));
+    }
+
+    pub(super) fn apply_directory_diff(
+        &mut self,
+        doc_id: crate::document::DocumentId,
+    ) -> crate::document::runtime::SaveResult {
         use crate::document::runtime::SaveResult;
         let (dir_doc_id, dir_path, dir_show_hidden, diff) = {
-            let Some(doc) = self.document_manager.active_document() else {
+            let Some(doc) = self.document_manager.get_document(doc_id) else {
                 return SaveResult::Rejected;
             };
             let Some(path) = doc.directory_path().cloned() else {

@@ -6,12 +6,6 @@ use crate::key::{InputEvent, Key};
 use crate::mode::Mode;
 use crate::term::TerminalBackend;
 
-/// Milliseconds an ambiguous non-operator key sequence waits for a follow-up
-/// key before the shorter action is flushed, mirroring vim's `timeoutlen`.
-const KEY_SEQUENCE_TIMEOUT_MS: u64 = 1000;
-
-pub(super) const FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_nanos(16_666_667);
-
 impl<T: TerminalBackend> Editor<T> {
     /// # Errors
     ///
@@ -46,7 +40,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn tick_inner(&mut self) -> Result<(), RiftError> {
         // Pending-key timer only applies while a sequence is in progress.
         if self.pending_keys.is_empty() {
-            self.pending_keys_started_at = None;
+            self.scheduler.key_sequence_started_at = None;
         }
 
         self.drain_syntax_sync();
@@ -109,7 +103,10 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        if self.terminal_frame_delay(crate::time::Instant::now()) == Some(std::time::Duration::ZERO)
+        if self
+            .scheduler
+            .terminal_frame_delay(crate::time::Instant::now())
+            == Some(std::time::Duration::ZERO)
         {
             self.update_and_render()?;
         }
@@ -128,30 +125,14 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn next_deadline(&self, now: crate::time::Instant) -> Option<crate::time::Instant> {
-        let key_sequence_timeout = std::time::Duration::from_millis(KEY_SEQUENCE_TIMEOUT_MS);
         [
-            self.terminal_frame_delay(now).map(|delay| now + delay),
             self.plugin_host.next_timer_deadline(),
-            self.scheduler.next_deadline(self.active_document_id()),
-            self.pending_keys_started_at
-                .map(|started_at| started_at + key_sequence_timeout),
+            self.scheduler.next_deadline(self.active_document_id(), now),
             self.state.notifications.next_expiry(),
         ]
         .into_iter()
         .flatten()
         .min()
-    }
-
-    fn terminal_frame_delay(&self, now: crate::time::Instant) -> Option<std::time::Duration> {
-        if !self.terminal_frame_pending {
-            return None;
-        }
-        Some(
-            self.last_frame_at
-                .map_or(std::time::Duration::ZERO, |last| {
-                    FRAME_INTERVAL.saturating_sub(now.saturating_duration_since(last))
-                }),
-        )
     }
 
     pub(super) fn fire_due_plugin_timers(&mut self, now: crate::time::Instant) -> bool {
@@ -238,8 +219,8 @@ impl<T: TerminalBackend> Editor<T> {
             }
             InputEvent::Key(key) => key,
         };
-        if self.is_git_status_refreshing() || !self.deferred_keys.is_empty() {
-            self.deferred_keys.push_back(key_press);
+        if self.is_git_status_refreshing() || !self.scheduler.deferred_keys.is_empty() {
+            self.scheduler.deferred_keys.push_back(key_press);
             return Ok(true);
         }
 
@@ -254,7 +235,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn replay_deferred_keys(&mut self) -> Result<(), RiftError> {
         while !self.is_git_status_refreshing() {
-            let Some(key) = self.deferred_keys.pop_front() else {
+            let Some(key) = self.scheduler.deferred_keys.pop_front() else {
                 return Ok(());
             };
             self.handle_key_press(key)?;
@@ -467,19 +448,21 @@ impl<T: TerminalBackend> Editor<T> {
                     if let Action::Editor(EditorAction::Operator(_)) = action {
                         let action = action.clone();
                         self.pending_keys.clear();
-                        self.pending_keys_started_at = None;
+                        self.scheduler.key_sequence_started_at = None;
                         self.handle_action(&action);
                         // Don't clear pending_count for operators
                         self.update_state_and_render(key_press, crate::command::Command::Noop)?;
                         break;
                     }
-                    self.pending_keys_started_at
+                    self.scheduler
+                        .key_sequence_started_at
                         .get_or_insert_with(crate::time::Instant::now);
                     self.update_state_and_render(key_press, crate::command::Command::Noop)?;
                     break;
                 }
                 MatchResult::Prefix => {
-                    self.pending_keys_started_at
+                    self.scheduler
+                        .key_sequence_started_at
                         .get_or_insert_with(crate::time::Instant::now);
                     self.update_state_and_render(key_press, crate::command::Command::Noop)?;
                     break;
@@ -694,10 +677,10 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn flush_pending_keys_on_timeout(&mut self) -> Result<(), RiftError> {
         use crate::keymap::trie::MatchResult;
 
-        let Some(started_at) = self.pending_keys_started_at else {
-            return Ok(());
-        };
-        if started_at.elapsed() < std::time::Duration::from_millis(KEY_SEQUENCE_TIMEOUT_MS) {
+        if !self
+            .scheduler
+            .key_sequence_expired(crate::time::Instant::now())
+        {
             return Ok(());
         }
 
@@ -707,7 +690,7 @@ impl<T: TerminalBackend> Editor<T> {
             _ => None,
         };
         self.pending_keys.clear();
-        self.pending_keys_started_at = None;
+        self.scheduler.key_sequence_started_at = None;
 
         if let Some(action) = action {
             self.handle_action(&action);

@@ -847,7 +847,7 @@ fn ambiguous_non_operator_binding_flushes_to_the_short_action_after_timeout() {
     );
 
     editor.pending_keys.push(Key::char('Q'));
-    editor.pending_keys_started_at = Some(
+    editor.scheduler.key_sequence_started_at = Some(
         std::time::Instant::now()
             .checked_sub(std::time::Duration::from_millis(1500))
             .unwrap(),
@@ -860,7 +860,7 @@ fn ambiguous_non_operator_binding_flushes_to_the_short_action_after_timeout() {
         "timeout flush should clear pending_keys"
     );
     assert!(
-        editor.pending_keys_started_at.is_none(),
+        editor.scheduler.key_sequence_started_at.is_none(),
         "timeout flush should clear the pending-key timer"
     );
     assert_eq!(

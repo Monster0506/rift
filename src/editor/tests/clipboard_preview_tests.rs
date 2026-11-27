@@ -93,7 +93,10 @@ fn clipboard_entry_save_rejects_changed_ring_without_marking_clean() {
         .clipboard_ring
         .push_str("external", crate::wrap::RangeKind::Charwise);
 
-    assert_eq!(editor.apply_clipboard_entry_save(), SaveResult::Failed);
+    assert_eq!(
+        editor.apply_clipboard_entry_save(editor.active_document_id()),
+        SaveResult::Failed
+    );
     assert!(editor.active_document().is_dirty());
     assert_eq!(ring_text(&editor, 0).as_deref(), Some("external"));
     assert_eq!(ring_text(&editor, 1).as_deref(), Some("one\n"));

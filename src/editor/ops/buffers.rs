@@ -8,10 +8,6 @@ use crate::term::TerminalBackend;
 use manager::{CreationReservation, NewDocument, Placement};
 
 impl<T: TerminalBackend> Editor<T> {
-    fn select_buffer(&mut self, id: DocumentId) -> Result<(), RiftError> {
-        self.document_manager.switch_to_document(id)
-    }
-
     pub(crate) fn set_recent_ghost(&mut self, id: Option<DocumentId>) {
         self.document_manager.set_most_recent_ghost_doc(id);
     }
@@ -112,40 +108,6 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(self.insert_buffer(doc, Placement::Background))
     }
 
-    pub(crate) fn with_document_target<R>(
-        &mut self,
-        buf: DocumentId,
-        f: impl FnOnce(&mut Self) -> R,
-    ) -> R {
-        let win = self.split_tree.focused_window_id();
-        let original = self.active_document_id();
-        let original_tab = self.document_manager.active_document_id();
-        let scroll = self.render_system.viewport.get_scroll();
-        self.show_in_window(win, buf);
-        let _ = self.select_buffer(buf);
-        self.sync_state_with_active_document();
-        let result = f(self);
-        if original != buf && self.document_manager.get_document(original).is_some() {
-            if self
-                .split_tree
-                .get_window(win)
-                .is_some_and(|w| w.document_id == buf)
-            {
-                self.show_in_window(win, original);
-                if self.split_tree.focused_window_id() == win {
-                    self.render_system.viewport.set_scroll(scroll.0, scroll.1);
-                }
-            }
-            if self.document_manager.active_document_id() == Some(buf) {
-                if let Some(tab) = original_tab {
-                    let _ = self.select_buffer(tab);
-                }
-            }
-            self.sync_state_with_active_document();
-        }
-        result
-    }
-
     pub(crate) fn focus_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
         let window = self.split_tree.focused_window_id();
         let previous = self.active_document_id();
@@ -178,7 +140,7 @@ impl<T: TerminalBackend> Editor<T> {
         if self.document_manager.get_document(id).is_some() {
             self.leave_entered_document(id);
         }
-        self.select_buffer(id)?;
+        self.document_manager.switch_to_document(id)?;
         update_view(self);
         self.sync_state_with_active_document();
         if self.active_document_id() == id {
@@ -209,6 +171,7 @@ impl<T: TerminalBackend> Editor<T> {
         intent: crate::document::manager::RemovalIntent,
     ) -> Result<(), RiftError> {
         let plan = self.document_manager.prepare_removal(id, intent)?;
+        self.scheduler.held_saves.remove(&id);
         let (handle, kind_id, descriptor) = {
             let document = self.document_manager.get_document(id).ok_or_else(|| {
                 RiftError::new(

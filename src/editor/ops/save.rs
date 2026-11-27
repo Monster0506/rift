@@ -1,13 +1,15 @@
+use super::super::scheduler::{HeldSave, SaveQuit};
 use super::super::Editor;
 use crate::document::runtime::{BufferKindId, DocumentHandle, SaveDispatch, SaveResult};
 use crate::document::DocumentId;
 use crate::error::{ErrorType, RiftError};
 use crate::job_manager::jobs::file_operations::FileSaveJob;
 use crate::notification::NotificationType;
-use crate::plugin::events::EventPayload;
+use crate::plugin::events::{EventPayload, SaveDecision, SaveRequestId};
 use crate::term::TerminalBackend;
 use std::path::{Path, PathBuf};
 
+#[derive(Clone, Copy)]
 pub(crate) enum SaveOutcome {
     Queued(usize),
     Saved,
@@ -21,13 +23,34 @@ impl<T: TerminalBackend> Editor<T> {
         target: Option<PathBuf>,
         force: bool,
     ) -> SaveOutcome {
-        let fs = crate::fs_backend::backend();
-        let target = target.map(|path| fs.canonicalize(&path));
+        self.save_buffer_with_quit(buf, target, force, None)
+    }
+
+    fn save_buffer_with_quit(
+        &mut self,
+        buf: DocumentId,
+        target: Option<PathBuf>,
+        force: bool,
+        mut quit: Option<SaveQuit>,
+    ) -> SaveOutcome {
+        let target = target.map(|path| crate::fs_backend::backend().canonicalize(&path));
+        if !self.save_target_allowed(buf, target.as_deref(), force) {
+            return SaveOutcome::NotSaved;
+        }
+        let result = self.start_save(buf, target, force, &mut quit);
+        self.state.clear_command_line();
+        if let Some(quit) = quit {
+            self.finish_save_quit(result, quit);
+        }
+        result
+    }
+
+    fn save_target_allowed(&mut self, buf: DocumentId, path: Option<&Path>, force: bool) -> bool {
         if !force
-            && target.as_deref().is_some_and(|path| {
-                self.document_manager
-                    .get_document(buf)
-                    .is_some_and(|doc| doc.path() != Some(path) && fs.path_exists(path))
+            && path.is_some_and(|path| {
+                self.document_manager.get_document(buf).is_some_and(|doc| {
+                    doc.path() != Some(path) && crate::fs_backend::backend().path_exists(path)
+                })
             })
         {
             self.notify_error(RiftError::new(
@@ -35,20 +58,27 @@ impl<T: TerminalBackend> Editor<T> {
                 crate::constants::errors::FILE_EXISTS,
                 crate::constants::errors::MSG_FILE_EXISTS,
             ));
-            return SaveOutcome::NotSaved;
+            return false;
         }
-        let result = self.start_save(buf, target);
-        self.state.clear_command_line();
-        result
+        true
     }
 
-    fn start_save(&mut self, buf: DocumentId, target: Option<PathBuf>) -> SaveOutcome {
+    fn start_save(
+        &mut self,
+        buf: DocumentId,
+        target: Option<PathBuf>,
+        force: bool,
+        quit: &mut Option<SaveQuit>,
+    ) -> SaveOutcome {
+        if self.scheduler.save_pre_in_progress.contains(&buf) {
+            return SaveOutcome::NotSaved;
+        }
         let Some(doc) = self.document_manager.get_document_mut(buf) else {
             return SaveOutcome::NotSaved;
         };
         let handle = doc.handle();
-        let file = doc.buffer_kind_id() == BufferKindId::FILE;
-        if !file {
+        let kind = doc.buffer_kind_id();
+        if kind != BufferKindId::FILE {
             match doc.descriptor().save_dispatch {
                 SaveDispatch::Disabled => return SaveOutcome::NotSaved,
                 SaveDispatch::Reject => {
@@ -61,15 +91,15 @@ impl<T: TerminalBackend> Editor<T> {
         }
         doc.commit_pending_ghost();
         let path = target.or_else(|| doc.path().map(Path::to_path_buf));
-        if file && path.is_none() {
+        if kind == BufferKindId::FILE && path.is_none() {
             self.notify_error(RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"));
             return SaveOutcome::NotSaved;
         }
-        self.raise(EventPayload::BufSavePre {
-            buf,
-            path: path.clone(),
-        });
-        let Some(doc) = self.document_manager.get_document_by_handle_mut(handle) else {
+        self.scheduler.held_saves.remove(&buf);
+        self.scheduler.save_pre_in_progress.insert(buf);
+        let decision = self.raise_save_pre(buf, path.clone());
+        self.scheduler.save_pre_in_progress.remove(&buf);
+        let Some(doc) = self.document_manager.get_document_by_handle(handle) else {
             self.notify_error(RiftError::new(
                 ErrorType::Io,
                 "SAVE_TARGET_CLOSED",
@@ -77,7 +107,84 @@ impl<T: TerminalBackend> Editor<T> {
             ));
             return SaveOutcome::NotSaved;
         };
-        let path = match (file, path) {
+        match decision {
+            SaveDecision::Proceed => self.write_save(handle, kind, path),
+            SaveDecision::Cancel => SaveOutcome::NotSaved,
+            SaveDecision::Hold(hold) => {
+                if !self.should_quit && doc.matches_kind(kind) && hold.activate() {
+                    self.scheduler.held_saves.insert(
+                        buf,
+                        HeldSave {
+                            hold,
+                            handle,
+                            kind,
+                            source_path: doc.path().map(Path::to_path_buf),
+                            path,
+                            force,
+                            quit: quit.take(),
+                        },
+                    );
+                }
+                SaveOutcome::NotSaved
+            }
+        }
+    }
+
+    pub(crate) fn resume_save(&mut self, request: &SaveRequestId) {
+        let buf = request.buf;
+        if self
+            .scheduler
+            .held_saves
+            .get(&buf)
+            .is_none_or(|save| !save.hold.matches_resume(request))
+        {
+            return;
+        }
+        let Some(save) = self.scheduler.held_saves.remove(&buf) else {
+            return;
+        };
+        if self.should_quit {
+            return;
+        }
+        if !self.save_target_allowed(buf, save.path.as_deref(), save.force) {
+            return;
+        }
+        let Some(doc) = self
+            .document_manager
+            .get_document_by_handle_mut(save.handle)
+        else {
+            return;
+        };
+        if !doc.matches_kind(save.kind) || doc.path() != save.source_path.as_deref() {
+            return;
+        }
+        doc.commit_pending_ghost();
+
+        let quit = save.quit.filter(|quit| {
+            let current = self.active_document_id() == buf
+                && self.split_tree.focused_window_id() == quit.window;
+            if !current {
+                self.notify_save_quit_aborted();
+            }
+            current
+        });
+        let result = self.write_save(save.handle, save.kind, save.path);
+        if let Some(quit) = quit {
+            self.finish_save_quit(result, quit);
+        }
+    }
+
+    fn write_save(
+        &mut self,
+        handle: DocumentHandle,
+        kind: BufferKindId,
+        path: Option<PathBuf>,
+    ) -> SaveOutcome {
+        let buf = handle.doc_id();
+        let Some(doc) = self.document_manager.get_document_by_handle_mut(handle) else {
+            return SaveOutcome::NotSaved;
+        };
+        let path = match (kind == BufferKindId::FILE, path) {
             (true, Some(path)) => {
                 let job = FileSaveJob::new(
                     buf,
@@ -125,7 +232,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .get(&doc.buffer_kind_id())
                     .copied()
                 {
-                    self.with_document_target(handle.doc_id(), save)
+                    save(self, handle.doc_id())
                 } else {
                     handler(handle)
                 }
@@ -153,30 +260,43 @@ impl<T: TerminalBackend> Editor<T> {
             .as_deref()
             .or_else(|| doc.path())
             .map(|path| format!("Saving {} and quitting...", path.display()));
-        match self.save_buffer(handle.doc_id(), target, force || implicit_target) {
+        let quit = SaveQuit {
+            handle,
+            window: self.split_tree.focused_window_id(),
+            message,
+        };
+        self.save_buffer_with_quit(
+            handle.doc_id(),
+            target,
+            force || implicit_target,
+            Some(quit),
+        );
+    }
+
+    fn finish_save_quit(&mut self, outcome: SaveOutcome, quit: SaveQuit) {
+        match outcome {
             SaveOutcome::Queued(job) => {
                 self.scheduler.quit_after_job = Some(job);
-                if let Some(message) = message {
+                self.scheduler.quit_after_job_window = Some(quit.window);
+                if let Some(message) = quit.message {
                     self.notify(NotificationType::Info, message);
                 }
             }
-            SaveOutcome::Saved if self.active_document_id() == handle.doc_id() => {
+            SaveOutcome::Saved
+                if self.active_document_id() == quit.handle.doc_id()
+                    && self.split_tree.focused_window_id() == quit.window =>
+            {
                 self.do_quit(false);
             }
             SaveOutcome::Saved
                 if self
                     .document_manager
-                    .get_document_by_handle(handle)
+                    .get_document_by_handle(quit.handle)
                     .is_none() =>
             {
                 self.quit_if_alone();
             }
-            SaveOutcome::Saved => {
-                self.notify(
-                    NotificationType::Warning,
-                    "Quit aborted: buffer changed during save",
-                );
-            }
+            SaveOutcome::Saved => self.notify_save_quit_aborted(),
             SaveOutcome::NotSaved => {}
         }
     }
@@ -196,17 +316,27 @@ impl<T: TerminalBackend> Editor<T> {
         self.should_quit = true;
     }
 
+    fn notify_save_quit_aborted(&mut self) {
+        self.notify(
+            NotificationType::Warning,
+            "Quit aborted: buffer changed during save",
+        );
+    }
+
     pub(crate) fn quit_after_save(&mut self, doc_id: DocumentId) {
-        let unchanged = self.active_document_id() == doc_id
+        let same_window = self
+            .scheduler
+            .quit_after_job_window
+            .take()
+            .is_none_or(|window| self.split_tree.focused_window_id() == window);
+        let unchanged = same_window
+            && self.active_document_id() == doc_id
             && self
                 .document_manager
                 .get_document(doc_id)
                 .is_some_and(|doc| !doc.is_dirty());
         if !unchanged {
-            self.notify(
-                NotificationType::Warning,
-                "Quit aborted: buffer changed during save",
-            );
+            self.notify_save_quit_aborted();
             return;
         }
         self.do_quit(false);

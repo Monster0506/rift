@@ -227,8 +227,8 @@ impl<T: TerminalBackend> Editor<T> {
         let result = self.update_and_render_painted();
         self.end_ghost_paint(&visible);
         if result.is_ok() {
-            self.last_frame_at = Some(crate::time::Instant::now());
-            self.terminal_frame_pending = false;
+            self.scheduler.last_frame_at = Some(crate::time::Instant::now());
+            self.scheduler.terminal_frame_dirty = false;
             for id in visible {
                 if let Some(doc) = self.document_manager.get_document_mut(id) {
                     doc.clear_terminal_scroll();

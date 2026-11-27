@@ -211,7 +211,7 @@ impl<T: TerminalBackend> Editor<T> {
             buffer_vars: Some(fingerprint(
                 self.document_manager
                     .documents_iter()
-                    .map(|doc| (doc.id.get(), doc.vars.revision())),
+                    .map(|doc| (doc.id.get(), doc.vars().revision())),
             )),
         }
     }
@@ -355,7 +355,7 @@ impl<T: TerminalBackend> Editor<T> {
     > {
         self.document_manager
             .documents_iter()
-            .map(|doc| (doc.id.get(), doc.vars.clone()))
+            .map(|doc| (doc.id.get(), (**doc.vars()).clone()))
             .collect()
     }
 
@@ -434,6 +434,7 @@ impl<T: TerminalBackend> Editor<T> {
             | PluginMutation::RegisterBufferKind { .. } => {
                 self.apply_buffer_mutation(mutation, origin);
             }
+            PluginMutation::ResumeSave { request } => self.resume_save(&request),
             PluginMutation::MapKey { .. }
             | PluginMutation::UnmapKey { .. }
             | PluginMutation::MapKeyKind { .. }
@@ -530,42 +531,25 @@ impl<T: TerminalBackend> Editor<T> {
         };
         match mutation {
             PluginMutation::AppendLines { lines, .. } => {
-                let end = doc.buffer().len();
-                let _ = doc.edit(Edit::insert(end, lines.join("\n")), EditSource::Plugin);
+                doc.append_lines(&lines, EditSource::Plugin);
             }
             PluginMutation::InsertAtCursor { text, .. } => {
-                let _ = doc.edit(Edit::type_text(&text), EditSource::Plugin);
+                let _ = doc.edit(Edit::type_text(text), EditSource::Plugin);
             }
             PluginMutation::DeleteBefore { count, .. } => {
-                for _ in 0..count {
-                    let _ = doc.edit(Edit::DeleteBackward, EditSource::Plugin);
-                }
+                doc.delete_near_cursor(count, true, EditSource::Plugin);
             }
             PluginMutation::DeleteForward { count, .. } => {
-                for _ in 0..count {
-                    let _ = doc.edit(Edit::DeleteForward, EditSource::Plugin);
-                }
+                doc.delete_near_cursor(count, false, EditSource::Plugin);
             }
             PluginMutation::ReplaceLines {
                 start, end, lines, ..
-            } => {
-                if let Some(edit) = doc.buffer().line_replacement(
-                    start.saturating_sub(1),
-                    end.saturating_sub(1),
-                    &lines,
-                ) {
-                    let deleted = doc
-                        .edit(Edit::delete(edit.start..edit.end), EditSource::Plugin)
-                        .unwrap_or(false);
-                    let inserted = doc
-                        .edit(Edit::insert(edit.start, &edit.text), EditSource::Plugin)
-                        .unwrap_or(false);
-                    if deleted || inserted {
-                        let cursor = edit.cursor.min(doc.buffer().len());
-                        let _ = doc.set_cursor(cursor, crate::document::ops::CursorCause::Plugin);
-                    }
-                }
-            }
+            } => doc.replace_lines(
+                start.saturating_sub(1),
+                end.saturating_sub(1),
+                &lines,
+                EditSource::Plugin,
+            ),
             _ => {}
         }
     }
@@ -700,9 +684,9 @@ impl<T: TerminalBackend> Editor<T> {
         };
         document.set_handle(reservation.handle());
         document.kind = crate::document::kind::BufferKind::new(descriptor.clone());
-        *document.vars = vars.into_iter().collect();
+        document.initialize_vars(vars);
         if let Some(title_str) = title {
-            document.vars.insert(
+            document.set_var(
                 "title".to_string(),
                 crate::annotations::value::Value::Str(title_str.to_string()),
             );
@@ -868,8 +852,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             #[cfg(feature = "treesitter")]
             PluginMutation::SetSyntaxQuery { lang, kind, source } => {
-                self.language_loader.set_query_override(&lang, kind, source);
-                self.rebuild_syntax_using(&lang);
+                self.set_syntax_query(&lang, kind, source);
             }
             #[cfg(feature = "treesitter")]
             PluginMutation::StartSyntax { buf, lang } => self.start_syntax(buf, lang.as_deref()),
@@ -960,8 +943,7 @@ impl<T: TerminalBackend> Editor<T> {
                 if let Some(pres) = presentation {
                     ann = ann.with_presentation(pres);
                 }
-                doc.annotations
-                    .add_with_id(crate::annotations::AnnotationId::new(id), ann);
+                doc.annotate_with_id(crate::annotations::AnnotationId::new(id), ann);
             }
             PluginMutation::UpdateAnnotation {
                 id,
@@ -970,25 +952,23 @@ impl<T: TerminalBackend> Editor<T> {
                 presentation,
                 ..
             } => {
-                doc.annotations
-                    .update(crate::annotations::AnnotationId::new(id), |a| {
-                        if let Some(p) = payload {
-                            a.payload = p;
-                        }
-                        if let Some(v) = visible {
-                            a.visible = v;
-                        }
-                        if let Some(pres) = presentation {
-                            a.presentation = Some(pres);
-                        }
-                    });
+                doc.update_annotation(crate::annotations::AnnotationId::new(id), |a| {
+                    if let Some(p) = payload {
+                        a.payload = p;
+                    }
+                    if let Some(v) = visible {
+                        a.visible = v;
+                    }
+                    if let Some(pres) = presentation {
+                        a.presentation = Some(pres);
+                    }
+                });
             }
             PluginMutation::RemoveAnnotation { id, .. } => {
-                doc.annotations
-                    .remove(crate::annotations::AnnotationId::new(id));
+                doc.unannotate(crate::annotations::AnnotationId::new(id));
             }
             PluginMutation::ClearAnnotations { kind_prefix, .. } => {
-                doc.annotations.clear_by_kind_prefix(&kind_prefix);
+                doc.clear_annotations_by_kind(&kind_prefix);
             }
             _ => {}
         }
@@ -1095,7 +1075,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.drop_plugin_write(buf, "set_buffer_var");
             return;
         };
-        doc.vars.insert(key, value);
+        doc.set_var(key, value);
     }
 
     fn plugin_save_buffer(&mut self, buf: DocumentId) {

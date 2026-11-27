@@ -1,15 +1,26 @@
+use super::super::split::window::WindowId;
 use super::explorer::PendingExplorerPreview;
+use crate::document::runtime::{BufferKindId, DocumentHandle};
 use crate::document::DocumentId;
+use crate::plugin::events::SaveHold;
 use crate::time::Instant;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
+use std::path::PathBuf;
 use std::time::Duration;
 
 pub(super) const SYNTAX_REPARSE_DEBOUNCE: Duration = Duration::from_millis(40);
 pub(super) const SEARCH_REFRESH_DEBOUNCE: Duration = Duration::from_millis(40);
 pub(super) const GIT_GUTTER_DEBOUNCE: Duration = Duration::from_millis(400);
 
+pub(super) const KEY_SEQUENCE_TIMEOUT: Duration = Duration::from_secs(1);
+pub(super) const FRAME_INTERVAL: Duration = Duration::from_nanos(16_666_667);
+
 pub(super) struct Scheduler {
+    pub(super) key_sequence_started_at: Option<Instant>,
+    pub(super) deferred_keys: VecDeque<crate::key::Key>,
+    pub(super) terminal_frame_dirty: bool,
+    pub(super) last_frame_at: Option<Instant>,
     pub(super) syntax_reparse: Debounced<DocumentId>,
     pub(super) search_refresh: Debounced<()>,
     pub(super) git_gutter_diff: Debounced<DocumentId>,
@@ -18,15 +29,38 @@ pub(super) struct Scheduler {
     pub(super) git_status_expand_all: HashMap<DocumentId, bool>,
     pub(super) git_log_expand_head: HashSet<DocumentId>,
     pub(super) quit_after_job: Option<usize>,
+    pub(super) quit_after_job_window: Option<WindowId>,
+    pub(super) save_pre_in_progress: HashSet<DocumentId>,
+    pub(super) held_saves: HashMap<DocumentId, HeldSave>,
     #[cfg(feature = "lsp")]
     pub(super) goto_after_load: Option<(DocumentId, usize, usize)>,
     #[cfg(feature = "lsp")]
     pub(super) code_actions: Vec<serde_json::Value>,
 }
 
+pub(super) struct HeldSave {
+    pub(super) hold: SaveHold,
+    pub(super) handle: DocumentHandle,
+    pub(super) kind: BufferKindId,
+    pub(super) source_path: Option<PathBuf>,
+    pub(super) path: Option<PathBuf>,
+    pub(super) force: bool,
+    pub(super) quit: Option<SaveQuit>,
+}
+
+pub(super) struct SaveQuit {
+    pub(super) handle: DocumentHandle,
+    pub(super) window: WindowId,
+    pub(super) message: Option<String>,
+}
+
 impl Scheduler {
     pub(super) fn new() -> Self {
         Self {
+            key_sequence_started_at: None,
+            deferred_keys: VecDeque::new(),
+            terminal_frame_dirty: false,
+            last_frame_at: None,
             syntax_reparse: Debounced::new(SYNTAX_REPARSE_DEBOUNCE),
             search_refresh: Debounced::new(SEARCH_REFRESH_DEBOUNCE),
             git_gutter_diff: Debounced::new(GIT_GUTTER_DEBOUNCE),
@@ -35,6 +69,9 @@ impl Scheduler {
             git_status_expand_all: HashMap::new(),
             git_log_expand_head: HashSet::new(),
             quit_after_job: None,
+            quit_after_job_window: None,
+            save_pre_in_progress: HashSet::new(),
+            held_saves: HashMap::new(),
             #[cfg(feature = "lsp")]
             goto_after_load: None,
             #[cfg(feature = "lsp")]
@@ -42,11 +79,35 @@ impl Scheduler {
         }
     }
 
-    pub(super) fn next_deadline(&self, active_document: DocumentId) -> Option<Instant> {
+    fn key_sequence_deadline(&self) -> Option<Instant> {
+        self.key_sequence_started_at
+            .map(|start| start + KEY_SEQUENCE_TIMEOUT)
+    }
+
+    pub(super) fn key_sequence_expired(&self, now: Instant) -> bool {
+        self.key_sequence_deadline()
+            .is_some_and(|deadline| deadline <= now)
+    }
+
+    pub(super) fn terminal_frame_delay(&self, now: Instant) -> Option<Duration> {
+        self.terminal_frame_dirty.then(|| {
+            self.last_frame_at.map_or(Duration::ZERO, |last| {
+                FRAME_INTERVAL.saturating_sub(now.saturating_duration_since(last))
+            })
+        })
+    }
+
+    pub(super) fn next_deadline(
+        &self,
+        active_document: DocumentId,
+        now: Instant,
+    ) -> Option<Instant> {
         [
             self.syntax_reparse.next_deadline(),
             self.search_refresh.next_deadline(),
             self.git_gutter_diff.deadline(active_document),
+            self.key_sequence_deadline(),
+            self.terminal_frame_delay(now).map(|delay| now + delay),
         ]
         .into_iter()
         .flatten()
@@ -58,6 +119,7 @@ impl Scheduler {
         self.git_gutter_diff.cancel(id);
         self.git_status_expand_all.remove(&id);
         self.git_log_expand_head.remove(&id);
+        self.held_saves.remove(&id);
         #[cfg(feature = "lsp")]
         if self.goto_after_load.is_some_and(|(d, ..)| d == id) {
             self.goto_after_load = None;

@@ -259,6 +259,50 @@ impl Document {
         applied
     }
 
+    pub(crate) fn append_lines(&mut self, lines: &[String], source: EditSource) {
+        let capacity = lines.iter().map(String::len).sum::<usize>() + lines.len().saturating_sub(1);
+        let mut text = Vec::with_capacity(capacity);
+        for (index, line) in lines.iter().enumerate() {
+            if index != 0 {
+                text.push(Character::Newline);
+            }
+            text.extend(line.chars().map(Character::from));
+        }
+        let _ = self.edit(Edit::insert(self.buffer.len(), text), source);
+    }
+
+    pub(crate) fn delete_near_cursor(&mut self, count: usize, backward: bool, source: EditSource) {
+        for _ in 0..count {
+            let edit = if backward {
+                Edit::DeleteBackward
+            } else {
+                Edit::DeleteForward
+            };
+            if !matches!(self.edit(edit, source), Ok(true)) {
+                break;
+            }
+        }
+    }
+
+    pub(crate) fn replace_lines(
+        &mut self,
+        start: usize,
+        end: usize,
+        lines: &[String],
+        source: EditSource,
+    ) {
+        let Some(edit) = self.buffer.line_replacement(start, end, lines) else {
+            return;
+        };
+        if matches!(
+            self.edit(Edit::replace(edit.start..edit.end, edit.text), source),
+            Ok(true)
+        ) {
+            let cursor = edit.cursor.min(self.buffer.len());
+            let _ = self.set_cursor(cursor, super::CursorCause::Plugin);
+        }
+    }
+
     #[must_use]
     pub(crate) fn char_to_overwrite(&self) -> Option<Character> {
         self.buffer

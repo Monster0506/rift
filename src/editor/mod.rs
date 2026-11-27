@@ -170,7 +170,6 @@ pub struct Editor<T: TerminalBackend> {
     pending_operator_count: usize,
     pending_operator: Option<PendingOperator>,
     pending_grammar: Option<pending_grammar::PendingGrammar>,
-    pending_keys_started_at: Option<crate::time::Instant>,
     pending_multi_insert_anchors: Vec<usize>,
     replace_originals: Vec<replace_mode::ReplaceEntry>,
     region_build_recording: Vec<crate::action::Action>,
@@ -204,12 +203,9 @@ pub struct Editor<T: TerminalBackend> {
     git_gutter_repo_cache:
         std::collections::HashMap<crate::document::DocumentId, Option<std::path::PathBuf>>,
     git_status_refresh_jobs: std::collections::HashMap<crate::document::DocumentId, usize>,
-    deferred_keys: std::collections::VecDeque<crate::key::Key>,
     search_highlights_synced: Option<(crate::document::DocumentId, u64, String)>,
     startup_first_paint: Option<crate::time::Instant>,
     unrendered_key_count: usize,
-    terminal_frame_pending: bool,
-    last_frame_at: Option<crate::time::Instant>,
     entered_document: DocumentId,
     frame_events: Vec<EditorEvent>,
 }

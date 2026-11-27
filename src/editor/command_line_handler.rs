@@ -1,7 +1,11 @@
 use super::Editor;
-use crate::command_line::commands::executor::CommandExecutor;
+use crate::action::{Action, EditorAction};
+use crate::command_line::commands::types::ParsedCommand;
+use crate::command_line::settings::resolver::OptionScope;
 use crate::mode::Mode;
+use crate::split::tree::SplitDirection;
 use crate::term::TerminalBackend;
+use std::path::PathBuf;
 
 impl<T: TerminalBackend> Editor<T> {
     /// Schedule a debounced `update_search_highlights`. With no active query
@@ -86,172 +90,108 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Execute a command line string
     pub(super) fn execute_command_line(&mut self, cmd: &str) {
-        let parsed_command = self.command_parser.parse(cmd);
-        let active_id = self.active_document_id();
-        let result = CommandExecutor::execute(
-            parsed_command,
-            &mut self.state,
-            self.document_manager
-                .get_document_mut(active_id)
-                .expect("active document missing"),
-        );
-        if !self.apply_command_result(result, cmd) {
-            return;
-        }
-        if self.current_mode == Mode::Command {
+        let command = self.command_parser.parse(cmd);
+        if self.apply_ex_command(command, cmd) && self.current_mode == Mode::Command {
             self.set_mode(Mode::Normal);
         }
     }
 
-    fn apply_ex_option(
-        &mut self,
-        name: &str,
-        value: Option<&str>,
-        scope: crate::command_line::settings::resolver::OptionScope,
-    ) -> bool {
-        if let Err(error) = self.set_option(name, value, scope) {
-            self.notify_error(error);
-            return false;
-        }
-        true
-    }
-
-    fn apply_command_result(
-        &mut self,
-        result: crate::command_line::commands::executor::ExecutionResult,
-        cmd: &str,
-    ) -> bool {
-        use crate::command_line::commands::executor::ExecutionResult;
-        match result {
-            ExecutionResult::Failure => return false, // keep command line visible for editing
-            ExecutionResult::OpenTerminal { cmd, .. } => {
+    fn apply_ex_command(&mut self, command: ParsedCommand, cmd: &str) -> bool {
+        match command {
+            ParsedCommand::Action(action) => {
+                self.handle_action(&Action::Editor(action));
+            }
+            ParsedCommand::InvalidArgument(message) => return self.reject_ex_argument(message),
+            ParsedCommand::Ambiguous { prefix, matches } => {
+                return self.reject_ambiguous_ex_command(&prefix, &matches);
+            }
+            ParsedCommand::Unknown { name, args } => {
+                return self.run_plugin_command(&name, &args, cmd)
+            }
+            ParsedCommand::Terminal { cmd, .. } => {
                 self.open_terminal_from_input(cmd);
                 return false;
             }
-            ExecutionResult::RunGit { args } => self.run_git_from_command(args),
-            ExecutionResult::Success => {}
-            ExecutionResult::Checkpoint => {
+            ParsedCommand::Git { args, .. } => self.run_git_from_command(args),
+            ParsedCommand::Checkpoint { .. } => {
                 self.create_checkpoint();
             }
-            ExecutionResult::Quit { bangs } => {
-                self.do_quit(bangs > 0);
-            }
-            ExecutionResult::Write { path, force } => {
+            ParsedCommand::Quit { bangs } => self.do_quit(bangs > 0),
+            ParsedCommand::Write { path, bangs } => {
                 self.save_buffer(
                     self.active_document_id(),
-                    path.map(std::path::PathBuf::from),
-                    force,
+                    path.map(PathBuf::from),
+                    bangs > 0,
                 );
             }
-            ExecutionResult::WriteAndQuit { path, force } => {
-                self.save_and_quit(path.map(std::path::PathBuf::from), force);
+            ParsedCommand::WriteQuit { path, bangs } => {
+                self.save_and_quit(path.map(PathBuf::from), bangs > 0);
             }
-            ExecutionResult::Redraw => self.redraw_from_command(),
-            ExecutionResult::Action(action) => {
-                self.handle_action(&crate::action::Action::Editor(action));
+            ParsedCommand::Notify {
+                kind,
+                message,
+                bangs,
+            } => return self.notify_from_command(&kind, message, bangs > 0),
+            ParsedCommand::Redraw { .. } => self.redraw_from_command(),
+            ParsedCommand::NoHighlight { .. } => {
+                self.handle_action(&Action::Editor(EditorAction::ClearHighlights));
             }
-            ExecutionResult::Substituted(pattern) => self.finish_substitution(&pattern),
-            ExecutionResult::SetOption { name, value, scope } => {
-                if !self.apply_ex_option(&name, value.as_deref(), scope) {
-                    return false;
-                }
+            ParsedCommand::Substitute {
+                pattern,
+                replacement,
+                flags,
+                range,
+                ..
+            } => {
+                return self.substitute(
+                    &pattern,
+                    &replacement,
+                    flags.contains('g'),
+                    range.as_deref() == Some("%"),
+                );
             }
-            ExecutionResult::Reload => self.load_plugins(),
-            ExecutionResult::Edit { path, bangs } => {
-                if !self.open_file_from_input(path, bangs > 0) {
-                    return false;
-                }
+            ParsedCommand::Set { option, value, .. } => {
+                return self.apply_ex_option(
+                    &option,
+                    value.as_deref(),
+                    OptionScope::Resolve(self.active_document_id()),
+                );
             }
-            ExecutionResult::BufferNext { .. } => {
-                self.do_buffer_next();
+            ParsedCommand::SetLocal { option, value, .. } => {
+                return self.apply_ex_option(
+                    &option,
+                    value.as_deref(),
+                    OptionScope::Local(self.active_document_id()),
+                );
             }
-            ExecutionResult::BufferPrevious { .. } => {
-                self.do_buffer_prev();
+            ParsedCommand::Reload { .. } => self.load_plugins(),
+            ParsedCommand::Edit { path, bangs } => {
+                return self.open_file_from_input(path, bangs > 0)
             }
-            ExecutionResult::BufferList => {
-                self.do_show_buffer_list();
-            }
-            ExecutionResult::BufferGoto { index } => {
-                self.do_buffer_goto(index);
-            }
-            ExecutionResult::OpenBufferList => {
-                self.open_buffer_list_panel();
-            }
-            ExecutionResult::BufferDelete { index, bangs } => {
-                self.do_buffer_delete(index, bangs > 0);
-            }
-            ExecutionResult::NotificationClear { bangs } => {
-                self.do_notification_clear(bangs > 0);
-            }
-            ExecutionResult::Undo { count } => {
+            ParsedCommand::BufferNext { .. } => self.do_buffer_next(),
+            ParsedCommand::BufferPrevious { .. } => self.do_buffer_prev(),
+            ParsedCommand::BufferList => self.do_show_buffer_list(),
+            ParsedCommand::BufferGoto { index, .. } => self.do_buffer_goto(index),
+            ParsedCommand::OpenBufferList { .. } => self.open_buffer_list_panel(),
+            ParsedCommand::BufferDelete { index, bangs } => self.do_buffer_delete(index, bangs > 0),
+            ParsedCommand::Undo { count, .. } => {
                 self.do_undo(count);
             }
-            ExecutionResult::Redo { count } => {
+            ParsedCommand::Redo { count, .. } => {
                 self.do_redo(count);
             }
-            ExecutionResult::UndoGoto { seq } => {
-                self.do_undo_goto(seq);
+            ParsedCommand::UndoGoto { seq, .. } => self.do_undo_goto(seq),
+            ParsedCommand::Split { subcommand, .. } => {
+                self.do_split_window(SplitDirection::Horizontal, subcommand);
             }
-            ExecutionResult::SplitWindow {
-                direction,
-                subcommand,
-            } => {
-                self.do_split_window(direction, subcommand);
+            ParsedCommand::VSplit { subcommand, .. } => {
+                self.do_split_window(SplitDirection::Vertical, subcommand);
             }
-            ExecutionResult::OpenDirectory { path } => {
-                self.open_explorer(path);
-            }
-            ExecutionResult::OpenUndoTree => {
-                self.open_undotree_split();
-            }
-            ExecutionResult::OpenMessages { show_all } => {
-                self.open_messages(show_all);
-            }
-            ExecutionResult::OpenClipboard => {
-                self.open_clipboard();
-            }
-            ExecutionResult::PluginCommand { name, args } => {
-                if !self.run_plugin_command(&name, &args, cmd) {
-                    return false;
-                }
-            }
-        }
-        true
-    }
-
-    fn run_git_from_command(&mut self, args: String) {
-        self.run_git_command(args);
-        self.state.clear_command_line();
-    }
-
-    fn redraw_from_command(&mut self) {
-        self.state.clear_command_line();
-        if let Err(e) = self.force_full_redraw() {
-            self.notify_error(e);
-        }
-    }
-
-    /// Returns false when the command was unknown and reported as an error.
-    fn run_plugin_command(&mut self, name: &str, args: &[String], cmd: &str) -> bool {
-        if name == "lua" {
-            let s = cmd.trim_start_matches(':').trim();
-            let code = s.strip_prefix("lua").map_or("", |r| r.trim_start());
-            // First :lua in a pluginless session: snapshot state for it.
-            self.plugin_host.mark_lua_used();
-            self.call_plugins(|editor| {
-                if let Some(err) = editor.plugin_host.lua_exec(code) {
-                    editor.notify(crate::notification::NotificationType::Error, err);
-                }
-            });
-        } else if !self.call_plugins(|editor| editor.plugin_host.execute_command(name, args)) {
-            self.notify_error(crate::error::RiftError::new(
-                crate::error::ErrorType::Parse,
-                "UNKNOWN_COMMAND",
-                format!("Unknown command: {name}"),
-            ));
-            return false;
+            ParsedCommand::File { path, .. } => return self.open_explorer_from_command(path),
+            ParsedCommand::UndoTree { .. } => self.open_undotree_split(),
+            ParsedCommand::Messages { show_all, .. } => self.open_messages(show_all),
+            ParsedCommand::Clipboard { .. } => self.open_clipboard(),
         }
         true
     }
@@ -289,3 +229,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "command_line_handler_tests.rs"]
+mod tests;

@@ -4,6 +4,78 @@ use crate::document::DocumentId;
 use crate::mode::Mode;
 #[cfg(feature = "plugins")]
 use crate::plugin::lua_value::lua_int;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Arc, Weak};
+
+const HELD: u8 = 0;
+const READY: u8 = 1;
+const QUEUED: u8 = 2;
+#[cfg(feature = "plugins")]
+const REVOKED: u8 = 3;
+
+#[derive(Debug, Default)]
+#[cfg_attr(not(feature = "plugins"), allow(dead_code))]
+pub(crate) enum SaveDecision {
+    #[default]
+    Proceed,
+    Cancel,
+    Hold(SaveHold),
+}
+
+#[derive(Debug)]
+pub(crate) struct SaveHold(Arc<AtomicU8>);
+
+impl SaveHold {
+    #[cfg(feature = "plugins")]
+    pub(super) fn new(buf: DocumentId) -> (Self, SaveRequestId) {
+        let ticket = Arc::new(AtomicU8::new(HELD));
+        let request = SaveRequestId {
+            buf,
+            ticket: Arc::downgrade(&ticket),
+        };
+        (Self(ticket), request)
+    }
+
+    #[cfg(feature = "plugins")]
+    pub(super) fn is_held(&self) -> bool {
+        self.0.load(Ordering::Relaxed) == HELD
+    }
+
+    pub(crate) fn activate(&self) -> bool {
+        self.0
+            .compare_exchange(HELD, READY, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+    }
+
+    pub(crate) fn matches_resume(&self, request: &SaveRequestId) -> bool {
+        std::ptr::eq(Arc::as_ptr(&self.0), request.ticket.as_ptr())
+            && self.0.load(Ordering::Relaxed) == QUEUED
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SaveRequestId {
+    pub(crate) buf: DocumentId,
+    ticket: Weak<AtomicU8>,
+}
+
+impl SaveRequestId {
+    #[cfg(feature = "plugins")]
+    pub(super) fn queue_resume(&self) -> bool {
+        self.ticket.upgrade().is_some_and(|ticket| {
+            ticket
+                .compare_exchange(READY, QUEUED, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+        })
+    }
+
+    #[cfg(feature = "plugins")]
+    pub(super) fn revoke(&self) {
+        if let Some(ticket) = self.ticket.upgrade() {
+            ticket.store(REVOKED, Ordering::Relaxed);
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub(crate) enum EventPayload {

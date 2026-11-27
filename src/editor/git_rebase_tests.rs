@@ -130,7 +130,7 @@ fn wq_on_default_todo_completes_a_no_op_rebase() {
     editor.open_git_rebase(dir.clone());
     let doc_id = editor.active_document_id();
 
-    editor.apply_git_rebase_todo();
+    editor.apply_git_rebase_todo(editor.active_document_id());
 
     assert!(
         editor.document_manager.get_document(doc_id).is_none(),
@@ -165,7 +165,7 @@ fn reordering_and_dropping_lines_changes_final_history() {
         doc.remove_git_rebase_step(&sha_c);
     }
 
-    editor.apply_git_rebase_todo();
+    editor.apply_git_rebase_todo(editor.active_document_id());
 
     assert_eq!(subjects(&dir, "origin/main..main"), vec!["add b", "add a"]);
     assert!(
@@ -200,7 +200,7 @@ fn fixup_folds_into_previous_commit_keeping_its_message() {
     }
     let _ = sha_b;
 
-    editor.apply_git_rebase_todo();
+    editor.apply_git_rebase_todo(editor.active_document_id());
 
     let subs = subjects(&dir, "origin/main..main");
     assert_eq!(
@@ -234,7 +234,7 @@ fn squash_combines_messages_of_both_commits() {
         doc.remove_git_rebase_step(&sha_c);
     }
 
-    editor.apply_git_rebase_todo();
+    editor.apply_git_rebase_todo(editor.active_document_id());
 
     let subs = subjects(&dir, "origin/main..main");
     assert_eq!(
@@ -291,7 +291,7 @@ fn squash_succeeds_inside_a_real_worktree_checkout() {
         doc.set_git_rebase_verb(&sha_b, crate::git::rebase::RebaseVerb::Squash);
         doc.remove_git_rebase_step(&sha_c);
     }
-    editor.apply_git_rebase_todo();
+    editor.apply_git_rebase_todo(editor.active_document_id());
 
     assert!(
         editor.document_manager.get_document(doc_id).is_none(),
@@ -332,7 +332,7 @@ fn reword_opens_commit_buffer_and_completes_on_save() {
         doc.set_git_rebase_verb(&sha_b, crate::git::rebase::RebaseVerb::Reword);
     }
 
-    editor.apply_git_rebase_todo();
+    editor.apply_git_rebase_todo(editor.active_document_id());
 
     // The rebase should now be paused, and a commit-message buffer active.
     assert!(
@@ -359,7 +359,7 @@ fn reword_opens_commit_buffer_and_completes_on_save() {
             crate::document::ops::ContentKind::Render,
         );
     }
-    editor.apply_git_commit_message();
+    editor.apply_git_commit_message(editor.active_document_id());
 
     assert!(
         editor
@@ -393,7 +393,7 @@ fn edit_pauses_after_cherry_pick_and_resumes_on_save() {
         doc.set_git_rebase_verb(&sha_a, crate::git::rebase::RebaseVerb::Edit);
     }
 
-    editor.apply_git_rebase_todo();
+    editor.apply_git_rebase_todo(editor.active_document_id());
 
     // Paused: "add a" already cherry-picked, HEAD should be that commit.
     assert!(editor.document_manager.get_document(doc_id).is_some());
@@ -406,7 +406,7 @@ fn edit_pauses_after_cherry_pick_and_resumes_on_save() {
     git(&dir, &["add", "a.txt"]);
     git(&dir, &["commit", "--amend", "--no-edit", "--quiet"]);
 
-    editor.apply_git_rebase_todo();
+    editor.apply_git_rebase_todo(editor.active_document_id());
 
     assert!(
         editor.document_manager.get_document(doc_id).is_none(),
@@ -441,7 +441,7 @@ fn edit_pause_auto_resumes_after_amending_via_ca_in_status_buffer() {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
         doc.set_git_rebase_verb(&sha_a, crate::git::rebase::RebaseVerb::Edit);
     }
-    editor.apply_git_rebase_todo();
+    editor.apply_git_rebase_todo(editor.active_document_id());
 
     // Paused: the pause banner should be rendered in the same rich view,
     // not a plain-text dump;  confirm it still carries real annotations.
@@ -477,7 +477,7 @@ fn edit_pause_auto_resumes_after_amending_via_ca_in_status_buffer() {
 
     // `ca` (amend) should stage/amend AND auto-resume the paused rebase.
     editor.open_git_commit_amend();
-    editor.apply_git_commit_message();
+    editor.apply_git_commit_message(editor.active_document_id());
 
     assert!(
         editor.document_manager.get_document(doc_id).is_none(),
@@ -551,7 +551,7 @@ fn conflicting_pick_pauses_and_resolving_then_saving_resumes() {
         "only \"change local\" is ahead of the new origin/main: {text}"
     );
 
-    editor.apply_git_rebase_todo();
+    editor.apply_git_rebase_todo(editor.active_document_id());
 
     // Paused on the conflict.
     assert!(
@@ -575,7 +575,7 @@ fn conflicting_pick_pauses_and_resolving_then_saving_resumes() {
     .unwrap();
     git(&dir, &["add", "shared.txt"]);
 
-    editor.apply_git_rebase_todo();
+    editor.apply_git_rebase_todo(editor.active_document_id());
 
     assert!(
         editor.document_manager.get_document(doc_id).is_none(),
@@ -888,7 +888,7 @@ fn message_editor_round_trip_updates_the_plan_without_touching_git() {
         let doc = editor.document_manager.active_document_mut().unwrap();
         doc.replace_content("reworded a", crate::document::ops::ContentKind::Render);
     }
-    editor.apply_git_commit_message();
+    editor.apply_git_commit_message(editor.active_document_id());
 
     // Back on the rebase todo, nothing committed yet.
     assert_eq!(editor.active_document_id(), rebase_doc_id);
@@ -934,9 +934,9 @@ fn reword_via_pre_edited_message_applies_without_pausing() {
         let doc = editor.document_manager.active_document_mut().unwrap();
         doc.replace_content("reworded a", crate::document::ops::ContentKind::Render);
     }
-    editor.apply_git_commit_message();
+    editor.apply_git_commit_message(editor.active_document_id());
 
-    editor.apply_git_rebase_todo();
+    editor.apply_git_rebase_todo(editor.active_document_id());
 
     assert!(
         editor.document_manager.get_document(doc_id).is_none(),
@@ -977,14 +977,14 @@ fn reword_via_a_real_edit_closes_the_message_buffer() {
         doc.edit(Edit::type_text(" reworded"), EditSource::User)
             .unwrap();
     }
-    editor.apply_git_commit_message();
+    editor.apply_git_commit_message(editor.active_document_id());
 
     assert!(
         editor.document_manager.get_document(msg_doc_id).is_none(),
         "a real history-tracked edit must still let the message buffer close"
     );
 
-    editor.apply_git_rebase_todo();
+    editor.apply_git_rebase_todo(editor.active_document_id());
 
     assert!(
         editor.document_manager.get_document(doc_id).is_none(),
@@ -1025,9 +1025,9 @@ fn squash_with_a_pre_edited_message_uses_it_as_the_incoming_half() {
             crate::document::ops::ContentKind::Render,
         );
     }
-    editor.apply_git_commit_message();
+    editor.apply_git_commit_message(editor.active_document_id());
 
-    editor.apply_git_rebase_todo();
+    editor.apply_git_rebase_todo(editor.active_document_id());
 
     assert!(editor.document_manager.get_document(doc_id).is_none());
     let final_message = git(&dir, &["log", "-1", "--format=%B", "main"]);

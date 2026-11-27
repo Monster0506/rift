@@ -1,20 +1,10 @@
 use super::Editor;
+use crate::document::DocumentId;
 use crate::error::{ErrorType, RiftError};
 use crate::term::TerminalBackend;
 
-pub(super) type NativeSaveHandler<T> = fn(&mut Editor<T>) -> crate::document::runtime::SaveResult;
-
-fn save_clipboard<T: TerminalBackend>(
-    editor: &mut Editor<T>,
-) -> crate::document::runtime::SaveResult {
-    editor.apply_clipboard_diff()
-}
-
-fn save_clipboard_entry<T: TerminalBackend>(
-    editor: &mut Editor<T>,
-) -> crate::document::runtime::SaveResult {
-    editor.apply_clipboard_entry_save()
-}
+pub(super) type NativeSaveHandler<T> =
+    fn(&mut Editor<T>, DocumentId) -> crate::document::runtime::SaveResult;
 
 pub(super) fn native_save_handlers<T: TerminalBackend>(
 ) -> std::collections::HashMap<crate::document::runtime::BufferKindId, NativeSaveHandler<T>> {
@@ -31,11 +21,11 @@ pub(super) fn native_save_handlers<T: TerminalBackend>(
     );
     handlers.insert(
         BufferKindId::CLIPBOARD,
-        save_clipboard::<T> as NativeSaveHandler<T>,
+        Editor::apply_clipboard_diff as NativeSaveHandler<T>,
     );
     handlers.insert(
         BufferKindId::CLIPBOARD_ENTRY,
-        save_clipboard_entry::<T> as NativeSaveHandler<T>,
+        Editor::apply_clipboard_entry_save as NativeSaveHandler<T>,
     );
     handlers.insert(
         BufferKindId::GIT_REBASE_TODO,
@@ -46,8 +36,8 @@ pub(super) fn native_save_handlers<T: TerminalBackend>(
 
 // One table holds both shapes; only the undo-file and image views can fail.
 pub(super) enum NativeReloadHandler<T: TerminalBackend> {
-    Infallible(fn(&mut Editor<T>)),
-    Fallible(fn(&mut Editor<T>) -> Result<(), RiftError>),
+    Infallible(fn(&mut Editor<T>, DocumentId)),
+    Fallible(fn(&mut Editor<T>, DocumentId) -> Result<(), RiftError>),
 }
 
 // Manual impls: derive would require `T: Copy`, which the backend does not satisfy.
@@ -61,8 +51,8 @@ impl<T: TerminalBackend> Copy for NativeReloadHandler<T> {}
 
 fn reload_undo_file_view_handler<T: TerminalBackend>(
     editor: &mut Editor<T>,
+    doc_id: DocumentId,
 ) -> Result<(), RiftError> {
-    let doc_id = editor.active_document_id();
     let Some(doc) = editor.document_manager.get_document_mut(doc_id) else {
         return Ok(());
     };
@@ -70,8 +60,10 @@ fn reload_undo_file_view_handler<T: TerminalBackend>(
 }
 
 /// `:e` on an image buffer reopens the same file as plain text (raw bytes).
-fn reopen_image_as_text<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), RiftError> {
-    let doc_id = editor.active_document_id();
+fn reopen_image_as_text<T: TerminalBackend>(
+    editor: &mut Editor<T>,
+    doc_id: DocumentId,
+) -> Result<(), RiftError> {
     let Some(doc) = editor.document_manager.get_document_mut(doc_id) else {
         return Ok(());
     };
@@ -98,24 +90,7 @@ fn reopen_image_as_text<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<()
     Ok(())
 }
 
-fn reload_directory<T: TerminalBackend>(editor: &mut Editor<T>) {
-    editor.handle_explorer_refresh();
-}
-
-fn reload_undotree<T: TerminalBackend>(editor: &mut Editor<T>) {
-    editor.handle_undotree_refresh();
-}
-
-fn reload_messages<T: TerminalBackend>(editor: &mut Editor<T>) {
-    editor.refresh_messages_buffer_if_open();
-}
-
-fn reload_clipboard<T: TerminalBackend>(editor: &mut Editor<T>) {
-    editor.refresh_clipboard_buffer_if_open();
-}
-
-fn reload_git_status<T: TerminalBackend>(editor: &mut Editor<T>) {
-    let doc_id = editor.active_document_id();
+fn reload_git_status<T: TerminalBackend>(editor: &mut Editor<T>, doc_id: DocumentId) {
     let Some(repo_root) = editor
         .document_manager
         .get_document(doc_id)
@@ -127,8 +102,7 @@ fn reload_git_status<T: TerminalBackend>(editor: &mut Editor<T>) {
     editor.refresh_git_status_buffers_for(&repo_root);
 }
 
-fn reload_git_log<T: TerminalBackend>(editor: &mut Editor<T>) {
-    let doc_id = editor.active_document_id();
+fn reload_git_log<T: TerminalBackend>(editor: &mut Editor<T>, doc_id: DocumentId) {
     let Some((repo_root, path)) = editor.document_manager.get_document(doc_id).and_then(|d| {
         let repo_root = d.git_repo_root()?.to_path_buf();
         let path = d.git_log_path().flatten().map(std::path::Path::to_path_buf);
@@ -140,8 +114,7 @@ fn reload_git_log<T: TerminalBackend>(editor: &mut Editor<T>) {
     editor.job_manager.spawn(job);
 }
 
-fn reload_git_blame<T: TerminalBackend>(editor: &mut Editor<T>) {
-    let doc_id = editor.active_document_id();
+fn reload_git_blame<T: TerminalBackend>(editor: &mut Editor<T>, doc_id: DocumentId) {
     let Some((repo_root, path, at_commit)) =
         editor.document_manager.get_document(doc_id).and_then(|d| {
             let repo_root = d.git_repo_root()?.to_path_buf();
@@ -154,10 +127,6 @@ fn reload_git_blame<T: TerminalBackend>(editor: &mut Editor<T>) {
     };
     let job = crate::job_manager::jobs::git::GitBlameJob::new(doc_id, repo_root, path, at_commit);
     editor.job_manager.spawn(job);
-}
-
-fn reload_buffer_list<T: TerminalBackend>(editor: &mut Editor<T>) {
-    editor.refresh_buffer_list_panel();
 }
 
 pub(super) fn native_reload_handlers<T: TerminalBackend>(
@@ -175,19 +144,19 @@ pub(super) fn native_reload_handlers<T: TerminalBackend>(
     );
     handlers.insert(
         BufferKindId::DIRECTORY,
-        NativeReloadHandler::Infallible(reload_directory::<T>),
+        NativeReloadHandler::Infallible(Editor::refresh_directory),
     );
     handlers.insert(
         BufferKindId::UNDO_TREE,
-        NativeReloadHandler::Infallible(reload_undotree::<T>),
+        NativeReloadHandler::Infallible(Editor::refresh_undotree),
     );
     handlers.insert(
         BufferKindId::MESSAGES,
-        NativeReloadHandler::Infallible(reload_messages::<T>),
+        NativeReloadHandler::Infallible(Editor::refresh_messages_buffer),
     );
     handlers.insert(
         BufferKindId::CLIPBOARD,
-        NativeReloadHandler::Infallible(reload_clipboard::<T>),
+        NativeReloadHandler::Infallible(Editor::refresh_clipboard_buffer),
     );
     handlers.insert(
         BufferKindId::GIT_STATUS,
@@ -203,7 +172,7 @@ pub(super) fn native_reload_handlers<T: TerminalBackend>(
     );
     handlers.insert(
         BufferKindId::BUFFER_LIST,
-        NativeReloadHandler::Infallible(reload_buffer_list::<T>),
+        NativeReloadHandler::Infallible(Editor::refresh_buffer_list),
     );
     handlers
 }

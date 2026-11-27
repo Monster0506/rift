@@ -162,7 +162,18 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     #[cfg(feature = "treesitter")]
-    pub(super) fn rebuild_syntax_using(&mut self, lang: &str) {
+    pub(super) fn set_syntax_query(
+        &mut self,
+        lang: &str,
+        kind: crate::syntax::loader::QueryKind,
+        source: Option<String>,
+    ) {
+        self.language_loader.set_query_override(lang, kind, source);
+        self.rebuild_syntax_using(lang);
+    }
+
+    #[cfg(feature = "treesitter")]
+    fn rebuild_syntax_using(&mut self, lang: &str) {
         let targets: Vec<(DocumentId, String)> = self
             .document_manager
             .documents_iter()
@@ -451,7 +462,7 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
             .windows_for_document(token.doc_id())
             .is_empty()
         {
-            self.terminal_frame_pending = true;
+            self.scheduler.terminal_frame_dirty = true;
         }
     }
 

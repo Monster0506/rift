@@ -60,12 +60,15 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn refresh_clipboard_buffer_if_open(&mut self) {
-        let Some(layout) = self.panel_layout_of(PanelKind::Clipboard) else {
-            return;
-        };
+        if let Some(layout) = self.panel_layout_of(PanelKind::Clipboard) {
+            self.refresh_clipboard_buffer(layout.dir_doc_id);
+        }
+    }
+
+    pub(super) fn refresh_clipboard_buffer(&mut self, doc_id: crate::document::DocumentId) {
         if self
             .document_manager
-            .get_document(layout.dir_doc_id)
+            .get_document(doc_id)
             .is_some_and(crate::document::Document::is_dirty)
         {
             self.notify(
@@ -74,21 +77,24 @@ impl<T: TerminalBackend> Editor<T> {
             );
             return;
         }
-        if !self.clipboard_entry_can_be_replaced(layout.preview_doc_id) {
-            return;
+        if let Some(layout) = self
+            .panel_layout_of(PanelKind::Clipboard)
+            .filter(|layout| layout.dir_doc_id == doc_id)
+        {
+            if !self.clipboard_entry_can_be_replaced(layout.preview_doc_id) {
+                return;
+            }
         }
-        let entries: std::collections::VecDeque<crate::clipboard::Clip> =
-            self.clipboard_ring.entries().clone();
-        if let Some(doc) = self.document_manager.get_document_mut(layout.dir_doc_id) {
+        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             let cursor = doc.buffer().cursor();
-            doc.populate_clipboard_buffer(&entries);
+            doc.populate_clipboard_buffer(self.clipboard_ring.entries());
             let len = doc.buffer().len();
             let _ = doc.set_cursor(
                 cursor.min(len.saturating_sub(1)),
                 crate::document::ops::CursorCause::User,
             );
         }
-        if self.active_document_id() == layout.dir_doc_id {
+        if self.active_document_id() == doc_id {
             let _ = self.update_and_render();
         }
     }
@@ -174,14 +180,17 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Save an edited clipboard entry back to the ring.
-    pub(super) fn apply_clipboard_entry_save(&mut self) -> crate::document::runtime::SaveResult {
+    pub(super) fn apply_clipboard_entry_save(
+        &mut self,
+        doc_id: crate::document::DocumentId,
+    ) -> crate::document::runtime::SaveResult {
         use crate::document::runtime::SaveResult;
 
         let Some(layout) = self.panel_layout_of(PanelKind::Clipboard) else {
             return SaveResult::Failed;
         };
         let (entry_index, new_text) = {
-            let Some(doc) = self.document_manager.active_document_mut() else {
+            let Some(doc) = self.document_manager.get_document_mut(doc_id) else {
                 return SaveResult::Failed;
             };
             doc.commit_pending_ghost();
@@ -260,7 +269,7 @@ impl<T: TerminalBackend> Editor<T> {
             );
         }
         self.clipboard_ring = ring;
-        if let Some(doc) = self.document_manager.active_document_mut() {
+        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             doc.convert_to_clipboard_entry(saved_index);
             doc.history.mark_saved();
         }
@@ -277,10 +286,12 @@ impl<T: TerminalBackend> Editor<T> {
     /// Repopulate any open messages buffer with the current notification log.
     /// Preserves cursor position for background refreshes.
     pub(super) fn refresh_messages_buffer_if_open(&mut self) {
-        let Some(doc_id) = self.document_manager.find_messages_doc_id() else {
-            return;
-        };
+        if let Some(doc_id) = self.document_manager.find_messages_doc_id() {
+            self.refresh_messages_buffer(doc_id);
+        }
+    }
 
+    pub(super) fn refresh_messages_buffer(&mut self, doc_id: crate::document::DocumentId) {
         let log = self.state.notifications.message_log();
 
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {

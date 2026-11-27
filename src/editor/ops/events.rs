@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::super::Editor;
-use crate::plugin::events::EventPayload;
+use crate::plugin::events::{EventPayload, SaveDecision};
 use crate::term::TerminalBackend;
 
 #[repr(transparent)]
@@ -47,8 +47,11 @@ fn same_subject(a: &EventPayload, b: &EventPayload) -> bool {
 }
 
 impl<T: TerminalBackend> Editor<T> {
-    pub(crate) fn raise(&mut self, payload: EventPayload) {
+    pub(crate) fn raise(&mut self, payload: EventPayload) -> SaveDecision {
         let event = EditorEvent(payload);
+        if matches!(event.payload(), EventPayload::BufSavePre { .. }) {
+            return self.call_plugins(|editor| editor.plugin_host.dispatch(&event));
+        }
         if let EventPayload::CursorHold { now, .. } = event.payload() {
             self.call_plugins(|editor| {
                 editor.plugin_host.dispatch(&event);
@@ -79,6 +82,15 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             self.dispatch_events(&[event]);
         }
+        SaveDecision::Proceed
+    }
+
+    pub(super) fn raise_save_pre(
+        &mut self,
+        buf: crate::document::DocumentId,
+        path: Option<std::path::PathBuf>,
+    ) -> SaveDecision {
+        self.raise(EventPayload::BufSavePre { buf, path })
     }
 
     pub(super) fn deliver_open_before_close(&mut self, id: crate::document::DocumentId) {

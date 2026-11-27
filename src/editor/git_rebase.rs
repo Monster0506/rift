@@ -301,10 +301,13 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    pub(super) fn apply_git_rebase_todo(&mut self) -> crate::document::runtime::SaveResult {
+    pub(super) fn apply_git_rebase_todo(
+        &mut self,
+        doc_id: DocumentId,
+    ) -> crate::document::runtime::SaveResult {
         use crate::document::runtime::SaveResult;
         let (repo_root, base, branch, pause, steps, message_overrides) = {
-            let Some(doc) = self.document_manager.active_document() else {
+            let Some(doc) = self.document_manager.get_document(doc_id) else {
                 return SaveResult::Rejected;
             };
             if !doc.is_git_rebase_todo() {
@@ -323,7 +326,6 @@ impl<T: TerminalBackend> Editor<T> {
             let pause = doc.git_rebase_pause().cloned();
             (repo_root, base, branch, pause, steps, message_overrides)
         };
-        let doc_id = self.active_document_id();
 
         match pause {
             None => {

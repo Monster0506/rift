@@ -144,7 +144,7 @@ fn clipboard_visual_put_uses_rows() {
     assert_eq!(ring_text(&editor, 0).as_deref(), Some("two\n"));
     assert_eq!(ring_text(&editor, 1).as_deref(), Some("one\n"));
     assert_eq!(
-        editor.apply_clipboard_diff(),
+        editor.apply_clipboard_diff(editor.active_document_id()),
         crate::document::runtime::SaveResult::Saved,
     );
     assert_eq!(ring_text(&editor, 0).as_deref(), Some("two\n"));
@@ -177,7 +177,7 @@ fn clipboard_malformed_save_atomic() {
     doc.replace_content(&text, crate::document::ops::ContentKind::Render);
 
     assert_eq!(
-        editor.apply_clipboard_diff(),
+        editor.apply_clipboard_diff(editor.active_document_id()),
         crate::document::runtime::SaveResult::Failed,
     );
     assert_eq!(ring_text(&editor, 0).as_deref(), Some("one\n"));
@@ -194,7 +194,7 @@ fn clipboard_stale_save_atomic() {
         .push_str("new", crate::wrap::RangeKind::Charwise);
 
     assert_eq!(
-        editor.apply_clipboard_diff(),
+        editor.apply_clipboard_diff(editor.active_document_id()),
         crate::document::runtime::SaveResult::Failed,
     );
     assert_eq!(ring_text(&editor, 0).as_deref(), Some("new"));

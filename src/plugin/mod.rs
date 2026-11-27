@@ -18,7 +18,7 @@ use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::editor::EditorEvent;
-use crate::plugin::events::EventPayload;
+use crate::plugin::events::{EventPayload, SaveDecision};
 
 use crate::document::DocumentId;
 use crate::notification::NotificationType;
@@ -270,6 +270,10 @@ pub(crate) enum PluginMutation {
     },
     SaveBuffer {
         buf: DocumentId,
+    },
+    #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
+    ResumeSave {
+        request: events::SaveRequestId,
     },
     /// Open a plugin-owned floating window.
     OpenFloat(PluginFloat),
@@ -1179,7 +1183,7 @@ impl PluginHost {
 
     /// Dispatch an event to all registered handlers, applying any returned mutations via
     /// [`Self::apply_mutation`].
-    pub(crate) fn dispatch(&mut self, event: &EditorEvent) {
+    pub(crate) fn dispatch(&mut self, event: &EditorEvent) -> SaveDecision {
         let payload = event.payload();
         if let EventPayload::CursorMoved { buf, row, col } = payload {
             self.cursor_hold
@@ -1199,20 +1203,25 @@ impl PluginHost {
         }
 
         // Dispatch to Lua handlers and convert any errors to notifications.
-        if let Some(lua) = &self.lua {
+        if let Some(lua) = self.active_lua() {
             let gen = lua.generation();
-            if self.is_generation_active(gen) {
-                for err in lua.dispatch_event(payload) {
-                    self.mutation_queue.push(PluginMutationEnvelope::plugin(
-                        PluginMutation::Notify {
-                            message: err,
-                            level: crate::notification::NotificationType::Error,
-                        },
-                        gen,
-                    ));
-                }
+            let (errors, decision) = if let EventPayload::BufSavePre { buf, .. } = payload {
+                lua.dispatch_save_pre(payload, *buf)
+            } else {
+                (lua.dispatch_event(payload), SaveDecision::Proceed)
+            };
+            for err in errors {
+                self.mutation_queue.push(PluginMutationEnvelope::plugin(
+                    PluginMutation::Notify {
+                        message: err,
+                        level: crate::notification::NotificationType::Error,
+                    },
+                    gen,
+                ));
             }
+            return decision;
         }
+        SaveDecision::Proceed
     }
 
     pub(crate) fn take_due_cursor_hold(

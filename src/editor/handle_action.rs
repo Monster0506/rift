@@ -587,10 +587,7 @@ impl<T: TerminalBackend> Editor<T> {
 
             EditorAction::ReplaceSelection(ch) => self.replace_selection(*ch),
 
-            EditorAction::ReplaceCharPending => {
-                self.pending_grammar = Some(super::pending_grammar::PendingGrammar::ReplaceChar);
-                true
-            }
+            EditorAction::ReplaceCharPending => self.read_replace_char(),
 
             EditorAction::EnterReplaceMode => {
                 self.handle_mode_management(crate::command::Command::BeginReplace);

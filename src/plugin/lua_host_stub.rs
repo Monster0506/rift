@@ -1,9 +1,11 @@
 //! Inert stand-in for `lua_host` when `plugins` is compiled out: no Lua VM
 //! exists, so every operation is a no-op / empty result.
 
+#[cfg(feature = "lsp")]
+pub(crate) use crate::plugin::lua_state::LspDiagnosticsSnapshot;
 pub(crate) use crate::plugin::lua_state::{
     AnnotationView, BufAnnotations, BufEntry, BufMeta, BufUpdate, HistoryAvailability,
-    LspDiagnosticsSnapshot, StateUpdate, SyncKeys, WinEntry,
+    StateUpdate, SyncKeys, WinEntry,
 };
 
 /// Stand-in for the real `LuaHost`; holds no state since there is no VM.
@@ -58,6 +60,14 @@ impl LuaHost {
         Vec::new()
     }
 
+    pub(super) const fn dispatch_save_pre(
+        &self,
+        _event: &crate::plugin::events::EventPayload,
+        _buf: crate::document::DocumentId,
+    ) -> (Vec<String>, crate::plugin::events::SaveDecision) {
+        (Vec::new(), crate::plugin::events::SaveDecision::Proceed)
+    }
+
     #[must_use]
     pub(super) const fn invoke_annotation_action(
         &self,
@@ -72,6 +82,11 @@ impl LuaHost {
         _enter: bool,
         _ctx: &crate::plugin::AnnotationHoverCtx,
     ) -> bool {
+        false
+    }
+
+    #[must_use]
+    pub(super) const fn has_annotation_hook(&self, _enter: bool, _kind: &str) -> bool {
         false
     }
 
@@ -130,6 +145,11 @@ impl LuaHost {
     #[must_use]
     pub(super) const fn drain_mutations(&self) -> Vec<crate::plugin::PluginMutation> {
         Vec::new()
+    }
+
+    #[must_use]
+    pub(super) const fn has_queued_mutations(&self) -> bool {
+        false
     }
 
     #[must_use]

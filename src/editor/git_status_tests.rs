@@ -286,7 +286,7 @@ fn commit_new_writes_a_real_commit_and_closes_the_buffer() {
             crate::document::ops::ContentKind::Render,
         );
     }
-    editor.apply_git_commit_message();
+    editor.apply_git_commit_message(editor.active_document_id());
 
     let log = crate::git::run_checked(dir.path(), &["log", "-1", "--format=%s"]).unwrap();
     assert_eq!(log.trim(), "Update tracked.txt line two");
@@ -319,7 +319,7 @@ fn commit_amend_prefills_head_message_and_amends_in_place() {
             .unwrap();
         doc.replace_content("init (amended)", crate::document::ops::ContentKind::Render);
     }
-    editor.apply_git_commit_message();
+    editor.apply_git_commit_message(editor.active_document_id());
 
     let log = crate::git::run_checked(dir.path(), &["log", "--format=%s"]).unwrap();
     let subjects: Vec<&str> = log.lines().collect();
