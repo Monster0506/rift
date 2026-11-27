@@ -138,6 +138,7 @@ fn two_buffers_changed_in_one_frame_each_raise_text_changed() {
     assert_eq!(bufs, vec![first, second_id]);
 }
 
+#[cfg(feature = "lsp")]
 #[test]
 fn idle_frame_delivers_one_progress_event_per_server() {
     let mut editor = settled("text");

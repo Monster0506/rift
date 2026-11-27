@@ -1,8 +1,8 @@
 //! No-op `Terminal` for when `terminal_emulation` is disabled. `new` always
 //! fails, so the rest of the API exists only so callers don't need their own gate.
 
-use super::TerminalEvent;
 use std::sync::mpsc;
+pub(crate) type TerminalEvent = std::convert::Infallible;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ScrollPosition;

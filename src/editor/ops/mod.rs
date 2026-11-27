@@ -1,5 +1,7 @@
 pub(crate) mod buffers;
+#[cfg(feature = "plugins")]
 mod events;
+#[cfg(feature = "plugins")]
 pub(crate) use events::EditorEvent;
 mod ex;
 mod files;

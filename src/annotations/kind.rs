@@ -16,6 +16,7 @@ impl Kind {
     }
 
     #[must_use]
+    #[cfg(feature = "plugins")]
     pub(crate) fn as_arc(&self) -> Arc<str> {
         self.0.clone()
     }
@@ -61,6 +62,7 @@ pub(crate) mod well_known {
     pub(in crate::annotations) const GIT_REBASE_STEP: &str = "git.rebase_step";
     pub(in crate::annotations) const GIT_GUTTER: &str = "git.gutter";
     pub(in crate::annotations) const BUFFER_ENTRY: &str = "buffer.entry";
+    #[cfg(feature = "plugins")]
     pub(crate) const PLUGIN_HIGHLIGHT: &str = "plugin.highlight";
     pub(crate) const TEXT_COLOR: &str = "ui.color";
 }

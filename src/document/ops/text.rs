@@ -163,7 +163,9 @@ fn splice(buffer: &mut TextBuffer, start: usize, end: usize, text: &[Character])
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EditSource {
     User,
+    #[cfg(feature = "plugins")]
     Plugin,
+    #[cfg(feature = "lsp")]
     Lsp,
 }
 
@@ -212,6 +214,7 @@ impl Document {
         buffer.revision = self.buffer.revision.wrapping_add(1);
         self.buffer = buffer;
         self.content_version = self.content_version.wrapping_add(1);
+        #[cfg(feature = "lsp")]
         self.pending_lsp_edits.clear();
         if let Some(syntax) = &mut self.syntax {
             syntax.invalidate_trees();
@@ -259,6 +262,7 @@ impl Document {
         applied
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn append_lines(&mut self, lines: &[String], source: EditSource) {
         let capacity = lines.iter().map(String::len).sum::<usize>() + lines.len().saturating_sub(1);
         let mut text = Vec::with_capacity(capacity);
@@ -271,6 +275,7 @@ impl Document {
         let _ = self.edit(Edit::insert(self.buffer.len(), text), source);
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn delete_near_cursor(&mut self, count: usize, backward: bool, source: EditSource) {
         for _ in 0..count {
             let edit = if backward {
@@ -284,6 +289,7 @@ impl Document {
         }
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn replace_lines(
         &mut self,
         start: usize,
@@ -396,6 +402,7 @@ impl Document {
             );
             if origin == Origin::Replay {
                 self.content_version = self.content_version.wrapping_add(1);
+                #[cfg(feature = "lsp")]
                 self.pending_lsp_edits.push(op);
             } else {
                 self.record_edit(op, &description, hint, cursor_before);
@@ -453,6 +460,7 @@ impl Document {
         cursor_before: usize,
     ) {
         self.content_version = self.content_version.wrapping_add(1);
+        #[cfg(feature = "lsp")]
         self.pending_lsp_edits.push(op.clone());
         if let Some(tx) = &mut self.current_transaction {
             tx.record(op);

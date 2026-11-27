@@ -56,6 +56,7 @@ impl AnnotationId {
     }
 
     #[must_use]
+    #[cfg(feature = "plugins")]
     pub(crate) const fn get(self) -> u64 {
         self.0
     }
@@ -93,6 +94,7 @@ impl AnnotationOwner {
     }
 
     #[must_use]
+    #[cfg(feature = "plugins")]
     pub(crate) const fn as_str(&self) -> &'static str {
         match self {
             Self::System => "system",
@@ -113,6 +115,7 @@ pub enum Anchor {
 
 impl Anchor {
     #[must_use]
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) const fn point(offset: usize) -> Self {
         Self::Point(Marker::left(offset))
     }
@@ -399,10 +402,12 @@ impl AnnotationStore {
         id
     }
 
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) const fn peek_next_id(&self) -> AnnotationId {
         self.next_id
     }
 
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) fn add_with_id(
         &mut self,
         id: AnnotationId,
@@ -446,6 +451,7 @@ impl AnnotationStore {
         self.invalidate_index();
     }
 
+    #[cfg(feature = "plugins")]
     fn clear_by_owner(&mut self, owner: &AnnotationOwner) {
         self.annotations.retain(|a| &a.owner != owner);
         self.invalidate_index();
@@ -495,6 +501,7 @@ impl AnnotationStore {
             .collect()
     }
 
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) fn iter(&self) -> impl Iterator<Item = &Annotation> {
         self.annotations.iter()
     }
@@ -856,7 +863,7 @@ impl AnnotationStore {
         self.invalidate_index();
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "lsp"))]
     pub(crate) fn create_lsp_diagnostic(&mut self, line: usize, tooltip: String) -> AnnotationId {
         let mut payload = Value::map();
         payload.set("tooltip", Value::Str(tooltip));
@@ -961,6 +968,7 @@ impl AnnotationStore {
         })
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn add_ns_highlight(
         &mut self,
         ns: &str,
@@ -978,10 +986,12 @@ impl AnnotationStore {
         )
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn clear_ns_highlights(&mut self, ns: &str) {
         self.clear_by_owner(&Self::ns_owner(ns));
     }
 
+    #[cfg(feature = "plugins")]
     fn ns_owner(ns: &str) -> AnnotationOwner {
         AnnotationOwner::Plugin(format!("hl:{ns}"))
     }

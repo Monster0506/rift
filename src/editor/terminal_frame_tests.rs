@@ -1,8 +1,10 @@
 use super::*;
 use crate::editor::scheduler::{FRAME_INTERVAL, KEY_SEQUENCE_TIMEOUT};
+#[cfg(feature = "terminal_emulation")]
 use crate::job_manager::{AsyncOpDomain, CancellationSignal, Job, JobMessage};
 use crate::test_utils::MockTerminal;
 use std::collections::VecDeque;
+#[cfg(feature = "terminal_emulation")]
 use std::sync::mpsc::{self, Sender};
 use std::time::Duration;
 
@@ -191,9 +193,11 @@ fn key_render_does_not_wait_for_terminal_frame_deadline() {
     assert!(!editor.scheduler.terminal_frame_dirty);
 }
 
+#[cfg(feature = "terminal_emulation")]
 #[derive(Debug)]
 struct CaptureJobSender(Sender<Sender<JobMessage>>);
 
+#[cfg(feature = "terminal_emulation")]
 impl Job for CaptureJobSender {
     fn run(self: Box<Self>, _id: usize, sender: Sender<JobMessage>, _signal: CancellationSignal) {
         self.0.send(sender).unwrap();
@@ -284,6 +288,7 @@ fn poll_timeout_shrinks_to_the_next_plugin_timer() {
     assert!(editor.term.polls[0] > Duration::from_millis(100));
 }
 
+#[cfg(feature = "plugins")]
 #[test]
 fn poll_timeout_shrinks_to_the_cursor_hold_deadline() {
     let mut editor = editor();
@@ -338,6 +343,7 @@ fn poll_timeout_shrinks_to_the_next_notification_expiry() {
             crate::command_line::settings::resolver::OptionScope::Global,
         )
         .unwrap();
+    #[cfg(feature = "plugins")]
     editor.plugin_host.set_cursor_hold_delay_ms(60_000);
     editor.notify(crate::notification::NotificationType::Success, "saved");
 

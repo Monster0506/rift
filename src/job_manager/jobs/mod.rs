@@ -6,6 +6,7 @@ pub(crate) mod explorer_preview;
 pub(crate) mod file_operations;
 pub(crate) mod fs;
 pub(crate) mod git;
+#[cfg(feature = "plugins")]
 pub(crate) mod plugin_process;
 #[cfg(feature = "treesitter")]
 pub(crate) mod syntax;

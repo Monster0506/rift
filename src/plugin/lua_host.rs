@@ -3,6 +3,7 @@
 use crate::action::{Action, EditorAction};
 use crate::document::ops::Edit;
 use crate::document::DocumentId;
+use crate::floating_window::popup::PopupContent;
 use crate::job_manager::jobs::plugin_process::{JobCommand, JobSpec, JobStream, PluginJobEvent};
 use crate::notification::NotificationType;
 use crate::plugin::events::{EventPayload, SaveDecision, SaveHold, SaveRequestId};
@@ -13,7 +14,7 @@ pub(crate) use crate::plugin::lua_state::{
 use crate::plugin::lua_value::{
     lua_index, lua_int, value_from_lua, value_from_lua_table, value_into_lua,
 };
-use crate::plugin::{PluginFloat, PluginMutation};
+use crate::plugin::PluginMutation;
 use mlua::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -1159,7 +1160,7 @@ impl LuaHost {
                 }
                 sh.borrow_mut()
                     .mutations
-                    .push(PluginMutation::OpenFloat(PluginFloat::new(title, v)));
+                    .push(PluginMutation::OpenFloat(PopupContent::new(title, v)));
                 Ok(())
             })?;
             api.set("open_float", f)?;

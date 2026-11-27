@@ -1,5 +1,3 @@
-#![allow(clippy::disallowed_methods)]
-
 use super::super::Editor;
 use crate::plugin::events::{EventPayload, SaveDecision};
 use crate::term::TerminalBackend;
@@ -28,9 +26,11 @@ fn same_subject(a: &EventPayload, b: &EventPayload) -> bool {
         | (E::CursorMoved { buf: x, .. }, E::CursorMoved { buf: y, .. })
         | (E::SelectionChanged { buf: x }, E::SelectionChanged { buf: y })
         | (E::SyntaxUpdated { buf: x, .. }, E::SyntaxUpdated { buf: y, .. }) => x == y,
+        #[cfg(feature = "lsp")]
         (E::LspDiagnosticsChanged { uri: x, .. }, E::LspDiagnosticsChanged { uri: y, .. }) => {
             x == y
         }
+        #[cfg(feature = "lsp")]
         (
             E::LspProgress {
                 language: lx,
@@ -46,6 +46,33 @@ fn same_subject(a: &EventPayload, b: &EventPayload) -> bool {
     }
 }
 
+fn delivered_at_frame(payload: &EventPayload) -> bool {
+    matches!(
+        payload,
+        EventPayload::BufOpen { .. }
+            | EventPayload::TextChangedCoarse { .. }
+            | EventPayload::SearchChanged { .. }
+            | EventPayload::TextYank { .. }
+            | EventPayload::CursorMoved { .. }
+            | EventPayload::SelectionChanged { .. }
+            | EventPayload::SyntaxUpdated { .. }
+            | EventPayload::WindowResized { .. }
+    ) || is_lsp_frame_event(payload)
+}
+
+#[cfg(feature = "lsp")]
+const fn is_lsp_frame_event(payload: &EventPayload) -> bool {
+    matches!(
+        payload,
+        EventPayload::LspDiagnosticsChanged { .. } | EventPayload::LspProgress { .. }
+    )
+}
+
+#[cfg(not(feature = "lsp"))]
+const fn is_lsp_frame_event(_payload: &EventPayload) -> bool {
+    false
+}
+
 impl<T: TerminalBackend> Editor<T> {
     pub(crate) fn raise(&mut self, payload: EventPayload) -> SaveDecision {
         let event = EditorEvent(payload);
@@ -57,19 +84,7 @@ impl<T: TerminalBackend> Editor<T> {
                 editor.plugin_host.dispatch(&event);
                 editor.plugin_host.fire_due_lua_timers(*now);
             });
-        } else if matches!(
-            event.payload(),
-            EventPayload::BufOpen { .. }
-                | EventPayload::TextChangedCoarse { .. }
-                | EventPayload::SearchChanged { .. }
-                | EventPayload::TextYank { .. }
-                | EventPayload::CursorMoved { .. }
-                | EventPayload::SelectionChanged { .. }
-                | EventPayload::SyntaxUpdated { .. }
-                | EventPayload::LspDiagnosticsChanged { .. }
-                | EventPayload::LspProgress { .. }
-                | EventPayload::WindowResized { .. }
-        ) {
+        } else if delivered_at_frame(event.payload()) {
             if let Some(queued) = self
                 .frame_events
                 .iter_mut()
@@ -102,6 +117,26 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    pub(in crate::editor) fn raise_buf_open(&mut self, id: crate::document::DocumentId) {
+        let Some(doc) = self.document_manager.get_document(id) else {
+            return;
+        };
+        let path = doc.path().map(std::path::Path::to_path_buf);
+        let filetype = doc
+            .syntax
+            .as_ref()
+            .map(|s| s.language_name.clone())
+            .or_else(|| {
+                path.as_deref()
+                    .and_then(|p| self.language_loader.language_name_for_file(p))
+            });
+        self.raise(EventPayload::BufOpen {
+            buf: id,
+            path,
+            filetype,
+        });
+    }
+
     pub(crate) fn raise_syntax_updated(&mut self, buf: crate::document::DocumentId) {
         let lang = self
             .document_manager
@@ -111,9 +146,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.raise(EventPayload::SyntaxUpdated { buf, lang });
     }
 
-    pub(crate) fn deliver_frame_events(&mut self) {
-        self.deliver_document_changes();
-        self.drain_syntax_sync();
+    pub(in crate::editor) fn dispatch_frame_events(&mut self) {
         let mut events = std::mem::take(&mut self.frame_events);
         crate::perf_span!(
             "plugin_dispatch_buffer_changes",

@@ -70,6 +70,7 @@ impl Adornment {
         self
     }
 
+    #[cfg(any(feature = "plugins", test))]
     #[must_use]
     pub(crate) const fn with_style(mut self, style: StyleOverride) -> Self {
         self.style = Some(style);

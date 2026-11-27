@@ -397,6 +397,7 @@ fn test_large_count_down_motion_matches_full_build_reference() {
     );
 }
 
+#[cfg(feature = "plugins")]
 #[test]
 fn test_text_changed_coarse_fires_once_per_render() {
     use std::sync::{Arc, Mutex};
@@ -435,6 +436,7 @@ fn test_text_changed_coarse_fires_once_per_render() {
     );
 }
 
+#[cfg(feature = "plugins")]
 #[test]
 fn test_cursor_moved_fires_once_per_render_with_latest_position() {
     use std::sync::{Arc, Mutex};

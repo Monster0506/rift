@@ -465,7 +465,7 @@ fn test_cancel_jobs_for_handle_purges_tokens_and_epochs() {
 fn test_spawn_document_job_auto_generates_token() {
     let mut manager = JobManager::new();
     let handle = DocumentHandle::new(crate::document::DocumentId::new(10), 1);
-    manager.register_document_handle(handle, BufferKindId::DIRECTORY, None);
+    manager.register_document_handle(handle, BufferKindId::DIRECTORY);
 
     let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
         crate::document::DocumentId::new(10),

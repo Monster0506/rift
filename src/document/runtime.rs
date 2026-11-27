@@ -1,4 +1,6 @@
-use super::{DirEntry, DocumentId, GitCommitTarget, LocationEntry};
+#[cfg(feature = "lsp")]
+use super::LocationEntry;
+use super::{DirEntry, DocumentId, GitCommitTarget};
 use crate::action::table::{self, KindActionSpec};
 use std::borrow::Cow;
 use std::collections::hash_map::Entry;
@@ -32,6 +34,7 @@ impl BufferKindId {
 
     const RESERVED_BUILTIN_END: u32 = 64;
 
+    #[cfg(feature = "plugins")]
     const FIRST_RUNTIME_ID: u32 = 65;
 
     #[cfg(test)]
@@ -137,6 +140,7 @@ pub(crate) enum LanguageServicesPolicy {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum KeyFallback {
     Normal,
+    #[cfg(feature = "plugins")]
     Global,
     None,
 }
@@ -215,6 +219,7 @@ impl Default for BufferPolicies {
     }
 }
 
+#[cfg(feature = "plugins")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum DescriptorOwner {
     BuiltIn,
@@ -224,6 +229,7 @@ pub(crate) enum DescriptorOwner {
     },
 }
 
+#[cfg(feature = "plugins")]
 impl DescriptorOwner {
     #[must_use]
     pub(crate) const fn plugin(plugin_id: NonZeroU32, generation: NonZeroU32) -> Self {
@@ -242,6 +248,7 @@ pub(crate) struct TombstoneMetadata {
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ActionDispatch {
     Native(&'static [KindActionSpec]),
+    #[cfg(feature = "plugins")]
     Lua,
     Disabled,
 }
@@ -258,6 +265,7 @@ type NativeSaveHandler = fn(DocumentHandle) -> SaveResult;
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum SaveDispatch {
     Native(NativeSaveHandler),
+    #[cfg(feature = "plugins")]
     Lua,
     Disabled,
     Reject,
@@ -268,6 +276,7 @@ type NativeCloseHandler = fn(DocumentHandle);
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum CloseHandler {
     Native(NativeCloseHandler),
+    #[cfg(feature = "plugins")]
     Lua,
 }
 
@@ -432,6 +441,7 @@ pub(super) static CLIPBOARD_ENTRY_STATE_KEY: StateKey<ClipboardEntryState> =
 
 #[derive(Debug, Clone)]
 pub(super) struct LocationListState {
+    #[cfg(feature = "lsp")]
     pub(super) entries: Vec<LocationEntry>,
 }
 pub(super) static LOCATION_LIST_STATE_KEY: StateKey<LocationListState> =
@@ -524,7 +534,9 @@ pub(super) struct ImageViewState {
 pub(super) static IMAGE_VIEW_STATE_KEY: StateKey<ImageViewState> = StateKey::new("image_view");
 
 #[derive(Debug, Clone, Default)]
+#[cfg(feature = "plugins")]
 pub(crate) struct PluginBufferState;
+#[cfg(feature = "plugins")]
 pub(crate) static PLUGIN_BUFFER_STATE_KEY: StateKey<PluginBufferState> =
     StateKey::new("plugin_buffer_state");
 
@@ -578,12 +590,14 @@ pub(crate) struct KindDescriptor {
     pub(crate) on_close: CloseHandler,
     pub(crate) reload_dispatch: ReloadDispatch,
     pub(crate) state_key: StateKeyId,
+    #[cfg(feature = "plugins")]
     pub(crate) owner: DescriptorOwner,
     pub(crate) tombstone: Option<TombstoneMetadata>,
 }
 
 impl KindDescriptor {
     #[must_use]
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) const fn id(&self) -> BufferKindId {
         self.id
     }
@@ -614,6 +628,7 @@ impl KindDescriptor {
     }
 
     #[must_use]
+    #[cfg(feature = "plugins")]
     fn to_tombstone(&self, reason: String) -> Self {
         let mut policies = self.policies;
         policies.read_only = ReadOnlyPolicy::FixedReadOnly;
@@ -652,8 +667,11 @@ impl KindDescriptor {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RegistryError {
     DuplicateName(String),
+    #[cfg(feature = "plugins")]
     InvalidId(BufferKindId),
+    #[cfg(feature = "plugins")]
     IdExhausted,
+    #[cfg(feature = "plugins")]
     ZeroId,
     NotBuiltinId(BufferKindId),
     AlreadyRegistered(BufferKindId),
@@ -663,8 +681,11 @@ impl std::fmt::Display for RegistryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::DuplicateName(name) => write!(f, "buffer kind name '{name}' already registered"),
+            #[cfg(feature = "plugins")]
             Self::InvalidId(id) => write!(f, "invalid buffer kind ID {id}"),
+            #[cfg(feature = "plugins")]
             Self::IdExhausted => write!(f, "runtime buffer kind ID space exhausted"),
+            #[cfg(feature = "plugins")]
             Self::ZeroId => write!(f, "buffer kind ID cannot be zero"),
             Self::NotBuiltinId(id) => write!(f, "ID {id} is outside reserved built-in range"),
             Self::AlreadyRegistered(id) => write!(f, "buffer kind ID {id} already registered"),
@@ -678,6 +699,7 @@ pub(crate) struct BufferKindRegistry {
     names: HashMap<Box<str>, BufferKindId>,
     descriptors: HashMap<BufferKindId, Arc<KindDescriptor>>,
     open_counts: HashMap<BufferKindId, usize>,
+    #[cfg(feature = "plugins")]
     next_runtime_id: u32,
 }
 
@@ -688,6 +710,7 @@ impl BufferKindRegistry {
             names: HashMap::new(),
             descriptors: HashMap::new(),
             open_counts: HashMap::new(),
+            #[cfg(feature = "plugins")]
             next_runtime_id: BufferKindId::FIRST_RUNTIME_ID,
         }
     }
@@ -735,6 +758,7 @@ impl BufferKindRegistry {
     /// Returns `DuplicateName` if the name is taken, `IdExhausted` if the runtime id
     /// counter overflows, `ZeroId` if the allocated id is zero, or `InvalidId` if the
     /// builder returns a descriptor with a different id.
+    #[cfg(feature = "plugins")]
     pub(crate) fn register_runtime(
         &mut self,
         name: &str,
@@ -769,11 +793,13 @@ impl BufferKindRegistry {
     }
 
     #[must_use]
+    #[cfg(feature = "plugins")]
     pub(crate) fn get_by_name(&self, name: &str) -> Option<Arc<KindDescriptor>> {
         self.names.get(name).and_then(|id| self.get_by_id(*id))
     }
 
     #[must_use]
+    #[cfg(feature = "plugins")]
     pub(crate) fn id_by_name(&self, name: &str) -> Option<BufferKindId> {
         self.names.get(name).copied()
     }
@@ -803,10 +829,12 @@ impl BufferKindRegistry {
     }
 
     #[must_use]
+    #[cfg(feature = "plugins")]
     fn open_count(&self, id: BufferKindId) -> usize {
         self.open_counts.get(&id).copied().unwrap_or(0)
     }
 
+    #[cfg(feature = "plugins")]
     fn tombstone_descriptor(
         &mut self,
         id: BufferKindId,
@@ -830,6 +858,7 @@ impl BufferKindRegistry {
         }
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn retire_plugin(
         &mut self,
         plugin_id: NonZeroU32,
@@ -879,6 +908,7 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Native,
             state_key: FILE_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
@@ -904,6 +934,7 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Unsupported,
             state_key: TERMINAL_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
@@ -923,6 +954,7 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Native,
             state_key: DIRECTORY_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
@@ -938,6 +970,7 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Native,
             state_key: UNDO_TREE_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
@@ -957,6 +990,7 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Native,
             state_key: MESSAGES_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
@@ -979,6 +1013,7 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Native,
             state_key: CLIPBOARD_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
@@ -994,6 +1029,7 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Unsupported,
             state_key: CLIPBOARD_ENTRY_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
@@ -1009,6 +1045,7 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Unsupported,
             state_key: LOCATION_LIST_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
@@ -1024,6 +1061,7 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Unsupported,
             state_key: REGIONS_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
@@ -1043,6 +1081,7 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Unsupported,
             state_key: SCRATCH_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
@@ -1079,6 +1118,7 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Native,
             state_key: GIT_STATUS_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
@@ -1094,6 +1134,7 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Unsupported,
             state_key: GIT_COMMIT_MESSAGE_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
@@ -1120,6 +1161,7 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Native,
             state_key: GIT_BLAME_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
@@ -1143,6 +1185,7 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Native,
             state_key: GIT_LOG_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
@@ -1176,6 +1219,7 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Unsupported,
             state_key: GIT_REBASE_TODO_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
@@ -1194,6 +1238,7 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Native,
             state_key: BUFFER_LIST_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
@@ -1214,6 +1259,7 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Native,
             state_key: UNDO_FILE_VIEW_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
@@ -1235,6 +1281,7 @@ impl BufferKindRegistry {
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Native,
             state_key: IMAGE_VIEW_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;

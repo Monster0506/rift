@@ -448,6 +448,7 @@ impl<T: TerminalBackend> Editor<T> {
             PluginMutation::SetSyntaxQuery { .. }
             | PluginMutation::StartSyntax { .. }
             | PluginMutation::StopSyntax { .. } => self.apply_language_mutation(mutation),
+            #[cfg(feature = "lsp")]
             PluginMutation::LspRename { new_name } => self.rename_lsp_symbol(new_name),
             #[cfg(feature = "lsp")]
             PluginMutation::LspRegisterServer { language, config } => {
@@ -497,9 +498,8 @@ impl<T: TerminalBackend> Editor<T> {
             PluginMutation::Notify { message, level } => {
                 self.notify(level, message);
             }
-            PluginMutation::OpenFloat(_) | PluginMutation::CloseFloat => {
-                self.plugin_host.apply_mutation(mutation);
-            }
+            PluginMutation::OpenFloat(content) => self.popup.open(content),
+            PluginMutation::CloseFloat => self.popup.close(),
             PluginMutation::SetCursorHoldDelay(ms) => {
                 self.plugin_host.set_cursor_hold_delay_ms(ms);
             }

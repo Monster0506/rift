@@ -11,6 +11,7 @@ impl WindowId {
     }
 
     #[must_use]
+    #[cfg(feature = "plugins")]
     pub(crate) const fn get(self) -> u64 {
         self.0
     }

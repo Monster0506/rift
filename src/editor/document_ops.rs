@@ -175,6 +175,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// # Errors
     /// Returns `Err` when the scratch document cannot be created or switched to.
+    #[cfg(any(feature = "plugins", test))]
     pub(super) fn create_scratch_buffer(
         &mut self,
         reservation: crate::document::manager::CreationReservation,

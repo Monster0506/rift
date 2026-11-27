@@ -585,6 +585,7 @@ fn test_static_contexts_retain_current_fallback() {
     );
 }
 
+#[cfg(feature = "plugins")]
 #[test]
 fn test_layered_registration_and_restoration_by_sequence() {
     let mut map = KeyMap::new();
@@ -624,6 +625,7 @@ fn test_layered_registration_and_restoration_by_sequence() {
     assert!(!map.unregister_sequence(ctx, std::slice::from_ref(&key)));
 }
 
+#[cfg(feature = "plugins")]
 #[test]
 fn test_layered_registration_and_restoration_by_owner() {
     let mut map = KeyMap::new();
@@ -689,6 +691,7 @@ fn test_layered_registration_and_restoration_by_owner() {
     );
 }
 
+#[cfg(feature = "plugins")]
 #[test]
 fn test_multi_key_sequence_layer_restoration() {
     let mut map = KeyMap::new();
@@ -864,6 +867,7 @@ fn every_default_binding_row_parses() {
     }
 }
 
+#[cfg(feature = "plugins")]
 #[test]
 fn default_rows_register_every_binding() {
     let mut map = KeyMap::new();
@@ -875,6 +879,7 @@ fn default_rows_register_every_binding() {
     assert_eq!(map.layers.len(), expected);
 }
 
+#[cfg(feature = "plugins")]
 #[test]
 fn mode_names_resolve_by_short_and_long_name() {
     assert_eq!(KeyContext::from_mode("n"), Some(KeyContext::Normal));

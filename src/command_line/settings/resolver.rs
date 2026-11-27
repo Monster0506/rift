@@ -1,10 +1,13 @@
+#[cfg(any(feature = "plugins", test))]
 use super::descriptor::SettingValue;
 use super::registry::SettingsRegistry;
 use crate::command_line::commands::registry::MatchResult;
+#[cfg(any(feature = "plugins", test))]
 use crate::error::RiftError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OptionScope {
+    #[cfg(any(feature = "plugins", test))]
     Global,
     Local(crate::document::DocumentId),
     Resolve(crate::document::DocumentId),
@@ -45,6 +48,7 @@ impl<L, G> SettingsResolver<L, G> {
         }
     }
 
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) fn set(
         &self,
         name: &str,
@@ -60,6 +64,7 @@ impl<L, G> SettingsResolver<L, G> {
         Ok(())
     }
 
+    #[cfg(any(feature = "plugins", test))]
     #[must_use]
     pub(crate) fn get(
         &self,

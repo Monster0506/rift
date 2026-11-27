@@ -17,6 +17,7 @@ fn loading_content_advances_the_revision_and_resets_undo_state() {
     assert_eq!(doc.transaction_depth, 0);
     assert!(doc.annotation_undo_stack.is_empty());
     assert!(doc.annotation_redo_stack.is_empty());
+    #[cfg(feature = "lsp")]
     assert!(doc.pending_lsp_edits.is_empty());
     assert_eq!(doc.buffer.to_string(), "z");
     assert!(doc
@@ -27,6 +28,7 @@ fn loading_content_advances_the_revision_and_resets_undo_state() {
         .is_empty());
 }
 
+#[cfg(feature = "lsp")]
 #[test]
 fn undo_and_redo_queue_lsp_changes_and_bump_the_content_version() {
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();

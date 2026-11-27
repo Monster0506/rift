@@ -4,8 +4,8 @@ use crate::mode::Mode;
 use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
+    #[cfg(all(feature = "lsp", feature = "plugins"))]
     pub(crate) fn rename_lsp_symbol(&mut self, new_name: String) {
-        #[cfg(feature = "lsp")]
         match self.cursor_lsp_position() {
             Some((path, line, col)) => {
                 if self
@@ -21,11 +21,9 @@ impl<T: TerminalBackend> Editor<T> {
                 "LSP rename: no file open".to_string(),
             ),
         }
-        #[cfg(not(feature = "lsp"))]
-        let _ = new_name;
     }
 
-    #[cfg(feature = "lsp")]
+    #[cfg(all(feature = "lsp", feature = "plugins"))]
     pub(crate) fn register_lsp_server(
         &mut self,
         language: String,

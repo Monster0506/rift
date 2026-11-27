@@ -291,6 +291,7 @@ impl FloatingWindow {
 
     /// Render the floating window to `layer` at the position calculated from
     /// the layer's dimensions, using `content` as the line-by-line body.
+    #[cfg(any(feature = "plugins", feature = "lsp", test))]
     pub(crate) fn render(&self, layer: &mut Layer, content: &[Vec<char>]) {
         self.render_with_border_chars(layer, content, None);
     }
@@ -730,6 +731,9 @@ impl FloatingWindow {
         }
     }
 }
+
+#[cfg(any(feature = "plugins", feature = "lsp"))]
+pub(crate) mod popup;
 
 #[cfg(test)]
 #[path = "tests.rs"]

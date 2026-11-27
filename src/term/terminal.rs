@@ -1,10 +1,16 @@
-use super::TerminalEvent;
 use alacritty_terminal::event::{Event, EventListener, WindowSize};
 use alacritty_terminal::event_loop::{EventLoop, Notifier};
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::{Config, Term};
 use alacritty_terminal::tty::{self, Options, Shell};
 use std::sync::{mpsc, Arc};
+
+#[derive(Debug, Clone)]
+pub(crate) enum TerminalEvent {
+    Title,
+    Wakeup,
+    ChildExit(i32),
+}
 
 #[derive(Clone)]
 struct TerminalListener(mpsc::Sender<TerminalEvent>);

@@ -114,29 +114,43 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    fn reject_unknown_ex_command(&mut self, name: &str) -> bool {
+        self.report_ex_error(RiftError::new(
+            ErrorType::Parse,
+            "UNKNOWN_COMMAND",
+            format!("Unknown command: {name}"),
+        ))
+    }
+
+    #[cfg(not(feature = "plugins"))]
+    pub(in crate::editor) fn run_plugin_command(
+        &mut self,
+        name: &str,
+        _args: &[String],
+        _cmd: &str,
+    ) -> bool {
+        self.reject_unknown_ex_command(name)
+    }
+
+    #[cfg(feature = "plugins")]
     pub(in crate::editor) fn run_plugin_command(
         &mut self,
         name: &str,
         args: &[String],
         cmd: &str,
     ) -> bool {
-        if name == "lua" {
-            let s = cmd.trim_start_matches(':').trim();
-            let code = s.strip_prefix("lua").map_or("", |r| r.trim_start());
-            self.plugin_host.mark_lua_used();
-            self.call_plugins(|editor| {
-                if let Some(err) = editor.plugin_host.lua_exec(code) {
-                    editor.notify(NotificationType::Error, err);
-                }
-            });
-        } else if !self.call_plugins(|editor| editor.plugin_host.execute_command(name, args)) {
-            self.notify_error(RiftError::new(
-                ErrorType::Parse,
-                "UNKNOWN_COMMAND",
-                format!("Unknown command: {name}"),
-            ));
-            return false;
+        if name != "lua" {
+            return self.call_plugins(|editor| editor.plugin_host.execute_command(name, args))
+                || self.reject_unknown_ex_command(name);
         }
+        let s = cmd.trim_start_matches(':').trim();
+        let code = s.strip_prefix("lua").map_or("", |r| r.trim_start());
+        self.plugin_host.mark_lua_used();
+        self.call_plugins(|editor| {
+            if let Some(err) = editor.plugin_host.lua_exec(code) {
+                editor.notify(NotificationType::Error, err);
+            }
+        });
         true
     }
 }

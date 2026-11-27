@@ -1,6 +1,7 @@
 use super::tree::{SplitNode, SplitTree};
 use super::window::WindowId;
 use crate::num::f64_to_usize;
+#[cfg(feature = "plugins")]
 use std::hash::{Hash, Hasher};
 
 pub(crate) const MIN_WINDOW_ROWS: usize = 3;
@@ -23,6 +24,7 @@ impl SplitTree {
         layouts
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn hash_layout<H: Hasher>(&self, state: &mut H) {
         hash_node(self.root(), state);
         for (id, window) in self.windows() {
@@ -105,6 +107,7 @@ fn compute_node_layout(
     }
 }
 
+#[cfg(feature = "plugins")]
 fn hash_node<H: Hasher>(node: &SplitNode, state: &mut H) {
     match node {
         SplitNode::Leaf(window_id) => window_id.hash(state),

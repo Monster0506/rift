@@ -102,6 +102,7 @@ impl LayerPriority {
     /// Floating windows like command line, dialogs
     pub(crate) const FLOATING_WINDOW: Self = Self(20);
     /// Popup menus like autocomplete
+    #[cfg(any(feature = "plugins", feature = "lsp", test))]
     pub(crate) const POPUP: Self = Self(30);
     /// Hover information
     pub(crate) const HOVER: Self = Self(40);

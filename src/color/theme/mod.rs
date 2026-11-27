@@ -81,6 +81,7 @@ impl SyntaxColors {
         }
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn names(&self) -> impl Iterator<Item = &str> {
         self.styles.keys().map(String::as_str)
     }

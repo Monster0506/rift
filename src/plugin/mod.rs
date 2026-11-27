@@ -5,13 +5,8 @@
 pub(crate) mod events;
 mod lua_state;
 
-#[cfg(feature = "plugins")]
-pub(crate) mod lua_host;
-#[cfg(not(feature = "plugins"))]
-#[path = "lua_host_stub.rs"]
 pub(crate) mod lua_host;
 
-#[cfg(feature = "plugins")]
 mod lua_value;
 
 use std::num::NonZeroU32;
@@ -43,12 +38,6 @@ fn allocate_next_generation_id() -> NonZeroU32 {
 pub(crate) struct PluginId(NonZeroU32);
 
 impl PluginId {
-    #[cfg(not(feature = "plugins"))]
-    #[must_use]
-    const fn new(id: NonZeroU32) -> Self {
-        Self(id)
-    }
-
     #[cfg(test)]
     /// Allocate a fresh, process-unique `PluginId`.
     #[must_use]
@@ -181,12 +170,6 @@ impl PluginMutationEnvelope {
             origin: Some(origin),
         }
     }
-
-    /// Create a mutation envelope with optional origin generation.
-    #[must_use]
-    const fn new(mutation: PluginMutation, origin: Option<PluginGeneration>) -> Self {
-        Self { mutation, origin }
-    }
 }
 
 impl From<PluginMutation> for PluginMutationEnvelope {
@@ -271,12 +254,11 @@ pub(crate) enum PluginMutation {
     SaveBuffer {
         buf: DocumentId,
     },
-    #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
     ResumeSave {
         request: events::SaveRequestId,
     },
     /// Open a plugin-owned floating window.
-    OpenFloat(PluginFloat),
+    OpenFloat(crate::floating_window::popup::PopupContent),
     /// Close the currently open plugin float.
     CloseFloat,
     ExecAction(crate::action::Action),
@@ -357,6 +339,7 @@ pub(crate) enum PluginMutation {
         language: String,
         config: crate::lsp::config::LspServerConfig,
     },
+    #[cfg(feature = "lsp")]
     /// Request a rename of the symbol at the current cursor position (direct, no dialog).
     LspRename {
         new_name: String,
@@ -522,39 +505,6 @@ pub(crate) struct AnnotationHoverCtx {
     pub(crate) buffer: u64,
 }
 
-/// A floating window owned by a plugin. Stored in `PluginHost` and rendered
-/// on each frame until `CloseFloat` is queued.
-#[derive(Debug, Clone)]
-pub(crate) struct PluginFloat {
-    title: String,
-    lines: Vec<String>,
-    /// Screen row to keep uncovered: the float sits below it, else above.
-    anchor_row: Option<usize>,
-    /// First visible line of `lines`.
-    scroll: usize,
-    /// Content rows shown at the last render; bounds `scroll_float`.
-    visible_lines: usize,
-}
-
-impl PluginFloat {
-    pub(crate) fn new(title: impl Into<String>, lines: Vec<String>) -> Self {
-        Self {
-            title: title.into(),
-            lines,
-            anchor_row: None,
-            scroll: 0,
-            visible_lines: 0,
-        }
-    }
-
-    /// Anchor the float to a screen row (the cursor's) instead of centering.
-    #[must_use]
-    pub(crate) const fn with_anchor_row(mut self, row: usize) -> Self {
-        self.anchor_row = Some(row);
-        self
-    }
-}
-
 /// Tracks idle time for `CursorHold` events.
 #[derive(Debug)]
 struct CursorHoldState {
@@ -628,10 +578,6 @@ pub(crate) struct PluginHost {
     command_descriptions: std::collections::HashMap<String, String>,
     /// Registered keymap action handlers with optional origin generation. Key matches `EditorAction::PluginAction(id)`.
     actions: std::collections::HashMap<String, (ActionHandler, Option<PluginGeneration>)>,
-    /// Currently open plugin float, if any.
-    open_float: Option<PluginFloat>,
-    /// Set to `true` when a float was just closed so the layer can be cleared once.
-    float_just_closed: bool,
     /// Mutations queued by handlers during dispatch or command execution.
     mutation_queue: Vec<PluginMutationEnvelope>,
     /// Cursor-hold idle tracker.
@@ -666,8 +612,6 @@ impl PluginHost {
             commands: std::collections::HashMap::new(),
             command_descriptions: std::collections::HashMap::new(),
             actions: std::collections::HashMap::new(),
-            open_float: None,
-            float_just_closed: false,
             mutation_queue: Vec::new(),
             cursor_hold: CursorHoldState::new(cursor_hold_delay),
             lua: None,
@@ -884,156 +828,6 @@ impl PluginHost {
             }
         }
         false
-    }
-
-    /// Returns `true` if a plugin float is currently open.
-    pub(crate) const fn has_open_float(&self) -> bool {
-        self.open_float.is_some()
-    }
-
-    /// Close the open float immediately (e.g. when Escape is pressed).
-    pub(crate) fn close_float(&mut self) {
-        if self.open_float.is_some() {
-            self.open_float = None;
-            self.float_just_closed = true;
-        }
-    }
-
-    /// Returns `true` once after a float was closed, so the render layer
-    /// can be cleared. Resets the flag on read.
-    pub(crate) const fn take_float_closed(&mut self) -> bool {
-        let val = self.float_just_closed;
-        self.float_just_closed = false;
-        val
-    }
-
-    /// Scroll the open float's visible lines by `delta`, clamped to its content.
-    pub(crate) fn scroll_float(&mut self, delta: isize) {
-        if let Some(float) = &mut self.open_float {
-            let max = float.lines.len().saturating_sub(float.visible_lines.max(1));
-            float.scroll = float.scroll.saturating_add_signed(delta).min(max);
-        }
-    }
-
-    /// Render the open float (if any) into the given layer. `fg`/`bg` should be the editor's
-    /// current theme colors so the float blends with the UI instead of using reverse-video defaults.
-    pub(crate) fn render_float_into_layer(
-        &mut self,
-        layer: &mut crate::layer::Layer,
-        fg: Option<crate::color::Color>,
-        bg: Option<crate::color::Color>,
-    ) {
-        use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
-        use crate::layer::Cell;
-        use unicode_width::UnicodeWidthStr;
-
-        let Some(float) = &mut self.open_float else {
-            return;
-        };
-
-        let rows = layer.rows();
-        let cols = layer.cols();
-        let total = float.lines.len();
-
-        // Anchored: below the anchor row if it fits, else above; never on it.
-        // The last screen row (status line) is never used. Otherwise centered.
-        let (position, content_h, left_aligned) = float.anchor_row.map_or_else(
-            || {
-                (
-                    WindowPosition::Center,
-                    total.min(rows.saturating_sub(4)),
-                    false,
-                )
-            },
-            |r| {
-                let below = rows.saturating_sub(r + 2);
-                let above = r;
-                let wanted = total + 2;
-                let (top, height) = if wanted <= below {
-                    (r + 1, wanted)
-                } else if wanted <= above {
-                    (r - wanted, wanted)
-                } else if below >= above {
-                    (r + 1, below)
-                } else {
-                    (0, above)
-                };
-                let position = WindowPosition::Absolute {
-                    row: u16::try_from(top).unwrap_or(u16::MAX),
-                    col: 0,
-                };
-                (position, height.saturating_sub(2), true)
-            },
-        );
-        float.visible_lines = content_h;
-        float.scroll = float.scroll.min(total.saturating_sub(content_h));
-        let overflow = total > content_h;
-        let title = if overflow {
-            format!(
-                " {} [{}/{}] ",
-                float.title,
-                (float.scroll + content_h).min(total),
-                total
-            )
-        } else {
-            format!(" {} ", float.title)
-        };
-
-        // Size to fit content using unicode display width, not `.len()` (byte length),
-        // which would give wrong widths for CJK or other multi-byte characters.
-        let content_w = float
-            .lines
-            .iter()
-            .map(|l| UnicodeWidthStr::width(l.as_str()))
-            .max()
-            .unwrap_or(20)
-            .max(UnicodeWidthStr::width(title.as_str()))
-            .min(cols.saturating_sub(if left_aligned { 2 } else { 4 }));
-        let width = (content_w + 2).min(cols);
-        let height = (content_h + 2).min(rows);
-
-        let mut style = WindowStyle::default().with_reverse_video(false);
-        if let Some(f) = fg {
-            style = style.with_fg(f);
-        }
-        if let Some(b) = bg {
-            style = style.with_bg(b);
-        }
-
-        let window = FloatingWindow::with_style(position, width, height, style);
-
-        let char_lines: Vec<Vec<char>> = float
-            .lines
-            .iter()
-            .skip(float.scroll)
-            .take(content_h)
-            .map(|l| l.chars().collect())
-            .collect();
-
-        window.render(layer, &char_lines);
-
-        // Title on the top border, clipped to the inner width.
-        let (top, left) = window.calculate_position(
-            u16::try_from(rows).unwrap_or(u16::MAX),
-            u16::try_from(cols).unwrap_or(u16::MAX),
-        );
-        let (top, left) = (top as usize, left as usize + 1);
-        let mut col = 0;
-        for ch in title.chars() {
-            let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
-            if w == 0 || col + w > width.saturating_sub(2) {
-                continue;
-            }
-            layer.set_cell(top, left + col, Cell::from_char(ch).with_colors(fg, bg));
-            for k in 1..w {
-                layer.set_cell(
-                    top,
-                    left + col + k,
-                    Cell::from_char(' ').with_colors(fg, bg),
-                );
-            }
-            col += w;
-        }
     }
 
     /// Initialize the Lua VM. Must be called once at startup or reload.
@@ -1411,8 +1205,6 @@ impl PluginHost {
         true
     }
 
-    /// Apply a mutation immediately (used internally by command/action handlers). Float open/close
-    /// mutations are applied directly to `open_float`; all others are queued for the main loop.
     pub(crate) fn apply_mutation(&mut self, mutation: PluginMutation) {
         self.apply_mutation_envelope(PluginMutationEnvelope::native(mutation));
     }
@@ -1430,30 +1222,13 @@ impl PluginHost {
         self.apply_mutation_envelope(PluginMutationEnvelope::plugin(mutation, origin))
     }
 
-    /// Apply a mutation envelope. Float open/close mutations are applied directly
-    /// to `open_float`; all others are queued for the main loop.
     fn apply_mutation_envelope(&mut self, envelope: PluginMutationEnvelope) -> bool {
         if let Some(origin) = envelope.origin {
             if !self.is_generation_active(origin) {
                 return false;
             }
         }
-        match envelope.mutation {
-            PluginMutation::OpenFloat(f) => {
-                self.open_float = Some(f);
-                self.float_just_closed = false;
-            }
-            PluginMutation::CloseFloat => {
-                if self.open_float.is_some() {
-                    self.float_just_closed = true;
-                }
-                self.open_float = None;
-            }
-            other => {
-                self.mutation_queue
-                    .push(PluginMutationEnvelope::new(other, envelope.origin));
-            }
-        }
+        self.mutation_queue.push(envelope);
         true
     }
 
@@ -1522,16 +1297,11 @@ impl std::fmt::Debug for PluginHost {
             .field("handlers", &handler_counts)
             .field("commands", &self.commands.keys().collect::<Vec<_>>())
             .field("actions", &self.actions.keys().collect::<Vec<_>>())
-            .field("open_float", &self.open_float.as_ref().map(|f| &f.title))
             .field("queued_mutations", &self.mutation_queue.len())
             .field("active_generations", &self.active_generations())
             .finish_non_exhaustive()
     }
 }
-
-#[cfg(test)]
-#[path = "float_tests.rs"]
-mod float_tests;
 
 #[cfg(test)]
 #[path = "identity_and_generation_tests.rs"]

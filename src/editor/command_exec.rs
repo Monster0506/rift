@@ -97,9 +97,16 @@ impl<T: TerminalBackend> Editor<T> {
             self.resolve_display_map_cached(doc_id, content_width, cursor_after, viewport_height);
     }
 
-    pub(super) fn deliver_document_changes(&mut self) {
-        use crate::plugin::events::EventPayload;
+    pub(crate) fn deliver_frame_events(&mut self) {
+        #[cfg(any(feature = "plugins", feature = "lsp"))]
+        self.deliver_document_changes();
+        self.drain_syntax_sync();
+        #[cfg(feature = "plugins")]
+        self.dispatch_frame_events();
+    }
 
+    #[cfg(any(feature = "plugins", feature = "lsp"))]
+    pub(super) fn deliver_document_changes(&mut self) {
         let drained = self.document_manager.drain_changes();
         if drained.is_empty() {
             return;
@@ -110,7 +117,10 @@ impl<T: TerminalBackend> Editor<T> {
                 self.lsp_notify_change(*buf);
             }
         }
+        #[cfg(feature = "plugins")]
         for (buf, changes) in drained {
+            use crate::plugin::events::EventPayload;
+
             if changes.text {
                 self.raise(EventPayload::TextChangedCoarse { buf });
             }
@@ -127,6 +137,7 @@ impl<T: TerminalBackend> Editor<T> {
         for (doc_id, notice) in self.document_manager.take_syntax_notices() {
             if notice.completed {
                 self.cancel_pending_syntax_reparse(doc_id);
+                #[cfg(feature = "plugins")]
                 self.raise_syntax_updated(doc_id);
             }
             if notice.deferred {
@@ -136,6 +147,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     #[cfg(feature = "treesitter")]
+    #[cfg(any(feature = "plugins", test))]
     pub(super) fn reparse_syntax(&mut self, doc_id: crate::document::DocumentId) {
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             doc.reparse_syntax();

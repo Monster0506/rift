@@ -35,6 +35,7 @@ pub struct Action {
 }
 
 impl Action {
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) fn new(verb: impl Into<String>) -> Self {
         Self {
             verb: verb.into(),
@@ -56,6 +57,7 @@ impl Action {
     }
 
     #[must_use]
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) const fn with_default(mut self) -> Self {
         self.default = true;
         self

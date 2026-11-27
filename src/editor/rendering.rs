@@ -65,6 +65,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn update_state(&mut self) -> Option<FrameState> {
         crate::perf_span!("update_state", crate::perf::PerfFields::default());
         self.deliver_frame_events();
+        #[cfg(feature = "plugins")]
         self.update_annotation_hover();
         if self.split_tree.window_count() == 1 {
             let rows = self.render_system.viewport.visible_rows();
@@ -253,7 +254,8 @@ impl<T: TerminalBackend> Editor<T> {
             self.update_window_viewports();
         }
 
-        self.render_plugin_float();
+        #[cfg(any(feature = "plugins", feature = "lsp"))]
+        self.render_popup();
 
         if self.post_paste_state.is_some() {
             self.render_clipboard_tooltip();
@@ -716,9 +718,10 @@ impl<T: TerminalBackend> Editor<T> {
         )
     }
 
-    fn render_plugin_float(&mut self) {
-        crate::perf_span!("render_plugin_float", crate::perf::PerfFields::default());
-        if self.plugin_host.has_open_float() {
+    #[cfg(any(feature = "plugins", feature = "lsp"))]
+    fn render_popup(&mut self) {
+        crate::perf_span!("render_popup", crate::perf::PerfFields::default());
+        if self.popup.is_open() {
             let layer = self
                 .render_system
                 .compositor
@@ -726,8 +729,8 @@ impl<T: TerminalBackend> Editor<T> {
             layer.clear();
             let fg = self.state.settings.editor_fg();
             let bg = self.state.settings.editor_bg();
-            self.plugin_host.render_float_into_layer(layer, fg, bg);
-        } else if self.plugin_host.take_float_closed() {
+            self.popup.render_into_layer(layer, fg, bg);
+        } else if self.popup.take_closed() {
             self.render_system
                 .compositor
                 .get_layer_mut(crate::layer::LayerPriority::POPUP)

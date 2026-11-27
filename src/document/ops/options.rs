@@ -1,7 +1,9 @@
+#[cfg(feature = "plugins")]
 use std::collections::HashMap;
 
 use super::super::definitions::{create_document_settings_registry, DocumentOptions};
 use super::super::Document;
+#[cfg(feature = "plugins")]
 use crate::annotations::value::Value;
 use crate::command_line::settings::descriptor::SettingDescriptor;
 use crate::error::RiftError;
@@ -21,14 +23,17 @@ impl Document {
         create_document_settings_registry().set(name, value, &mut self.options)
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) const fn vars(&self) -> &Tracked<HashMap<String, Value>> {
         &self.vars
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn set_var(&mut self, name: String, value: Value) {
         self.vars.insert(name, value);
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn initialize_vars(&mut self, vars: Vec<(String, Value)>) {
         *self.vars = vars.into_iter().collect();
     }

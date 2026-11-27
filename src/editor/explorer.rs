@@ -209,9 +209,9 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         let (keep, close) = match layout.kind {
-            PanelKind::UndoTree | PanelKind::LocationList | PanelKind::Regions => {
-                (layout.preview_win_id, layout.dir_win_id)
-            }
+            PanelKind::UndoTree | PanelKind::Regions => (layout.preview_win_id, layout.dir_win_id),
+            #[cfg(feature = "lsp")]
+            PanelKind::LocationList => (layout.preview_win_id, layout.dir_win_id),
             PanelKind::FileExplorer | PanelKind::Clipboard | PanelKind::BufferList => {
                 (layout.dir_win_id, layout.preview_win_id)
             }

@@ -1,4 +1,5 @@
 use super::Editor;
+#[cfg(feature = "plugins")]
 use super::{plugin_dirs, user_config_dir};
 use crate::command_line::commands::parser::CommandParser;
 use crate::document::{Document, DocumentId};
@@ -10,6 +11,7 @@ use crate::split::tree::SplitTree;
 use crate::state::definitions::create_settings_registry;
 use crate::state::State;
 use crate::term::TerminalBackend;
+#[cfg(any(feature = "plugins", feature = "lsp", feature = "treesitter"))]
 use std::sync::Arc;
 
 /// Splits the startup argument into a directory target and an optional file to open.
@@ -26,6 +28,7 @@ fn startup_target(file_path: Option<&str>) -> (Option<std::path::PathBuf>, Optio
     (target_dir, effective_file_path)
 }
 
+#[cfg(any(feature = "plugins", feature = "lsp", feature = "treesitter"))]
 fn startup_language_loader() -> Arc<crate::syntax::loader::LanguageLoader> {
     let grammar_dir = std::env::current_exe()
         .ok()
@@ -69,6 +72,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// Panics if no document is active after the startup buffer is created.
     pub fn with_file(mut terminal: T, file_path: Option<&str>) -> Result<Self, RiftError> {
         let (target_dir, effective_file_path) = startup_target(file_path);
+        #[cfg(any(feature = "plugins", feature = "lsp", feature = "treesitter"))]
         let language_loader = startup_language_loader();
         let startup_doc = startup_document(effective_file_path)?;
         let buffer_kinds = crate::document::runtime::BufferKindRegistry::with_builtins();
@@ -99,6 +103,7 @@ impl<T: TerminalBackend> Editor<T> {
             settings_registry,
             document_settings_registry:
                 crate::document::definitions::create_document_settings_registry(),
+            #[cfg(any(feature = "plugins", feature = "lsp", feature = "treesitter"))]
             language_loader,
             job_manager: crate::job_manager::JobManager::new(),
             scheduler: super::scheduler::Scheduler::new(),
@@ -119,8 +124,12 @@ impl<T: TerminalBackend> Editor<T> {
             dot_repeat: DotRepeat::new(),
             panel_layout: None,
             last_notification_generation: 0,
+            #[cfg(feature = "plugins")]
             plugin_host: crate::plugin::PluginHost::new(std::time::Duration::from_millis(400)),
+            #[cfg(feature = "plugins")]
             plugin_jobs: std::collections::HashMap::new(),
+            #[cfg(any(feature = "plugins", feature = "lsp"))]
+            popup: crate::floating_window::popup::Popup::default(),
             clipboard_ring: crate::clipboard::ClipboardRing::new(),
             system_clipboard_cache: crate::clipboard::SystemClipboardCache::new(),
             clipboard_panel_register: None,
@@ -136,7 +145,9 @@ impl<T: TerminalBackend> Editor<T> {
             rename_context: None,
             dispatch_registry: crate::annotations::registry::DispatchRegistry::with_builtins(),
             kind_registry: crate::annotations::registry::KindRegistry::with_core(),
+            #[cfg(feature = "plugins")]
             hovered_annotation: None,
+            #[cfg(feature = "plugins")]
             plugin_mutation_rounds: None,
             git_gutter_seen_revision: std::collections::HashMap::new(),
             git_gutter_repo_cache: std::collections::HashMap::new(),
@@ -144,12 +155,15 @@ impl<T: TerminalBackend> Editor<T> {
             search_highlights_synced: None,
             startup_first_paint: None,
             unrendered_key_count: 0,
+            #[cfg(feature = "plugins")]
             entered_document: initial_doc_id,
+            #[cfg(feature = "plugins")]
             frame_events: Vec::new(),
         };
 
         crate::keymap::defaults::register_defaults(&mut editor.keymap);
         editor.insert_buffer(startup_doc, crate::document::manager::Placement::Background);
+        #[cfg(feature = "plugins")]
         editor.load_plugins();
         if effective_file_path.is_some() {
             editor.restore_startup_undo(initial_doc_id);
@@ -178,6 +192,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.deliver_frame_events();
         }
 
+        #[cfg(feature = "plugins")]
         self.raise(crate::plugin::events::EventPayload::EditorStart);
 
         if let Some(dir) = target_dir {
@@ -241,6 +256,7 @@ impl<T: TerminalBackend> Editor<T> {
         })
     }
 
+    #[cfg(feature = "plugins")]
     fn retire_lua_plugins(&mut self) {
         self.clear_plugin_creation_ids();
         let active_gens = self.plugin_host.active_generations();
@@ -278,6 +294,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.dispatch_registry.clear_lua_handlers();
     }
 
+    #[cfg(feature = "plugins")]
     pub(super) fn load_plugins(&mut self) {
         let init_lua = user_config_dir().join("init.lua");
         for err in self.load_plugins_from(&plugin_dirs(), &init_lua) {
@@ -285,6 +302,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    #[cfg(feature = "plugins")]
     pub(super) fn load_plugins_from(
         &mut self,
         dirs: &[std::path::PathBuf],
@@ -310,11 +328,13 @@ impl<T: TerminalBackend> Editor<T> {
         errors
     }
 
+    #[cfg(feature = "ipc")]
     pub(crate) const fn set_remote(&mut self, remote: bool) {
         self.state.is_remote = remote;
     }
 }
 
+#[cfg(any(feature = "plugins", feature = "lsp", feature = "treesitter"))]
 mod paths {
     pub(super) const GRAMMARS_DIR: &str = "grammars";
 }

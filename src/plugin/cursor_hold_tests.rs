@@ -1,5 +1,3 @@
-#![allow(clippy::disallowed_methods)]
-
 use super::*;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

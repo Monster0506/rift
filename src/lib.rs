@@ -42,6 +42,7 @@ mod movement;
 mod notification;
 mod num;
 mod paint;
+#[cfg(feature = "plugins")]
 mod plugin;
 mod render;
 mod replay;
@@ -56,6 +57,7 @@ mod term;
 mod text_objects;
 mod time;
 mod tracked;
+#[cfg(feature = "ipc")]
 mod transport;
 mod undotree_view;
 mod viewport;

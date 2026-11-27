@@ -159,6 +159,7 @@ impl NotificationManager {
         self.generation += 1;
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn log(&mut self, kind: NotificationType, message: impl Into<String>) {
         self.push_log_entry(MessageEntry::Notification {
             time: SystemTime::now(),

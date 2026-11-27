@@ -648,6 +648,7 @@ impl Syntax {
     }
 
     #[must_use]
+    #[cfg(feature = "plugins")]
     pub(crate) fn uses_language(&self, lang_name: &str) -> bool {
         self.language_name == lang_name
             || self
@@ -658,6 +659,7 @@ impl Syntax {
     }
 
     #[must_use]
+    #[cfg(feature = "plugins")]
     pub(crate) fn snapshot(
         &self,
         buf: u64,

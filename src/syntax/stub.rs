@@ -3,6 +3,7 @@ use super::ParseOutcome;
 /// Inert stand-in for `Syntax` when tree-sitter is compiled out: no language
 /// can ever be loaded, so every operation is a no-op / empty result.
 pub(crate) struct Syntax {
+    #[cfg(any(feature = "plugins", feature = "lsp", feature = "treesitter"))]
     pub(crate) language_name: String,
 }
 

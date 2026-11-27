@@ -6,11 +6,13 @@ pub(crate) enum LspCapability {
     Hover,
     Rename,
     Format,
+    #[cfg(feature = "plugins")]
     Diagnostics,
     CodeActions,
 }
 
 impl LspCapability {
+    #[cfg(feature = "plugins")]
     #[must_use]
     pub(crate) fn parse(s: &str) -> Option<Self> {
         match s {

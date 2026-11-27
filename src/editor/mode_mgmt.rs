@@ -322,6 +322,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.pending_operator_count = 0;
         }
 
+        #[cfg(feature = "plugins")]
         if old_mode != mode {
             self.raise(crate::plugin::events::EventPayload::ModeChanged {
                 from: old_mode,

@@ -51,6 +51,7 @@ impl<T: TerminalBackend> Editor<T> {
                 })
             }
             Some(Handler::Builtin(Builtin::OpenEntry)) => self.open_entry_annotation(ann_id),
+            #[cfg(feature = "plugins")]
             Some(Handler::Lua) => {
                 let ctx = {
                     let Some(doc) = self.document_manager.active_document_mut() else {
@@ -81,6 +82,7 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 ran
             }
+            #[cfg(any(feature = "plugins", test))]
             Some(Handler::Command(cmd)) => {
                 if cmd.is_empty() {
                     return false;
@@ -182,6 +184,7 @@ impl<T: TerminalBackend> Editor<T> {
         Some(!checked)
     }
 
+    #[cfg(feature = "plugins")]
     /// Detect cursor enter/leave transitions over annotations and fire the
     /// matching Lua hooks once per change. Called each frame.
     pub(super) fn update_annotation_hover(&mut self) {

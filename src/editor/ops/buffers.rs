@@ -5,13 +5,16 @@ use super::super::Editor;
 use crate::document::DocumentId;
 use crate::error::{ErrorType, RiftError};
 use crate::term::TerminalBackend;
-use manager::{CreationReservation, NewDocument, Placement};
+#[cfg(any(feature = "plugins", test))]
+use manager::CreationReservation;
+use manager::{NewDocument, Placement};
 
 impl<T: TerminalBackend> Editor<T> {
     pub(crate) fn set_recent_ghost(&mut self, id: Option<DocumentId>) {
         self.document_manager.set_most_recent_ghost_doc(id);
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn claim_buffer_creation(&mut self, id: DocumentId) -> Option<CreationReservation> {
         self.document_manager.claim_plugin_creation(id)
     }
@@ -21,14 +24,17 @@ impl<T: TerminalBackend> Editor<T> {
         self.document_manager.reserve_creation()
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn refill_plugin_creation_ids(&self, ids: Vec<u64>) -> Vec<u64> {
         self.document_manager.refill_plugin_ids(ids)
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn release_plugin_creation_ids(&self, ids: impl IntoIterator<Item = u64>) {
         self.document_manager.release_plugin_ids(ids);
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn clear_plugin_creation_ids(&self) {
         self.document_manager.clear_plugin_ids();
     }
@@ -80,23 +86,8 @@ impl<T: TerminalBackend> Editor<T> {
             #[cfg(feature = "lsp")]
             self.lsp_notify_open(id);
         }
-        let Some(doc) = self.document_manager.get_document(id) else {
-            return;
-        };
-        let path = doc.path().map(std::path::Path::to_path_buf);
-        let filetype = doc
-            .syntax
-            .as_ref()
-            .map(|s| s.language_name.clone())
-            .or_else(|| {
-                path.as_deref()
-                    .and_then(|p| self.language_loader.language_name_for_file(p))
-            });
-        self.raise(crate::plugin::events::EventPayload::BufOpen {
-            buf: id,
-            path,
-            filetype,
-        });
+        #[cfg(feature = "plugins")]
+        self.raise_buf_open(id);
     }
 
     pub(crate) fn open_placeholder(
@@ -137,18 +128,21 @@ impl<T: TerminalBackend> Editor<T> {
         id: DocumentId,
         update_view: impl FnOnce(&mut Self),
     ) -> Result<(), RiftError> {
+        #[cfg(feature = "plugins")]
         if self.document_manager.get_document(id).is_some() {
             self.leave_entered_document(id);
         }
         self.document_manager.switch_to_document(id)?;
         update_view(self);
         self.sync_state_with_active_document();
+        #[cfg(feature = "plugins")]
         if self.active_document_id() == id {
             self.enter_document(id);
         }
         Ok(())
     }
 
+    #[cfg(feature = "plugins")]
     fn leave_entered_document(&mut self, next: DocumentId) {
         let left = self.entered_document;
         if left == next || self.document_manager.get_document(left).is_none() {
@@ -157,6 +151,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.raise(crate::plugin::events::EventPayload::BufLeave { buf: left });
     }
 
+    #[cfg(feature = "plugins")]
     fn enter_document(&mut self, id: DocumentId) {
         if self.entered_document == id {
             return;
@@ -171,6 +166,7 @@ impl<T: TerminalBackend> Editor<T> {
         intent: crate::document::manager::RemovalIntent,
     ) -> Result<(), RiftError> {
         let plan = self.document_manager.prepare_removal(id, intent)?;
+        #[cfg(feature = "plugins")]
         self.scheduler.held_saves.remove(&id);
         let (handle, kind_id, descriptor) = {
             let document = self.document_manager.get_document(id).ok_or_else(|| {
@@ -187,6 +183,7 @@ impl<T: TerminalBackend> Editor<T> {
             )
         };
 
+        #[cfg(feature = "plugins")]
         self.deliver_open_before_close(id);
         if self
             .document_manager
@@ -199,8 +196,10 @@ impl<T: TerminalBackend> Editor<T> {
         match descriptor.on_close {
             crate::document::runtime::CloseHandler::Native(close) => {
                 close(handle);
+                #[cfg(feature = "plugins")]
                 self.apply_plugin_mutations();
             }
+            #[cfg(feature = "plugins")]
             crate::document::runtime::CloseHandler::Lua => {
                 self.call_plugins(|editor| {
                     editor
@@ -267,6 +266,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.buffer_kinds.decrement_open_count(kind_id);
         self.sync_state_with_active_document();
 
+        #[cfg(feature = "plugins")]
         self.raise(crate::plugin::events::EventPayload::BufClose { buf: id });
     }
 }

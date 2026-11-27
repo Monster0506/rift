@@ -627,8 +627,8 @@ fn test_open_float_queues_mutation() {
     assert_eq!(mutations.len(), 1);
     match &mutations[0] {
         PluginMutation::OpenFloat(f) => {
-            assert_eq!(f.title, "My Float");
-            assert_eq!(f.lines, vec!["line a", "line b"]);
+            assert_eq!(f.title(), "My Float");
+            assert_eq!(f.lines(), ["line a", "line b"]);
         }
         _ => panic!("expected OpenFloat"),
     }

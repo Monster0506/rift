@@ -24,11 +24,13 @@ pub(crate) struct CreationReservation {
 
 impl CreationReservation {
     #[must_use]
+    #[cfg(any(feature = "plugins", test))]
     const fn new(id: DocumentId, handle: DocumentHandle) -> Self {
         Self { id, handle }
     }
 
     #[must_use]
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) const fn id(&self) -> DocumentId {
         self.id
     }
@@ -48,6 +50,7 @@ impl DocumentDraft {
     /// # Errors
     /// Returns an error if the document ID or state key does not match the reservation or
     /// descriptor.
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) fn new(
         reservation: CreationReservation,
         document: Document,
@@ -165,6 +168,7 @@ impl DocumentManager {
         self.most_recent_ghost_doc = id;
     }
 
+    #[cfg(feature = "terminal_emulation")]
     #[must_use]
     pub(crate) fn get_handle(&self, id: DocumentId) -> Option<DocumentHandle> {
         self.handles.get(&id).copied()
@@ -174,7 +178,7 @@ impl DocumentManager {
     #[must_use]
     fn active_document_handle(&self) -> Option<DocumentHandle> {
         let id = self.active_document_id()?;
-        self.get_handle(id)
+        self.handles.get(&id).copied()
     }
 
     #[must_use]
@@ -284,6 +288,7 @@ impl DocumentManager {
             .collect()
     }
 
+    #[cfg(any(feature = "plugins", feature = "lsp"))]
     pub(crate) fn drain_changes(&mut self) -> Vec<(DocumentId, crate::document::ops::Changes)> {
         self.documents
             .values_mut()
@@ -292,6 +297,7 @@ impl DocumentManager {
             .collect()
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn tabs(&self) -> impl Iterator<Item = (&Document, bool)> {
         self.tab_order
             .iter()
@@ -383,6 +389,7 @@ impl DocumentManager {
         id
     }
 
+    #[cfg(any(feature = "plugins", test))]
     pub(super) fn refill_plugin_ids(&self, mut ids: Vec<u64>) -> Vec<u64> {
         self.release_plugin_ids(ids.iter().copied());
         ids.clear();
@@ -399,10 +406,12 @@ impl DocumentManager {
         ids
     }
 
+    #[cfg(feature = "plugins")]
     pub(super) fn clear_plugin_ids(&self) {
         self.plugin_ids.borrow_mut().clear();
     }
 
+    #[cfg(any(feature = "plugins", test))]
     pub(super) fn release_plugin_ids(&self, ids: impl IntoIterator<Item = u64>) {
         let mut reserved = self.plugin_ids.borrow_mut();
         for id in ids {
@@ -412,6 +421,7 @@ impl DocumentManager {
         }
     }
 
+    #[cfg(any(feature = "plugins", test))]
     pub(super) fn claim_plugin_creation(&mut self, id: DocumentId) -> Option<CreationReservation> {
         let mut reserved = self.plugin_ids.borrow_mut();
         let index = reserved.iter().position(|reserved| *reserved == id)?;

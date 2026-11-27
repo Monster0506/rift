@@ -21,6 +21,7 @@ impl<T> Tracked<T> {
     }
 
     #[must_use]
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) const fn revision(&self) -> u64 {
         self.revision
     }

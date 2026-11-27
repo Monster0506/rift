@@ -16,18 +16,18 @@ fn drawn_rows(layer: &Layer) -> Vec<usize> {
         .collect()
 }
 
-fn host_with(float: PluginFloat) -> PluginHost {
-    let mut host = PluginHost::new(std::time::Duration::from_millis(1));
-    host.apply_mutation(PluginMutation::OpenFloat(float));
-    host
+fn popup_with(content: PopupContent) -> Popup {
+    let mut popup = Popup::default();
+    popup.open(content);
+    popup
 }
 
 #[test]
 fn anchored_float_sits_below_cursor_row_when_it_fits() {
     let mut layer = Layer::new(20, 40);
     let lines = vec!["one".to_string(), "two".to_string()];
-    let mut host = host_with(PluginFloat::new("T", lines).with_anchor_row(3));
-    host.render_float_into_layer(&mut layer, None, None);
+    let mut popup = popup_with(PopupContent::new("T", lines).with_anchor_row(3));
+    popup.render_into_layer(&mut layer, None, None);
     assert_eq!(drawn_rows(&layer), vec![4, 5, 6, 7]);
     assert!(
         row_text(&layer, 4).contains(" T "),
@@ -40,9 +40,8 @@ fn anchored_float_sits_below_cursor_row_when_it_fits() {
 fn anchored_float_moves_above_cursor_row_when_no_room_below() {
     let mut layer = Layer::new(20, 40);
     let lines = vec!["one".to_string(), "two".to_string()];
-    let mut host = host_with(PluginFloat::new("T", lines).with_anchor_row(17));
-    host.render_float_into_layer(&mut layer, None, None);
-    // Ends at row 16, never touching the anchor row.
+    let mut popup = popup_with(PopupContent::new("T", lines).with_anchor_row(17));
+    popup.render_into_layer(&mut layer, None, None);
     assert_eq!(drawn_rows(&layer), vec![13, 14, 15, 16]);
 }
 
@@ -50,20 +49,19 @@ fn anchored_float_moves_above_cursor_row_when_no_room_below() {
 fn anchored_float_clamps_and_scrolls_long_content() {
     let mut layer = Layer::new(12, 40);
     let lines: Vec<String> = (0..20).map(|i| format!("line{i}")).collect();
-    let mut host = host_with(PluginFloat::new("T", lines).with_anchor_row(2));
-    host.render_float_into_layer(&mut layer, None, None);
-    // Rows 3..=10: 8 rows = 6 content lines; the status row 11 stays clear.
+    let mut popup = popup_with(PopupContent::new("T", lines).with_anchor_row(2));
+    popup.render_into_layer(&mut layer, None, None);
     assert_eq!(drawn_rows(&layer), (3..=10).collect::<Vec<_>>());
     assert!(row_text(&layer, 3).contains("T [6/20]"));
     assert!(row_text(&layer, 4).contains("line0"));
 
-    host.scroll_float(100);
-    host.render_float_into_layer(&mut layer, None, None);
+    popup.scroll(100);
+    popup.render_into_layer(&mut layer, None, None);
     assert!(row_text(&layer, 3).contains("T [20/20]"));
     assert!(row_text(&layer, 4).contains("line14"));
 
-    host.scroll_float(-3);
-    host.render_float_into_layer(&mut layer, None, None);
+    popup.scroll(-3);
+    popup.render_into_layer(&mut layer, None, None);
     assert!(row_text(&layer, 3).contains("T [17/20]"));
     assert!(row_text(&layer, 4).contains("line11"));
 }
@@ -72,7 +70,7 @@ fn anchored_float_clamps_and_scrolls_long_content() {
 fn unanchored_float_stays_centered() {
     let mut layer = Layer::new(20, 40);
     let lines = vec!["one".to_string()];
-    let mut host = host_with(PluginFloat::new("T", lines));
-    host.render_float_into_layer(&mut layer, None, None);
+    let mut popup = popup_with(PopupContent::new("T", lines));
+    popup.render_into_layer(&mut layer, None, None);
     assert_eq!(drawn_rows(&layer), vec![8, 9, 10]);
 }

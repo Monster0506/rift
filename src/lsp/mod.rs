@@ -297,6 +297,7 @@ impl LspManager {
         Some((ended, started))
     }
 
+    #[cfg(any(feature = "plugins", test))]
     /// Register a language server (called by plugins via `rift.lsp.register()`).
     pub(crate) fn register_server(&mut self, language: String, server: config::LspServerConfig) {
         self.exits.remove(&language);

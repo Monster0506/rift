@@ -2,7 +2,6 @@
 
 use crate::document::DocumentId;
 use crate::mode::Mode;
-#[cfg(feature = "plugins")]
 use crate::plugin::lua_value::lua_int;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Weak};
@@ -10,11 +9,9 @@ use std::sync::{Arc, Weak};
 const HELD: u8 = 0;
 const READY: u8 = 1;
 const QUEUED: u8 = 2;
-#[cfg(feature = "plugins")]
 const REVOKED: u8 = 3;
 
 #[derive(Debug, Default)]
-#[cfg_attr(not(feature = "plugins"), allow(dead_code))]
 pub(crate) enum SaveDecision {
     #[default]
     Proceed,
@@ -26,7 +23,6 @@ pub(crate) enum SaveDecision {
 pub(crate) struct SaveHold(Arc<AtomicU8>);
 
 impl SaveHold {
-    #[cfg(feature = "plugins")]
     pub(super) fn new(buf: DocumentId) -> (Self, SaveRequestId) {
         let ticket = Arc::new(AtomicU8::new(HELD));
         let request = SaveRequestId {
@@ -36,7 +32,6 @@ impl SaveHold {
         (Self(ticket), request)
     }
 
-    #[cfg(feature = "plugins")]
     pub(super) fn is_held(&self) -> bool {
         self.0.load(Ordering::Relaxed) == HELD
     }
@@ -60,7 +55,6 @@ pub(crate) struct SaveRequestId {
 }
 
 impl SaveRequestId {
-    #[cfg(feature = "plugins")]
     pub(super) fn queue_resume(&self) -> bool {
         self.ticket.upgrade().is_some_and(|ticket| {
             ticket
@@ -69,7 +63,6 @@ impl SaveRequestId {
         })
     }
 
-    #[cfg(feature = "plugins")]
     pub(super) fn revoke(&self) {
         if let Some(ticket) = self.ticket.upgrade() {
             ticket.store(REVOKED, Ordering::Relaxed);
@@ -177,24 +170,28 @@ pub(crate) enum EventPayload {
         cols: u16,
     },
 
+    #[cfg(feature = "lsp")]
     /// An LSP server process spawned and connected (before it finishes indexing).
     LspServerConnected {
         language: String,
         server_name: String,
     },
 
+    #[cfg(feature = "lsp")]
     /// An LSP server finished indexing and is ready for requests.
     LspServerReady {
         language: String,
         server_name: String,
     },
 
+    #[cfg(feature = "lsp")]
     /// An LSP server sent a work-done progress tick.
     LspProgress {
         language: String,
         server_name: String,
     },
 
+    #[cfg(feature = "lsp")]
     /// LSP diagnostics were received for a file.
     LspDiagnosticsChanged {
         /// Normalized URI of the file.
@@ -243,7 +240,6 @@ impl EventPayload {
     ///
     /// # Errors
     /// Returns an error if the table cannot be created or a field cannot be set.
-    #[cfg(feature = "plugins")]
     pub(super) fn to_lua_table(&self, lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
         let t = lua.create_table()?;
         match self {
@@ -301,6 +297,7 @@ impl EventPayload {
                 t.set("rows", i64::from(*rows))?;
                 t.set("cols", i64::from(*cols))?;
             }
+            #[cfg(feature = "lsp")]
             Self::LspServerConnected {
                 language,
                 server_name,
@@ -316,6 +313,7 @@ impl EventPayload {
                 t.set("language", language.as_str())?;
                 t.set("server_name", server_name.as_str())?;
             }
+            #[cfg(feature = "lsp")]
             Self::LspDiagnosticsChanged {
                 uri,
                 error_count,
@@ -373,9 +371,13 @@ impl EventPayload {
             Self::WinClosed { .. } => "WinClosed",
             Self::WinMoved { .. } => "WinMoved",
             Self::WinSwapped { .. } => "WinSwapped",
+            #[cfg(feature = "lsp")]
             Self::LspServerConnected { .. } => "LspServerConnected",
+            #[cfg(feature = "lsp")]
             Self::LspServerReady { .. } => "LspServerReady",
+            #[cfg(feature = "lsp")]
             Self::LspProgress { .. } => "LspProgress",
+            #[cfg(feature = "lsp")]
             Self::LspDiagnosticsChanged { .. } => "LspDiagnosticsChanged",
         }
     }

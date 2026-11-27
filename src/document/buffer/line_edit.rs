@@ -1,6 +1,7 @@
 use super::TextBuffer;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(feature = "plugins")]
 pub(crate) struct LineReplacement {
     pub(crate) start: usize,
     pub(crate) end: usize,
@@ -10,6 +11,7 @@ pub(crate) struct LineReplacement {
 
 impl TextBuffer {
     #[must_use]
+    #[cfg(feature = "plugins")]
     pub(crate) fn line_replacement(
         &self,
         first: usize,
@@ -49,6 +51,7 @@ impl TextBuffer {
     }
 
     #[must_use]
+    #[cfg(feature = "plugins")]
     pub(crate) fn line_col_position(&self, row: usize, col: usize) -> usize {
         let row = row.min(self.line_index.line_count().saturating_sub(1));
         let start = self.line_index.get_line_start(row);

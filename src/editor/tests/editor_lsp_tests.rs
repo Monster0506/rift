@@ -1,5 +1,6 @@
 #[cfg(feature = "lsp")]
 use super::common::*;
+#[cfg(feature = "lsp")]
 use crate::document::ops::{Edit, EditSource};
 
 #[cfg(feature = "lsp")]

@@ -34,6 +34,7 @@ pub enum Color {
 }
 
 impl Color {
+    #[cfg(any(feature = "plugins", test))]
     #[must_use]
     pub(crate) fn parse(s: &str) -> Option<Self> {
         Some(match s.to_lowercase().as_str() {
@@ -65,6 +66,7 @@ impl Color {
         })
     }
 
+    #[cfg(any(feature = "plugins", test))]
     #[must_use]
     pub(crate) fn name(self) -> String {
         match self {

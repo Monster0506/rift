@@ -5,7 +5,9 @@ use crate::action::Action;
 use crate::document::runtime::BufferKindId;
 use crate::key::Key;
 use crate::keymap::trie::{MatchResult, Strictness, TrieNode};
-use std::collections::{BTreeMap, HashMap};
+#[cfg(feature = "plugins")]
+use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 /// Trait for resolving the parent context of a given key context.
 pub(crate) trait ParentResolver {
@@ -36,6 +38,7 @@ pub enum KeyContext {
     Buffer(BufferKindId),
 }
 
+#[cfg(feature = "plugins")]
 const MODES: &[(&str, &str, KeyContext)] = &[
     ("g", "global", KeyContext::Global),
     ("n", "normal", KeyContext::Normal),
@@ -49,6 +52,7 @@ const MODES: &[(&str, &str, KeyContext)] = &[
 ];
 
 impl KeyContext {
+    #[cfg(feature = "plugins")]
     pub(crate) fn from_mode(name: &str) -> Option<Self> {
         MODES
             .iter()
@@ -57,18 +61,22 @@ impl KeyContext {
     }
 }
 
+#[cfg(feature = "plugins")]
 /// Opaque token identifying a key binding owner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct KeyBindingToken(pub(crate) u64);
 
+#[cfg(feature = "plugins")]
 impl KeyBindingToken {
     /// Create a new token from a raw identifier.
     #[must_use]
+    #[cfg(feature = "plugins")]
     pub(crate) const fn new(raw: u64) -> Self {
         Self(raw)
     }
 }
 
+#[cfg(feature = "plugins")]
 /// A single registration layer entry for a sequence.
 #[derive(Debug, Clone)]
 struct LayerEntry {
@@ -81,6 +89,7 @@ struct LayerEntry {
 pub struct KeyMap {
     /// Active lookup trie per context for fast traversal on the input hot path.
     mappings: HashMap<KeyContext, TrieNode>,
+    #[cfg(feature = "plugins")]
     /// Stack of registration layers for each sequence, ordered from oldest to newest.
     layers: BTreeMap<(KeyContext, Vec<Key>), Vec<LayerEntry>>,
 }
@@ -90,6 +99,7 @@ impl KeyMap {
     pub fn new() -> Self {
         Self {
             mappings: HashMap::new(),
+            #[cfg(feature = "plugins")]
             layers: BTreeMap::new(),
         }
     }
@@ -106,10 +116,17 @@ impl KeyMap {
         keys: Vec<Key>,
         action: Action,
     ) {
+        #[cfg(feature = "plugins")]
         self.register_layered(context, keys, action, None);
+        #[cfg(not(feature = "plugins"))]
+        self.mappings
+            .entry(context)
+            .or_default()
+            .insert(&keys, action);
     }
 
     /// Register a sequence binding with an explicit owner token.
+    #[cfg(feature = "plugins")]
     pub(crate) fn register_with_owner(
         &mut self,
         context: KeyContext,
@@ -120,6 +137,7 @@ impl KeyMap {
         self.register_layered(context, keys, action, Some(owner));
     }
 
+    #[cfg(feature = "plugins")]
     /// Register a layered sequence binding with an optional owner token.
     fn register_layered(
         &mut self,
@@ -140,6 +158,7 @@ impl KeyMap {
     }
 
     /// Refresh the active trie node for a sequence after layers change.
+    #[cfg(feature = "plugins")]
     fn refresh_binding(&mut self, context: KeyContext, keys: &[Key]) {
         let key_tuple = (context, keys.to_vec());
         let top_action = self
@@ -161,6 +180,7 @@ impl KeyMap {
 
     /// Remove the top registration layer for a sequence, restoring any lower layer.
     /// Returns `true` if a layer or binding was removed.
+    #[cfg(feature = "plugins")]
     pub(crate) fn unregister_sequence(&mut self, context: KeyContext, keys: &[Key]) -> bool {
         let key_tuple = (context, keys.to_vec());
         let mut removed = false;
@@ -180,6 +200,7 @@ impl KeyMap {
     }
 
     /// Remove all registration layers belonging to an owner token, restoring any lower layers.
+    #[cfg(feature = "plugins")]
     pub(crate) fn unregister_owner(&mut self, owner: KeyBindingToken) -> usize {
         let mut count = 0;
         let mut to_cleanup = Vec::new();
@@ -206,7 +227,7 @@ impl KeyMap {
         count
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "plugins"))]
     /// Return the active registration layer count for a sequence.
     #[must_use]
     fn layer_count(&self, context: KeyContext, keys: &[Key]) -> usize {

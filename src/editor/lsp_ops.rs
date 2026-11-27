@@ -156,12 +156,18 @@ impl<T: TerminalBackend> LspTarget for Editor<T> {
         }
     }
 
+    #[cfg(feature = "plugins")]
     fn lsp_server_connected(&mut self, language: String, server_name: String) {
         self.state.lsp_status = Some(format!("{server_name}: starting"));
         self.raise(crate::plugin::events::EventPayload::LspServerConnected {
             language,
             server_name,
         });
+    }
+
+    #[cfg(not(feature = "plugins"))]
+    fn lsp_server_connected(&mut self, _language: String, server_name: String) {
+        self.state.lsp_status = Some(format!("{server_name}: starting"));
     }
 
     fn lsp_server_ready(&mut self, language: String) {
@@ -172,6 +178,7 @@ impl<T: TerminalBackend> LspTarget for Editor<T> {
             .unwrap_or(&language)
             .to_string();
         self.refresh_lsp_diag_status(&language, &name);
+        #[cfg(feature = "plugins")]
         self.raise(crate::plugin::events::EventPayload::LspServerReady {
             language,
             server_name: name,
@@ -189,6 +196,7 @@ impl<T: TerminalBackend> LspTarget for Editor<T> {
             None => format!("{name}: indexing"),
         };
         self.state.lsp_status = Some(status);
+        #[cfg(feature = "plugins")]
         self.raise(crate::plugin::events::EventPayload::LspProgress {
             language,
             server_name: name,
@@ -334,12 +342,11 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        let error_count = diagnostics.iter().filter(|d| d.severity == Some(1)).count();
-        let warning_count = diagnostics.iter().filter(|d| d.severity == Some(2)).count();
+        #[cfg(feature = "plugins")]
         self.raise(crate::plugin::events::EventPayload::LspDiagnosticsChanged {
             uri: key,
-            error_count,
-            warning_count,
+            error_count: diagnostics.iter().filter(|d| d.severity == Some(1)).count(),
+            warning_count: diagnostics.iter().filter(|d| d.severity == Some(2)).count(),
         });
     }
 
@@ -459,9 +466,10 @@ impl<T: TerminalBackend> Editor<T> {
 
         let lines = crate::render::wrap_text(contents, wrap_width);
         let anchor_row = self.cursor_screen_row();
-        let float = crate::plugin::PluginFloat::new("LSP Hover", lines).with_anchor_row(anchor_row);
-        self.plugin_host
-            .apply_mutation(crate::plugin::PluginMutation::OpenFloat(float));
+        self.popup.open(
+            crate::floating_window::popup::PopupContent::new("LSP Hover", lines)
+                .with_anchor_row(anchor_row),
+        );
         let _ = self.update_and_render();
     }
 

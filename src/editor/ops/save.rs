@@ -1,10 +1,13 @@
-use super::super::scheduler::{HeldSave, SaveQuit};
+#[cfg(feature = "plugins")]
+use super::super::scheduler::HeldSave;
+use super::super::scheduler::SaveQuit;
 use super::super::Editor;
 use crate::document::runtime::{BufferKindId, DocumentHandle, SaveDispatch, SaveResult};
 use crate::document::DocumentId;
 use crate::error::{ErrorType, RiftError};
 use crate::job_manager::jobs::file_operations::FileSaveJob;
 use crate::notification::NotificationType;
+#[cfg(feature = "plugins")]
 use crate::plugin::events::{EventPayload, SaveDecision, SaveRequestId};
 use crate::term::TerminalBackend;
 use std::path::{Path, PathBuf};
@@ -63,6 +66,52 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
+    fn prepare_save(
+        &mut self,
+        buf: DocumentId,
+        target: Option<PathBuf>,
+    ) -> Option<(DocumentHandle, BufferKindId, Option<PathBuf>)> {
+        let doc = self.document_manager.get_document_mut(buf)?;
+        let handle = doc.handle();
+        let kind = doc.buffer_kind_id();
+        if kind != BufferKindId::FILE {
+            match doc.descriptor().save_dispatch {
+                SaveDispatch::Disabled => return None,
+                SaveDispatch::Reject => {
+                    let message = format!("{} buffer cannot be saved", doc.display_name());
+                    self.notify_error(RiftError::new(ErrorType::Io, "CANT_SAVE", message));
+                    return None;
+                }
+                #[cfg(feature = "plugins")]
+                SaveDispatch::Lua | SaveDispatch::Native(_) => {}
+                #[cfg(not(feature = "plugins"))]
+                SaveDispatch::Native(_) => {}
+            }
+        }
+        doc.commit_pending_ghost();
+        let path = target.or_else(|| doc.path().map(Path::to_path_buf));
+        if kind == BufferKindId::FILE && path.is_none() {
+            self.notify_error(RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"));
+            return None;
+        }
+        Some((handle, kind, path))
+    }
+
+    #[cfg(not(feature = "plugins"))]
+    fn start_save(
+        &mut self,
+        buf: DocumentId,
+        target: Option<PathBuf>,
+        _force: bool,
+        _quit: &mut Option<SaveQuit>,
+    ) -> SaveOutcome {
+        match self.prepare_save(buf, target) {
+            Some((handle, kind, path)) => self.write_save(handle, kind, path),
+            None => SaveOutcome::NotSaved,
+        }
+    }
+
+    #[cfg(feature = "plugins")]
     fn start_save(
         &mut self,
         buf: DocumentId,
@@ -73,28 +122,9 @@ impl<T: TerminalBackend> Editor<T> {
         if self.scheduler.save_pre_in_progress.contains(&buf) {
             return SaveOutcome::NotSaved;
         }
-        let Some(doc) = self.document_manager.get_document_mut(buf) else {
+        let Some((handle, kind, path)) = self.prepare_save(buf, target) else {
             return SaveOutcome::NotSaved;
         };
-        let handle = doc.handle();
-        let kind = doc.buffer_kind_id();
-        if kind != BufferKindId::FILE {
-            match doc.descriptor().save_dispatch {
-                SaveDispatch::Disabled => return SaveOutcome::NotSaved,
-                SaveDispatch::Reject => {
-                    let message = format!("{} buffer cannot be saved", doc.display_name());
-                    self.notify_error(RiftError::new(ErrorType::Io, "CANT_SAVE", message));
-                    return SaveOutcome::NotSaved;
-                }
-                SaveDispatch::Lua | SaveDispatch::Native(_) => {}
-            }
-        }
-        doc.commit_pending_ghost();
-        let path = target.or_else(|| doc.path().map(Path::to_path_buf));
-        if kind == BufferKindId::FILE && path.is_none() {
-            self.notify_error(RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"));
-            return SaveOutcome::NotSaved;
-        }
         self.scheduler.held_saves.remove(&buf);
         self.scheduler.save_pre_in_progress.insert(buf);
         let decision = self.raise_save_pre(buf, path.clone());
@@ -130,6 +160,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn resume_save(&mut self, request: &SaveRequestId) {
         let buf = request.buf;
         if self
@@ -204,6 +235,7 @@ impl<T: TerminalBackend> Editor<T> {
         if self.save_special_buffer(handle) != SaveResult::Saved {
             return SaveOutcome::NotSaved;
         }
+        #[cfg(feature = "plugins")]
         self.raise(EventPayload::BufSavePost { buf, path });
         SaveOutcome::Saved
     }
@@ -213,6 +245,7 @@ impl<T: TerminalBackend> Editor<T> {
             return SaveResult::Rejected;
         };
         match doc.descriptor().save_dispatch {
+            #[cfg(feature = "plugins")]
             SaveDispatch::Lua => {
                 let descriptor = std::sync::Arc::clone(&doc.kind.descriptor);
                 let saved = self.call_plugins(|editor| {

@@ -132,13 +132,17 @@ impl Document {
             annotations: AnnotationStore::new(),
             selection_set: crate::selection::SelectionSet::default(),
             visual_anchor: None,
+            #[cfg(any(feature = "plugins", feature = "lsp"))]
             journal: super::ops::ChangeJournal::default(),
             pending_annotation_snapshot: None,
             annotation_undo_stack: Vec::new(),
             annotation_redo_stack: Vec::new(),
             content_version: 0,
+            #[cfg(feature = "lsp")]
             pending_lsp_edits: Vec::new(),
+            #[cfg(feature = "lsp")]
             lsp_synced_revision: 0,
+            #[cfg(feature = "lsp")]
             lsp_full_sync_needed: false,
             pending_ghost: Vec::new(),
             ghost_clip: None,

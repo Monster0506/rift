@@ -21,8 +21,10 @@ pub(crate) enum Builtin {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Handler {
     Builtin(Builtin),
+    #[cfg(any(feature = "plugins", test))]
     Lua,
     /// Run an ex command named by this string.
+    #[cfg(any(feature = "plugins", test))]
     Command(String),
 }
 
@@ -80,6 +82,7 @@ impl DispatchRegistry {
             .insert((key.into(), verb.into()), (handler, owner));
     }
 
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) fn remove_owner(&mut self, owner: &str) {
         self.handlers
             .retain(|_, (_, registered_owner)| registered_owner.as_deref() != Some(owner));
@@ -91,6 +94,7 @@ impl DispatchRegistry {
         self.handlers.retain(|(k, _), _| k != key);
     }
 
+    #[cfg(feature = "plugins")]
     /// Drop all Lua-backed handlers (e.g. before a plugin reload). Builtins,
     /// commands, and remote handlers are kept; Lua handlers re-register on reload.
     pub(crate) fn clear_lua_handlers(&mut self) {
@@ -200,6 +204,7 @@ impl KindRegistry {
         self.generation += 1;
     }
 
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) fn register_owned(
         &mut self,
         key: impl Into<String>,
@@ -222,6 +227,7 @@ impl KindRegistry {
         self.generation += 1;
     }
 
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) fn remove_owner(&mut self, owner: &str) {
         let mut changed = false;
         self.defaults.retain(|_, defaults| {

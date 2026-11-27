@@ -28,7 +28,7 @@ impl<W: Write> ReplayBackend<W> {
         self.pending.extend(keys.into_iter().map(InputEvent::Key));
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "terminal_emulation"))]
     /// Queue non-key events (resize, paste), oldest first.
     pub(crate) fn push_events(&mut self, events: impl IntoIterator<Item = InputEvent>) {
         self.pending.extend(events);

@@ -271,6 +271,7 @@ impl UserSettings {
         &self.undo
     }
 
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) fn set_highlight_override(
         &mut self,
         name: &str,
@@ -301,6 +302,7 @@ impl UserSettings {
         self.refresh_derived_highlights();
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn clear_highlight_overrides(&mut self) {
         let names: Vec<String> = self.highlight_overrides.keys().cloned().collect();
         for name in names {

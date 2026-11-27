@@ -385,6 +385,7 @@ impl TextBuffer {
     }
 
     #[must_use]
+    #[cfg(feature = "plugins")]
     pub(crate) fn line_byte_range(&self, line_idx: usize) -> std::ops::Range<usize> {
         let (Some(start), Some(end)) = (
             self.line_index.get_start(line_idx),

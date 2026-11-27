@@ -83,9 +83,13 @@ impl Key {
     pub(crate) const HOME: Self = Self::plain(KeyCode::Home);
     #[cfg(test)]
     pub(crate) const END: Self = Self::plain(KeyCode::End);
+    #[cfg(any(feature = "plugins", feature = "lsp", test))]
     pub(crate) const PAGE_UP: Self = Self::plain(KeyCode::PageUp);
+    #[cfg(any(feature = "plugins", feature = "lsp", test))]
     pub(crate) const PAGE_DOWN: Self = Self::plain(KeyCode::PageDown);
+    #[cfg(any(feature = "plugins", feature = "lsp", test))]
     pub(crate) const UP: Self = Self::plain(KeyCode::Up);
+    #[cfg(any(feature = "plugins", feature = "lsp", test))]
     pub(crate) const DOWN: Self = Self::plain(KeyCode::Down);
     #[cfg(test)]
     pub(crate) const LEFT: Self = Self::plain(KeyCode::Left);

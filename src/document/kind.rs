@@ -11,6 +11,7 @@ pub(crate) struct BufferKind {
 
 impl BufferKind {
     #[must_use]
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) fn new(descriptor: Arc<KindDescriptor>) -> Self {
         Self {
             id: descriptor.id(),
@@ -112,6 +113,7 @@ impl BufferKind {
     }
 
     #[must_use]
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) fn kind_str(&self) -> &str {
         self.descriptor.name()
     }

@@ -1,7 +1,8 @@
 #[cfg(feature = "treesitter")]
 use crate::error::{ErrorType, RiftError};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
 #[cfg(feature = "treesitter")]
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -63,6 +64,7 @@ impl LanguageLoader {
 
     // Dynamic registration (called from plugin mutations)
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn register_filetype(&self, ext: &str, lang_name: &str) {
         let mut reg = self
             .dynamic
@@ -72,6 +74,7 @@ impl LanguageLoader {
             .insert(ext.to_string(), lang_name.to_string());
     }
 
+    #[cfg(any(feature = "plugins", feature = "lsp"))]
     pub(crate) fn language_name_for_file(&self, path: &Path) -> Option<String> {
         let ext = path.extension()?.to_str()?;
         // Dynamic registry (from plugins) takes priority.
@@ -114,6 +117,7 @@ impl LanguageLoader {
     }
 
     #[cfg(feature = "treesitter")]
+    #[cfg(feature = "plugins")]
     pub(crate) fn set_query_override(
         &self,
         lang_name: &str,
@@ -139,6 +143,7 @@ impl LanguageLoader {
     /// # Errors
     /// Returns `Err` when the library or its language symbol cannot be loaded.
     #[cfg(feature = "treesitter")]
+    #[cfg(feature = "plugins")]
     pub(crate) fn register_grammar(
         &self,
         lang_name: &str,
@@ -379,6 +384,7 @@ impl LanguageLoader {
     }
 
     #[cfg(feature = "treesitter")]
+    #[cfg(feature = "plugins")]
     pub(crate) fn query_source(&self, lang_name: &str, kind: QueryKind) -> Option<String> {
         match kind {
             QueryKind::Highlights => self.load_query(lang_name, "highlights").ok(),
@@ -387,6 +393,7 @@ impl LanguageLoader {
     }
 
     #[cfg(feature = "treesitter")]
+    #[cfg(feature = "plugins")]
     pub(crate) fn available_languages(&self) -> Vec<String> {
         let mut names: Vec<String> = BUNDLED_LANGUAGES.iter().map(|s| (*s).to_string()).collect();
         names.extend(
@@ -404,14 +411,16 @@ impl LanguageLoader {
 
 #[cfg(feature = "treesitter")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg(feature = "plugins")]
 pub(crate) enum QueryKind {
     Highlights,
     Injections,
 }
 
-#[cfg(feature = "treesitter")]
+#[cfg(all(feature = "treesitter", feature = "plugins"))]
 impl QueryKind {
     #[must_use]
+    #[cfg(feature = "plugins")]
     pub(crate) fn parse(name: &str) -> Option<Self> {
         match name {
             "highlights" => Some(Self::Highlights),
@@ -422,6 +431,7 @@ impl QueryKind {
 }
 
 #[cfg(feature = "treesitter")]
+#[cfg(feature = "plugins")]
 pub(crate) const BUNDLED_LANGUAGES: &[&str] = &[
     "bash",
     "c",
@@ -564,6 +574,6 @@ fn get_bundled_injections_query(lang_name: &str) -> Option<&'static str> {
     }
 }
 
-#[cfg(all(test, feature = "treesitter"))]
+#[cfg(all(test, feature = "treesitter", feature = "plugins"))]
 #[path = "loader_tests.rs"]
 mod loader_tests;

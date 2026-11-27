@@ -6,6 +6,7 @@ use crate::text_objects::{self, TextObjectSpec};
 use std::fmt;
 use std::path::PathBuf;
 
+#[cfg(any(feature = "plugins", test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ArgShape {
     Text,
@@ -19,6 +20,7 @@ pub(crate) enum ArgShape {
     SplitSubcommand,
 }
 
+#[cfg(feature = "plugins")]
 impl ArgShape {
     pub(crate) const fn name(self) -> &'static str {
         match self {
@@ -38,8 +40,11 @@ impl ArgShape {
 #[derive(Debug)]
 pub(crate) struct ActionSpec {
     pub(crate) id: &'static str,
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) args: &'static [ArgShape],
+    #[cfg(feature = "plugins")]
     pub(crate) op: &'static str,
+    #[cfg(feature = "plugins")]
     pub(crate) doc: &'static str,
 }
 
@@ -81,7 +86,9 @@ pub(crate) enum KindOp {
 pub(crate) struct KindActionSpec {
     pub(crate) id: &'static str,
     pub(crate) run: KindOp,
+    #[cfg(feature = "plugins")]
     pub(crate) op: &'static str,
+    #[cfg(feature = "plugins")]
     pub(crate) doc: &'static str,
 }
 
@@ -89,7 +96,14 @@ macro_rules! kind_actions {
     ($( $table:ident $kind:literal { $( $id:literal => $run:ident $op:literal $doc:literal ; )* } )*) => {
         $(
             pub(crate) const $table: &[KindActionSpec] = &[
-                $( KindActionSpec { id: $id, run: KindOp::$run, op: $op, doc: $doc }, )*
+                $( KindActionSpec {
+                    id: $id,
+                    run: KindOp::$run,
+                    #[cfg(feature = "plugins")]
+                    op: $op,
+                    #[cfg(feature = "plugins")]
+                    doc: $doc,
+                }, )*
             ];
         )*
 
@@ -188,12 +202,14 @@ pub(super) fn is_builtin_namespace(ns: &str) -> bool {
 }
 
 trait ActionArg: Sized {
+    #[cfg(any(feature = "plugins", test))]
     const SHAPE: ArgShape;
     fn parse_arg(s: &str) -> Option<Self>;
     fn write_arg(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
 }
 
 impl ActionArg for String {
+    #[cfg(any(feature = "plugins", test))]
     const SHAPE: ArgShape = ArgShape::Text;
     fn parse_arg(s: &str) -> Option<Self> {
         Some(s.to_string())
@@ -204,6 +220,7 @@ impl ActionArg for String {
 }
 
 impl ActionArg for PathBuf {
+    #[cfg(any(feature = "plugins", test))]
     const SHAPE: ArgShape = ArgShape::Path;
     fn parse_arg(s: &str) -> Option<Self> {
         (!s.is_empty()).then(|| Self::from(s))
@@ -217,6 +234,7 @@ macro_rules! number_arg {
     ($($ty:ty => $shape:ident),+) => {
         $(
             impl ActionArg for $ty {
+                #[cfg(any(feature = "plugins", test))]
                 const SHAPE: ArgShape = ArgShape::$shape;
                 fn parse_arg(s: &str) -> Option<Self> {
                     s.parse().ok()
@@ -232,6 +250,7 @@ macro_rules! number_arg {
 number_arg!(usize => Count, u64 => Count, i32 => Int);
 
 impl ActionArg for char {
+    #[cfg(any(feature = "plugins", test))]
     const SHAPE: ArgShape = ArgShape::Char;
     fn parse_arg(s: &str) -> Option<Self> {
         let mut chars = s.chars();
@@ -246,6 +265,7 @@ impl ActionArg for char {
 const MOVE_PREFIX: &str = "editor:move:";
 
 impl ActionArg for Motion {
+    #[cfg(any(feature = "plugins", test))]
     const SHAPE: ArgShape = ArgShape::Motion;
     fn parse_arg(s: &str) -> Option<Self> {
         match parse_table(&format!("{MOVE_PREFIX}{s}")) {
@@ -260,6 +280,7 @@ impl ActionArg for Motion {
 }
 
 impl ActionArg for TextObjectSpec {
+    #[cfg(any(feature = "plugins", test))]
     const SHAPE: ArgShape = ArgShape::TextObject;
     fn parse_arg(s: &str) -> Option<Self> {
         let mut chars = s.chars().peekable();
@@ -302,6 +323,7 @@ impl ActionArg for TextObjectSpec {
 }
 
 impl ActionArg for Direction {
+    #[cfg(any(feature = "plugins", test))]
     const SHAPE: ArgShape = ArgShape::Text;
     fn parse_arg(s: &str) -> Option<Self> {
         match s {
@@ -323,6 +345,7 @@ impl ActionArg for Direction {
 }
 
 impl ActionArg for SplitDirection {
+    #[cfg(any(feature = "plugins", test))]
     const SHAPE: ArgShape = ArgShape::SplitDirection;
     fn parse_arg(s: &str) -> Option<Self> {
         match s {
@@ -340,6 +363,7 @@ impl ActionArg for SplitDirection {
 }
 
 impl ActionArg for SplitSubcommand {
+    #[cfg(any(feature = "plugins", test))]
     const SHAPE: ArgShape = ArgShape::SplitSubcommand;
     fn parse_arg(s: &str) -> Option<Self> {
         let (name, arg) = s.split_once(':').unwrap_or((s, ""));
@@ -381,8 +405,11 @@ macro_rules! action_table {
             $(
                 ActionSpec {
                     id: $id,
+                    #[cfg(any(feature = "plugins", test))]
                     args: &[$($(<$ty as ActionArg>::SHAPE),+)?],
+                    #[cfg(feature = "plugins")]
                     op: $op,
+                    #[cfg(feature = "plugins")]
                     doc: $doc,
                 },
             )*

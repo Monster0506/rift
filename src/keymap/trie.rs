@@ -49,6 +49,7 @@ impl TrieNode {
     }
 
     /// Remove a sequence from the trie. Returns `true` if a binding was removed.
+    #[cfg(feature = "plugins")]
     pub(super) fn remove(&mut self, keys: &[Key]) -> bool {
         if keys.is_empty() {
             let had = self.action.is_some();

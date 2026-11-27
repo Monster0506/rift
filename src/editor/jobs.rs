@@ -119,6 +119,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     #[cfg(feature = "treesitter")]
+    #[cfg(feature = "plugins")]
     pub(super) fn start_syntax(&mut self, doc_id: DocumentId, lang: Option<&str>) {
         self.cancel_pending_syntax_reparse(doc_id);
         match lang {
@@ -152,16 +153,19 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     #[cfg(feature = "treesitter")]
+    #[cfg(feature = "plugins")]
     pub(super) fn stop_syntax(&mut self, doc_id: DocumentId) {
         self.cancel_pending_syntax_reparse(doc_id);
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             if doc.syntax.take().is_some() {
+                #[cfg(feature = "plugins")]
                 self.raise_syntax_updated(doc_id);
             }
         }
     }
 
     #[cfg(feature = "treesitter")]
+    #[cfg(feature = "plugins")]
     pub(super) fn set_syntax_query(
         &mut self,
         lang: &str,
@@ -173,6 +177,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     #[cfg(feature = "treesitter")]
+    #[cfg(feature = "plugins")]
     fn rebuild_syntax_using(&mut self, lang: &str) {
         let targets: Vec<(DocumentId, String)> = self
             .document_manager
@@ -225,15 +230,7 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(doc) = self.document_manager.get_document_by_handle(token.handle) else {
             return false;
         };
-        if !doc.matches_kind(token.expected_kind) {
-            return false;
-        }
-        if let Some(owner) = token.owner {
-            if !self.plugin_host.is_generation_active(owner) {
-                return false;
-            }
-        }
-        true
+        doc.matches_kind(token.expected_kind)
     }
 
     fn resolve_and_validate_token(
@@ -264,7 +261,7 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn handle_job_message(&mut self, msg: crate::job_manager::JobMessage) {
         for doc in self.document_manager.documents_iter() {
             self.job_manager
-                .register_document_handle(doc.handle(), doc.buffer_kind_id(), None);
+                .register_document_handle(doc.handle(), doc.buffer_kind_id());
         }
 
         self.job_manager.update_job_state(&msg);
@@ -441,6 +438,7 @@ impl<T: TerminalBackend> Editor<T> {
 impl<T: TerminalBackend> crate::job_manager::LspTarget for Editor<T> {}
 
 impl<T: TerminalBackend> JobTarget for Editor<T> {
+    #[cfg(feature = "plugins")]
     fn apply_plugin_job(
         &mut self,
         payload: crate::job_manager::jobs::plugin_process::PluginJobPayload,
@@ -960,6 +958,7 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
             format!("Written to {}", res.path.display()),
         );
 
+        #[cfg(feature = "plugins")]
         self.raise(crate::plugin::events::EventPayload::BufSavePost {
             buf: res.document_id,
             path: Some(res.path.clone()),
@@ -1008,6 +1007,7 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
         doc.replace_content(res.line_index, crate::document::ops::ContentKind::Load);
         let _ = doc.set_option("line_ending", Some(res.line_ending.name()));
         let _ = doc.set_option("bomb", Some(if res.has_bom { "true" } else { "false" }));
+        #[cfg(feature = "lsp")]
         if res.is_reload {
             doc.mark_lsp_full_sync();
         }
@@ -1017,6 +1017,7 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
             #[cfg(feature = "treesitter")]
             self.attach_syntax_for_document(res.document_id);
             self.spawn_syntax_parse_job(res.document_id);
+            #[cfg(feature = "plugins")]
             self.raise(crate::plugin::events::EventPayload::BufReload {
                 buf: res.document_id,
             });
@@ -1077,6 +1078,7 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
         }
 
         if res.is_reload {
+            #[cfg(feature = "plugins")]
             self.raise(crate::plugin::events::EventPayload::BufReload {
                 buf: res.document_id,
             });
@@ -1127,6 +1129,7 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
                 .with_syntax(|syntax, buffer| syntax.update_from_result(result, buffer))
                 .is_some()
         {
+            #[cfg(feature = "plugins")]
             self.raise_syntax_updated(doc_id);
         }
 

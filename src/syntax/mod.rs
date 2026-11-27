@@ -1,9 +1,10 @@
 pub(crate) mod interval_tree;
+#[cfg(any(feature = "plugins", feature = "lsp", feature = "treesitter"))]
 pub(crate) mod loader;
 
 #[cfg(feature = "treesitter")]
 mod imp;
-#[cfg(feature = "treesitter")]
+#[cfg(all(feature = "treesitter", feature = "plugins"))]
 pub(crate) mod snapshot;
 #[cfg(feature = "treesitter")]
 mod source;

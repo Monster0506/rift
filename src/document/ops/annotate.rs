@@ -6,10 +6,12 @@ impl Document {
         self.annotations.add(annotation)
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn annotate_with_id(&mut self, id: AnnotationId, annotation: Annotation) {
         self.annotations.add_with_id(id, annotation);
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn update_annotation(
         &mut self,
         id: AnnotationId,
@@ -18,6 +20,7 @@ impl Document {
         self.annotations.update(id, update);
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn clear_annotations_by_kind(&mut self, prefix: &str) {
         self.annotations.clear_by_kind_prefix(prefix);
     }

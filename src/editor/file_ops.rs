@@ -81,9 +81,7 @@ fn reopen_image_as_text<T: TerminalBackend>(
     doc.replace_content("", crate::document::ops::ContentKind::Load);
     // The load's async token records the kind at spawn; it must be FILE now.
     let (handle, kind) = (doc.handle(), doc.buffer_kind_id());
-    editor
-        .job_manager
-        .register_document_handle(handle, kind, None);
+    editor.job_manager.register_document_handle(handle, kind);
     let job = crate::job_manager::jobs::file_operations::FileLoadJob::new_text(doc_id, path);
     let job_id = editor.job_manager.spawn(job);
     editor.file_load_jobs.insert(job_id, doc_id);

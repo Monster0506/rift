@@ -58,6 +58,7 @@ fn f64_to_u64(x: f64) -> u64 {
     mantissa >> (EXPONENT_BIAS_SHIFTED - exponent)
 }
 
+#[cfg(any(feature = "plugins", test))]
 /// Truncates toward zero, saturating at the `i64` range. NaN gives 0.
 #[must_use]
 pub(crate) fn f64_to_i64(x: f64) -> i64 {

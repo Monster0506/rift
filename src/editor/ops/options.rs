@@ -2,6 +2,7 @@ use super::super::Editor;
 use crate::command_line::settings::descriptor::SettingEffect;
 use crate::command_line::settings::resolver::{OptionScope, SettingsResolver};
 use crate::error::{ErrorType, RiftError};
+#[cfg(feature = "plugins")]
 use crate::plugin::events::EventPayload;
 use crate::term::TerminalBackend;
 
@@ -13,6 +14,7 @@ impl<T: TerminalBackend> Editor<T> {
         scope: OptionScope,
     ) -> Result<(), RiftError> {
         let local = match scope {
+            #[cfg(any(feature = "plugins", test))]
             OptionScope::Global => None,
             OptionScope::Local(id) => Some(id),
             OptionScope::Resolve(id) => {
@@ -21,7 +23,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .then_some(id)
             }
         };
-        let (name, effect) = if let Some(id) = local {
+        let applied = if let Some(id) = local {
             let doc = self.document_manager.get_document_mut(id).ok_or_else(|| {
                 RiftError::new(
                     ErrorType::Internal,
@@ -37,7 +39,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .set(name, value, &mut self.state.settings)?;
             (descriptor.name, descriptor.effect)
         };
-        match effect {
+        match applied.1 {
             SettingEffect::None => {}
             SettingEffect::Redraw => self.render_system.viewport.mark_needs_full_redraw(),
             SettingEffect::ResizeClipboard => {
@@ -48,7 +50,11 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
         }
-        self.raise(EventPayload::OptionSet { buf: local, name });
+        #[cfg(feature = "plugins")]
+        self.raise(EventPayload::OptionSet {
+            buf: local,
+            name: applied.0,
+        });
         Ok(())
     }
 }

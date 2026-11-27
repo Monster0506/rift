@@ -2,7 +2,7 @@ use super::*;
 
 mod common;
 
-#[cfg(feature = "treesitter")]
+#[cfg(all(feature = "treesitter", feature = "plugins"))]
 mod bench_harness;
 mod buffer_nav_tests;
 #[cfg(feature = "plugins")]
@@ -22,7 +22,9 @@ mod normal_cursor_tests;
 mod operator_tests;
 #[cfg(feature = "plugins")]
 mod plugin_any_buffer_tests;
+#[cfg(feature = "plugins")]
 mod plugin_edit_tests;
+#[cfg(feature = "plugins")]
 mod plugin_highlight_tests;
 #[cfg(feature = "plugins")]
 mod plugin_job_tests;
@@ -30,10 +32,11 @@ mod plugin_job_tests;
 mod plugin_keymap_tests;
 #[cfg(feature = "plugins")]
 mod plugin_loading_tests;
+#[cfg(feature = "plugins")]
 mod plugin_settings_tests;
 #[cfg(feature = "plugins")]
 mod plugin_sync_tests;
-#[cfg(feature = "treesitter")]
+#[cfg(all(feature = "treesitter", feature = "plugins"))]
 mod plugin_treesitter_tests;
 mod region_bank_ops_tests;
 mod region_bank_selection_tests;

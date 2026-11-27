@@ -1,7 +1,6 @@
 use crate::document::runtime::{BufferKindId, DocumentHandle};
 use crate::document::DocumentId;
 use crate::error::RiftError;
-use crate::plugin::PluginGeneration;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -69,6 +68,7 @@ use crate::lsp::LspTarget;
 pub trait LspTarget {}
 
 pub trait JobTarget: LspTarget {
+    #[cfg(feature = "plugins")]
     fn apply_plugin_job(&mut self, payload: jobs::plugin_process::PluginJobPayload);
     fn apply_completion(&mut self, payload: jobs::completion::CompletionPayload);
     #[cfg(feature = "terminal_emulation")]
@@ -181,7 +181,6 @@ pub struct AsyncToken {
     pub(crate) handle: DocumentHandle,
     pub(crate) expected_kind: BufferKindId,
     epoch: u64,
-    pub(crate) owner: Option<PluginGeneration>,
     pub(crate) domain: AsyncOpDomain,
 }
 
@@ -198,25 +197,6 @@ impl AsyncToken {
             handle,
             expected_kind,
             epoch,
-            owner: None,
-            domain,
-        }
-    }
-
-    /// Creates a new `AsyncToken` with an owner generation and explicit domain.
-    #[must_use]
-    const fn with_owner(
-        handle: DocumentHandle,
-        expected_kind: BufferKindId,
-        epoch: u64,
-        owner: Option<PluginGeneration>,
-        domain: AsyncOpDomain,
-    ) -> Self {
-        Self {
-            handle,
-            expected_kind,
-            epoch,
-            owner,
             domain,
         }
     }
@@ -427,7 +407,7 @@ pub struct JobManager {
     /// Tracks current epoch per document handle and operation domain
     current_epochs: HashMap<(DocumentHandle, AsyncOpDomain), u64>,
     /// Active document handles mapped by `DocumentId`
-    active_handles: HashMap<DocumentId, (DocumentHandle, BufferKindId, Option<PluginGeneration>)>,
+    active_handles: HashMap<DocumentId, (DocumentHandle, BufferKindId)>,
 }
 
 impl JobManager {
@@ -458,11 +438,11 @@ impl JobManager {
         {
             // Only tokenize when the real handle is already known; a fabricated
             // instance-0 handle would silently discard results for recycled doc IDs.
-            if let Some(&(handle, kind, owner)) = self.active_handles.get(&doc_id) {
+            if let Some(&(handle, kind)) = self.active_handles.get(&doc_id) {
                 let entry = self.current_epochs.entry((handle, domain)).or_insert(0);
                 *entry += 1;
                 let epoch = *entry;
-                let token = AsyncToken::with_owner(handle, kind, epoch, owner, domain);
+                let token = AsyncToken::with_domain(handle, kind, epoch, domain);
                 self.job_tokens.insert(id, token);
             }
         }
@@ -630,15 +610,9 @@ impl JobManager {
         self.register_job_token(id, token);
         id
     }
-    /// Register an active document handle, kind, and optional plugin owner.
-    pub(crate) fn register_document_handle(
-        &mut self,
-        handle: DocumentHandle,
-        kind: BufferKindId,
-        owner: Option<PluginGeneration>,
-    ) {
-        self.active_handles
-            .insert(handle.doc_id, (handle, kind, owner));
+
+    pub(crate) fn register_document_handle(&mut self, handle: DocumentHandle, kind: BufferKindId) {
+        self.active_handles.insert(handle.doc_id, (handle, kind));
     }
 
     /// Generates a fresh `AsyncToken` for the given document handle, kind, and domain,
@@ -649,7 +623,7 @@ impl JobManager {
         expected_kind: BufferKindId,
         domain: AsyncOpDomain,
     ) -> AsyncToken {
-        self.register_document_handle(handle, expected_kind, None);
+        self.register_document_handle(handle, expected_kind);
         let entry = self.current_epochs.entry((handle, domain)).or_insert(0);
         *entry += 1;
         let epoch = *entry;
@@ -689,7 +663,7 @@ impl JobManager {
             self.job_tokens.remove(&id);
         }
         self.current_epochs.retain(|(h, _), _| *h != handle);
-        if let Some((curr, _, _)) = self.active_handles.get(&handle.doc_id) {
+        if let Some((curr, _)) = self.active_handles.get(&handle.doc_id) {
             if *curr == handle {
                 self.active_handles.remove(&handle.doc_id);
             }

@@ -165,7 +165,10 @@ impl<T: TerminalBackend> Editor<T> {
                     OptionScope::Local(self.active_document_id()),
                 );
             }
-            ParsedCommand::Reload { .. } => self.load_plugins(),
+            ParsedCommand::Reload { .. } => {
+                #[cfg(feature = "plugins")]
+                self.load_plugins();
+            }
             ParsedCommand::Edit { path, bangs } => {
                 return self.open_file_from_input(path, bangs > 0)
             }
@@ -216,7 +219,10 @@ impl<T: TerminalBackend> Editor<T> {
                     words.dedup();
                     words
                 };
+                #[cfg(feature = "plugins")]
                 let plugin_commands = self.plugin_host.command_list();
+                #[cfg(not(feature = "plugins"))]
+                let plugin_commands = Vec::new();
                 self.job_manager.spawn(CompletionJob {
                     input,
                     current_settings,

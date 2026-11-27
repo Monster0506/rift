@@ -27,10 +27,13 @@ mod mode_mgmt;
 mod multi_region;
 mod operators;
 pub(crate) mod ops;
+#[cfg(feature = "plugins")]
 pub(crate) use ops::EditorEvent;
 mod panel_handlers;
 mod pending_grammar;
+#[cfg(feature = "plugins")]
 mod plugin_jobs;
+#[cfg(feature = "plugins")]
 mod plugin_ops;
 pub(crate) mod rendering;
 mod replace_mode;
@@ -70,6 +73,7 @@ use crate::mode::Mode;
 use crate::split::tree::SplitTree;
 use crate::state::{State, UserSettings};
 use crate::term::TerminalBackend;
+#[cfg(any(feature = "plugins", feature = "lsp", feature = "treesitter"))]
 use std::sync::Arc;
 
 pub(crate) fn user_config_dir() -> std::path::PathBuf {
@@ -86,6 +90,7 @@ pub(crate) fn user_config_dir() -> std::path::PathBuf {
     }
 }
 
+#[cfg(feature = "plugins")]
 fn plugin_dirs() -> Vec<std::path::PathBuf> {
     #[cfg(not(test))]
     let runtime = std::env::var("CARGO_MANIFEST_DIR").ok().map(|manifest| {
@@ -152,6 +157,7 @@ pub struct Editor<T: TerminalBackend> {
     command_parser: CommandParser,
     settings_registry: SettingsRegistry<UserSettings>,
     document_settings_registry: SettingsRegistry<crate::document::definitions::DocumentOptions>,
+    #[cfg(any(feature = "plugins", feature = "lsp", feature = "treesitter"))]
     language_loader: Arc<crate::syntax::loader::LanguageLoader>,
     pub(crate) job_manager: crate::job_manager::JobManager,
     scheduler: scheduler::Scheduler,
@@ -178,8 +184,12 @@ pub struct Editor<T: TerminalBackend> {
     dot_repeat: DotRepeat,
     panel_layout: Option<PanelLayout>,
     last_notification_generation: u64,
+    #[cfg(feature = "plugins")]
     plugin_host: crate::plugin::PluginHost,
+    #[cfg(feature = "plugins")]
     plugin_jobs: std::collections::HashMap<u64, plugin_jobs::PluginJob>,
+    #[cfg(any(feature = "plugins", feature = "lsp"))]
+    popup: crate::floating_window::popup::Popup,
     clipboard_ring: crate::clipboard::ClipboardRing,
     system_clipboard_cache: crate::clipboard::SystemClipboardCache,
     clipboard_panel_register: Option<ClipboardPanelRegister>,
@@ -197,7 +207,9 @@ pub struct Editor<T: TerminalBackend> {
     rename_context: Option<(std::path::PathBuf, u32, u32)>,
     dispatch_registry: crate::annotations::registry::DispatchRegistry,
     kind_registry: crate::annotations::registry::KindRegistry,
+    #[cfg(feature = "plugins")]
     hovered_annotation: Option<crate::annotations::AnnotationId>,
+    #[cfg(feature = "plugins")]
     plugin_mutation_rounds: Option<usize>,
     git_gutter_seen_revision: std::collections::HashMap<crate::document::DocumentId, u64>,
     git_gutter_repo_cache:
@@ -206,7 +218,9 @@ pub struct Editor<T: TerminalBackend> {
     search_highlights_synced: Option<(crate::document::DocumentId, u64, String)>,
     startup_first_paint: Option<crate::time::Instant>,
     unrendered_key_count: usize,
+    #[cfg(feature = "plugins")]
     entered_document: DocumentId,
+    #[cfg(feature = "plugins")]
     frame_events: Vec<EditorEvent>,
 }
 
@@ -238,6 +252,7 @@ enum PanelKind {
     FileExplorer,
     UndoTree,
     Clipboard,
+    #[cfg(feature = "lsp")]
     LocationList,
     Regions,
     BufferList,

@@ -4,6 +4,7 @@ use crate::document::ops::{CursorCause, Edit, EditSource};
 use crate::document::Document;
 use crate::error::{ErrorType, RiftError};
 use crate::notification::NotificationType;
+#[cfg(feature = "plugins")]
 use crate::plugin::events::EventPayload;
 use crate::search::SearchDirection;
 use crate::term::TerminalBackend;
@@ -17,6 +18,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
         self.state.last_search_query = pattern.map(str::to_string);
+        #[cfg(feature = "plugins")]
         if let Some(buf) = self.document_manager.active_document_id() {
             self.raise(EventPayload::SearchChanged { buf });
         }

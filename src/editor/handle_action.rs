@@ -142,6 +142,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             EditorAction::Redraw => self.action_redraw(),
             EditorAction::Reload => {
+                #[cfg(feature = "plugins")]
                 self.load_plugins();
                 true
             }
@@ -412,10 +413,13 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::NotificationClearAll => self.action_notification_clear_all(),
+            #[cfg(feature = "plugins")]
             EditorAction::PluginAction(id) => {
                 self.call_plugins(|editor| editor.plugin_host.execute_action(id));
                 true
             }
+            #[cfg(not(feature = "plugins"))]
+            EditorAction::PluginAction(_) => true,
 
             _ => self.handle_paste_action(action, editor_action),
         }
@@ -696,26 +700,25 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn action_buffer_action(&mut self, id: &str) -> bool {
-        let Some((doc_id, kind_name, action_dispatch, is_tombstone)) =
-            self.document_manager.active_document().map(|document| {
-                (
-                    document.id,
-                    document.descriptor().name().to_string(),
-                    document.descriptor().action_dispatch,
-                    document.descriptor().is_tombstone(),
-                )
-            })
+        let Some(action_dispatch) = self
+            .document_manager
+            .active_document()
+            .filter(|document| !document.descriptor().is_tombstone())
+            .map(|document| document.descriptor().action_dispatch)
         else {
             return true;
         };
-
-        if is_tombstone || matches!(action_dispatch, ActionDispatch::Disabled) {
-            return true;
-        }
-
         match action_dispatch {
             ActionDispatch::Native(actions) => self.run_kind_action(actions, id),
+            #[cfg(feature = "plugins")]
             ActionDispatch::Lua => {
+                let Some((doc_id, kind_name)) = self
+                    .document_manager
+                    .active_document()
+                    .map(|document| (document.id, document.descriptor().name().to_string()))
+                else {
+                    return true;
+                };
                 self.call_plugins(|editor| {
                     editor
                         .plugin_host

@@ -579,6 +579,7 @@ impl Document {
     }
 
     /// Coalesce terminal wakeups without copying the terminal grid until a frame.
+    #[cfg(feature = "terminal_emulation")]
     pub(crate) fn handle_terminal_data(&mut self, _data: &[u8]) {
         if let Some(state) = self.state.try_get_mut(TERMINAL_STATE_KEY) {
             state.terminal_dirty = true;
@@ -1547,6 +1548,7 @@ mod terminal_snapshot_tests {
         document
     }
 
+    #[cfg(feature = "terminal_emulation")]
     #[test]
     fn terminal_wakeups_only_mark_one_pending_snapshot() {
         let mut document = terminal_document();
@@ -1575,6 +1577,7 @@ mod terminal_snapshot_tests {
         assert_eq!(document.buffer.revision, revision);
     }
 
+    #[cfg(feature = "terminal_emulation")]
     #[test]
     fn rendered_terminal_scroll_is_cleared_without_losing_dirty_state() {
         let mut document = terminal_document();
@@ -1598,6 +1601,7 @@ mod terminal_snapshot_tests {
         );
     }
 
+    #[cfg(feature = "terminal_emulation")]
     #[test]
     fn ordinary_document_ignores_terminal_wakeups() {
         let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
@@ -1607,38 +1611,5 @@ mod terminal_snapshot_tests {
         document.clear_terminal_scroll();
         assert_eq!(document.buffer.revision, revision);
         assert_eq!(document.terminal_scroll(), 0);
-    }
-
-    #[cfg(not(feature = "terminal_emulation"))]
-    #[test]
-    fn dirty_terminal_snapshots_coalesce_and_explicit_sync_remains_immediate() {
-        let mut document = terminal_document();
-        document
-            .state
-            .try_get_mut(TERMINAL_STATE_KEY)
-            .unwrap()
-            .terminal = Some(crate::term::terminal::Terminal {
-            size: (3, 40),
-            name: "stub".to_string(),
-        });
-        let revision = document.buffer.revision;
-        document.handle_terminal_data(b"first");
-        document.handle_terminal_data(b"second");
-        assert_eq!(document.buffer.revision, revision);
-
-        document.sync_terminal_if_dirty();
-        assert_eq!(document.buffer.revision, revision + 1);
-        assert!(
-            !document
-                .state
-                .try_get(TERMINAL_STATE_KEY)
-                .unwrap()
-                .terminal_dirty
-        );
-
-        document.sync_terminal_if_dirty();
-        assert_eq!(document.buffer.revision, revision + 1);
-        document.sync_terminal_buffer();
-        assert_eq!(document.buffer.revision, revision + 2);
     }
 }

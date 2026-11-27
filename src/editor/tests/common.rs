@@ -192,7 +192,7 @@ pub(super) fn feed_keys(editor: &mut Editor<MockTerminal>, seq: &str) {
     }
 }
 
-#[cfg(feature = "treesitter")]
+#[cfg(all(feature = "treesitter", feature = "plugins"))]
 pub(super) fn measure_type(editor: &mut Editor<MockTerminal>, label: &str, n: usize) {
     use std::time::Instant;
     let mut times = Vec::with_capacity(n);

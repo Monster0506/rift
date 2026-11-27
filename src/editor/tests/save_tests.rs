@@ -1,6 +1,8 @@
 use super::common::*;
+#[cfg(feature = "plugins")]
 use crate::plugin::PluginMutation;
 
+#[cfg(feature = "plugins")]
 #[test]
 fn save_does_not_write_another_buffers_content_when_a_bufsavepre_hook_closes_the_target() {
     let dir = tempfile::tempdir().unwrap();
@@ -549,7 +551,8 @@ fn all_open_frontends_keep_dirty_buffers_when_opening_another_file() {
     use crate::action::{Action, EditorAction};
 
     let (_dir, a, b) = setup();
-    for frontend in 0..3 {
+    let frontends = if cfg!(feature = "plugins") { 3 } else { 2 };
+    for frontend in 0..frontends {
         let mut editor = create_editor();
         open(&mut editor, &a);
         let original = editor.active_document_id();
@@ -564,12 +567,15 @@ fn all_open_frontends_keep_dirty_buffers_when_opening_another_file() {
                 }));
             }
             1 => editor.execute_command_line(&format!(":e {path}")),
+            #[cfg(feature = "plugins")]
             _ => {
                 editor
                     .plugin_host
                     .queue_mutation(PluginMutation::OpenFile { path, force: false });
                 editor.apply_plugin_mutations();
             }
+            #[cfg(not(feature = "plugins"))]
+            _ => unreachable!(),
         }
         settle(&mut editor);
         assert_eq!(editor.active_document().buffer().to_string(), "b");

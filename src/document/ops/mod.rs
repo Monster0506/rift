@@ -11,6 +11,7 @@ pub(crate) mod standalone;
 mod text;
 
 pub(crate) use cursor::CursorCause;
+#[cfg(any(feature = "plugins", feature = "lsp"))]
 pub(crate) use journal::{ChangeJournal, Changes};
 pub(crate) use put::PutAt;
 pub(crate) use text::{ContentKind, EditSource};

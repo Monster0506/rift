@@ -21,13 +21,14 @@ use crate::document::kind::BufferKind;
 use crate::document::runtime::{
     BufferKindId, BufferKindRegistry, BufferPolicies, ClipboardEntryState, DirectoryState,
     DocumentHandle, FileState, GhostCutPolicy, ImageViewState, KeyFallback, KindDescriptor,
-    LocationListState, ReadOnlyPolicy, RegionsState, ScratchState, StateSlot, TextProjection,
-    UndoFileViewState, BUFFER_LIST_STATE_KEY, CLIPBOARD_ENTRY_STATE_KEY, CLIPBOARD_STATE_KEY,
-    DIRECTORY_STATE_KEY, FILE_STATE_KEY, GIT_BLAME_STATE_KEY, GIT_COMMIT_MESSAGE_STATE_KEY,
-    GIT_LOG_STATE_KEY, GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY, IMAGE_VIEW_STATE_KEY,
-    LOCATION_LIST_STATE_KEY, REGIONS_STATE_KEY, SCRATCH_STATE_KEY, TERMINAL_STATE_KEY,
-    UNDO_FILE_VIEW_STATE_KEY, UNDO_TREE_STATE_KEY,
+    ReadOnlyPolicy, RegionsState, ScratchState, StateSlot, TextProjection, UndoFileViewState,
+    BUFFER_LIST_STATE_KEY, CLIPBOARD_ENTRY_STATE_KEY, CLIPBOARD_STATE_KEY, DIRECTORY_STATE_KEY,
+    FILE_STATE_KEY, GIT_BLAME_STATE_KEY, GIT_COMMIT_MESSAGE_STATE_KEY, GIT_LOG_STATE_KEY,
+    GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY, IMAGE_VIEW_STATE_KEY, REGIONS_STATE_KEY,
+    SCRATCH_STATE_KEY, TERMINAL_STATE_KEY, UNDO_FILE_VIEW_STATE_KEY, UNDO_TREE_STATE_KEY,
 };
+#[cfg(feature = "lsp")]
+use crate::document::runtime::{LocationListState, LOCATION_LIST_STATE_KEY};
 use crate::history::{EditTransaction, UndoTree};
 use crate::syntax::Syntax;
 use crate::term::terminal::Terminal;
@@ -125,6 +126,7 @@ pub(crate) struct GhostCut {
     painted: Option<(usize, crate::annotations::AnnotationId)>,
 }
 
+#[cfg(feature = "lsp")]
 #[derive(Debug, Clone)]
 pub(crate) struct LocationEntry {
     pub(crate) uri: String,
@@ -163,6 +165,7 @@ impl LineEnding {
     }
 
     #[must_use]
+    #[cfg(feature = "plugins")]
     pub(crate) fn from_name(name: &str) -> Self {
         if name.eq_ignore_ascii_case("crlf") {
             Self::Crlf
@@ -206,13 +209,17 @@ pub(crate) struct Document {
     pub(crate) annotations: AnnotationStore,
     selection_set: crate::selection::SelectionSet,
     visual_anchor: Option<usize>,
+    #[cfg(any(feature = "plugins", feature = "lsp"))]
     journal: ops::ChangeJournal,
     pending_annotation_snapshot: Option<Vec<crate::annotations::Annotation>>,
     annotation_undo_stack: Vec<AnnotationUndo>,
     annotation_redo_stack: Vec<AnnotationUndo>,
     content_version: u64,
+    #[cfg(feature = "lsp")]
     pending_lsp_edits: Vec<crate::history::EditOperation>,
+    #[cfg(feature = "lsp")]
     lsp_synced_revision: u64,
+    #[cfg(feature = "lsp")]
     lsp_full_sync_needed: bool,
     pub(crate) pending_ghost: Vec<GhostCut>,
     ghost_clip: Option<crate::clipboard::Clip>,
@@ -484,16 +491,19 @@ impl Document {
         )
     }
 
+    #[cfg(feature = "lsp")]
     pub(crate) fn discard_pending_lsp_changes(&mut self) {
         self.pending_lsp_edits.clear();
         self.lsp_synced_revision = self.buffer.revision;
         self.lsp_full_sync_needed = false;
     }
 
+    #[cfg(feature = "lsp")]
     pub(crate) const fn mark_lsp_full_sync(&mut self) {
         self.lsp_full_sync_needed = true;
     }
 
+    #[cfg(feature = "lsp")]
     pub(crate) const fn has_pending_lsp_edits(&self) -> bool {
         self.lsp_full_sync_needed
             || !self.pending_lsp_edits.is_empty()
@@ -729,12 +739,14 @@ impl Document {
         );
     }
 
+    #[cfg(feature = "lsp")]
     pub(crate) fn location_list_entry_at(&self, line: usize) -> Option<LocationEntry> {
         self.state
             .try_get(LOCATION_LIST_STATE_KEY)
             .and_then(|s| s.entries.get(line).cloned())
     }
 
+    #[cfg(feature = "lsp")]
     pub(crate) fn set_location_list(&mut self, entries: Vec<LocationEntry>) {
         self.kind = BufferKind::for_builtin(BufferKindId::LOCATION_LIST);
         self.state = StateSlot::new(LOCATION_LIST_STATE_KEY, LocationListState { entries });

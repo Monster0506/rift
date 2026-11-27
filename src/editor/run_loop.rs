@@ -19,6 +19,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.tick()?;
         }
 
+        #[cfg(feature = "plugins")]
         self.raise(crate::plugin::events::EventPayload::EditorQuit);
 
         Ok(())
@@ -70,6 +71,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(deadline) = self.next_deadline(now) {
             timeout = timeout.min(deadline.saturating_duration_since(now));
         }
+        #[cfg(feature = "plugins")]
         if !self.frame_events.is_empty() {
             timeout = std::time::Duration::ZERO;
         }
@@ -83,6 +85,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Output can arrive while polling; apply it before either kind of frame.
         jobs_changed |= self.drain_job_messages();
+        #[cfg(feature = "plugins")]
         let timers_fired = self.fire_due_plugin_timers(crate::time::Instant::now());
         if input_ready {
             self.handle_input_event()?;
@@ -91,13 +94,13 @@ impl<T: TerminalBackend> Editor<T> {
 
             let notif_tick = self.state.notifications.tick(timeout);
 
-            if jobs_changed
+            let needs_frame = jobs_changed
                 || notif_changed
                 || notif_tick
-                || timers_fired
-                || !self.frame_events.is_empty()
-                || self.render_system.needs_animation_frame()
-            {
+                || self.render_system.needs_animation_frame();
+            #[cfg(feature = "plugins")]
+            let needs_frame = needs_frame || timers_fired || !self.frame_events.is_empty();
+            if needs_frame {
                 self.update_and_render()?;
                 self.state.notifications.mark_rendered();
             }
@@ -125,16 +128,18 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn next_deadline(&self, now: crate::time::Instant) -> Option<crate::time::Instant> {
-        [
-            self.plugin_host.next_timer_deadline(),
+        let deadlines = [
             self.scheduler.next_deadline(self.active_document_id(), now),
             self.state.notifications.next_expiry(),
         ]
         .into_iter()
-        .flatten()
-        .min()
+        .flatten();
+        #[cfg(feature = "plugins")]
+        let deadlines = deadlines.chain(self.plugin_host.next_timer_deadline());
+        deadlines.min()
     }
 
+    #[cfg(feature = "plugins")]
     pub(super) fn fire_due_plugin_timers(&mut self, now: crate::time::Instant) -> bool {
         if self
             .plugin_host
@@ -157,7 +162,7 @@ impl<T: TerminalBackend> Editor<T> {
         const BUDGET_CHECK_INTERVAL: usize = 256;
         for doc in self.document_manager.documents_iter() {
             self.job_manager
-                .register_document_handle(doc.handle(), doc.buffer_kind_id(), None);
+                .register_document_handle(doc.handle(), doc.buffer_kind_id());
         }
         let started = crate::time::Instant::now();
         let mut jobs_changed = false;
@@ -229,6 +234,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_terminal_resize(&mut self, rows: u16, cols: u16) -> Result<(), RiftError> {
         self.render_system.resize(rows as usize, cols as usize);
+        #[cfg(feature = "plugins")]
         self.raise(crate::plugin::events::EventPayload::WindowResized { rows, cols });
         self.update_and_render()
     }
@@ -248,8 +254,11 @@ impl<T: TerminalBackend> Editor<T> {
         // Update debug info
         self.state.update_keypress(key_press);
 
-        let consumed = self.capture_plugin_float_key(key_press)?
-            || self.cancel_operator_on_escape(key_press)?
+        #[cfg(any(feature = "plugins", feature = "lsp"))]
+        if self.capture_popup_key(key_press)? {
+            return Ok(true);
+        }
+        let consumed = self.cancel_operator_on_escape(key_press)?
             || self.handle_terminal_insert_key(key_press)?
             || self.feed_pending_grammar(key_press)?
             || self.start_text_object_grammar(key_press)?
@@ -263,13 +272,13 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(false)
     }
 
-    fn capture_plugin_float_key(&mut self, key_press: Key) -> Result<bool, RiftError> {
-        // An open plugin float captures Escape (close) and scroll keys.
-        if !self.plugin_host.has_open_float() {
+    #[cfg(any(feature = "plugins", feature = "lsp"))]
+    fn capture_popup_key(&mut self, key_press: Key) -> Result<bool, RiftError> {
+        if !self.popup.is_open() {
             return Ok(false);
         }
         if key_press.is(Key::ESC) {
-            self.plugin_host.close_float();
+            self.popup.close();
             self.update_and_render()?;
             return Ok(true);
         }
@@ -287,7 +296,7 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(delta) = scroll else {
             return Ok(false);
         };
-        self.plugin_host.scroll_float(delta);
+        self.popup.scroll(delta);
         self.update_and_render()?;
         Ok(true)
     }
@@ -585,6 +594,7 @@ impl<T: TerminalBackend> Editor<T> {
                             crate::document::runtime::KeyFallback::Normal => {
                                 Some(crate::keymap::KeyContext::Normal)
                             }
+                            #[cfg(feature = "plugins")]
                             crate::document::runtime::KeyFallback::Global => {
                                 Some(crate::keymap::KeyContext::Global)
                             }
@@ -597,6 +607,7 @@ impl<T: TerminalBackend> Editor<T> {
                         crate::document::runtime::KeyFallback::Normal => {
                             Some(crate::keymap::KeyContext::Normal)
                         }
+                        #[cfg(feature = "plugins")]
                         crate::document::runtime::KeyFallback::Global => {
                             Some(crate::keymap::KeyContext::Global)
                         }

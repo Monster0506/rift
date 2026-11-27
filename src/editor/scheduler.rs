@@ -1,11 +1,15 @@
 use super::super::split::window::WindowId;
 use super::explorer::PendingExplorerPreview;
-use crate::document::runtime::{BufferKindId, DocumentHandle};
+#[cfg(feature = "plugins")]
+use crate::document::runtime::BufferKindId;
+use crate::document::runtime::DocumentHandle;
 use crate::document::DocumentId;
+#[cfg(feature = "plugins")]
 use crate::plugin::events::SaveHold;
 use crate::time::Instant;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
+#[cfg(feature = "plugins")]
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -30,7 +34,9 @@ pub(super) struct Scheduler {
     pub(super) git_log_expand_head: HashSet<DocumentId>,
     pub(super) quit_after_job: Option<usize>,
     pub(super) quit_after_job_window: Option<WindowId>,
+    #[cfg(feature = "plugins")]
     pub(super) save_pre_in_progress: HashSet<DocumentId>,
+    #[cfg(feature = "plugins")]
     pub(super) held_saves: HashMap<DocumentId, HeldSave>,
     #[cfg(feature = "lsp")]
     pub(super) goto_after_load: Option<(DocumentId, usize, usize)>,
@@ -38,6 +44,7 @@ pub(super) struct Scheduler {
     pub(super) code_actions: Vec<serde_json::Value>,
 }
 
+#[cfg(feature = "plugins")]
 pub(super) struct HeldSave {
     pub(super) hold: SaveHold,
     pub(super) handle: DocumentHandle,
@@ -70,7 +77,9 @@ impl Scheduler {
             git_log_expand_head: HashSet::new(),
             quit_after_job: None,
             quit_after_job_window: None,
+            #[cfg(feature = "plugins")]
             save_pre_in_progress: HashSet::new(),
+            #[cfg(feature = "plugins")]
             held_saves: HashMap::new(),
             #[cfg(feature = "lsp")]
             goto_after_load: None,
@@ -119,6 +128,7 @@ impl Scheduler {
         self.git_gutter_diff.cancel(id);
         self.git_status_expand_all.remove(&id);
         self.git_log_expand_head.remove(&id);
+        #[cfg(feature = "plugins")]
         self.held_saves.remove(&id);
         #[cfg(feature = "lsp")]
         if self.goto_after_load.is_some_and(|(d, ..)| d == id) {

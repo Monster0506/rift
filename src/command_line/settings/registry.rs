@@ -63,6 +63,7 @@ impl<T> SettingsRegistry<T> {
         self.cached_option_registry().match_command(name)
     }
 
+    #[cfg(any(feature = "plugins", test))]
     #[must_use]
     pub(super) fn find_descriptor(&self, name: &str) -> Option<&SettingDescriptor<T>> {
         let matched_name = match self.match_option(name) {
@@ -72,6 +73,7 @@ impl<T> SettingsRegistry<T> {
         self.settings.iter().find(|d| d.name == matched_name)
     }
 
+    #[cfg(any(feature = "plugins", test))]
     #[must_use]
     pub(super) fn get_setting(&self, name: &str, target: &T) -> Option<SettingValue> {
         let desc = self.find_descriptor(name)?;

@@ -115,12 +115,4 @@ pub(crate) mod terminal;
 #[cfg(not(feature = "terminal_emulation"))]
 #[path = "terminal_stub.rs"]
 pub(crate) mod terminal;
-
-/// Events raised by a PTY-backed terminal buffer. Available regardless of the
-/// `terminal_emulation` feature so channel plumbing doesn't need its own gate.
-#[derive(Debug, Clone)]
-pub(crate) enum TerminalEvent {
-    Title,
-    Wakeup,
-    ChildExit(i32),
-}
+pub(crate) use terminal::TerminalEvent;

@@ -78,6 +78,7 @@ fn code_name(code: KeyCode) -> String {
     }
 }
 
+#[cfg(any(feature = "ipc", test))]
 /// Parse exactly one key: a bare character or a `<...>` token.
 #[must_use]
 pub(crate) fn parse_key(s: &str) -> Option<Key> {
