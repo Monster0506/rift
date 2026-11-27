@@ -1,12 +1,12 @@
 use super::common::*;
 use super::*;
 use crate::document::ops::{Edit, EditSource};
-use crate::plugin::events::EditorEvent;
+use crate::plugin::events::EventPayload;
 use crate::plugin::PluginMutation;
 use crate::test_utils::MockTerminal;
 use std::sync::{Arc, Mutex};
 
-fn record(editor: &mut Editor<MockTerminal>, name: &'static str) -> Arc<Mutex<Vec<EditorEvent>>> {
+fn record(editor: &mut Editor<MockTerminal>, name: &'static str) -> Arc<Mutex<Vec<EventPayload>>> {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let sink = seen.clone();
     editor
@@ -69,7 +69,7 @@ fn plugin_edits_and_moves_raise_text_changed_and_cursor_moved() {
     editor.update_and_render().unwrap();
     assert!(matches!(
         moves.lock().unwrap().as_slice(),
-        [EditorEvent::CursorMoved { row: 0, col: 0, .. }]
+        [EventPayload::CursorMoved { row: 0, col: 0, .. }]
     ));
 }
 
@@ -83,7 +83,7 @@ fn search_jumps_raise_cursor_moved() {
 
     assert!(matches!(
         moves.lock().unwrap().as_slice(),
-        [EditorEvent::CursorMoved { row: 0, col: 6, .. }]
+        [EventPayload::CursorMoved { row: 0, col: 6, .. }]
     ));
 }
 
@@ -115,7 +115,7 @@ fn two_buffers_changed_in_one_frame_each_raise_text_changed() {
         .unwrap()
         .iter()
         .filter_map(|event| match event {
-            EditorEvent::TextChangedCoarse { buf } => Some(*buf),
+            EventPayload::TextChangedCoarse { buf } => Some(*buf),
             _ => None,
         })
         .collect();

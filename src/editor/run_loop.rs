@@ -25,11 +25,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.tick()?;
         }
 
-        self.call_plugins(|editor| {
-            editor
-                .plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::EditorQuit);
-        });
+        self.raise(crate::plugin::events::EventPayload::EditorQuit);
 
         Ok(())
     }
@@ -90,7 +86,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Output can arrive while polling; apply it before either kind of frame.
         jobs_changed |= self.drain_job_messages();
-        let timers_fired = self.fire_due_plugin_timers();
+        let timers_fired = self.fire_due_plugin_timers(crate::time::Instant::now());
         if input_ready {
             self.handle_input_event()?;
         } else {
@@ -154,8 +150,7 @@ impl<T: TerminalBackend> Editor<T> {
         )
     }
 
-    fn fire_due_plugin_timers(&mut self) -> bool {
-        let now = crate::time::Instant::now();
+    pub(super) fn fire_due_plugin_timers(&mut self, now: crate::time::Instant) -> bool {
         if self
             .plugin_host
             .next_timer_deadline()
@@ -163,7 +158,12 @@ impl<T: TerminalBackend> Editor<T> {
         {
             return false;
         }
-        self.call_plugins(|editor| editor.plugin_host.fire_due_timers(now))
+        if let Some((buf, row, col)) = self.plugin_host.take_due_cursor_hold(now) {
+            self.raise(crate::plugin::events::EventPayload::CursorHold { buf, row, col, now });
+            true
+        } else {
+            self.call_plugins(|editor| editor.plugin_host.fire_due_lua_timers(now))
+        }
     }
 
     fn drain_job_messages(&mut self) -> bool {
@@ -242,11 +242,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_terminal_resize(&mut self, rows: u16, cols: u16) -> Result<(), RiftError> {
         self.render_system.resize(rows as usize, cols as usize);
-        self.call_plugins(|editor| {
-            editor
-                .plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::WindowResized { rows, cols });
-        });
+        self.raise(crate::plugin::events::EventPayload::WindowResized { rows, cols });
         self.update_and_render()
     }
 

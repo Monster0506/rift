@@ -53,7 +53,7 @@ impl LuaHost {
     #[must_use]
     pub(super) const fn dispatch_event(
         &self,
-        _event: &crate::plugin::events::EditorEvent,
+        _event: &crate::plugin::events::EventPayload,
     ) -> Vec<String> {
         Vec::new()
     }

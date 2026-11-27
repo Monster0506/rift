@@ -1,1 +1,3 @@
-disallowed-methods = []
+disallowed-methods = [
+    { path = "monster_rift::plugin::PluginHost::dispatch", reason = "use Editor::raise" },
+]

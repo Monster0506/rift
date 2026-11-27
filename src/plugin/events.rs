@@ -5,10 +5,8 @@ use crate::mode::Mode;
 #[cfg(feature = "plugins")]
 use crate::plugin::lua_value::lua_int;
 
-/// Every significant editor state change produces one of these.
-/// The plugin host dispatches them to registered handlers.
 #[derive(Debug, Clone)]
-pub(crate) enum EditorEvent {
+pub(crate) enum EventPayload {
     /// A new buffer was opened (or created). Fired after the document is ready.
     BufOpen {
         buf: DocumentId,
@@ -77,6 +75,7 @@ pub(crate) enum EditorEvent {
         buf: DocumentId,
         row: usize,
         col: usize,
+        now: crate::time::Instant,
     },
 
     /// The editor mode changed.
@@ -158,7 +157,7 @@ pub(crate) enum EditorEvent {
     },
 }
 
-impl EditorEvent {
+impl EventPayload {
     /// Build a Lua table representing this event's payload.
     ///
     /// # Errors
@@ -203,7 +202,7 @@ impl EditorEvent {
                 t.set("row", lua_int(*row + 1))?; // 1-indexed for Lua
                 t.set("col", lua_int(*col))?;
             }
-            Self::CursorHold { buf, row, col } => {
+            Self::CursorHold { buf, row, col, .. } => {
                 t.set("buf", lua_int(buf.get()))?;
                 t.set("row", lua_int(*row + 1))?;
                 t.set("col", lua_int(*col))?;

@@ -3,7 +3,7 @@ pub(crate) mod tree;
 
 use super::super::Editor;
 use crate::document::DocumentId;
-use crate::plugin::events::EditorEvent;
+use crate::plugin::events::EventPayload;
 use crate::split::navigation::Direction;
 use crate::split::tree::SplitDirection;
 use crate::split::window::WindowId;
@@ -47,7 +47,7 @@ impl<T: TerminalBackend> Editor<T> {
             size.rows as usize,
             size.cols as usize,
         )?;
-        self.dispatch_window_event(&EditorEvent::WinNew {
+        self.raise(EventPayload::WinNew {
             win: opened.get(),
             buf: doc_id,
         });
@@ -73,7 +73,7 @@ impl<T: TerminalBackend> Editor<T> {
             size.cols as usize,
             ratio,
         )?;
-        self.dispatch_window_event(&EditorEvent::WinNew {
+        self.raise(EventPayload::WinNew {
             win: opened.get(),
             buf: doc_id,
         });
@@ -97,7 +97,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .get_window(next_id)
                 .expect("window in layout")
                 .document_id;
-            self.dispatch_window_event(&EditorEvent::WinLeave { win: id.get(), buf });
+            self.raise(EventPayload::WinLeave { win: id.get(), buf });
             if self
                 .focus_document_with(next_buf, |editor| {
                     editor.split_tree.close_window(id);
@@ -107,7 +107,7 @@ impl<T: TerminalBackend> Editor<T> {
             {
                 return false;
             }
-            self.dispatch_window_event(&EditorEvent::WinEnter {
+            self.raise(EventPayload::WinEnter {
                 win: next_id.get(),
                 buf: next_buf,
             });
@@ -115,7 +115,7 @@ impl<T: TerminalBackend> Editor<T> {
             return false;
         }
         self.render_system.viewport.mark_needs_full_redraw();
-        self.dispatch_window_event(&EditorEvent::WinClosed { win: id.get(), buf });
+        self.raise(EventPayload::WinClosed { win: id.get(), buf });
         true
     }
 
@@ -126,10 +126,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    fn dispatch_window_event(&mut self, event: &EditorEvent) {
-        self.call_plugins(|editor| editor.plugin_host.dispatch(event));
-    }
-
     pub(crate) fn move_window(&mut self, direction: Direction) -> bool {
         let layouts = self.window_layouts();
         let moved_id = self.split_tree.focused_window_id();
@@ -137,10 +133,8 @@ impl<T: TerminalBackend> Editor<T> {
             return false;
         }
         self.render_system.viewport.mark_needs_full_redraw();
-        self.call_plugins(|editor| {
-            editor.plugin_host.dispatch(&EditorEvent::WinMoved {
-                win: moved_id.get(),
-            });
+        self.raise(EventPayload::WinMoved {
+            win: moved_id.get(),
         });
         true
     }
@@ -168,11 +162,9 @@ impl<T: TerminalBackend> Editor<T> {
             return false;
         }
         self.render_system.viewport.mark_needs_full_redraw();
-        self.call_plugins(|editor| {
-            editor.plugin_host.dispatch(&EditorEvent::WinSwapped {
-                win1: focused_id.get(),
-                win2: prev_id.get(),
-            });
+        self.raise(EventPayload::WinSwapped {
+            win1: focused_id.get(),
+            win2: prev_id.get(),
         });
         true
     }
@@ -228,7 +220,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = self.document_manager.get_document(old_buf) {
             self.set_window_cursor(old_win, doc.buffer().cursor());
         }
-        self.dispatch_window_event(&EditorEvent::WinLeave {
+        self.raise(EventPayload::WinLeave {
             win: old_win.get(),
             buf: old_buf,
         });
@@ -244,7 +236,7 @@ impl<T: TerminalBackend> Editor<T> {
             })
             .is_ok()
         {
-            self.dispatch_window_event(&EditorEvent::WinEnter {
+            self.raise(EventPayload::WinEnter {
                 win: target.get(),
                 buf,
             });

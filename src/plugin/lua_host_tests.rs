@@ -1,6 +1,6 @@
 use super::*;
 use crate::notification::NotificationType;
-use crate::plugin::events::EditorEvent;
+use crate::plugin::events::EventPayload;
 
 fn make_host() -> LuaHost {
     let host = LuaHost::new().expect("LuaHost::new failed");
@@ -190,7 +190,7 @@ fn test_runaway_handler_cannot_remove_the_budget_hook() {
     ",
     );
     let started = std::time::Instant::now();
-    let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse {
+    let errors = host.dispatch_event(&EventPayload::TextChangedCoarse {
         buf: crate::document::DocumentId::new(1),
     });
     assert!(started.elapsed() < std::time::Duration::from_secs(2));
@@ -268,8 +268,8 @@ fn test_handler_reads_its_plugin_global_later() {
              rift.notify('info', tostring(count))
          end)",
     );
-    assert!(host.dispatch_event(&EditorEvent::EditorStart).is_empty());
-    assert!(host.dispatch_event(&EditorEvent::EditorStart).is_empty());
+    assert!(host.dispatch_event(&EventPayload::EditorStart).is_empty());
+    assert!(host.dispatch_event(&EventPayload::EditorStart).is_empty());
     assert_eq!(notified_messages(&host), ["1", "2"]);
 }
 
@@ -647,7 +647,7 @@ fn test_on_and_dispatch_event() {
     assert!(host
         .exec("rift.on('EditorStart', function(_ev) rift.notify('info', 'started') end)")
         .is_none());
-    let errors = host.dispatch_event(&EditorEvent::EditorStart);
+    let errors = host.dispatch_event(&EventPayload::EditorStart);
     assert!(errors.is_empty(), "unexpected errors: {errors:?}");
     let mutations = host.drain_mutations();
     assert_eq!(mutations.len(), 1);
@@ -838,7 +838,7 @@ fn test_error_in_handler_returned_from_dispatch() {
         "failing.lua",
         "rift.on('EditorStart', function(_ev) error('handler error') end)",
     );
-    let errors = host.dispatch_event(&EditorEvent::EditorStart);
+    let errors = host.dispatch_event(&EventPayload::EditorStart);
     assert_eq!(errors.len(), 1, "expected one error from bad handler");
     assert!(
         errors[0].starts_with("[failing:EditorStart] "),
@@ -1141,7 +1141,7 @@ fn test_plugins_unload_removes_all_registrations() {
         position: 0,
         buffer: 1,
     };
-    assert!(host.dispatch_event(&EditorEvent::EditorStart).is_empty());
+    assert!(host.dispatch_event(&EventPayload::EditorStart).is_empty());
     assert!(host.execute_command("DropCmd", &[]));
     assert!(host.execute_action("drop:act"));
     assert!(host.invoke_annotation_action(&action));
@@ -1225,7 +1225,7 @@ fn test_plugins_unload_removes_all_registrations() {
         mutation,
         PluginMutation::UnmapKey { mode, keys } if mode == "n" && keys == "zq"
     )));
-    assert!(host.dispatch_event(&EditorEvent::EditorStart).is_empty());
+    assert!(host.dispatch_event(&EventPayload::EditorStart).is_empty());
     assert!(!host.execute_command("DropCmd", &[]));
     assert!(!host.execute_action("drop:act"));
     assert!(!host.invoke_annotation_action(&action));
@@ -1291,7 +1291,7 @@ fn test_plugins_list_includes_resource_only_and_failed_plugins() {
     assert!(host.load_file(&broken).is_some());
     assert!(host.load_file(&missing).is_some());
     let _ = host.drain_mutations();
-    assert!(host.dispatch_event(&EditorEvent::EditorStart).is_empty());
+    assert!(host.dispatch_event(&EventPayload::EditorStart).is_empty());
     assert!(host.drain_mutations().iter().any(|m| matches!(
         m,
         PluginMutation::AddNsHighlight { ns, owner: Some(owner), .. }
@@ -1465,7 +1465,7 @@ fn test_dispatch_event_does_not_invoke_handlers_registered_during_same_pass() {
     "
         )
         .is_none());
-    let errors = host.dispatch_event(&EditorEvent::EditorStart);
+    let errors = host.dispatch_event(&EventPayload::EditorStart);
     assert!(errors.is_empty(), "unexpected errors: {errors:?}");
     let check = host.exec("assert(_G.count == 1, 'count was ' .. _G.count)");
     assert!(check.is_none(), "assertion failed: {check:?}");
@@ -1557,7 +1557,7 @@ fn test_dispatch_event_aborts_a_runaway_handler_past_its_time_budget() {
     );
 
     let started = std::time::Instant::now();
-    let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse {
+    let errors = host.dispatch_event(&EventPayload::TextChangedCoarse {
         buf: crate::document::DocumentId::new(1),
     });
     let elapsed = started.elapsed();
@@ -1588,7 +1588,7 @@ fn test_dispatch_event_does_not_abort_a_fast_handler() {
         )
         .is_none());
 
-    let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse {
+    let errors = host.dispatch_event(&EventPayload::TextChangedCoarse {
         buf: crate::document::DocumentId::new(1),
     });
     assert!(errors.is_empty(), "unexpected errors: {errors:?}");
@@ -1730,7 +1730,7 @@ const SPIN_ON_BUF_1: &str = "rift.on('TextChangedCoarse', function(ev)
 end)";
 
 fn coarse(host: &LuaHost, buf: u64) -> Vec<String> {
-    host.dispatch_event(&EditorEvent::TextChangedCoarse {
+    host.dispatch_event(&EventPayload::TextChangedCoarse {
         buf: crate::document::DocumentId::new(buf),
     })
 }

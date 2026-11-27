@@ -1076,13 +1076,9 @@ impl<T: TerminalBackend> Editor<T> {
             format!("Written to {}", res.path.display()),
         );
 
-        self.call_plugins(|editor| {
-            editor
-                .plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::BufSavePost {
-                    buf: res.document_id,
-                    path: res.path.clone(),
-                });
+        self.raise(crate::plugin::events::EventPayload::BufSavePost {
+            buf: res.document_id,
+            path: res.path.clone(),
         });
         #[cfg(feature = "lsp")]
         self.lsp_manager.did_save(&res.path, None);
@@ -1137,12 +1133,8 @@ impl<T: TerminalBackend> Editor<T> {
             #[cfg(feature = "treesitter")]
             self.attach_syntax_for_document(res.document_id);
             self.spawn_syntax_parse_job(res.document_id);
-            self.call_plugins(|editor| {
-                editor
-                    .plugin_host
-                    .dispatch(&crate::plugin::events::EditorEvent::BufReload {
-                        buf: res.document_id,
-                    });
+            self.raise(crate::plugin::events::EventPayload::BufReload {
+                buf: res.document_id,
             });
         } else {
             self.announce_buffer(res.document_id);
@@ -1201,12 +1193,8 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         if res.is_reload {
-            self.call_plugins(|editor| {
-                editor
-                    .plugin_host
-                    .dispatch(&crate::plugin::events::EditorEvent::BufReload {
-                        buf: res.document_id,
-                    });
+            self.raise(crate::plugin::events::EventPayload::BufReload {
+                buf: res.document_id,
             });
         } else {
             self.announce_buffer(res.document_id);

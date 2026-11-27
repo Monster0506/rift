@@ -322,13 +322,9 @@ impl<T: TerminalBackend> Editor<T> {
                     .map(|path| (document.id, path))
             };
             if let Some((buf_id, path)) = save_info {
-                self.call_plugins(|editor| {
-                    editor
-                        .plugin_host
-                        .dispatch(&crate::plugin::events::EditorEvent::BufSavePre {
-                            buf: buf_id,
-                            path: path.clone(),
-                        });
+                self.raise(crate::plugin::events::EventPayload::BufSavePre {
+                    buf: buf_id,
+                    path: path.clone(),
                 });
                 let Some(document) = self.document_manager.get_document_mut(buf_id) else {
                     self.notify_error(RiftError::new(

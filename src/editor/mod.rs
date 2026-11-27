@@ -27,6 +27,7 @@ mod mode_mgmt;
 mod multi_region;
 mod operators;
 pub(crate) mod ops;
+pub(crate) use ops::EditorEvent;
 mod panel_handlers;
 mod pending_grammar;
 mod plugin_jobs;

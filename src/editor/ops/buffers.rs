@@ -89,7 +89,10 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(crate) fn open_event(&self, buf: DocumentId) -> Option<crate::plugin::events::EditorEvent> {
+    pub(crate) fn open_event(
+        &self,
+        buf: DocumentId,
+    ) -> Option<crate::plugin::events::EventPayload> {
         let doc = self.document_manager.get_document(buf)?;
         let path = doc.path().map(std::path::Path::to_path_buf);
         let filetype = doc
@@ -100,7 +103,7 @@ impl<T: TerminalBackend> Editor<T> {
                 path.as_deref()
                     .and_then(|p| self.language_loader.language_name_for_file(p))
             });
-        Some(crate::plugin::events::EditorEvent::BufOpen {
+        Some(crate::plugin::events::EventPayload::BufOpen {
             buf,
             path,
             filetype,
@@ -196,11 +199,7 @@ impl<T: TerminalBackend> Editor<T> {
         if left == next || self.document_manager.get_document(left).is_none() {
             return;
         }
-        self.call_plugins(|editor| {
-            editor
-                .plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::BufLeave { buf: left });
-        });
+        self.raise(crate::plugin::events::EventPayload::BufLeave { buf: left });
     }
 
     fn enter_document(&mut self, id: DocumentId) {
@@ -208,11 +207,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
         self.entered_document = id;
-        self.call_plugins(|editor| {
-            editor
-                .plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::BufEnter { buf: id });
-        });
+        self.raise(crate::plugin::events::EventPayload::BufEnter { buf: id });
     }
 
     pub(crate) fn close_buffer(
@@ -308,10 +303,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.buffer_kinds.decrement_open_count(kind_id);
         self.sync_state_with_active_document();
 
-        self.call_plugins(|editor| {
-            editor
-                .plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::BufClose { buf: id });
-        });
+        self.raise(crate::plugin::events::EventPayload::BufClose { buf: id });
     }
 }

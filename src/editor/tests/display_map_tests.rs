@@ -439,7 +439,7 @@ fn test_cursor_moved_fires_once_per_render_with_latest_position() {
     let cols: Arc<Mutex<Vec<usize>>> = Arc::new(Mutex::new(Vec::new()));
     let c = cols.clone();
     editor.plugin_host.on("CursorMoved", move |event| {
-        if let crate::plugin::events::EditorEvent::CursorMoved { col, .. } = event {
+        if let crate::plugin::events::EventPayload::CursorMoved { col, .. } = event {
             c.lock().unwrap().push(*col);
         }
     });

@@ -98,7 +98,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn deliver_document_changes(&mut self) {
-        use crate::plugin::events::EditorEvent;
+        use crate::plugin::events::EventPayload;
 
         let drained = self.document_manager.drain_changes();
         if drained.is_empty() {
@@ -110,52 +110,37 @@ impl<T: TerminalBackend> Editor<T> {
                 self.lsp_notify_change(*buf);
             }
         }
-        self.call_plugins(|editor| {
-            crate::perf_span!(
-                "plugin_dispatch_buffer_changes",
-                crate::perf::PerfFields::default()
-            );
-            for &(buf, changes) in &drained {
-                if changes.opened {
-                    if let Some(event) = editor.open_event(buf) {
-                        editor.plugin_host.dispatch(&event);
-                    }
-                }
-                if changes.text {
-                    editor
-                        .plugin_host
-                        .dispatch(&EditorEvent::TextChangedCoarse { buf });
-                }
-                if let Some((row, col)) = changes.cursor {
-                    editor
-                        .plugin_host
-                        .dispatch(&EditorEvent::CursorMoved { buf, row, col });
-                }
-                if changes.selection {
-                    editor
-                        .plugin_host
-                        .dispatch(&EditorEvent::SelectionChanged { buf });
+        crate::perf_span!(
+            "plugin_dispatch_buffer_changes",
+            crate::perf::PerfFields::default()
+        );
+        for (buf, changes) in drained {
+            if changes.opened {
+                if let Some(event) = self.open_event(buf) {
+                    self.raise(event);
                 }
             }
-        });
+            if changes.text {
+                self.raise(EventPayload::TextChangedCoarse { buf });
+            }
+            if let Some((row, col)) = changes.cursor {
+                self.raise(EventPayload::CursorMoved { buf, row, col });
+            }
+            if changes.selection {
+                self.raise(EventPayload::SelectionChanged { buf });
+            }
+        }
     }
 
     pub(super) fn flush_pending_syntax_updated(&mut self) {
-        if self.pending_syntax_updated.is_empty() {
-            return;
+        for buf in std::mem::take(&mut self.pending_syntax_updated) {
+            let lang = self
+                .document_manager
+                .get_document(buf)
+                .and_then(|doc| doc.syntax.as_ref())
+                .map(|syntax| syntax.language_name.clone());
+            self.raise(crate::plugin::events::EventPayload::SyntaxUpdated { buf, lang });
         }
-        self.call_plugins(|editor| {
-            for buf in std::mem::take(&mut editor.pending_syntax_updated) {
-                let lang = editor
-                    .document_manager
-                    .get_document(buf)
-                    .and_then(|doc| doc.syntax.as_ref())
-                    .map(|syntax| syntax.language_name.clone());
-                editor
-                    .plugin_host
-                    .dispatch(&crate::plugin::events::EditorEvent::SyntaxUpdated { buf, lang });
-            }
-        });
     }
 
     pub(super) fn drain_syntax_sync(&mut self) {

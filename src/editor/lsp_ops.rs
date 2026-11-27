@@ -139,13 +139,9 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn lsp_server_connected(&mut self, language: String, server_name: String) {
         self.state.lsp_status = Some(format!("{server_name}: starting"));
-        self.call_plugins(|editor| {
-            editor
-                .plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::LspServerConnected {
-                    language,
-                    server_name,
-                });
+        self.raise(crate::plugin::events::EventPayload::LspServerConnected {
+            language,
+            server_name,
         });
     }
 
@@ -157,13 +153,9 @@ impl<T: TerminalBackend> Editor<T> {
             .unwrap_or(&language)
             .to_string();
         self.refresh_lsp_diag_status(&language, &name);
-        self.call_plugins(|editor| {
-            editor
-                .plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::LspServerReady {
-                    language,
-                    server_name: name,
-                });
+        self.raise(crate::plugin::events::EventPayload::LspServerReady {
+            language,
+            server_name: name,
         });
     }
 
@@ -178,13 +170,9 @@ impl<T: TerminalBackend> Editor<T> {
             None => format!("{name}: indexing"),
         };
         self.state.lsp_status = Some(status);
-        self.call_plugins(|editor| {
-            editor
-                .plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::LspProgress {
-                    language,
-                    server_name: name,
-                });
+        self.raise(crate::plugin::events::EventPayload::LspProgress {
+            language,
+            server_name: name,
         });
     }
 
@@ -327,14 +315,10 @@ impl<T: TerminalBackend> Editor<T> {
 
         let error_count = diagnostics.iter().filter(|d| d.severity == Some(1)).count();
         let warning_count = diagnostics.iter().filter(|d| d.severity == Some(2)).count();
-        self.call_plugins(|editor| {
-            editor.plugin_host.dispatch(
-                &crate::plugin::events::EditorEvent::LspDiagnosticsChanged {
-                    uri: key,
-                    error_count,
-                    warning_count,
-                },
-            );
+        self.raise(crate::plugin::events::EventPayload::LspDiagnosticsChanged {
+            uri: key,
+            error_count,
+            warning_count,
         });
 
         let _ = self.update_and_render();

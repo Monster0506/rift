@@ -183,11 +183,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.deliver_document_changes();
         }
 
-        self.call_plugins(|editor| {
-            editor
-                .plugin_host
-                .dispatch(&crate::plugin::events::EditorEvent::EditorStart);
-        });
+        self.raise(crate::plugin::events::EventPayload::EditorStart);
 
         if let Some(dir) = target_dir {
             self.open_explorer(dir);

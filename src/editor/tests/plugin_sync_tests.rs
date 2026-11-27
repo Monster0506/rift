@@ -966,8 +966,12 @@ fn set_cursor_hold_delay_moves_the_hold_deadline() {
         default.duration_since(shortened),
         std::time::Duration::from_millis(350)
     );
-    assert!(editor.plugin_host.fire_due_timers(shortened));
-    lua_ok(&editor, "assert(_G.held)");
+    lua_ok(
+        &editor,
+        "rift.timer(0, function() _G.timer_saw_hold = _G.held end)",
+    );
+    assert!(editor.fire_due_plugin_timers(shortened.max(crate::time::Instant::now())));
+    lua_ok(&editor, "assert(_G.held and _G.timer_saw_hold)");
 }
 
 fn resent_texts(editor: &Editor<MockTerminal>) -> Vec<u64> {

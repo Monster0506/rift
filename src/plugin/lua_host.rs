@@ -4,7 +4,7 @@ use crate::document::ops::Edit;
 use crate::document::DocumentId;
 use crate::job_manager::jobs::plugin_process::{JobCommand, JobSpec, JobStream, PluginJobEvent};
 use crate::notification::NotificationType;
-use crate::plugin::events::EditorEvent;
+use crate::plugin::events::EventPayload;
 pub(crate) use crate::plugin::lua_state::{
     AnnotationView, BufAnnotations, BufEntry, BufMeta, BufUpdate, HistoryAvailability,
     LspDiagnosticsSnapshot, StateUpdate, SyncKeys, WinEntry,
@@ -3492,10 +3492,10 @@ impl LuaHost {
             });
     }
 
-    /// Dispatch an `EditorEvent` to all registered Lua handlers.
+    /// Dispatch an `EventPayload` to all registered Lua handlers.
     /// Returns error strings for any handlers that raised a Lua error.
     #[must_use]
-    pub(super) fn dispatch_event(&self, event: &EditorEvent) -> Vec<String> {
+    pub(super) fn dispatch_event(&self, event: &EventPayload) -> Vec<String> {
         let handlers: LuaTable = match self.lua.globals().get("_rift_handlers") {
             Ok(t) => t,
             Err(_) => return vec![],

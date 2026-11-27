@@ -17,7 +17,8 @@ mod lua_value;
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::plugin::events::EditorEvent;
+use crate::editor::EditorEvent;
+use crate::plugin::events::EventPayload;
 
 use crate::document::DocumentId;
 use crate::notification::NotificationType;
@@ -195,7 +196,7 @@ impl From<PluginMutation> for PluginMutationEnvelope {
 }
 
 /// An event handler.
-type Handler = Box<dyn Fn(&EditorEvent) + Send + 'static>;
+type Handler = Box<dyn Fn(&EventPayload) + Send + 'static>;
 
 /// A command handler. Receives split args, returns mutations to apply.
 type CommandHandler = Box<dyn Fn(&[String]) -> Vec<PluginMutation> + Send + 'static>;
@@ -768,11 +769,9 @@ impl PluginHost {
     }
 
     #[cfg(test)]
-    /// Register a handler for a named event. `event_name` must match one of the strings
-    /// returned by [`EditorEvent::name`], e.g. `"BufSavePost"`.
     pub(crate) fn on<F>(&mut self, event_name: &'static str, handler: F)
     where
-        F: Fn(&EditorEvent) + Send + 'static,
+        F: Fn(&EventPayload) + Send + 'static,
     {
         self.handlers
             .entry(event_name)
@@ -1201,12 +1200,13 @@ impl PluginHost {
     /// Dispatch an event to all registered handlers, applying any returned mutations via
     /// [`Self::apply_mutation`].
     pub(crate) fn dispatch(&mut self, event: &EditorEvent) {
-        if let EditorEvent::CursorMoved { buf, row, col } = event {
+        let payload = event.payload();
+        if let EventPayload::CursorMoved { buf, row, col } = payload {
             self.cursor_hold
                 .on_cursor_move(*buf, *row, *col, crate::time::Instant::now());
         }
 
-        let name = event.name();
+        let name = payload.name();
         if let Some(handlers) = self.handlers.get(name) {
             for (handler, origin) in handlers {
                 if let Some(gen) = origin {
@@ -1214,7 +1214,7 @@ impl PluginHost {
                         continue;
                     }
                 }
-                handler(event);
+                handler(payload);
             }
         }
 
@@ -1222,7 +1222,7 @@ impl PluginHost {
         if let Some(lua) = &self.lua {
             let gen = lua.generation();
             if self.is_generation_active(gen) {
-                for err in lua.dispatch_event(event) {
+                for err in lua.dispatch_event(payload) {
                     self.mutation_queue.push(PluginMutationEnvelope::plugin(
                         PluginMutation::Notify {
                             message: err,
@@ -1235,15 +1235,16 @@ impl PluginHost {
         }
     }
 
-    pub(crate) fn fire_due_timers(&mut self, now: crate::time::Instant) -> bool {
-        let hold = self.cursor_hold.fire(now);
-        if let Some((buf, row, col)) = hold {
-            self.dispatch(&EditorEvent::CursorHold { buf, row, col });
-        }
-        let lua_fired = self
-            .active_lua()
-            .is_some_and(|lua| lua.fire_due_timers(now));
-        lua_fired || hold.is_some()
+    pub(crate) fn take_due_cursor_hold(
+        &mut self,
+        now: crate::time::Instant,
+    ) -> Option<(DocumentId, usize, usize)> {
+        self.cursor_hold.fire(now)
+    }
+
+    pub(crate) fn fire_due_lua_timers(&self, now: crate::time::Instant) -> bool {
+        self.active_lua()
+            .is_some_and(|lua| lua.fire_due_timers(now))
     }
 
     pub(crate) fn next_timer_deadline(&self) -> Option<crate::time::Instant> {

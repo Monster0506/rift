@@ -359,13 +359,9 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         if old_mode != mode {
-            self.call_plugins(|editor| {
-                editor
-                    .plugin_host
-                    .dispatch(&crate::plugin::events::EditorEvent::ModeChanged {
-                        from: old_mode,
-                        to: mode,
-                    });
+            self.raise(crate::plugin::events::EventPayload::ModeChanged {
+                from: old_mode,
+                to: mode,
             });
         }
         if (old_mode == Mode::Command || old_mode == Mode::Search || old_mode == Mode::Rename)
