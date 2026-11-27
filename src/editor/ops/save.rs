@@ -88,31 +88,27 @@ impl<T: TerminalBackend> Editor<T> {
         &mut self,
         buf: DocumentId,
         target: Option<PathBuf>,
-    ) -> Option<(DocumentHandle, BufferKindId, Option<PathBuf>)> {
+    ) -> Option<(DocumentHandle, BufferKindId, SaveDispatch, Option<PathBuf>)> {
         let doc = self.document_manager.get_document_mut(buf)?;
         let handle = doc.handle();
         let kind = doc.buffer_kind_id();
-        if kind != BufferKindId::FILE {
-            match doc.descriptor().save_dispatch {
-                SaveDispatch::Disabled => return None,
-                SaveDispatch::Reject => {
-                    let message = format!("{} buffer cannot be saved", doc.display_name());
-                    self.notify_error(RiftError::new(ErrorType::Io, "CANT_SAVE", message));
-                    return None;
-                }
-                #[cfg(feature = "plugins")]
-                SaveDispatch::Lua | SaveDispatch::Native(_) => {}
-                #[cfg(not(feature = "plugins"))]
-                SaveDispatch::Native(_) => {}
+        let dispatch = doc.descriptor().save_dispatch;
+        match dispatch {
+            SaveDispatch::Disabled => return None,
+            SaveDispatch::Reject => {
+                let message = format!("{} buffer cannot be saved", doc.display_name());
+                self.notify_error(RiftError::new(ErrorType::Io, "CANT_SAVE", message));
+                return None;
             }
+            _ => {}
         }
         doc.commit_pending_ghost();
         let path = target.or_else(|| doc.path().map(Path::to_path_buf));
-        if kind == BufferKindId::FILE && path.is_none() {
+        if dispatch == SaveDispatch::File && path.is_none() {
             self.notify_error(RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"));
             return None;
         }
-        Some((handle, kind, path))
+        Some((handle, kind, dispatch, path))
     }
 
     #[cfg(not(feature = "plugins"))]
@@ -124,7 +120,7 @@ impl<T: TerminalBackend> Editor<T> {
         _quit: &mut Option<SaveQuit>,
     ) -> SaveOutcome {
         match self.prepare_save(buf, target) {
-            Some((handle, kind, path)) => self.write_save(handle, kind, path),
+            Some((handle, _, dispatch, path)) => self.write_save(handle, dispatch, path),
             None => SaveOutcome::NotSaved,
         }
     }
@@ -140,7 +136,7 @@ impl<T: TerminalBackend> Editor<T> {
         if self.scheduler.save_pre_in_progress.contains(&buf) {
             return SaveOutcome::NotSaved;
         }
-        let Some((handle, kind, path)) = self.prepare_save(buf, target) else {
+        let Some((handle, kind, dispatch, path)) = self.prepare_save(buf, target) else {
             return SaveOutcome::NotSaved;
         };
         self.scheduler.held_saves.remove(&buf);
@@ -156,7 +152,7 @@ impl<T: TerminalBackend> Editor<T> {
             return SaveOutcome::NotSaved;
         };
         match decision {
-            SaveDecision::Proceed => self.write_save(handle, kind, path),
+            SaveDecision::Proceed => self.write_save(handle, dispatch, path),
             SaveDecision::Cancel => SaveOutcome::NotSaved,
             SaveDecision::Hold(hold) => {
                 if !self.should_quit && doc.matches_kind(kind) && hold.activate() {
@@ -207,6 +203,7 @@ impl<T: TerminalBackend> Editor<T> {
         if !doc.matches_kind(save.kind) || doc.path() != save.source_path.as_deref() {
             return;
         }
+        let dispatch = doc.descriptor().save_dispatch;
         doc.commit_pending_ghost();
 
         let quit = save.quit.filter(|quit| {
@@ -217,7 +214,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             current
         });
-        let result = self.write_save(save.handle, save.kind, save.path);
+        let result = self.write_save(save.handle, dispatch, save.path);
         if let Some(quit) = quit {
             self.finish_save_quit(result, quit);
         }
@@ -226,15 +223,15 @@ impl<T: TerminalBackend> Editor<T> {
     fn write_save(
         &mut self,
         handle: DocumentHandle,
-        kind: BufferKindId,
+        dispatch: SaveDispatch,
         path: Option<PathBuf>,
     ) -> SaveOutcome {
         let buf = handle.doc_id();
         let Some(doc) = self.document_manager.get_document_by_handle_mut(handle) else {
             return SaveOutcome::NotSaved;
         };
-        let path = match (kind == BufferKindId::FILE, path) {
-            (true, Some(path)) => {
+        let path = match (dispatch, path) {
+            (SaveDispatch::File, Some(path)) => {
                 let job = FileSaveJob::new(
                     buf,
                     doc.buffer().line_index.table.clone(),
@@ -345,18 +342,14 @@ impl<T: TerminalBackend> Editor<T> {
                     SaveResult::Failed
                 }
             }
-            SaveDispatch::Native(handler) => {
-                if let Some(save) = self
-                    .native_save_handlers
-                    .get(&doc.buffer_kind_id())
-                    .copied()
-                {
-                    save(self, handle.doc_id())
-                } else {
-                    handler(handle)
-                }
+            SaveDispatch::Directory => self.apply_directory_diff(handle.doc_id()),
+            SaveDispatch::Clipboard => self.apply_clipboard_diff(handle.doc_id()),
+            SaveDispatch::ClipboardEntry => self.apply_clipboard_entry_save(handle.doc_id()),
+            SaveDispatch::GitCommitMessage => self.apply_git_commit_message(handle.doc_id()),
+            SaveDispatch::GitRebaseTodo => self.apply_git_rebase_todo(handle.doc_id()),
+            SaveDispatch::Disabled | SaveDispatch::Reject | SaveDispatch::File => {
+                SaveResult::Rejected
             }
-            SaveDispatch::Disabled | SaveDispatch::Reject => SaveResult::Rejected,
         }
     }
 
@@ -368,7 +361,7 @@ impl<T: TerminalBackend> Editor<T> {
         let handle = doc.handle();
         let implicit_target = target.is_none();
         let target = if implicit_target
-            && doc.buffer_kind_id() == BufferKindId::FILE
+            && doc.descriptor().save_dispatch == SaveDispatch::File
             && doc.path().is_none()
         {
             self.state.file_path.as_ref().map(PathBuf::from)

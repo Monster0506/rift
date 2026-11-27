@@ -163,14 +163,6 @@ pub struct Editor<T: TerminalBackend> {
     scheduler: scheduler::Scheduler,
     keymap: KeyMap,
     split_tree: SplitTree,
-    native_save_handlers: std::collections::HashMap<
-        crate::document::runtime::BufferKindId,
-        file_ops::NativeSaveHandler<T>,
-    >,
-    native_reload_handlers: std::collections::HashMap<
-        crate::document::runtime::BufferKindId,
-        file_ops::NativeReloadHandler<T>,
-    >,
     pending_keys: Vec<crate::key::Key>,
     pending_count: usize,
     pending_operator_count: usize,

@@ -260,11 +260,14 @@ pub(crate) enum SaveResult {
     Failed,
 }
 
-type NativeSaveHandler = fn(DocumentHandle) -> SaveResult;
-
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SaveDispatch {
-    Native(NativeSaveHandler),
+    File,
+    Directory,
+    Clipboard,
+    ClipboardEntry,
+    GitCommitMessage,
+    GitRebaseTodo,
     #[cfg(feature = "plugins")]
     Lua,
     Disabled,
@@ -282,13 +285,19 @@ pub(crate) enum CloseHandler {
 
 const fn noop_close(_handle: DocumentHandle) {}
 
-const fn builtin_save(_handle: DocumentHandle) -> SaveResult {
-    SaveResult::Rejected
-}
-
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ReloadDispatch {
-    Native,
+    File,
+    Directory,
+    UndoTree,
+    Messages,
+    Clipboard,
+    GitStatus,
+    GitBlame,
+    GitLog,
+    BufferList,
+    UndoFileView,
+    ImageAsText,
     Unsupported,
 }
 
@@ -902,11 +911,11 @@ impl BufferKindRegistry {
             name: "file".into(),
             policies: BufferPolicies::file_default(),
             action_dispatch: ActionDispatch::Disabled,
-            save_dispatch: SaveDispatch::Native(builtin_save),
+            save_dispatch: SaveDispatch::File,
             display_name: DisplayNameStrategy::FileName,
             help_lines: None,
             on_close: CloseHandler::NOOP,
-            reload_dispatch: ReloadDispatch::Native,
+            reload_dispatch: ReloadDispatch::File,
             state_key: FILE_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -948,11 +957,11 @@ impl BufferKindRegistry {
                 ..BufferPolicies::read_only_panel()
             },
             action_dispatch: ActionDispatch::Native(table::DIRECTORY_ACTIONS),
-            save_dispatch: SaveDispatch::Native(builtin_save),
+            save_dispatch: SaveDispatch::Directory,
             display_name: DisplayNameStrategy::FileName,
             help_lines: None,
             on_close: CloseHandler::NOOP,
-            reload_dispatch: ReloadDispatch::Native,
+            reload_dispatch: ReloadDispatch::Directory,
             state_key: DIRECTORY_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -968,7 +977,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[UndoTree]".into()),
             help_lines: None,
             on_close: CloseHandler::NOOP,
-            reload_dispatch: ReloadDispatch::Native,
+            reload_dispatch: ReloadDispatch::UndoTree,
             state_key: UNDO_TREE_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -988,7 +997,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Messages]".into()),
             help_lines: None,
             on_close: CloseHandler::NOOP,
-            reload_dispatch: ReloadDispatch::Native,
+            reload_dispatch: ReloadDispatch::Messages,
             state_key: MESSAGES_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1007,11 +1016,11 @@ impl BufferKindRegistry {
                 ..BufferPolicies::read_only_list()
             },
             action_dispatch: ActionDispatch::Native(table::CLIPBOARD_ACTIONS),
-            save_dispatch: SaveDispatch::Native(builtin_save),
+            save_dispatch: SaveDispatch::Clipboard,
             display_name: DisplayNameStrategy::Label("[Clipboard]".into()),
             help_lines: None,
             on_close: CloseHandler::NOOP,
-            reload_dispatch: ReloadDispatch::Native,
+            reload_dispatch: ReloadDispatch::Clipboard,
             state_key: CLIPBOARD_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1023,7 +1032,7 @@ impl BufferKindRegistry {
             name: "clipboard_entry".into(),
             policies: BufferPolicies::writable_scratch_text(),
             action_dispatch: ActionDispatch::Native(table::CLIPBOARD_ENTRY_ACTIONS),
-            save_dispatch: SaveDispatch::Native(builtin_save),
+            save_dispatch: SaveDispatch::ClipboardEntry,
             display_name: DisplayNameStrategy::Label("[Clipboard:entry]".into()),
             help_lines: None,
             on_close: CloseHandler::NOOP,
@@ -1116,7 +1125,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Git Status]".into()),
             help_lines: Some(status_help.into()),
             on_close: CloseHandler::NOOP,
-            reload_dispatch: ReloadDispatch::Native,
+            reload_dispatch: ReloadDispatch::GitStatus,
             state_key: GIT_STATUS_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1128,7 +1137,7 @@ impl BufferKindRegistry {
             name: "git_commit_message".into(),
             policies: BufferPolicies::writable_scratch_text(),
             action_dispatch: ActionDispatch::Disabled,
-            save_dispatch: SaveDispatch::Native(builtin_save),
+            save_dispatch: SaveDispatch::GitCommitMessage,
             display_name: DisplayNameStrategy::Label("[Git Commit]".into()),
             help_lines: None,
             on_close: CloseHandler::NOOP,
@@ -1159,7 +1168,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Git Blame]".into()),
             help_lines: Some(blame_help.into()),
             on_close: CloseHandler::NOOP,
-            reload_dispatch: ReloadDispatch::Native,
+            reload_dispatch: ReloadDispatch::GitBlame,
             state_key: GIT_BLAME_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1183,7 +1192,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Git Log]".into()),
             help_lines: Some(log_help.into()),
             on_close: CloseHandler::NOOP,
-            reload_dispatch: ReloadDispatch::Native,
+            reload_dispatch: ReloadDispatch::GitLog,
             state_key: GIT_LOG_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1213,7 +1222,7 @@ impl BufferKindRegistry {
                 ..BufferPolicies::read_only_panel()
             },
             action_dispatch: ActionDispatch::Disabled,
-            save_dispatch: SaveDispatch::Native(builtin_save),
+            save_dispatch: SaveDispatch::GitRebaseTodo,
             display_name: DisplayNameStrategy::Label("[Git Rebase Todo]".into()),
             help_lines: Some(rebase_help.into()),
             on_close: CloseHandler::NOOP,
@@ -1236,7 +1245,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Buffers]".into()),
             help_lines: None,
             on_close: CloseHandler::NOOP,
-            reload_dispatch: ReloadDispatch::Native,
+            reload_dispatch: ReloadDispatch::BufferList,
             state_key: BUFFER_LIST_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1257,7 +1266,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::FileName,
             help_lines: Some(undo_file_view_help.into()),
             on_close: CloseHandler::NOOP,
-            reload_dispatch: ReloadDispatch::Native,
+            reload_dispatch: ReloadDispatch::UndoFileView,
             state_key: UNDO_FILE_VIEW_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1279,7 +1288,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::FileName,
             help_lines: Some(image_view_help.into()),
             on_close: CloseHandler::NOOP,
-            reload_dispatch: ReloadDispatch::Native,
+            reload_dispatch: ReloadDispatch::ImageAsText,
             state_key: IMAGE_VIEW_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,

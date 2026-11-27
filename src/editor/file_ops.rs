@@ -1,54 +1,9 @@
 use super::Editor;
+use crate::document::runtime::ReloadDispatch;
 use crate::document::DocumentId;
-use crate::error::{ErrorType, RiftError};
+use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use crate::job_manager::jobs::file_operations::FileLoadMode;
 use crate::term::TerminalBackend;
-
-pub(super) type NativeSaveHandler<T> =
-    fn(&mut Editor<T>, DocumentId) -> crate::document::runtime::SaveResult;
-
-pub(super) fn native_save_handlers<T: TerminalBackend>(
-) -> std::collections::HashMap<crate::document::runtime::BufferKindId, NativeSaveHandler<T>> {
-    use crate::document::runtime::BufferKindId;
-
-    let mut handlers = std::collections::HashMap::new();
-    handlers.insert(
-        BufferKindId::DIRECTORY,
-        Editor::apply_directory_diff as NativeSaveHandler<T>,
-    );
-    handlers.insert(
-        BufferKindId::GIT_COMMIT_MESSAGE,
-        Editor::apply_git_commit_message as NativeSaveHandler<T>,
-    );
-    handlers.insert(
-        BufferKindId::CLIPBOARD,
-        Editor::apply_clipboard_diff as NativeSaveHandler<T>,
-    );
-    handlers.insert(
-        BufferKindId::CLIPBOARD_ENTRY,
-        Editor::apply_clipboard_entry_save as NativeSaveHandler<T>,
-    );
-    handlers.insert(
-        BufferKindId::GIT_REBASE_TODO,
-        Editor::apply_git_rebase_todo as NativeSaveHandler<T>,
-    );
-    handlers
-}
-
-// One table holds both shapes; only the undo-file and image views can fail.
-pub(super) enum NativeReloadHandler<T: TerminalBackend> {
-    Infallible(fn(&mut Editor<T>, DocumentId)),
-    Fallible(fn(&mut Editor<T>, DocumentId) -> Result<(), RiftError>),
-}
-
-// Manual impls: derive would require `T: Copy`, which the backend does not satisfy.
-impl<T: TerminalBackend> Clone for NativeReloadHandler<T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<T: TerminalBackend> Copy for NativeReloadHandler<T> {}
 
 fn reload_undo_file_view_handler<T: TerminalBackend>(
     editor: &mut Editor<T>,
@@ -123,55 +78,55 @@ fn reload_git_blame<T: TerminalBackend>(editor: &mut Editor<T>, doc_id: Document
     editor.job_manager.spawn(job);
 }
 
-pub(super) fn native_reload_handlers<T: TerminalBackend>(
-) -> std::collections::HashMap<crate::document::runtime::BufferKindId, NativeReloadHandler<T>> {
-    use crate::document::runtime::BufferKindId;
-
-    let mut handlers = std::collections::HashMap::new();
-    handlers.insert(
-        BufferKindId::UNDO_FILE_VIEW,
-        NativeReloadHandler::Fallible(reload_undo_file_view_handler::<T>),
-    );
-    handlers.insert(
-        BufferKindId::IMAGE_VIEW,
-        NativeReloadHandler::Fallible(reopen_image_as_text::<T>),
-    );
-    handlers.insert(
-        BufferKindId::DIRECTORY,
-        NativeReloadHandler::Infallible(Editor::refresh_directory),
-    );
-    handlers.insert(
-        BufferKindId::UNDO_TREE,
-        NativeReloadHandler::Infallible(Editor::refresh_undotree),
-    );
-    handlers.insert(
-        BufferKindId::MESSAGES,
-        NativeReloadHandler::Infallible(Editor::refresh_messages_buffer),
-    );
-    handlers.insert(
-        BufferKindId::CLIPBOARD,
-        NativeReloadHandler::Infallible(Editor::refresh_clipboard_buffer),
-    );
-    handlers.insert(
-        BufferKindId::GIT_STATUS,
-        NativeReloadHandler::Infallible(reload_git_status::<T>),
-    );
-    handlers.insert(
-        BufferKindId::GIT_LOG,
-        NativeReloadHandler::Infallible(reload_git_log::<T>),
-    );
-    handlers.insert(
-        BufferKindId::GIT_BLAME,
-        NativeReloadHandler::Infallible(reload_git_blame::<T>),
-    );
-    handlers.insert(
-        BufferKindId::BUFFER_LIST,
-        NativeReloadHandler::Infallible(Editor::refresh_buffer_list),
-    );
-    handlers
-}
-
 impl<T: TerminalBackend> Editor<T> {
+    pub(super) fn reload_document(
+        &mut self,
+        buf: DocumentId,
+        force: bool,
+    ) -> Result<(), RiftError> {
+        let Some(doc) = self.document_manager.get_document(buf) else {
+            return Ok(());
+        };
+        match doc.descriptor().reload_dispatch {
+            ReloadDispatch::File => {
+                let Some(path) = doc.path() else {
+                    return Err(RiftError::new(
+                        ErrorType::Execution,
+                        crate::constants::errors::NO_PATH,
+                        "No file name",
+                    ));
+                };
+                if !force && doc.is_dirty() {
+                    return Err(RiftError {
+                        severity: ErrorSeverity::Warning,
+                        kind: ErrorType::Execution,
+                        code: crate::constants::errors::UNSAVED_CHANGES.to_string(),
+                        message: crate::constants::errors::MSG_UNSAVED_CHANGES.to_string(),
+                    });
+                }
+                self.start_file_load(buf, path.to_path_buf(), FileLoadMode::Reload);
+            }
+            ReloadDispatch::Directory => self.refresh_directory(buf),
+            ReloadDispatch::UndoTree => self.refresh_undotree(buf),
+            ReloadDispatch::Messages => self.refresh_messages_buffer(buf),
+            ReloadDispatch::Clipboard => self.refresh_clipboard_buffer(buf),
+            ReloadDispatch::GitStatus => reload_git_status(self, buf),
+            ReloadDispatch::GitBlame => reload_git_blame(self, buf),
+            ReloadDispatch::GitLog => reload_git_log(self, buf),
+            ReloadDispatch::BufferList => self.refresh_buffer_list(buf),
+            ReloadDispatch::UndoFileView => reload_undo_file_view_handler(self, buf)?,
+            ReloadDispatch::ImageAsText => reopen_image_as_text(self, buf)?,
+            ReloadDispatch::Unsupported => {
+                return Err(RiftError::new(
+                    ErrorType::Execution,
+                    crate::constants::errors::RELOAD_UNSUPPORTED,
+                    crate::constants::errors::MSG_RELOAD_UNSUPPORTED,
+                ));
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn do_quit(&mut self, force: bool) {
         let in_clipboard_entry = self
             .document_manager

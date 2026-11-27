@@ -1,8 +1,6 @@
-use super::file_ops::NativeReloadHandler;
 use super::Editor;
 use crate::action::{Action, EditorAction};
-use crate::document::DocumentId;
-use crate::error::{ErrorSeverity, ErrorType, RiftError};
+use crate::error::{ErrorType, RiftError};
 use crate::job_manager::jobs::file_operations::FileLoadMode;
 use crate::term::TerminalBackend;
 
@@ -97,71 +95,6 @@ impl<T: TerminalBackend> Editor<T> {
             doc_id
         };
         self.focus_document(target)
-    }
-
-    pub(super) fn reload_document(
-        &mut self,
-        buf: DocumentId,
-        force: bool,
-    ) -> Result<(), RiftError> {
-        let Some(doc) = self.document_manager.get_document(buf) else {
-            return Ok(());
-        };
-        if doc.buffer_kind_id() == crate::document::runtime::BufferKindId::FILE {
-            let Some(path) = doc.path() else {
-                return Err(RiftError::new(
-                    ErrorType::Execution,
-                    crate::constants::errors::NO_PATH,
-                    "No file name",
-                ));
-            };
-            if !force && doc.is_dirty() {
-                return Err(RiftError {
-                    severity: ErrorSeverity::Warning,
-                    kind: ErrorType::Execution,
-                    code: crate::constants::errors::UNSAVED_CHANGES.to_string(),
-                    message: crate::constants::errors::MSG_UNSAVED_CHANGES.to_string(),
-                });
-            }
-            self.start_file_load(buf, path.to_path_buf(), FileLoadMode::Reload);
-        } else {
-            let kind_id = doc.buffer_kind_id();
-            let dispatch = doc.descriptor().reload_dispatch;
-            self.reload_native_document(buf, kind_id, dispatch)?;
-        }
-        Ok(())
-    }
-
-    fn reload_native_document(
-        &mut self,
-        buf: DocumentId,
-        kind_id: crate::document::runtime::BufferKindId,
-        reload_dispatch: crate::document::runtime::ReloadDispatch,
-    ) -> Result<(), RiftError> {
-        match reload_dispatch {
-            crate::document::runtime::ReloadDispatch::Native => {
-                let handler = self.native_reload_handlers.get(&kind_id).copied();
-                match handler {
-                    Some(NativeReloadHandler::Infallible(handler)) => handler(self, buf),
-                    Some(NativeReloadHandler::Fallible(handler)) => handler(self, buf)?,
-                    None => {
-                        return Err(RiftError::new(
-                            ErrorType::Execution,
-                            crate::constants::errors::RELOAD_UNSUPPORTED,
-                            crate::constants::errors::MSG_RELOAD_UNSUPPORTED,
-                        ))
-                    }
-                }
-            }
-            crate::document::runtime::ReloadDispatch::Unsupported => {
-                return Err(RiftError::new(
-                    ErrorType::Execution,
-                    crate::constants::errors::RELOAD_UNSUPPORTED,
-                    crate::constants::errors::MSG_RELOAD_UNSUPPORTED,
-                ));
-            }
-        }
-        Ok(())
     }
 
     /// # Errors
