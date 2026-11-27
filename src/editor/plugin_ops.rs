@@ -675,7 +675,7 @@ impl<T: TerminalBackend> Editor<T> {
         match mutation {
             PluginMutation::SaveBuffer { buf } => {
                 if self.document_manager.get_document(buf).is_some() {
-                    self.save_document_to(buf, None);
+                    self.save_buffer(buf, None);
                 } else {
                     self.drop_plugin_write(buf, "save");
                 }

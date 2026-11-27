@@ -1078,7 +1078,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.raise(crate::plugin::events::EventPayload::BufSavePost {
             buf: res.document_id,
-            path: res.path.clone(),
+            path: Some(res.path.clone()),
         });
         #[cfg(feature = "lsp")]
         self.lsp_manager.did_save(&res.path, None);

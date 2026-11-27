@@ -558,21 +558,20 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    /// `:w`/`:wq` on a `GitCommitMessage` buffer: commit (or amend) with the
-    /// buffer's text, then close it.
-    pub(super) fn apply_git_commit_message(&mut self) {
+    pub(super) fn apply_git_commit_message(&mut self) -> crate::document::runtime::SaveResult {
+        use crate::document::runtime::SaveResult;
         let (repo_root, target, message, doc_id) = {
             let Some(doc) = self.document_manager.active_document() else {
-                return;
+                return SaveResult::Rejected;
             };
             if !doc.is_git_commit_message() {
-                return;
+                return SaveResult::Rejected;
             }
             let (Some(repo_root), Some(target)) = (
                 doc.git_repo_root().map(Path::to_path_buf),
                 doc.git_commit_target().cloned(),
             ) else {
-                return;
+                return SaveResult::Rejected;
             };
             let message: String = doc
                 .buffer()
@@ -591,24 +590,24 @@ impl<T: TerminalBackend> Editor<T> {
                 self.close_buffer(doc_id, crate::document::manager::RemovalIntent::Normal)
             {
                 self.notify_error(e);
-                return;
+                return SaveResult::Failed;
             }
             self.apply_rebase_plan_reword(rebase_doc_id, &sha, message);
-            return;
+            return SaveResult::Saved;
         }
         if message.trim().is_empty() {
             self.notify(
                 crate::notification::NotificationType::Error,
                 "Aborting commit due to empty commit message".to_string(),
             );
-            return;
+            return SaveResult::Rejected;
         }
 
         let tmp_path = match crate::git::git_dir(&repo_root) {
             Ok(dir) => dir.join("RIFT_COMMIT_EDITMSG"),
             Err(e) => {
                 self.notify_error(e);
-                return;
+                return SaveResult::Failed;
             }
         };
         if let Err(e) = std::fs::write(&tmp_path, &message) {
@@ -617,7 +616,7 @@ impl<T: TerminalBackend> Editor<T> {
                 "GIT_COMMIT_MSG_WRITE_FAILED",
                 e.to_string(),
             ));
-            return;
+            return SaveResult::Failed;
         }
 
         let tmp_path_str = tmp_path.to_string_lossy().into_owned();
@@ -635,8 +634,14 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = std::fs::remove_file(&tmp_path);
 
         match result {
-            Ok(_) => self.finish_commit(doc_id, &target, &repo_root),
-            Err(e) => self.notify_error(e),
+            Ok(_) => {
+                self.finish_commit(doc_id, &target, &repo_root);
+                SaveResult::Saved
+            }
+            Err(e) => {
+                self.notify_error(e);
+                SaveResult::Failed
+            }
         }
     }
 

@@ -29,7 +29,7 @@ fn save_does_not_write_another_buffers_content_when_a_bufsavepre_hook_closes_the
             force: true,
         });
 
-    editor.do_save();
+    editor.save_buffer(editor.active_document_id(), None);
     drain_jobs(&mut editor);
 
     if let Ok(written) = std::fs::read_to_string(&path) {

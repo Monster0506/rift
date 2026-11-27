@@ -31,16 +31,14 @@ pub(crate) enum EventPayload {
         buf: DocumentId,
     },
 
-    /// A buffer is about to be written to disk.
     BufSavePre {
         buf: DocumentId,
-        path: std::path::PathBuf,
+        path: Option<std::path::PathBuf>,
     },
 
-    /// A buffer was successfully written to disk.
     BufSavePost {
         buf: DocumentId,
-        path: std::path::PathBuf,
+        path: Option<std::path::PathBuf>,
     },
 
     /// A buffer was reloaded from disk (e.g. after an external change).
@@ -195,7 +193,9 @@ impl EventPayload {
             }
             Self::BufSavePre { buf, path } | Self::BufSavePost { buf, path } => {
                 t.set("buf", lua_int(buf.get()))?;
-                t.set("path", path.to_string_lossy().as_ref())?;
+                if let Some(path) = path {
+                    t.set("path", path.to_string_lossy().as_ref())?;
+                }
             }
             Self::CursorMoved { buf, row, col } => {
                 t.set("buf", lua_int(buf.get()))?;

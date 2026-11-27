@@ -352,12 +352,56 @@ fn buffer_kind_on_action_reads_the_edited_lines() {
 fn buffer_kind_on_save_reads_the_edited_lines() {
     let mut editor = editor_with_probe_buffer();
 
-    editor.do_save();
+    editor.save_buffer(editor.active_document_id(), None);
 
     lua_ok(
         &editor,
         "assert(_G.seen == 'edited first', tostring(_G.seen))",
     );
+}
+
+#[test]
+fn special_buffer_save_brackets_the_kind_handler() {
+    let mut editor = editor_with_probe_buffer();
+    lua_ok(
+        &editor,
+        "rift.on('BufSavePre', function(ev) \
+           assert(ev.buf == rift.current_buf() and ev.path == nil) \
+           _G.seen = 'before' \
+         end) \
+         rift.on('BufSavePost', function(ev) \
+           assert(ev.buf == rift.current_buf() and ev.path == nil) \
+           _G.seen = _G.seen .. ':after' \
+         end)",
+    );
+
+    editor.execute_command_line("w");
+
+    lua_ok(
+        &editor,
+        "assert(_G.seen == 'edited first:after', tostring(_G.seen))",
+    );
+}
+
+#[test]
+fn write_and_quit_saves_the_changes_made_by_the_pre_save_hook() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("probe.txt");
+    std::fs::write(&path, "saved\n").unwrap();
+    let mut editor = lua_editor("");
+    open_and_load(&mut editor, &path);
+    lua_ok(
+        &editor,
+        "rift.on('BufSavePre', function() rift.append_lines({ 'hook' }) end)",
+    );
+
+    editor.execute_command_line("wq");
+    drain_jobs(&mut editor);
+
+    assert!(std::fs::read_to_string(&path)
+        .unwrap()
+        .lines()
+        .any(|line| line == "hook"));
 }
 
 #[test]

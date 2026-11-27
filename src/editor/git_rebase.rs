@@ -301,14 +301,14 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    /// `:w` on a `GitRebaseTodo` buffer: start (if not yet running) or resume (if paused) executing it. Runs the buffer's structured `steps`/`message_overrides` directly; the rendered text is a view, not re-parsed.
-    pub(super) fn apply_git_rebase_todo(&mut self) {
+    pub(super) fn apply_git_rebase_todo(&mut self) -> crate::document::runtime::SaveResult {
+        use crate::document::runtime::SaveResult;
         let (repo_root, base, branch, pause, steps, message_overrides) = {
             let Some(doc) = self.document_manager.active_document() else {
-                return;
+                return SaveResult::Rejected;
             };
             if !doc.is_git_rebase_todo() {
-                return;
+                return SaveResult::Rejected;
             }
             let (Some(repo_root), Some(base), Some(branch), Some(steps), Some(message_overrides)) = (
                 doc.git_repo_root().map(Path::to_path_buf),
@@ -318,7 +318,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .map(<[crate::git::rebase::RebaseStep]>::to_vec),
                 doc.git_rebase_message_overrides().cloned(),
             ) else {
-                return;
+                return SaveResult::Rejected;
             };
             let pause = doc.git_rebase_pause().cloned();
             (repo_root, base, branch, pause, steps, message_overrides)
@@ -332,34 +332,33 @@ impl<T: TerminalBackend> Editor<T> {
                         NotificationType::Info,
                         "Nothing to rebase (empty todo)".to_string(),
                     );
-                    return;
+                    return SaveResult::Rejected;
                 }
                 if let Err(e) =
                     crate::git::run_checked(&repo_root, &["checkout", "--detach", &base])
                 {
                     self.notify_error(e);
-                    return;
+                    return SaveResult::Failed;
                 }
-                self.run_rebase_steps(doc_id, &repo_root, &branch, steps, &message_overrides);
+                self.run_rebase_steps(doc_id, &repo_root, &branch, steps, &message_overrides)
             }
             Some(RebasePause::Edit { remaining }) => {
-                self.run_rebase_steps(doc_id, &repo_root, &branch, remaining, &message_overrides);
+                self.run_rebase_steps(doc_id, &repo_root, &branch, remaining, &message_overrides)
             }
             Some(RebasePause::Conflict { remaining }) => {
                 match crate::git::run(&repo_root, &["cherry-pick", "--continue"]) {
-                    Ok(out) if out.success => {
-                        self.run_rebase_steps(
-                            doc_id,
-                            &repo_root,
-                            &branch,
-                            remaining,
-                            &message_overrides,
-                        );
-                    }
+                    Ok(out) if out.success => self.run_rebase_steps(
+                        doc_id,
+                        &repo_root,
+                        &branch,
+                        remaining,
+                        &message_overrides,
+                    ),
                     _ if cherry_pick_in_progress(&repo_root) => {
                         self.notify(NotificationType::Warning,
                         "Still conflicted — resolve remaining conflicts (see <Space>gs), stage them, then :w again"
                             .to_string(),);
+                        SaveResult::Failed
                     }
                     Ok(out) => {
                         self.notify_error(RiftError::new(
@@ -367,8 +366,12 @@ impl<T: TerminalBackend> Editor<T> {
                             "CHERRY_PICK_CONTINUE_FAILED",
                             out.stderr,
                         ));
+                        SaveResult::Failed
                     }
-                    Err(e) => self.notify_error(e),
+                    Err(e) => {
+                        self.notify_error(e);
+                        SaveResult::Failed
+                    }
                 }
             }
             #[cfg(test)]
@@ -377,6 +380,7 @@ impl<T: TerminalBackend> Editor<T> {
                     NotificationType::Info,
                     "Finish the reword commit message buffer first".to_string(),
                 );
+                SaveResult::Rejected
             }
         }
     }
@@ -471,7 +475,8 @@ impl<T: TerminalBackend> Editor<T> {
         branch: &str,
         steps: Vec<RebaseStep>,
         message_overrides: &std::collections::HashMap<String, String>,
-    ) {
+    ) -> crate::document::runtime::SaveResult {
+        use crate::document::runtime::SaveResult;
         match advance_rebase(repo_root, steps, message_overrides) {
             RebaseAdvance::Completed { new_tip } => {
                 let branch_ref = format!("refs/heads/{branch}");
@@ -479,11 +484,11 @@ impl<T: TerminalBackend> Editor<T> {
                     crate::git::run_checked(repo_root, &["update-ref", &branch_ref, &new_tip])
                 {
                     self.notify_error(e);
-                    return;
+                    return SaveResult::Failed;
                 }
                 if let Err(e) = crate::git::run_checked(repo_root, &["checkout", branch]) {
                     self.notify_error(e);
-                    return;
+                    return SaveResult::Failed;
                 }
                 self.notify(
                     NotificationType::Info,
@@ -498,6 +503,7 @@ impl<T: TerminalBackend> Editor<T> {
                     self.notify_error(e);
                 }
                 self.refresh_git_status_buffers_for(repo_root);
+                SaveResult::Saved
             }
             RebaseAdvance::PausedForEdit { remaining } => {
                 self.render_rebase_pause(
@@ -508,6 +514,7 @@ impl<T: TerminalBackend> Editor<T> {
                     "Paused for edit. Edit files normally, stage with <Space>gs, then ca/cw to amend and resume (or :w here to continue without amending).",
                 );
                 self.notify(NotificationType::Info, "Rebase paused for edit".to_string());
+                SaveResult::Saved
             }
             #[cfg(test)]
             RebaseAdvance::PausedForReword { message, remaining } => {
@@ -522,6 +529,7 @@ impl<T: TerminalBackend> Editor<T> {
                     },
                     &message,
                 );
+                SaveResult::Saved
             }
             RebaseAdvance::Conflict { remaining } => {
                 self.render_rebase_pause(
@@ -535,9 +543,11 @@ impl<T: TerminalBackend> Editor<T> {
                     NotificationType::Warning,
                     "Rebase paused: conflict".to_string(),
                 );
+                SaveResult::Failed
             }
             RebaseAdvance::Error(e) => {
                 self.notify_error(e);
+                SaveResult::Failed
             }
         }
     }

@@ -995,25 +995,31 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(super) fn apply_directory_diff(&mut self) {
+    pub(super) fn apply_directory_diff(&mut self) -> crate::document::runtime::SaveResult {
+        use crate::document::runtime::SaveResult;
         let (dir_doc_id, dir_path, dir_show_hidden, diff) = {
             let Some(doc) = self.document_manager.active_document() else {
-                return;
+                return SaveResult::Rejected;
             };
             let Some(path) = doc.directory_path().cloned() else {
-                return;
+                return SaveResult::Rejected;
             };
             let Some(show_hidden) = doc.directory_show_hidden() else {
-                return;
+                return SaveResult::Rejected;
             };
             (doc.id, path, show_hidden, doc.parse_directory_diff())
         };
 
         if diff.renames.is_empty() && diff.deletes.is_empty() && diff.creates.is_empty() {
-            return;
+            return SaveResult::Saved;
         }
 
         let errors = apply_directory_diff_to_fs(&dir_path, &diff);
+        let result = if errors.is_empty() {
+            SaveResult::Saved
+        } else {
+            SaveResult::Failed
+        };
 
         for err in errors {
             self.notify(crate::notification::NotificationType::Error, err);
@@ -1025,6 +1031,7 @@ impl<T: TerminalBackend> Editor<T> {
             dir_show_hidden,
         );
         self.job_manager.spawn(reload);
+        result
     }
 }
 

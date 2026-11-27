@@ -57,7 +57,7 @@ fn write_after_opening_nonexistent_path_creates_the_file_on_disk() {
     let mut editor = create_editor();
     editor.open_file(Some(path_str), false).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('h')));
-    editor.do_save();
+    editor.save_buffer(editor.active_document_id(), None);
     drain_jobs(&mut editor);
 
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "h");

@@ -140,10 +140,10 @@ impl<T: TerminalBackend> Editor<T> {
                 self.do_quit(bangs > 0);
             }
             ExecutionResult::Write { path } => {
-                self.save_to(path);
+                self.save_buffer(self.active_document_id(), path);
             }
             ExecutionResult::WriteAndQuit { path } => {
-                self.save_quit_to(path);
+                self.save_and_quit(path);
             }
             ExecutionResult::Redraw => self.redraw_from_command(),
             ExecutionResult::Reload => self.load_plugins(),

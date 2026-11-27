@@ -417,11 +417,11 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::Save => {
-                self.do_save();
+                self.save_buffer(self.active_document_id(), None);
                 true
             }
             EditorAction::SaveAndQuit => {
-                self.do_save_and_quit();
+                self.save_and_quit(None);
                 true
             }
             EditorAction::OpenExplorer => {
