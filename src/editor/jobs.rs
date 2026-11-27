@@ -66,7 +66,7 @@ impl<T: TerminalBackend> Editor<T> {
             crate::perf_span!(
                 "syntax_job_buffer_clone",
                 crate::perf::PerfFields {
-                    bytes: Some(u32::try_from(doc.buffer.byte_len()).unwrap_or(u32::MAX)),
+                    bytes: Some(u32::try_from(doc.buffer().byte_len()).unwrap_or(u32::MAX)),
                     ..Default::default()
                 }
             );
@@ -157,7 +157,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.cancel_pending_syntax_reparse(doc_id);
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             if doc.syntax.take().is_some() {
-                self.pending_syntax_updated.insert(doc_id);
+                self.raise_syntax_updated(doc_id);
             }
         }
     }
@@ -1277,7 +1277,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .with_syntax(|syntax, buffer| syntax.update_from_result(result, buffer))
                 .is_some()
         {
-            self.pending_syntax_updated.insert(doc.id);
+            self.raise_syntax_updated(doc_id);
         }
 
         self.scheduler.syntax_reparse.finish(doc_id, id);

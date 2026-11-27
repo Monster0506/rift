@@ -123,22 +123,11 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(super) fn flush_pending_syntax_updated(&mut self) {
-        for buf in std::mem::take(&mut self.pending_syntax_updated) {
-            let lang = self
-                .document_manager
-                .get_document(buf)
-                .and_then(|doc| doc.syntax.as_ref())
-                .map(|syntax| syntax.language_name.clone());
-            self.raise(crate::plugin::events::EventPayload::SyntaxUpdated { buf, lang });
-        }
-    }
-
     pub(super) fn drain_syntax_sync(&mut self) {
         for (doc_id, notice) in self.document_manager.take_syntax_notices() {
             if notice.completed {
                 self.cancel_pending_syntax_reparse(doc_id);
-                self.pending_syntax_updated.insert(doc_id);
+                self.raise_syntax_updated(doc_id);
             }
             if notice.deferred {
                 self.debounce_syntax_reparse(doc_id);

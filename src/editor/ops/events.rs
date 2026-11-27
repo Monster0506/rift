@@ -86,10 +86,18 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    pub(crate) fn raise_syntax_updated(&mut self, buf: crate::document::DocumentId) {
+        let lang = self
+            .document_manager
+            .get_document(buf)
+            .and_then(|doc| doc.syntax.as_ref())
+            .map(|syntax| syntax.language_name.clone());
+        self.raise(EventPayload::SyntaxUpdated { buf, lang });
+    }
+
     pub(crate) fn deliver_frame_events(&mut self) {
         self.deliver_document_changes();
         self.drain_syntax_sync();
-        self.flush_pending_syntax_updated();
         let mut events = std::mem::take(&mut self.frame_events);
         crate::perf_span!(
             "plugin_dispatch_buffer_changes",
