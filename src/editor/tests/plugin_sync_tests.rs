@@ -1218,6 +1218,27 @@ fn closed_buffer_drops_out_of_the_snapshot() {
 }
 
 #[test]
+fn writing_to_a_buffer_closed_in_the_same_batch_logs_without_a_toast() {
+    use crate::notification::{MessageEntry, NotificationType};
+    let (mut editor, _, second) = editor_with_two_buffers();
+    lua_ok(
+        &editor,
+        "rift.close_buf(true); rift.set_buffer_var(nil, 'probe', 'discarded')",
+    );
+    editor.apply_plugin_mutations();
+
+    let expected = format!("plugin set_buffer_var skipped: buffer {second} is closed");
+    assert!(editor.state.notifications.message_log().iter().any(|entry| {
+        matches!(entry, MessageEntry::Notification { kind: NotificationType::Info, message, .. } if message == &expected)
+    }));
+    assert!(!editor
+        .state
+        .notifications
+        .iter_active()
+        .any(|notice| notice.message == expected));
+}
+
+#[test]
 fn scratch_open_and_close_expose_the_buffer_being_left() {
     let mut editor = lua_editor("first\n");
     let first = editor.active_document_id().get();

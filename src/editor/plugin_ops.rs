@@ -486,8 +486,10 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn drop_plugin_write(&mut self, buf: crate::document::DocumentId, write: &str) {
-        self.state.notifications.log(
-            crate::notification::NotificationType::Info,
+        self.notify(
+            super::ops::notify::NotificationDelivery::LogOnly(
+                crate::notification::NotificationType::Info,
+            ),
             format!("plugin {write} skipped: buffer {} is closed", buf.get()),
         );
     }

@@ -6,7 +6,7 @@ pub(crate) use events::EditorEvent;
 mod ex;
 mod files;
 mod lsp;
-mod notify;
+pub(super) mod notify;
 mod options;
 pub(in crate::editor) mod quit;
 pub(super) mod save;
