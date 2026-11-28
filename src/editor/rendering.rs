@@ -347,8 +347,11 @@ impl<T: TerminalBackend> Editor<T> {
         #[cfg(any(feature = "plugins", feature = "lsp"))]
         self.render_popup();
 
+        self.render_clipboard_tooltip();
         if self.post_paste_state.is_some() {
-            self.render_clipboard_tooltip();
+            self.render_system
+                .compositor
+                .clear_layer(crate::layer::LayerPriority::ANNOTATION_TOOLTIP);
         } else {
             let cursor_row = self.cursor_screen_row();
             self.render_annotation_tooltip(cursor_row);
@@ -630,14 +633,19 @@ impl<T: TerminalBackend> Editor<T> {
             "render_clipboard_tooltip",
             crate::perf::PerfFields::default()
         );
-        let selected = self.post_paste_state.as_ref().map_or(0, |s| s.ring_index);
+        let Some(selected) = self.post_paste_state.as_ref().map(|s| s.ring_index) else {
+            self.render_system
+                .compositor
+                .clear_layer(crate::layer::LayerPriority::CLIPBOARD_TOOLTIP);
+            return;
+        };
         let foreground = self.state.settings.editor_fg();
         let background = self.state.settings.editor_bg();
         self.system_clipboard_cache.refresh_if_stale();
         let layer = self
             .render_system
             .compositor
-            .get_layer_mut(crate::layer::LayerPriority::TOOLTIP);
+            .get_layer_mut(crate::layer::LayerPriority::CLIPBOARD_TOOLTIP);
         layer.clear();
         crate::clipboard::ClipboardTooltip::render(
             &self.clipboard_ring,
@@ -1575,7 +1583,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.render_system
             .compositor
-            .clear_layer(LayerPriority::TOOLTIP);
+            .clear_layer(LayerPriority::ANNOTATION_TOOLTIP);
         if tip.is_none() && affordance.is_none() {
             return;
         }
@@ -1583,7 +1591,7 @@ impl<T: TerminalBackend> Editor<T> {
         let layer = self
             .render_system
             .compositor
-            .get_layer_mut(LayerPriority::TOOLTIP);
+            .get_layer_mut(LayerPriority::ANNOTATION_TOOLTIP);
         let screen_rows = layer.rows();
         let wrap_width = MAX_WIDTH.min(layer.cols().saturating_sub(4)).max(1);
         let mut rows: Vec<Vec<Cell>> = Vec::new();
@@ -1649,7 +1657,7 @@ impl<T: TerminalBackend> Editor<T> {
         if !is_dir {
             self.render_system
                 .compositor
-                .clear_layer(LayerPriority::HOVER);
+                .clear_layer(LayerPriority::EXPLORER_DIFF);
             return;
         }
 
@@ -1661,7 +1669,7 @@ impl<T: TerminalBackend> Editor<T> {
         if diff.renames.is_empty() && diff.deletes.is_empty() && diff.creates.is_empty() {
             self.render_system
                 .compositor
-                .clear_layer(LayerPriority::HOVER);
+                .clear_layer(LayerPriority::EXPLORER_DIFF);
             return;
         }
 
@@ -1714,7 +1722,7 @@ impl<T: TerminalBackend> Editor<T> {
         let layer = self
             .render_system
             .compositor
-            .get_layer_mut(LayerPriority::HOVER);
+            .get_layer_mut(LayerPriority::EXPLORER_DIFF);
         layer.clear();
         window.render_cells(layer, &rows);
     }

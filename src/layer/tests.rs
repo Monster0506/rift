@@ -32,8 +32,8 @@ fn test_layer_priority_ordering() {
     assert!(LayerPriority::CONTENT < LayerPriority::STATUS_BAR);
     assert!(LayerPriority::STATUS_BAR < LayerPriority::FLOATING_WINDOW);
     assert!(LayerPriority::FLOATING_WINDOW < LayerPriority::POPUP);
-    assert!(LayerPriority::POPUP < LayerPriority::HOVER);
-    assert!(LayerPriority::HOVER < LayerPriority::TOOLTIP);
+    assert!(LayerPriority::POPUP < LayerPriority::EXPLORER_DIFF);
+    assert!(LayerPriority::EXPLORER_DIFF < LayerPriority::ANNOTATION_TOOLTIP);
 }
 
 #[test]
@@ -179,7 +179,7 @@ fn test_compositor_get_layer() {
     assert!(compositor.get_layer(LayerPriority::CONTENT).is_some());
 
     // Non-existent layer
-    assert!(compositor.get_layer(LayerPriority::HOVER).is_none());
+    assert!(compositor.get_layer(LayerPriority::EXPLORER_DIFF).is_none());
 }
 
 #[test]
@@ -311,11 +311,11 @@ fn test_compositor_clear_layer() {
 fn test_compositor_remove_layer() {
     let mut compositor = LayerCompositor::new(3, 3);
 
-    compositor.get_layer_mut(LayerPriority::HOVER);
-    assert!(compositor.get_layer(LayerPriority::HOVER).is_some());
+    compositor.get_layer_mut(LayerPriority::EXPLORER_DIFF);
+    assert!(compositor.get_layer(LayerPriority::EXPLORER_DIFF).is_some());
 
-    compositor.remove_layer(LayerPriority::HOVER);
-    assert!(compositor.get_layer(LayerPriority::HOVER).is_none());
+    compositor.remove_layer(LayerPriority::EXPLORER_DIFF);
+    assert!(compositor.get_layer(LayerPriority::EXPLORER_DIFF).is_none());
 }
 
 #[test]

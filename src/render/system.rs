@@ -426,10 +426,10 @@ impl RenderSystem {
 
             self.world
                 .add_renderable(entity, Renderable::CompletionMenu(draw_state));
-            self.world.add_layer(entity, LayerPriority::HOVER);
+            self.world.add_layer(entity, LayerPriority::COMPLETION);
         } else if let Some(entity) = self.completion_entity.take() {
             self.world.destroy_entity(entity);
-            self.compositor.clear_layer(LayerPriority::HOVER);
+            self.compositor.clear_layer(LayerPriority::COMPLETION);
         }
     }
 

@@ -104,10 +104,10 @@ impl LayerPriority {
     /// Popup menus like autocomplete
     #[cfg(any(feature = "plugins", feature = "lsp", test))]
     pub(crate) const POPUP: Self = Self(30);
-    /// Hover information
-    pub(crate) const HOVER: Self = Self(40);
-    /// Tooltips and hints
-    pub(crate) const TOOLTIP: Self = Self(50);
+    pub(crate) const EXPLORER_DIFF: Self = Self(40);
+    pub(crate) const COMPLETION: Self = Self(45);
+    pub(crate) const ANNOTATION_TOOLTIP: Self = Self(50);
+    pub(crate) const CLIPBOARD_TOOLTIP: Self = Self(55);
     /// Notifications
     pub(crate) const NOTIFICATION: Self = Self(60);
     /// Software cursor

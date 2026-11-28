@@ -482,6 +482,43 @@ fn escape_in_command_mode_with_completion_dropdown_returns_to_normal() {
 }
 
 #[test]
+fn completion_dropdown_stays_drawn_across_unrelated_frames() {
+    use crate::command_line::commands::completion::CompletionCandidate;
+    use crate::state::CompletionSession;
+
+    let screen = |editor: &mut Editor<KeyQueue>| -> String {
+        editor
+            .render_system
+            .compositor
+            .get_composited_slice()
+            .iter()
+            .map(|cell| cell.to_char())
+            .collect()
+    };
+    let mut editor = editor_with_text("");
+    press(&mut editor, &keys(":se"));
+    let mut session = CompletionSession::new(
+        vec![CompletionCandidate {
+            text: "setlocal".into(),
+            description: "Set a buffer option".into(),
+            is_directory: false,
+        }],
+        0,
+    );
+    session.dropdown_open = true;
+    session.selected = Some(0);
+    editor.state.completion_session = Some(session);
+
+    editor.update_and_render().unwrap();
+    assert!(screen(&mut editor).contains("setlocal"));
+    editor.update_and_render().unwrap();
+    assert!(
+        screen(&mut editor).contains("setlocal"),
+        "a frame that does not change the menu must not erase it"
+    );
+}
+
+#[test]
 fn escape_in_search_mode_returns_to_normal() {
     let mut editor = editor_with_text("abc");
 
