@@ -225,6 +225,75 @@ fn yanking_a_directory_copies_its_tree_without_removing_the_source() {
 }
 
 #[test]
+fn visual_explorer_transfers_nonadjacent_rows_with_file_identity() {
+    for (op, moved) in [("Y", false), ("D", true)] {
+        let dir = fixture();
+        let destination = dir.path().join("sub");
+        std::fs::write(dir.path().join("c.txt"), b"CCC").unwrap();
+        std::fs::write(destination.join("stay.txt"), b"stay").unwrap();
+        let mut editor = explorer(dir.path());
+
+        goto_entry(&mut editor, "a.txt");
+        press(&mut editor, &keys("v<Esc>"));
+        goto_entry(&mut editor, "c.txt");
+        press(&mut editor, &keys(&format!("v{op}")));
+        assert_eq!(pending(&editor).deletes.len(), if moved { 2 } else { 0 });
+        goto_entry(&mut editor, "sub/");
+        press(&mut editor, &keys("<CR>"));
+        settle(&mut editor);
+
+        goto_entry(&mut editor, "inner.txt");
+        press(&mut editor, &keys("v<Esc>"));
+        goto_entry(&mut editor, "stay.txt");
+        press(&mut editor, &keys("vpp"));
+        let staged = pending(&editor);
+        assert_eq!(staged.transfers.len(), 2, "{op}: {staged:?}");
+        assert!(staged.creates.is_empty() && staged.deletes.is_empty());
+        assert!(dir.path().join("a.txt").exists());
+        assert!(dir.path().join("c.txt").exists());
+        assert!(!destination.join("a.txt").exists());
+        assert!(!destination.join("c.txt").exists());
+
+        press(&mut editor, &keys(":w<CR>"));
+        settle(&mut editor);
+
+        assert_eq!(dir.path().join("a.txt").exists(), !moved);
+        assert_eq!(dir.path().join("c.txt").exists(), !moved);
+        assert_eq!(std::fs::read(dir.path().join("b.txt")).unwrap(), b"BB");
+        assert_eq!(std::fs::read(destination.join("a.txt")).unwrap(), b"AAAA");
+        assert_eq!(std::fs::read(destination.join("c.txt")).unwrap(), b"CCC");
+        assert_eq!(std::fs::read(destination.join("inner.txt")).unwrap(), b"I");
+        assert_eq!(
+            std::fs::read(destination.join("stay.txt")).unwrap(),
+            b"stay"
+        );
+        if moved {
+            press(&mut editor, &keys("p"));
+            assert!(pending(&editor).is_empty());
+        }
+    }
+}
+
+#[test]
+fn linewise_normal_motion_captures_explorer_entries_for_copy() {
+    let dir = fixture();
+    let destination = dir.path().join("sub");
+    let mut editor = explorer(dir.path());
+    goto_entry(&mut editor, "a.txt");
+    press(&mut editor, &keys("yj"));
+    goto_entry(&mut editor, "sub/");
+    press(&mut editor, &keys("<CR>"));
+    settle(&mut editor);
+    press(&mut editor, &keys("p:w<CR>"));
+    settle(&mut editor);
+
+    for (name, text) in [("a.txt", b"AAAA".as_slice()), ("b.txt", b"BB".as_slice())] {
+        assert_eq!(std::fs::read(dir.path().join(name)).unwrap(), text);
+        assert_eq!(std::fs::read(destination.join(name)).unwrap(), text);
+    }
+}
+
+#[test]
 fn leaving_a_directory_with_unsaved_changes_is_refused() {
     let dir = fixture();
     let mut editor = explorer(dir.path());

@@ -53,24 +53,6 @@ fn region_clip(buf: &crate::buffer::TextBuffer, region: &Region) -> Clip {
     crate::clipboard::capture_text(buf, &range)
 }
 
-fn merge_spans(mut spans: Vec<(usize, usize, bool)>) -> Vec<(usize, usize)> {
-    spans.sort_unstable();
-    let mut merged: Vec<(usize, usize, bool)> = Vec::with_capacity(spans.len());
-    for (start, end, took) in spans {
-        match merged.last_mut() {
-            Some(last) if start < last.1 => {
-                last.1 = last.1.max(end);
-                if took && !last.2 {
-                    last.0 = last.0.saturating_sub(1);
-                    last.2 = true;
-                }
-            }
-            _ => merged.push((start, end, took)),
-        }
-    }
-    merged.into_iter().rev().map(|(s, e, _)| (s, e)).collect()
-}
-
 const EXPAND_CANDIDATES: &[(crate::text_objects::ObjectKind, u8)] = &[
     (crate::text_objects::ObjectKind::Word, 1),
     (crate::text_objects::ObjectKind::DoubleQuote, 1),
@@ -347,139 +329,50 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(super) fn try_run_set_aware_operator(&mut self, op: crate::action::OperatorType) -> bool {
-        use crate::action::OperatorType;
+    pub(super) fn change_selection(&mut self) -> bool {
+        use crate::command::Command;
 
-        let visual_kind = self.current_mode.visual_range_kind();
+        let visual = self.current_mode.visual_range_kind();
         if self.active_document().selections().is_empty()
-            && (visual_kind.is_none() || self.visual_anchor().is_none())
+            && (visual.is_none() || self.visual_anchor().is_none())
         {
             return false;
         }
-        match op {
-            OperatorType::Delete => self.run_set_delete(visual_kind),
-            OperatorType::Yank => {
-                let doc = self.active_document();
-                let clips: Vec<_> = doc
-                    .take_selection_batch()
-                    .into_iter()
-                    .map(|region| region_clip(doc.buffer(), &region))
-                    .collect();
-                let handled = !clips.is_empty();
-                for clip in clips {
-                    self.yank(clip);
-                }
-                self.refresh_clipboard_buffer_if_open();
-                handled
-            }
-            OperatorType::Change => {
-                use crate::command::Command;
-                let mut clips = Vec::new();
-                let handled = self.enter_multi_insert(
-                    Command::BeginInsert(crate::command::InsertEntry::AtCursor),
-                    |doc, region| {
-                        clips.push(region_clip(doc.buffer(), &region));
-                        let (start, end) = region.buffer_span(doc.buffer());
-                        let start = start.min(doc.buffer().len());
-                        let mut end = end.min(doc.buffer().len());
-                        if region.kind == RangeKind::Linewise {
-                            let last_line = doc
-                                .buffer()
-                                .line_index
-                                .get_line_at(region.anchor.max(region.cursor));
-                            if last_line + 1 < doc.buffer().get_total_lines() {
-                                end = end.saturating_sub(1).max(start);
-                            }
-                        }
-                        if start < end {
-                            let _ = doc.edit(Edit::delete(start..end), EditSource::User);
-                        }
-                        start
-                    },
-                );
-                let handled = match handled {
-                    Ok(handled) => handled,
-                    Err(error) => {
-                        self.notify_error(error.into());
-                        return true;
+        let mut clips = Vec::new();
+        let handled = self.enter_multi_insert(
+            Command::BeginInsert(crate::command::InsertEntry::AtCursor),
+            |doc, region| {
+                clips.push(region_clip(doc.buffer(), &region));
+                let (start, end) = region.buffer_span(doc.buffer());
+                let start = start.min(doc.buffer().len());
+                let mut end = end.min(doc.buffer().len());
+                if region.kind == RangeKind::Linewise {
+                    let last_line = doc
+                        .buffer()
+                        .line_index
+                        .get_line_at(region.anchor.max(region.cursor));
+                    if last_line + 1 < doc.buffer().get_total_lines() {
+                        end = end.saturating_sub(1).max(start);
                     }
-                };
-                for clip in clips {
-                    self.yank(clip);
                 }
-                self.refresh_clipboard_buffer_if_open();
-                handled
-            }
-        }
-    }
-
-    fn run_set_delete(&mut self, visual_kind: Option<RangeKind>) -> bool {
-        let ghost_cut = self.state.settings.editing().ghost_cut;
-        let Ok(mut doc) = self.active_document().write() else {
-            return true;
-        };
-        if let Some(kind) = visual_kind {
-            doc.bank_selection(kind);
-        }
-        let batch = doc.take_selection_batch();
-        if batch.is_empty() {
-            return false;
-        }
-        let (clips, mut ranges): (Vec<Clip>, Vec<(usize, usize)>) = {
-            let live: Vec<&crate::selection::Region> = batch
-                .iter()
-                .filter(|r| {
-                    let (s, e) = r.buffer_span(doc.buffer());
-                    r.kind == RangeKind::Linewise
-                        || s.min(doc.buffer().len()) < e.min(doc.buffer().len())
-                })
-                .collect();
-            let clips = live.iter().map(|r| region_clip(doc.buffer(), r)).collect();
-            let spans = live
-                .iter()
-                .map(|r| {
-                    let (start, end) = r.delete_span(doc.buffer());
-                    (
-                        start.min(doc.buffer().len()),
-                        end.min(doc.buffer().len()),
-                        start < r.buffer_span(doc.buffer()).0,
-                    )
-                })
-                .collect();
-            (clips, merge_spans(spans))
-        };
-        ranges.retain(|&(start, end)| start < end);
-        let ghost_clip = clips
-            .last()
-            .filter(|_| ghost_cut && doc.ghost_cut_allowed())
-            .cloned();
-        let ghosted = if let Some(ghost_clip) = ghost_clip {
-            let created = doc.create_ghosts(&ranges, ghost_clip);
-            if created {
-                if let Some(&(start, _)) = ranges.iter().min_by_key(|&&(start, _)| start) {
-                    let _ = doc.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
-                }
-            }
-            created.then_some(doc.id)
-        } else {
-            doc.edit_group("MultiRegion", |doc| {
-                for &(start, end) in &ranges {
+                if start < end {
                     let _ = doc.edit(Edit::delete(start..end), EditSource::User);
                 }
-            });
-            None
+                start
+            },
+        );
+        let handled = match handled {
+            Ok(handled) => handled,
+            Err(error) => {
+                self.notify_error(error.into());
+                return true;
+            }
         };
-        if let Some(id) = ghosted {
-            self.set_recent_ghost(Some(id));
-        }
         for clip in clips {
             self.yank(clip);
         }
         self.refresh_clipboard_buffer_if_open();
-        if visual_kind.is_some() {
-            self.set_mode(crate::mode::Mode::Normal);
-        }
-        true
+        handled
     }
 
     pub(super) fn replace_banked_regions(

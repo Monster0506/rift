@@ -672,7 +672,7 @@ fn cw_and_yw_stop_at_line_end() {
 
     let range = crate::document::ops::compute_motion_range(Motion::NextWord, 1, &mut doc, 24, None)
         .unwrap();
-    let (start, end) = crate::executor::range_to_offsets(&range, &doc, false);
+    let (start, end) = crate::executor::range_to_offsets(&range, &doc);
     assert_eq!((start, end), (4, 7));
 
     execute_command(

@@ -493,40 +493,49 @@ impl Document {
         }
     }
 
-    pub(crate) fn capture_directory_entries(
+    pub(crate) fn capture_directory_targets(
         &self,
-        count: usize,
+        targets: &crate::selection::TargetSet,
         kind: super::TransferKind,
     ) -> Option<Vec<super::DirectoryTransfer>> {
         let path = self.directory_path()?;
-        let first = self.buffer.line_index.get_line_at(self.buffer.cursor());
-        let end = first
-            .saturating_add(count)
-            .min(self.buffer.last_real_line() + 1);
-        (first..end)
-            .map(|line| {
-                let entry = self.directory_entry_at_line(line)?;
-                if entry.path.parent() != Some(path.as_path()) {
-                    return None;
-                }
-                let bytes = self.buffer.get_line_bytes(line);
-                let text = std::str::from_utf8(&bytes).ok()?.trim_end_matches('\n');
-                let name = if entry.is_dir {
-                    text.strip_suffix('/').unwrap_or(text)
-                } else {
-                    text
-                };
-                if name.trim().is_empty() {
-                    return None;
-                }
-                Some(super::DirectoryTransfer {
-                    source: entry.path.clone(),
-                    name: name.to_owned(),
-                    is_dir: entry.is_dir,
-                    kind,
-                })
-            })
-            .collect()
+        let entries: Vec<_> = targets
+            .targets()
+            .iter()
+            .rev()
+            .filter_map(|target| target.whole_rows(&self.buffer))
+            .flatten()
+            .filter_map(|line| self.capture_directory_row(line, kind, path))
+            .collect();
+        (!entries.is_empty()).then_some(entries)
+    }
+
+    fn capture_directory_row(
+        &self,
+        line: usize,
+        kind: super::TransferKind,
+        path: &std::path::Path,
+    ) -> Option<super::DirectoryTransfer> {
+        let entry = self.directory_entry_at_line(line)?;
+        if entry.path.parent() != Some(path) {
+            return None;
+        }
+        let bytes = self.buffer.get_line_bytes(line);
+        let text = std::str::from_utf8(&bytes).ok()?.trim_end_matches('\n');
+        let name = if entry.is_dir {
+            text.strip_suffix('/').unwrap_or(text)
+        } else {
+            text
+        };
+        if name.trim().is_empty() {
+            return None;
+        }
+        Some(super::DirectoryTransfer {
+            source: entry.path.clone(),
+            name: name.to_owned(),
+            is_dir: entry.is_dir,
+            kind,
+        })
     }
 
     pub(crate) fn put_directory_entries(

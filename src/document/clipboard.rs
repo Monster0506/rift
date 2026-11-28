@@ -144,35 +144,23 @@ impl Document {
         }
     }
 
-    fn delete_clipboard_rows(&mut self, count: usize) {
-        let line = self.buffer.line_index.get_line_at(self.buffer.cursor());
-        let mut start = self.buffer.line_index.get_start(line).unwrap_or(0);
-        let end = self
-            .buffer
-            .line_index
-            .get_start(line.saturating_add(count.max(1)))
-            .unwrap_or(self.buffer.len());
-        if end == self.buffer.len() && line > 0 {
-            start -= 1;
+    pub(crate) fn clipboard_target_rows(
+        &self,
+        targets: &crate::selection::TargetSet,
+    ) -> Option<Vec<Clip>> {
+        let mut rows = Vec::new();
+        for target in targets.targets().iter().rev() {
+            if target.kind != crate::wrap::RangeKind::Linewise {
+                return None;
+            }
+            for line in target.whole_rows(&self.buffer)? {
+                rows.push(
+                    self.clipboard_clip(self.clipboard_source_at(line)?)?
+                        .clone(),
+                );
+            }
         }
-        self.begin_transaction("Delete clipboard rows");
-        let _ = self.apply_edit(Edit::delete(start..end), EditSource::User);
-        self.commit_transaction();
-    }
-
-    pub(crate) fn clipboard_row_clips(&self, text: &Clip) -> Option<Vec<Clip>> {
-        let line = self.buffer.line_index.get_line_at(self.buffer.cursor());
-        let count = text
-            .text()
-            .iter()
-            .filter(|&&c| c == Character::Newline)
-            .count();
-        (line..line + count)
-            .map(|line| {
-                self.clipboard_clip(self.clipboard_source_at(line)?)
-                    .cloned()
-            })
-            .collect()
+        Some(rows)
     }
 
     pub(crate) fn put_clipboard_rows(&mut self, rows: &[Clip], before: ClipboardSide) -> bool {
@@ -231,12 +219,6 @@ impl Document {
             crate::document::ops::CursorCause::Programmatic,
         );
         true
-    }
-}
-
-impl super::ops::DocumentWrite<'_> {
-    pub(crate) fn delete_clipboard_rows(&mut self, count: usize) {
-        self.doc.delete_clipboard_rows(count);
     }
 }
 

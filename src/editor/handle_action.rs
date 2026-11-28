@@ -1,7 +1,7 @@
 use super::ops::quit::QuitRequest;
 use super::Editor;
 use super::PostPasteState;
-use crate::action::{Action, EditorAction};
+use crate::action::{Action, EditorAction, Motion, OperatorType};
 use crate::buffer::api::BufferView;
 use crate::clipboard::Clip;
 use crate::command::Command;
@@ -10,12 +10,6 @@ use crate::document::runtime::{ActionDispatch, BufferKindId, NavigationPolicy};
 use crate::mode::Mode;
 use crate::search::SearchDirection;
 use crate::term::TerminalBackend;
-
-#[derive(Clone, Copy)]
-enum PutRegister {
-    Replace,
-    Preserve,
-}
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn handle_action(&mut self, action: &crate::action::Action) -> bool {
@@ -45,6 +39,14 @@ impl<T: TerminalBackend> Editor<T> {
             Action::Editor(act) => act,
             Action::Buffer(id) => return self.action_buffer_action(id),
         };
+        if self.current_mode.is_visual() {
+            if let crate::action::TargetContract::UnavailableInVisual(reason) =
+                editor_action.target_contract()
+            {
+                self.notify(crate::notification::NotificationType::Warning, reason);
+                return true;
+            }
+        }
 
         if !matches!(editor_action, EditorAction::CyclePaste { .. }) {
             self.post_paste_state = None;
@@ -335,67 +337,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.close_split_panel();
             }
         }
-        let visual_yank_start = if op == crate::action::OperatorType::Yank {
-            self.current_mode.visual_range_kind().and_then(|kind| {
-                let anchor = self.visual_anchor()?;
-                let doc = self
-                    .document_manager
-                    .get_document(self.active_document_id())?;
-                Some(
-                    crate::selection::Region::new(anchor, doc.buffer().cursor(), kind)
-                        .buffer_span(doc.buffer())
-                        .0,
-                )
-            })
-        } else {
-            None
-        };
-        let visual_line_delete =
-            self.current_mode == Mode::VisualLine && op == crate::action::OperatorType::Delete;
-        let revision = self.active_document().buffer().revision();
-        if self.current_mode.is_visual() && op == crate::action::OperatorType::Yank {
-            self.set_mode(Mode::Normal);
-        }
-        if self.try_run_set_aware_operator(op) {
-            if self.current_mode.is_visual() {
-                return true;
-            }
-            if let Some(start) = visual_yank_start {
-                if let Some(doc) = self
-                    .document_manager
-                    .get_document_mut(self.active_document_id())
-                {
-                    let start = start.min(doc.buffer().len());
-                    let _ = doc.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
-                }
-            }
-            if visual_line_delete && self.active_document().buffer().revision() != revision {
-                if let Some(doc) = self
-                    .document_manager
-                    .get_document_mut(self.active_document_id())
-                {
-                    let line = doc.buffer().line_index.get_line_at(doc.buffer().cursor());
-                    let start = doc.buffer().line_start(line);
-                    let column = doc
-                        .buffer()
-                        .chars(start..doc.buffer().len())
-                        .take_while(|&ch| ch != crate::character::Character::Newline)
-                        .position(|ch| {
-                            !matches!(
-                                ch,
-                                crate::character::Character::Unicode(' ')
-                                    | crate::character::Character::Tab
-                            )
-                        })
-                        .unwrap_or(0);
-                    let _ = doc.set_cursor(
-                        start + column,
-                        crate::document::ops::CursorCause::Programmatic,
-                    );
-                }
-            }
-            let follow_up = (op == crate::action::OperatorType::Change).then(|| action.clone());
-            self.finish_region_build(follow_up);
+        if self.run_selection_operator(op, Some(action)) {
             return true;
         }
         if self.current_mode == Mode::OperatorPending {
@@ -409,6 +351,19 @@ impl<T: TerminalBackend> Editor<T> {
         self.input.operator = Some(super::pending_grammar::PendingOperator::Op(op));
         self.set_mode(Mode::OperatorPending);
         true
+    }
+
+    fn run_selection_operator(&mut self, op: OperatorType, action: Option<&Action>) -> bool {
+        let handled = if op == OperatorType::Change {
+            self.change_selection()
+        } else {
+            self.execute_selection_operator(op)
+        };
+        if handled && !self.current_mode.is_visual() {
+            let follow_up = action.filter(|_| op == OperatorType::Change).cloned();
+            self.finish_region_build(follow_up);
+        }
+        handled
     }
 
     fn handle_history_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
@@ -475,23 +430,18 @@ impl<T: TerminalBackend> Editor<T> {
                 } else {
                     ClipboardSide::After
                 };
-                return self
-                    .document_manager
-                    .get_document_mut(self.active_document_id())
-                    .is_some_and(|doc| doc.put_clipboard_rows(&rows, side));
+                let changed = self.active_document().put_clipboard_rows(&rows, side);
+                self.finish_typed_put(changed);
+                return changed;
+            }
+            if let Some(kind) = self.current_mode.visual_range_kind() {
+                return self.put_over_selection(&register.clip, kind, !before);
             }
             return self.put_into_active(&register.clip, PutAt::Cursor { before });
         }
 
-        if self.current_mode.is_visual() {
-            let register = if before {
-                PutRegister::Preserve
-            } else {
-                PutRegister::Replace
-            };
-            return self.replace_visual_selection(register);
-        }
         if let Some(changed) = self.put_explorer_register(before) {
+            self.finish_typed_put(changed);
             return changed;
         }
         let active = self.active_document_id();
@@ -505,6 +455,9 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(clip) = source.cloned() else {
             return false;
         };
+        if let Some(kind) = self.current_mode.visual_range_kind() {
+            return self.put_over_selection(&clip, kind, !before);
+        }
         let restore_here = ghost_doc.is_some_and(|doc| doc.id == active && doc.ghost_at_cursor());
 
         match self.try_run_set_aware_put(before, &clip) {
@@ -536,62 +489,12 @@ impl<T: TerminalBackend> Editor<T> {
         result
     }
 
-    fn replace_visual_selection(&mut self, register: PutRegister) -> bool {
-        let Some(anchor) = self.visual_anchor() else {
-            return false;
-        };
-        let Some(kind) = self.current_mode.visual_range_kind() else {
-            return false;
-        };
-        let clip = self
-            .document_manager
-            .most_recent_ghost_doc()
-            .and_then(|id| self.document_manager.get_document(id))
-            .and_then(crate::document::Document::most_recent_ghost)
-            .or_else(|| self.clipboard_ring.most_recent())
-            .cloned();
-        let Some(clip) = clip else {
-            return false;
-        };
-        let count = self.input.count.max(1);
-        let Some(doc) = self
-            .document_manager
-            .get_document_mut(self.active_document_id())
-        else {
-            return false;
-        };
-        let selected = matches!(register, PutRegister::Replace).then(|| {
-            crate::clipboard::capture_text(
-                doc.buffer(),
-                &crate::wrap::MotionRange {
-                    anchor,
-                    new_cursor: doc.buffer().cursor(),
-                    kind,
-                    inclusive: true,
-                },
-            )
-        });
-        if !doc.put(
-            &clip,
-            PutAt::Selection {
-                anchor,
-                kind,
-                count,
-            },
-        ) {
-            return false;
+    fn finish_typed_put(&mut self, changed: bool) {
+        if changed && self.current_mode.is_visual() {
+            self.active_document().clear_target_selection();
+            self.set_mode(Mode::Normal);
+            self.finish_region_build(None);
         }
-
-        self.commit_all_pending_ghosts();
-        if let Some(selected) = selected {
-            self.yank(selected);
-            self.refresh_clipboard_buffer_if_open();
-        }
-        self.post_paste_state = None;
-        self.set_visual_anchor(None);
-        self.set_mode(Mode::Normal);
-
-        true
     }
 
     fn handle_misc_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
@@ -913,30 +816,27 @@ impl<T: TerminalBackend> Editor<T> {
                 return true;
             }
         }
-        let count = self.input.count.max(1);
-        if self.current_mode == Mode::Normal {
-            return self.execute_resolved_operator(
-                crate::action::OperatorType::Delete,
-                Some(*motion),
-                count,
-                false,
-            );
-        }
-        self.execute_buffer_command(Command::DeleteMotion(*motion, count))
+        self.delete_using_targets(Some(*motion))
     }
 
     fn action_delete_line(&mut self) -> bool {
-        let count = if self.input.count > 0 {
-            self.input.count
-        } else {
-            1
-        };
-        let command = crate::command::Command::DeleteRows(count);
-        let result = self.execute_buffer_command(command);
-        if result && self.current_mode == Mode::Normal && !self.dot_repeat.is_replaying() {
-            self.dot_repeat.record_single(command);
+        if self.current_mode.is_visual() {
+            self.set_mode(Mode::VisualLine);
         }
-        result
+        self.active_document().make_banked_regions_linewise();
+        self.delete_using_targets(None)
+    }
+
+    fn delete_using_targets(&mut self, motion: Option<Motion>) -> bool {
+        let count = self.input.count.max(1);
+        if self.current_mode == Mode::Normal || self.current_mode.is_visual() {
+            return self.run_selection_operator(OperatorType::Delete, None)
+                || self.execute_resolved_operator(OperatorType::Delete, motion, count, false);
+        }
+        let command = motion.map_or(Command::DeleteRows(count), |motion| {
+            Command::DeleteMotion(motion, count)
+        });
+        self.execute_buffer_command(command)
     }
 
     fn action_insert_char(&mut self, c: char) -> bool {
@@ -1002,21 +902,17 @@ impl<T: TerminalBackend> Editor<T> {
         if !self.current_mode.is_visual() {
             return false;
         }
+        self.active_document().make_banked_regions_linewise();
         self.set_mode(Mode::VisualLine);
         self.handle_operator_action(action, &EditorAction::Operator(op))
     }
 
     fn action_to_line_end(&mut self, editor_action: &EditorAction) -> bool {
-        let command = if matches!(editor_action, EditorAction::ChangeToLineEnd) {
-            Command::Change(crate::action::Motion::EndOfLine, 1)
-        } else {
-            Command::DeleteMotion(crate::action::Motion::EndOfLine, 1)
-        };
-        if matches!(command, Command::Change(..)) {
-            self.handle_mode_management(command);
+        if matches!(editor_action, EditorAction::ChangeToLineEnd) {
+            self.handle_mode_management(Command::Change(Motion::EndOfLine, 1));
             self.current_mode == Mode::Insert
         } else {
-            self.execute_buffer_command(command)
+            self.delete_using_targets(Some(Motion::EndOfLine))
         }
     }
 
@@ -1122,6 +1018,9 @@ impl<T: TerminalBackend> Editor<T> {
                 .map(crate::character::Character::from)
                 .collect();
             let clip = Clip::from_plain(text);
+            if let Some(kind) = self.current_mode.visual_range_kind() {
+                return self.put_over_selection(&clip, kind, false);
+            }
             match self.try_run_set_aware_put(before, &clip) {
                 Ok(true) => {
                     self.finish_region_build(Some(action.clone()));
@@ -1337,7 +1236,7 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    fn commit_all_pending_ghosts(&mut self) {
+    pub(super) fn commit_all_pending_ghosts(&mut self) {
         let doc_ids: Vec<crate::document::DocumentId> = self
             .document_manager
             .iter_documents()

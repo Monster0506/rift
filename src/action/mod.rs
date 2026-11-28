@@ -275,6 +275,77 @@ pub enum EditorAction {
     GitHelp,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TargetContract {
+    Regions,
+    SelectionControl,
+    Once,
+    UnavailableInVisual(&'static str),
+}
+
+macro_rules! target_contracts {
+    ($($contract:expr => [$($variant:pat),+ $(,)?]),+ $(,)?) => {
+        impl EditorAction {
+            pub(crate) const fn target_contract(&self) -> TargetContract {
+                match self {
+                    $($($variant)|+ => $contract,)+
+                }
+            }
+        }
+    };
+}
+
+target_contracts! {
+    TargetContract::Regions => [
+        Self::EnterInsertMode, Self::EnterInsertModeAfter, Self::EnterInsertModeAtLineStart,
+        Self::EnterInsertModeAtLineEnd, Self::OpenLineBelow, Self::OpenLineAbove,
+        Self::Delete(_), Self::DeleteLine, Self::Operator(_), Self::ChangeToLineEnd,
+        Self::DeleteToLineEnd, Self::Put { .. }, Self::PutSystemClipboard { .. },
+        Self::ReplaceCharPending, Self::ReplaceSelection(_), Self::SurroundStart,
+        Self::VisualLineOp(_), Self::AddSurroundToSet { .. },
+    ],
+    TargetContract::SelectionControl => [
+        Self::Move(_), Self::EnterNormalMode, Self::GotoLine(_), Self::Search(_),
+        Self::FindCharPending { .. }, Self::EnterVisualChar, Self::EnterVisualLine,
+        Self::EnterVisualBlock, Self::VisualSwapEnds, Self::RegionBankOccurrenceNext,
+        Self::RegionBankOccurrencePrev, Self::ExpandRegion, Self::ShrinkRegion,
+        Self::RegionsListDown, Self::RegionsListUp, Self::RegionsListSelect, Self::RegionsListDrop,
+    ],
+    TargetContract::Once => [
+        Self::EnterCommandMode, Self::EnterSearchMode, Self::BufferNext, Self::BufferPrevious,
+        Self::ToggleDebug, Self::Redraw, Self::Reload, Self::Save, Self::SaveAndQuit,
+        Self::OpenExplorer, Self::OpenUndoTree, Self::OpenMessages, Self::OpenClipboard,
+        Self::ShowBufferList, Self::ClearHighlights, Self::ClearNotifications,
+        Self::ClearLastNotification, Self::Checkpoint, Self::RunCommand(_), Self::Undo,
+        Self::Redo, Self::Quit, Self::DotRepeat, Self::QuitKey, Self::OpenFile { .. },
+        Self::OpenDirectory(_), Self::OpenTerminal(_), Self::SplitWindow { .. },
+        Self::UndoCount(_), Self::RedoCount(_), Self::UndoGoto(_), Self::NotificationClearAll,
+        Self::PluginAction(_), Self::CyclePaste { .. }, Self::ExplorerToggleHidden,
+        Self::ExitTerminalMode, Self::TerminalScrollback(_), Self::LspGotoDefinition,
+        Self::LspReferences, Self::LspHover, Self::LspRename, Self::LspCodeAction,
+        Self::LspFormat, Self::LspDiagnosticNext, Self::LspDiagnosticPrev,
+        Self::LspDiagnosticsPanel, Self::ActivateAnnotation, Self::ActivateAnnotationVerb(_),
+        Self::NextInteractiveAnnotation, Self::PrevInteractiveAnnotation, Self::ToggleRegionsWindow,
+        Self::GitStatus, Self::GitCommitNew, Self::GitCommitAmend, Self::GitCommitFixup,
+        Self::GitRebaseFromLogCommit, Self::GitRebaseAbort, Self::GitRebaseMoveUp,
+        Self::GitRebaseMoveDown, Self::GitRebaseSetPick, Self::GitRebaseSetSquash,
+        Self::GitRebaseSetFixup, Self::GitRebaseSetEdit, Self::GitRebaseDrop,
+        Self::GitRebaseToggleFold, Self::GitRebaseOpenMessage, Self::GitHelp,
+    ],
+    TargetContract::UnavailableInVisual("Character input needs an insertion point or an open prompt") => [
+        Self::InsertChar(_),
+    ],
+    TargetContract::UnavailableInVisual("This action needs an open prompt") => [
+        Self::Submit, Self::HistoryUp, Self::HistoryDown,
+    ],
+    TargetContract::UnavailableInVisual("Replace mode needs one caret; use r to replace the selection") => [
+        Self::EnterReplaceMode,
+    ],
+    TargetContract::UnavailableInVisual("This action needs a pending surround motion") => [
+        Self::SurroundGiveLine,
+    ],
+}
+
 /// Represents an action in the editor
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {

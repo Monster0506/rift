@@ -5,6 +5,7 @@ use crate::buffer::TextBuffer;
 use crate::character::Character;
 use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
 use crate::layer::{Cell, Layer};
+use crate::selection::{Region, Target};
 use crate::wrap::{MotionRange, RangeKind};
 
 pub(crate) const DEFAULT_RING_CAPACITY: usize = 10;
@@ -117,36 +118,18 @@ impl ClipboardRing {
 }
 
 pub(crate) fn capture_text(buf: &TextBuffer, range: &MotionRange) -> Clip {
-    let first = range.anchor.min(range.new_cursor);
-    let last = range.anchor.max(range.new_cursor);
-    if range.kind == RangeKind::Linewise {
-        let first_line = buf.line_index.get_line_at(first);
-        return capture_lines(buf, first_line, buf.line_index.get_line_at(last));
-    }
-
-    let end = (last + usize::from(range.inclusive)).min(buf.len());
-    Clip::new(buf.chars(first..end).collect(), range.kind)
+    Region::from_motion(range).map_or_else(
+        || Clip::new(Vec::new(), range.kind),
+        |region| capture_target(buf, &region.resolve(buf)),
+    )
 }
 
-pub(crate) fn capture_current_line(buf: &TextBuffer, count: usize) -> Clip {
-    let line = buf.line_index.get_line_at(buf.cursor());
-    let last_line = (line + count.max(1).saturating_sub(1)).min(buf.last_real_line());
-    capture_lines(buf, line, last_line)
-}
-
-fn capture_lines(buf: &TextBuffer, first_line: usize, last_line: usize) -> Clip {
-    let start = buf.line_index.get_start(first_line).unwrap_or(0);
-    let is_final = last_line + 1 >= buf.get_total_lines();
-    let end = if is_final {
-        buf.len()
-    } else {
-        buf.line_index.get_start(last_line + 1).unwrap_or(buf.len())
-    };
+pub(crate) fn capture_target(buf: &TextBuffer, target: &Target) -> Clip {
     let text = buf
-        .chars(start..end)
-        .chain(is_final.then_some(Character::Newline))
+        .chars(target.start..target.end)
+        .chain(target.last_line.then_some(Character::Newline))
         .collect();
-    Clip::new(text, RangeKind::Linewise)
+    Clip::new(text, target.kind)
 }
 
 #[must_use]

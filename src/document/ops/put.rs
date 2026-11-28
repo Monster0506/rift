@@ -2,6 +2,7 @@ use super::super::Document;
 use super::{Edit, EditSource};
 use crate::character::Character;
 use crate::clipboard::Clip;
+use crate::selection::{Target, TargetSet};
 use crate::wrap::RangeKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,11 +16,6 @@ pub(crate) enum PutAt {
         before: bool,
     },
     Paste,
-    Selection {
-        anchor: usize,
-        kind: RangeKind,
-        count: usize,
-    },
 }
 
 impl Document {
@@ -31,6 +27,40 @@ impl Document {
 impl super::DocumentWrite<'_> {
     pub(crate) fn put(&mut self, clip: &Clip, at: PutAt) -> bool {
         self.doc.put_edit(clip, at)
+    }
+
+    pub(crate) fn put_over_targets(
+        &mut self,
+        clip: &Clip,
+        targets: &TargetSet,
+        count: usize,
+    ) -> bool {
+        let Some(first) = targets.targets().last() else {
+            return false;
+        };
+        let _ = self.set_cursor(first.start, super::CursorCause::Programmatic);
+        self.edit_group("Put", |doc| {
+            let mut changed = false;
+            let mut cursor = first.start;
+            for target in targets.targets() {
+                let put = SelectionPut::new(clip, target, count);
+                if doc
+                    .edit(put.edit, EditSource::User)
+                    .is_ok_and(|applied| applied)
+                {
+                    changed = true;
+                    cursor = put.cursor;
+                }
+            }
+            if changed {
+                let _ = doc.set_cursor(
+                    cursor.min(doc.buffer().len()),
+                    super::CursorCause::Programmatic,
+                );
+                doc.doc.buffer.clear_desired_col();
+            }
+            changed
+        })
     }
 }
 
@@ -65,11 +95,6 @@ impl Document {
                 let _ = self.apply_edit(Edit::type_text(clip.text()), EditSource::User);
                 self.commit_transaction();
             }
-            PutAt::Selection {
-                anchor,
-                kind,
-                count,
-            } => self.put_over_selection(clip, anchor, kind, count),
         }
         true
     }
@@ -101,45 +126,42 @@ impl Document {
         self.commit_transaction();
         pos + usize::from(needs_newline)
     }
+}
 
-    fn put_over_selection(&mut self, clip: &Clip, anchor: usize, kind: RangeKind, count: usize) {
-        let cursor = self.buffer.cursor();
-        let region = crate::selection::Region::new(anchor, cursor, kind);
-        let (start, end) = region.buffer_span(&self.buffer);
-        let start = start.min(self.buffer.len());
-        let end = end.min(self.buffer.len());
-        let target_linewise = kind == RangeKind::Linewise;
+struct SelectionPut {
+    edit: Edit,
+    cursor: usize,
+}
+
+impl SelectionPut {
+    fn new(clip: &Clip, target: &Target, count: usize) -> Self {
+        let target_linewise = target.kind == RangeKind::Linewise;
         let source_linewise = clip.kind() == RangeKind::Linewise;
-        let last_selected_line = self.buffer.line_index.get_line_at(anchor.max(cursor));
-        let has_following_line = last_selected_line + 1 < self.buffer.get_total_lines();
-        let text = if target_linewise && source_linewise && !has_following_line {
-            clip.text()
-                .strip_suffix(&[Character::Newline])
-                .unwrap_or_else(|| clip.text())
+        let has_following_line = !target.last_line;
+        let text = clip.text();
+        let tail = if target_linewise && source_linewise && !has_following_line {
+            text.strip_suffix(&[Character::Newline]).unwrap_or(text)
         } else {
-            clip.text()
+            text
         };
-
-        let _ = self.set_cursor(start, crate::document::ops::CursorCause::Programmatic);
-        self.begin_transaction("Put");
-        let _ = self.apply_edit(Edit::delete(start..end), EditSource::User);
-        if source_linewise && !target_linewise {
-            let _ = self.apply_edit(Edit::type_text(Character::Newline), EditSource::User);
-        }
-        let inserted_start = self.buffer.cursor();
+        let leading = source_linewise && !target_linewise;
+        let trailing = target_linewise && !source_linewise && has_following_line;
+        let inserted_start = target.start + usize::from(leading);
+        let mut replacement = Vec::with_capacity(
+            text.len() * (count - 1) + tail.len() + usize::from(leading) + usize::from(trailing),
+        );
+        replacement.extend(leading.then_some(Character::Newline));
         for _ in 1..count {
-            let _ = self.apply_edit(Edit::type_text(clip.text()), EditSource::User);
+            replacement.extend_from_slice(text);
         }
-        let _ = self.apply_edit(Edit::type_text(text), EditSource::User);
-        if target_linewise && !source_linewise && has_following_line {
-            let _ = self.apply_edit(Edit::type_text(Character::Newline), EditSource::User);
-        }
-        let inserted_cursor = if target_linewise || source_linewise {
-            let first_line_end = text
+        replacement.extend_from_slice(tail);
+        replacement.extend(trailing.then_some(Character::Newline));
+        let cursor = if target_linewise || source_linewise {
+            let first_line_end = tail
                 .iter()
                 .position(|&ch| ch == Character::Newline)
-                .unwrap_or(text.len());
-            let first_nonblank = text[..first_line_end]
+                .unwrap_or(tail.len());
+            let first_nonblank = tail[..first_line_end]
                 .iter()
                 .position(|&ch| !matches!(ch, Character::Unicode(' ') | Character::Tab))
                 .unwrap_or_else(|| first_line_end.saturating_sub(1));
@@ -147,14 +169,11 @@ impl Document {
         } else if text.contains(&Character::Newline) {
             inserted_start
         } else {
-            self.buffer.cursor().saturating_sub(1)
+            (target.start + replacement.len()).saturating_sub(1)
         };
-        let _ = self.set_cursor(
-            inserted_cursor.min(self.buffer.len()),
-            crate::document::ops::CursorCause::Programmatic,
-        );
-        self.buffer.clear_desired_col();
-        self.clear_selection();
-        self.commit_transaction();
+        Self {
+            edit: Edit::replace(target.start..target.end, replacement),
+            cursor,
+        }
     }
 }

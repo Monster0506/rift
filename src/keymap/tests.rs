@@ -366,6 +366,65 @@ fn test_default_word_end_keybind() {
 }
 
 #[test]
+fn default_normal_and_visual_bindings_resolve_with_target_contracts() {
+    use crate::action::TargetContract;
+    use crate::key::notation::parse_key_sequence;
+    use crate::keymap::defaults::DEFAULT_BINDINGS;
+
+    let mut map = KeyMap::new();
+    register_defaults(&mut map);
+
+    for &(contexts, notation, id, _) in DEFAULT_BINDINGS {
+        for &context in contexts {
+            if !matches!(context, KeyContext::Normal | KeyContext::Visual) {
+                continue;
+            }
+            let keys = parse_key_sequence(notation).unwrap();
+            let expected = id.parse::<Action>().unwrap();
+            let result = map.lookup(context, &keys);
+            let (MatchResult::Exact(action) | MatchResult::Ambiguous(action)) = result else {
+                panic!("{context:?} {notation} did not resolve: {result:?}");
+            };
+            assert_eq!(action, &expected, "{context:?} {notation}");
+            let Action::Editor(action) = action else {
+                panic!("{context:?} {notation} did not resolve to an editor action");
+            };
+            match action.target_contract() {
+                TargetContract::Regions
+                | TargetContract::SelectionControl
+                | TargetContract::Once => {}
+                TargetContract::UnavailableInVisual(reason) => {
+                    assert_eq!(context, KeyContext::Normal, "{notation} targets {id}");
+                    assert!(!reason.trim().is_empty(), "{notation} targets {id}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn visual_bindings_can_override_normal_targets_or_inherit_them() {
+    use crate::action::TargetContract::{Once, Regions, SelectionControl};
+    use crate::key::notation::parse_key_sequence;
+
+    let mut map = KeyMap::new();
+    register_defaults(&mut map);
+
+    for (context, notation, expected) in [
+        (KeyContext::Normal, "o", Regions),
+        (KeyContext::Visual, "o", SelectionControl),
+        (KeyContext::Visual, "w", SelectionControl),
+        (KeyContext::Visual, "<C-w>h", Once),
+    ] {
+        let keys = parse_key_sequence(notation).unwrap();
+        let MatchResult::Exact(Action::Editor(action)) = map.lookup(context, &keys) else {
+            panic!("{context:?} {notation} should resolve to an editor action");
+        };
+        assert_eq!(action.target_contract(), expected, "{context:?} {notation}");
+    }
+}
+
+#[test]
 fn test_ctrl_w_ctrl_hjkl_match_ctrl_w_hjkl() {
     let mut map = KeyMap::new();
     register_defaults(&mut map);

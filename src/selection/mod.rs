@@ -1,6 +1,7 @@
 //! Multi-region, non-contiguous selection set. Regions are plain char-offset
 //! pairs; any edit outside the set-aware drivers clears the set.
 
+use crate::buffer::api::BufferView;
 use crate::buffer::TextBuffer;
 use crate::wrap::RangeKind;
 
@@ -11,6 +12,97 @@ pub(crate) struct Region {
     pub(crate) kind: RangeKind,
 }
 
+pub(crate) enum TargetSet {
+    One(Target),
+    Many(Vec<Target>),
+}
+
+impl TargetSet {
+    pub(crate) fn one(region: Region, buf: &TextBuffer) -> Self {
+        Self::One(region.resolve(buf))
+    }
+
+    pub(crate) fn from_motion(range: &crate::wrap::MotionRange, buf: &TextBuffer) -> Option<Self> {
+        Some(Self::one(Region::from_motion(range)?, buf))
+    }
+
+    pub(crate) fn current_lines(buf: &TextBuffer, count: usize) -> Option<Self> {
+        let line = buf.get_line();
+        let last_real = buf.last_real_line();
+        if line > last_real {
+            return None;
+        }
+        let last = line.saturating_add(count.max(1) - 1).min(last_real);
+        let region = Region::new(
+            buf.line_start(line),
+            buf.line_start(last),
+            RangeKind::Linewise,
+        );
+        Some(Self::one(region, buf))
+    }
+
+    pub(crate) fn from_batch(regions: Vec<Region>, buf: &TextBuffer) -> Option<Self> {
+        let mut targets: Vec<_> = regions
+            .into_iter()
+            .map(|region| region.resolve(buf))
+            .collect();
+        targets.dedup_by(|left, right| {
+            if left.end <= right.start {
+                return false;
+            }
+            right.start = left.start.min(right.start);
+            right.end = left.end.max(right.end);
+            true
+        });
+        match targets.as_slice() {
+            [] => None,
+            [target] => Some(Self::One(*target)),
+            _ => Some(Self::Many(targets)),
+        }
+    }
+
+    pub(crate) fn targets(&self) -> &[Target] {
+        match self {
+            Self::One(target) => std::slice::from_ref(target),
+            Self::Many(targets) => targets,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct Target {
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) kind: RangeKind,
+    pub(crate) last_line: bool,
+}
+
+impl Target {
+    pub(crate) fn delete_start(&self) -> usize {
+        self.start.saturating_sub(usize::from(self.last_line))
+    }
+
+    pub(crate) fn whole_rows(&self, buf: &TextBuffer) -> Option<std::ops::RangeInclusive<usize>> {
+        let mut first = buf.line_index.get_line_at(self.start);
+        if self.kind == RangeKind::Linewise {
+            let last = buf.line_index.get_line_at(if self.last_line {
+                self.end
+            } else {
+                self.end.saturating_sub(1)
+            });
+            return Some(first..=last);
+        }
+        if self.start == self.end {
+            return None;
+        }
+        first += usize::from(self.start != buf.line_start(first));
+        let last = buf.line_index.get_line_at(self.end - 1);
+        let end = buf.line_index.get_end(last, buf.len())?;
+        let last = last.checked_sub(usize::from(self.end < end))?;
+        (first <= last).then_some(first..=last)
+    }
+}
+
 impl Region {
     #[must_use]
     pub(crate) const fn new(anchor: usize, cursor: usize, kind: RangeKind) -> Self {
@@ -18,6 +110,39 @@ impl Region {
             anchor,
             cursor,
             kind,
+        }
+    }
+
+    pub(crate) fn from_motion(range: &crate::wrap::MotionRange) -> Option<Self> {
+        let first = range.anchor.min(range.new_cursor);
+        let last = range.anchor.max(range.new_cursor);
+        let last = if range.kind != RangeKind::Linewise && !range.inclusive {
+            last.checked_sub(1).filter(|last| *last >= first)?
+        } else {
+            last
+        };
+        Some(Self::new(first, last, range.kind))
+    }
+
+    pub(crate) fn resolve(&self, buf: &TextBuffer) -> Target {
+        if self.kind == RangeKind::Linewise {
+            let index = &buf.line_index;
+            let first = index.get_line_at(self.anchor.min(self.cursor));
+            let last = index.get_line_at(self.anchor.max(self.cursor));
+            let next = index.get_start(last + 1);
+            return Target {
+                start: buf.line_start(first),
+                end: next.unwrap_or(buf.len()),
+                kind: self.kind,
+                last_line: next.is_none(),
+            };
+        }
+        let (start, end) = self.span();
+        Target {
+            start: start.min(buf.len()),
+            end: end.min(buf.len()),
+            kind: self.kind,
+            last_line: false,
         }
     }
 
@@ -34,32 +159,17 @@ impl Region {
     pub(crate) fn buffer_span(&self, buf: &TextBuffer) -> (usize, usize) {
         match self.kind {
             RangeKind::Linewise => {
-                let first = self.anchor.min(self.cursor);
-                let last = self.anchor.max(self.cursor);
-                let first_line = buf.line_index.get_line_at(first);
-                let last_line = buf.line_index.get_line_at(last);
-                let s = buf.line_index.get_start(first_line).unwrap_or(0);
-                let e = if last_line + 1 < buf.get_total_lines() {
-                    buf.line_index.get_start(last_line + 1).unwrap_or(buf.len())
-                } else {
-                    buf.len()
-                };
-                (s, e)
+                let target = self.resolve(buf);
+                (target.start, target.end)
             }
             RangeKind::Charwise | RangeKind::Blockwise => self.span(),
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn delete_span(&self, buf: &TextBuffer) -> (usize, usize) {
-        let (start, end) = self.buffer_span(buf);
-        if self.kind != RangeKind::Linewise || start == 0 {
-            return (start, end);
-        }
-        let last_line = buf.line_index.get_line_at(self.anchor.max(self.cursor));
-        if last_line + 1 < buf.get_total_lines() {
-            return (start, end);
-        }
-        (start - 1, end)
+        let target = self.resolve(buf);
+        (target.delete_start(), target.end)
     }
 
     fn overlaps(&self, other: &Self, buf: &TextBuffer) -> bool {
@@ -128,6 +238,19 @@ impl SelectionSet {
             cur = Region::new(start, end.saturating_sub(1), kind);
         }
         self.regions.push(cur);
+    }
+
+    pub(super) fn make_linewise(&mut self, buf: &TextBuffer) {
+        self.commit_active(buf);
+        for region in std::mem::take(&mut self.regions) {
+            self.bank(
+                Region {
+                    kind: RangeKind::Linewise,
+                    ..region
+                },
+                buf,
+            );
+        }
     }
 
     fn commit_active(&mut self, buf: &TextBuffer) {

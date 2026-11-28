@@ -4,9 +4,10 @@
 use crate::action::Motion;
 use crate::buffer::TextBuffer;
 use crate::command::Command;
-use crate::document::ops::{DocumentWrite, Edit, EditSource};
+use crate::document::ops::{DeleteLanding, DocumentWrite, Edit, EditSource};
 use crate::document::Document;
 use crate::error::RiftError;
+use crate::selection::TargetSet;
 use crate::wrap::DisplayMap;
 
 fn calculate_current_column(buf: &TextBuffer, tab_width: usize) -> usize {
@@ -30,11 +31,7 @@ pub(crate) fn tab_fill_width(buf: &TextBuffer, tab_width: usize) -> usize {
     tab_width - (calculate_current_column(buf, tab_width) % tab_width)
 }
 
-pub(crate) fn range_to_offsets(
-    range: &crate::wrap::MotionRange,
-    doc: &Document,
-    consume_trailing_newline: bool,
-) -> (usize, usize) {
+pub(crate) fn range_to_offsets(range: &crate::wrap::MotionRange, doc: &Document) -> (usize, usize) {
     use crate::wrap::RangeKind;
     match range.kind {
         RangeKind::Linewise => {
@@ -45,24 +42,13 @@ pub(crate) fn range_to_offsets(
             } else {
                 (end_line, start_line)
             };
-            let mut start = doc.buffer().line_index.get_start(first_line).unwrap_or(0);
+            let start = doc.buffer().line_index.get_start(first_line).unwrap_or(0);
             let len = doc.buffer().len();
-            let end = if consume_trailing_newline {
-                if last_line + 1 < doc.buffer().get_total_lines() {
-                    doc.buffer()
-                        .line_index
-                        .get_start(last_line + 1)
-                        .unwrap_or(len)
-                } else {
-                    start = start.saturating_sub(1);
-                    len
-                }
-            } else {
-                doc.buffer()
-                    .line_index
-                    .get_end(last_line, len)
-                    .unwrap_or(len)
-            };
+            let end = doc
+                .buffer()
+                .line_index
+                .get_end(last_line, len)
+                .unwrap_or(len);
             (start, end)
         }
         RangeKind::Charwise | RangeKind::Blockwise => {
@@ -125,13 +111,19 @@ pub(crate) fn execute_write_command(
     doc.clear_selection();
     match cmd {
         Command::DeleteMotion(motion, count) => {
-            delete_motion_cmd(doc, motion, count, viewport_height, last_search_query);
+            if let Some(targets) =
+                doc.motion_targets(motion, count, viewport_height, last_search_query)
+            {
+                doc.delete_targets(&targets, DeleteLanding::AtEdit, None);
+            }
         }
         Command::Change(motion, count) => {
             change_motion_cmd(doc, motion, count, viewport_height, last_search_query);
         }
         Command::DeleteRows(count) => {
-            delete_line_cmd(doc, count);
+            if let Some(targets) = TargetSet::current_lines(doc.buffer(), count) {
+                doc.delete_targets(&targets, DeleteLanding::CountedRows, None);
+            }
         }
         Command::ChangeLine(count) => {
             change_line_cmd(doc, count);
@@ -205,25 +197,6 @@ fn move_cmd(
     }
 }
 
-/// Delete over a motion (`Delete`).
-fn delete_motion_cmd(
-    doc: &mut DocumentWrite<'_>,
-    motion: Motion,
-    count: usize,
-    viewport_height: usize,
-    last_search_query: Option<&str>,
-) {
-    let Some(range) = doc.motion_range(motion, count, viewport_height, last_search_query) else {
-        return;
-    };
-    let (delete_start, delete_end) = range_to_offsets(&range, doc, true);
-    if delete_end > delete_start {
-        doc.edit_group("Delete", |doc| {
-            let _ = doc.edit(Edit::delete(delete_start..delete_end), EditSource::User);
-        });
-    }
-}
-
 /// Change over a motion (`Change`).
 fn change_motion_cmd(
     doc: &mut DocumentWrite<'_>,
@@ -235,43 +208,10 @@ fn change_motion_cmd(
     let Some(range) = doc.change_range(motion, count, viewport_height, last_search_query) else {
         return;
     };
-    let (delete_start, delete_end) = range_to_offsets(&range, doc, false);
+    let (delete_start, delete_end) = range_to_offsets(&range, doc);
     if delete_end > delete_start {
         let _ = doc.edit(Edit::delete(delete_start..delete_end), EditSource::User);
     }
-}
-
-/// Delete `count` whole lines (`DeleteLine`).
-fn delete_line_cmd(doc: &mut DocumentWrite<'_>, count: usize) {
-    if doc.is_clipboard_index() {
-        doc.delete_clipboard_rows(count);
-        return;
-    }
-    doc.edit_group("DeleteLine", |doc| {
-        doc.move_cursor(crate::action::Motion::StartOfLine);
-        let start = doc.buffer().cursor();
-        let mut reached_last_line = false;
-        for _ in 0..count.max(1) {
-            if !doc.move_cursor(crate::action::Motion::Down) {
-                reached_last_line = doc.buffer().get_line() <= doc.buffer().last_real_line();
-                break;
-            }
-        }
-        if reached_last_line {
-            doc.move_cursor(crate::action::Motion::EndOfLine);
-            let end = doc.buffer().cursor();
-            if end > start {
-                let _ = doc.edit(Edit::delete(start..end), EditSource::User);
-            }
-            if start > 0 {
-                let _ = doc.edit(Edit::DeleteBackward, EditSource::User);
-                doc.move_cursor(crate::action::Motion::StartOfLine);
-            }
-        } else {
-            let end = doc.buffer().cursor();
-            let _ = doc.edit(Edit::delete(start..end), EditSource::User);
-        }
-    });
 }
 
 /// Change `count` lines up to their end (`ChangeLine`).
@@ -386,7 +326,7 @@ fn add_surround_cmd(
     else {
         return;
     };
-    let (start, end) = range_to_offsets(&range, doc, false);
+    let (start, end) = range_to_offsets(&range, doc);
     doc.edit_group("AddSurround", |doc| {
         let _ = doc.edit(Edit::insert(end, &close), EditSource::User);
         let _ = doc.edit(Edit::insert(start, &open), EditSource::User);

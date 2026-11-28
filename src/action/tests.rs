@@ -383,6 +383,84 @@ fn every_table_id_parses_and_displays_back_to_itself() {
 }
 
 #[test]
+fn registered_actions_have_visual_target_contracts() {
+    for spec in table::ACTIONS {
+        let id = sample_id(spec);
+        let Action::Editor(action) = id.parse().unwrap() else {
+            panic!("'{id}' did not parse to an editor action");
+        };
+        match action.target_contract() {
+            TargetContract::Regions | TargetContract::SelectionControl | TargetContract::Once => {}
+            TargetContract::UnavailableInVisual(reason) => {
+                assert!(!reason.trim().is_empty(), "'{id}' needs a rationale");
+            }
+        }
+    }
+}
+
+#[test]
+fn target_contract_distinguishes_region_edits_from_selection_control_and_once_actions() {
+    use EditorAction::*;
+    use TargetContract::{Once, Regions, SelectionControl};
+
+    for (action, expected) in [
+        (Operator(OperatorType::Change), Regions),
+        (Delete(Motion::Right), Regions),
+        (DeleteLine, Regions),
+        (DeleteToLineEnd, Regions),
+        (ChangeToLineEnd, Regions),
+        (ReplaceCharPending, Regions),
+        (ReplaceSelection('x'), Regions),
+        (PutSystemClipboard { before: false }, Regions),
+        (EnterInsertModeAtLineEnd, Regions),
+        (OpenLineAbove, Regions),
+        (SurroundStart, Regions),
+        (Move(Motion::NextWord), SelectionControl),
+        (GotoLine(7), SelectionControl),
+        (
+            FindCharPending {
+                forward: true,
+                till: false,
+            },
+            SelectionControl,
+        ),
+        (EnterNormalMode, SelectionControl),
+        (VisualSwapEnds, SelectionControl),
+        (RegionBankOccurrenceNext, SelectionControl),
+        (LspHover, Once),
+        (LspRename, Once),
+        (ActivateAnnotation, Once),
+        (EnterSearchMode, Once),
+        (UndoCount(Some(7)), Once),
+        (DotRepeat, Once),
+    ] {
+        assert_eq!(action.target_contract(), expected, "{action}");
+    }
+}
+
+#[test]
+fn visual_unavailability_has_a_reason_for_incompatible_modes() {
+    use EditorAction::*;
+
+    for action in [
+        InsertChar('x'),
+        EnterReplaceMode,
+        Submit,
+        HistoryUp,
+        HistoryDown,
+        SurroundGiveLine,
+    ] {
+        assert!(
+            matches!(
+                action.target_contract(),
+                TargetContract::UnavailableInVisual(reason) if !reason.trim().is_empty()
+            ),
+            "{action} should explain why it cannot act in Visual mode"
+        );
+    }
+}
+
+#[test]
 fn table_ids_are_unique_per_argument_shape() {
     let mut seen = std::collections::HashSet::new();
     for spec in table::ACTIONS {

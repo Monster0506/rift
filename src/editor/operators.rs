@@ -3,12 +3,14 @@ use crate::action::{Motion, OperatorType};
 use crate::clipboard::Clip;
 use crate::command::Command;
 use crate::document::ops::EditSession;
-use crate::document::ops::{CursorCause, DocumentWrite, Edit, EditSource};
-use crate::document::Document;
+use crate::document::ops::{CursorCause, DeleteLanding, DocumentWrite, Edit, EditSource};
+use crate::document::{DirectoryTransfer, Document, TransferKind};
 use crate::dot_repeat::DotRegister;
 use crate::executor::{execute_write_command, range_to_offsets};
 use crate::mode::Mode;
+use crate::selection::TargetSet;
 use crate::term::TerminalBackend;
+use crate::wrap::RangeKind;
 
 const fn with_count_override(cmd: Command, count: usize) -> Option<Command> {
     match cmd {
@@ -28,21 +30,36 @@ const fn with_count_override(cmd: Command, count: usize) -> Option<Command> {
 }
 
 enum OperatorClip {
-    Ring(Clip),
+    Ring { first: Clip, rest: Vec<Clip> },
     Panel(super::ClipboardPanelRegister),
 }
 
 impl OperatorClip {
-    fn capture(doc: &Document, clip: Clip) -> Option<Self> {
+    fn capture(doc: &Document, targets: &TargetSet) -> Option<Self> {
+        let (first, rest) = targets.targets().split_last()?;
         if doc.is_clipboard_index() {
-            let rows = (clip.kind() == crate::wrap::RangeKind::Linewise)
-                .then(|| doc.clipboard_row_clips(&clip))
-                .flatten();
+            let clip = crate::clipboard::capture_target(doc.buffer(), first);
+            let rows = doc.clipboard_target_rows(targets);
             Some(Self::Panel(super::ClipboardPanelRegister { clip, rows }))
-        } else if !doc.is_any_clipboard() && !clip.text().is_empty() {
-            Some(Self::Ring(clip))
-        } else {
+        } else if doc.is_any_clipboard() {
             None
+        } else {
+            let mut clips = rest
+                .iter()
+                .chain(std::iter::once(first))
+                .map(|target| crate::clipboard::capture_target(doc.buffer(), target))
+                .filter(|clip| !clip.text().is_empty())
+                .rev();
+            let first = clips.next()?;
+            let rest = clips.collect();
+            Some(Self::Ring { first, rest })
+        }
+    }
+
+    const fn most_recent(&self) -> &Clip {
+        match self {
+            Self::Ring { first, .. } => first,
+            Self::Panel(register) => &register.clip,
         }
     }
 }
@@ -62,7 +79,7 @@ fn apply_change(
     } else {
         doc.start_edit_session(EditSession::Change);
         if let Some(range) = range {
-            let (start, end) = range_to_offsets(&range, doc, false);
+            let (start, end) = range_to_offsets(&range, doc);
             doc.clear_selection();
             let _ = doc.edit(Edit::delete(start..end), EditSource::User);
         } else if motion.is_none() {
@@ -73,55 +90,74 @@ fn apply_change(
     Some(record)
 }
 
-fn apply_cut(
-    doc: &mut DocumentWrite<'_>,
-    command: Command,
-    range: Option<crate::wrap::MotionRange>,
-    ghost_clip: Option<Clip>,
-    count: usize,
-) -> (bool, bool) {
-    let revision = doc.buffer().revision();
-    let ghosted = if let Some(clip) = ghost_clip {
-        let (start, end) = match &range {
-            Some(range) => range_to_offsets(range, doc, true),
-            None => linewise_ghost_span(doc, count),
-        };
-        let ghosted = start < end && doc.create_ghosts(&[(start, end)], clip);
-        if ghosted {
-            let _ = doc.set_cursor(start, CursorCause::Programmatic);
-        }
-        ghosted
-    } else {
-        if let Some(range) = range {
-            let (start, end) = range_to_offsets(&range, doc, true);
-            doc.clear_selection();
-            if end > start {
-                doc.edit_group("Delete", |doc| {
-                    let _ = doc.edit(Edit::delete(start..end), EditSource::User);
-                });
-            }
-        } else if matches!(command, Command::DeleteRows(_)) {
-            let _ = execute_write_command(command, doc, false, 1, 0, None);
-        }
-        false
-    };
-    let changed = doc.buffer().revision() != revision;
-    (changed, ghosted)
+#[derive(Clone, Copy)]
+enum Transfer {
+    Cut { landing: DeleteLanding, ghost: bool },
+    Yank { cursor: Option<usize> },
 }
 
-fn linewise_ghost_span(doc: &mut DocumentWrite<'_>, count: usize) -> (usize, usize) {
-    doc.move_cursor(Motion::StartOfLine);
-    let start = doc.buffer().cursor();
-    for _ in 0..count.max(1) {
-        if !doc.move_cursor(Motion::Down) {
-            if doc.buffer().get_line() <= doc.buffer().last_real_line() {
-                doc.move_cursor(Motion::EndOfLine);
-                return (start.saturating_sub(1), doc.buffer().cursor());
-            }
-            break;
+struct TransferResult {
+    capture: Option<OperatorClip>,
+    entries: Option<Vec<DirectoryTransfer>>,
+    changed: bool,
+    ghosted: bool,
+}
+
+impl TransferResult {
+    fn capture(doc: &Document, targets: &TargetSet, kind: TransferKind) -> Self {
+        Self {
+            capture: OperatorClip::capture(doc, targets),
+            entries: doc.capture_directory_targets(targets, kind),
+            changed: false,
+            ghosted: false,
         }
     }
-    (start, doc.buffer().cursor())
+}
+
+fn transfer_targets(
+    doc: &mut Document,
+    targets: &TargetSet,
+    transfer: Transfer,
+) -> Option<TransferResult> {
+    match transfer {
+        Transfer::Cut { landing, ghost } => {
+            let mut doc = doc.write().ok()?;
+            let mut result = TransferResult::capture(&doc, targets, TransferKind::Move);
+            let clip = result
+                .capture
+                .as_ref()
+                .filter(|_| ghost)
+                .map(OperatorClip::most_recent);
+            doc.clear_target_selection();
+            (result.changed, result.ghosted) = doc.delete_targets(targets, landing, clip);
+            if !result.changed {
+                result.capture = None;
+                result.entries = None;
+            }
+            Some(result)
+        }
+        Transfer::Yank { cursor } => {
+            let result = TransferResult::capture(doc, targets, TransferKind::Copy);
+            doc.clear_target_selection();
+            if let Some(start) = cursor {
+                let _ = doc.set_cursor(start, CursorCause::Programmatic);
+            }
+            Some(result)
+        }
+    }
+}
+
+fn resolve_operator_targets(
+    doc: &mut Document,
+    motion: Option<Motion>,
+    count: usize,
+    viewport_height: usize,
+    query: Option<&str>,
+) -> Option<TargetSet> {
+    match motion {
+        Some(motion) => doc.motion_targets(motion, count, viewport_height, query),
+        None => TargetSet::current_lines(doc.buffer(), count),
+    }
 }
 
 impl<T: TerminalBackend> Editor<T> {
@@ -162,71 +198,30 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(doc) = self.document_manager.get_document_mut(doc_id) else {
             return false;
         };
-        if op == OperatorType::Yank {
-            let explorer_register = if motion.is_none() {
-                doc.capture_directory_entries(count, crate::document::TransferKind::Copy)
+        if op == OperatorType::Change {
+            let mut doc = match doc.write() {
+                Ok(doc) => doc,
+                Err(error) => {
+                    self.notify_error(error.into());
+                    self.set_mode(Mode::Normal);
+                    return false;
+                }
+            };
+            let range =
+                motion.and_then(|motion| doc.change_range(motion, count, viewport_height, query));
+            let targets = if let Some(range) = &range {
+                TargetSet::from_motion(range, doc.buffer())
+            } else if motion.is_none() {
+                TargetSet::current_lines(doc.buffer(), count)
             } else {
                 None
             };
-            let clip = match motion {
-                Some(motion) => crate::document::ops::compute_motion_range(
-                    motion,
-                    count,
-                    doc,
-                    viewport_height,
-                    query,
-                )
-                .map(|range| crate::clipboard::capture_text(doc.buffer(), &range)),
-                None => Some(crate::clipboard::capture_current_line(doc.buffer(), count)),
-            };
-            let capture = clip.and_then(|clip| OperatorClip::capture(doc, clip));
-            self.publish_operator_clip(capture);
-            if let Some(entries) = explorer_register {
-                self.explorer_register = Some(super::explorer::ExplorerRegister::new(entries));
-            }
-            self.set_mode(Mode::Normal);
-            return true;
-        }
-        let mut doc = match doc.write() {
-            Ok(doc) => doc,
-            Err(error) => {
-                if op == OperatorType::Change {
-                    self.notify_error(error.into());
-                }
-                self.set_mode(Mode::Normal);
-                return false;
-            }
-        };
-        let range = motion.and_then(|motion| {
-            if op == OperatorType::Change {
-                doc.change_range(motion, count, viewport_height, query)
-            } else {
-                doc.motion_range(motion, count, viewport_height, query)
-            }
-        });
-        let clip = if let Some(range) = &range {
-            Some(crate::clipboard::capture_text(doc.buffer(), range))
-        } else if motion.is_none() {
-            Some(crate::clipboard::capture_current_line(doc.buffer(), count))
-        } else {
-            None
-        };
-        let ghost_clip = (op == OperatorType::Delete && ghost && doc.ghost_cut_allowed())
-            .then(|| clip.clone())
-            .flatten();
-        let capture = clip.and_then(|clip| OperatorClip::capture(&doc, clip));
-        let explorer_register = if op == OperatorType::Delete && motion.is_none() {
-            doc.capture_directory_entries(count, crate::document::TransferKind::Move)
-        } else {
-            None
-        };
-        let command = match (op, motion) {
-            (OperatorType::Change, Some(motion)) => Command::Change(motion, count),
-            (OperatorType::Change, None) => Command::ChangeLine(count),
-            (_, Some(motion)) => Command::DeleteMotion(motion, count),
-            (_, None) => Command::DeleteRows(count),
-        };
-        if op == OperatorType::Change {
+            let capture = targets
+                .as_ref()
+                .and_then(|targets| OperatorClip::capture(&doc, targets));
+            let command = motion.map_or(Command::ChangeLine(count), |motion| {
+                Command::Change(motion, count)
+            });
             let Some(record) = apply_change(&mut doc, command, motion, count, range) else {
                 self.set_mode(Mode::Normal);
                 return false;
@@ -238,28 +233,102 @@ impl<T: TerminalBackend> Editor<T> {
             self.set_mode(Mode::Insert);
             return true;
         }
-
-        let (changed, ghosted) = apply_cut(&mut doc, command, range, ghost_clip, count);
-        if ghosted {
-            self.set_recent_ghost(Some(doc_id));
-        }
+        let transfer = match op {
+            OperatorType::Yank => Transfer::Yank { cursor: None },
+            _ => Transfer::Cut {
+                landing: if motion.is_none() {
+                    DeleteLanding::CountedRows
+                } else {
+                    DeleteLanding::AtEdit
+                },
+                ghost,
+            },
+        };
+        let outcome = resolve_operator_targets(doc, motion, count, viewport_height, query)
+            .and_then(|targets| transfer_targets(doc, &targets, transfer));
         self.set_mode(Mode::Normal);
-        if changed {
-            self.publish_operator_clip(capture);
-            if let Some(entries) = explorer_register {
-                self.explorer_register = Some(super::explorer::ExplorerRegister::new(entries));
-            }
-            if !self.dot_repeat.is_replaying() {
+        if let Some(outcome) = outcome {
+            let changed = outcome.changed;
+            self.publish_transfer(outcome);
+            if changed && !self.dot_repeat.is_replaying() {
+                let command = motion.map_or(Command::DeleteRows(count), |motion| {
+                    Command::DeleteMotion(motion, count)
+                });
                 self.dot_repeat.record_single(command);
             }
+            return changed || op == OperatorType::Yank;
         }
-        changed
+        op == OperatorType::Yank
+    }
+
+    pub(super) fn execute_selection_operator(&mut self, op: OperatorType) -> bool {
+        let visual = self.current_mode.visual_range_kind();
+        let ghost = self.state.settings.editing().ghost_cut;
+        let doc = self.active_document();
+        let Some(targets) = doc.selection_targets(visual) else {
+            return false;
+        };
+        let transfer = match op {
+            OperatorType::Delete => Transfer::Cut {
+                landing: if visual == Some(RangeKind::Linewise) {
+                    DeleteLanding::FirstNonblank
+                } else {
+                    DeleteLanding::AtEdit
+                },
+                ghost,
+            },
+            OperatorType::Yank => Transfer::Yank {
+                cursor: visual
+                    .and_then(|kind| doc.visual_region(kind))
+                    .map(|region| region.resolve(doc.buffer()).start),
+            },
+            OperatorType::Change => return false,
+        };
+        if let Some(outcome) = transfer_targets(doc, &targets, transfer) {
+            self.publish_transfer(outcome);
+            self.set_mode(Mode::Normal);
+        }
+        true
+    }
+
+    pub(super) fn put_over_selection(&mut self, clip: &Clip, kind: RangeKind, swap: bool) -> bool {
+        let count = self.input.count.max(1);
+        let doc = self.active_document();
+        let Some(targets) = doc.selection_targets(Some(kind)) else {
+            return false;
+        };
+        let Ok(mut doc) = doc.write() else {
+            return false;
+        };
+        let removed = swap
+            .then(|| OperatorClip::capture(&doc, &targets))
+            .flatten();
+        if !doc.put_over_targets(clip, &targets, count) {
+            return false;
+        }
+        doc.clear_target_selection();
+        self.commit_all_pending_ghosts();
+        self.publish_operator_clip(removed);
+        self.set_mode(Mode::Normal);
+        self.finish_region_build(None);
+        true
+    }
+
+    fn publish_transfer(&mut self, outcome: TransferResult) {
+        if outcome.ghosted {
+            self.set_recent_ghost(Some(self.active_document_id()));
+        }
+        self.publish_operator_clip(outcome.capture);
+        self.set_explorer_register(outcome.entries);
     }
 
     fn publish_operator_clip(&mut self, capture: Option<OperatorClip>) {
         match capture {
-            Some(OperatorClip::Ring(clip)) => {
-                self.yank(clip);
+            Some(OperatorClip::Ring { first, rest }) => {
+                for clip in rest.into_iter().rev() {
+                    self.yank(clip);
+                }
+                self.yank(first);
                 self.refresh_clipboard_buffer_if_open();
             }
             Some(OperatorClip::Panel(register)) => self.clipboard_panel_register = Some(register),

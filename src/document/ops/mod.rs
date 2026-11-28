@@ -12,13 +12,16 @@ mod selection;
 pub(crate) mod standalone;
 mod text;
 
-pub(crate) use cursor::{compute_motion_range, CursorCause};
+#[cfg(test)]
+pub(crate) use cursor::compute_motion_range;
+pub(crate) use cursor::CursorCause;
 pub(crate) use history::EditSession;
 #[cfg(any(feature = "plugins", feature = "lsp"))]
 pub(crate) use journal::{ChangeJournal, Changes};
 #[cfg(feature = "plugins")]
 pub(crate) use plugin::{BufferChange, BufferTarget};
 pub(crate) use put::PutAt;
+pub(crate) use selection::DeleteLanding;
 #[cfg(feature = "plugins")]
 pub(crate) use text::EditPolicy;
 pub(crate) use text::{ContentKind, DocumentWrite, EditSource, ReadOnlyEdit};

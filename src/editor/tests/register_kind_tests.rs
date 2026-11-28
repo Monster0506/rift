@@ -395,3 +395,27 @@ fn visual_put_repeats_source_count() {
         );
     }
 }
+
+#[test]
+fn visual_put_replaces_active_and_banked_ranges_with_one_undo() {
+    use super::common::ring_text;
+
+    for (put, first, second) in [("p", "abc", Some("xyz")), ("P", "source", None)] {
+        let mut editor = vp_editor("source abc xyz");
+        vp_replay(&mut editor, &format!("yiwwve<Esc>wve{put}"));
+        assert_eq!(
+            editor.active_document().buffer().to_string(),
+            "source source source",
+            "{put}"
+        );
+        assert_eq!(ring_text(&editor, 0).as_deref(), Some(first), "{put}");
+        assert_eq!(ring_text(&editor, 1).as_deref(), second, "{put}");
+        assert_eq!(editor.current_mode, Mode::Normal, "{put}");
+        assert!(editor.active_document().selections().is_empty(), "{put}");
+        vp_replay(&mut editor, "u");
+        assert_eq!(
+            editor.active_document().buffer().to_string(),
+            "source abc xyz"
+        );
+    }
+}

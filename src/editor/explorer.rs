@@ -15,6 +15,14 @@ pub(super) struct ExplorerRegister {
     detached: bool,
 }
 
+impl<T: TerminalBackend> Editor<T> {
+    pub(super) fn set_explorer_register(&mut self, entries: Option<Vec<DirectoryTransfer>>) {
+        if let Some(entries) = entries.filter(|entries| !entries.is_empty()) {
+            self.explorer_register = Some(ExplorerRegister::new(entries));
+        }
+    }
+}
+
 impl ExplorerRegister {
     pub(super) const fn new(entries: Vec<DirectoryTransfer>) -> Self {
         Self {
@@ -109,12 +117,12 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let diff = doc.parse_directory_diff();
         if diff.is_empty() {
-            if self
+            if let Some(cut) = self
                 .explorer_register
-                .as_ref()
-                .is_some_and(ExplorerRegister::is_attached_cut)
+                .as_mut()
+                .filter(|register| register.is_attached_cut())
             {
-                self.explorer_register = None;
+                cut.entries.clear();
             }
             return true;
         }

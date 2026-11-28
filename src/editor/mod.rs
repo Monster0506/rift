@@ -48,6 +48,9 @@ mod undo_persist;
 mod tests;
 
 #[cfg(test)]
+mod target_contract_tests;
+
+#[cfg(test)]
 mod split_move_tests;
 
 #[cfg(test)]
