@@ -516,7 +516,7 @@ fn test_explorer_preview_draws_images_and_clears_them_for_text() {
         .unwrap();
     assert_eq!(
         preview.buffer_kind_id(),
-        crate::document::runtime::BufferKindId::FILE
+        crate::document::runtime::BufferKindId::FILE_PREVIEW
     );
     let written = editor.term.get_written_string();
     assert!(written.contains("plain text"));

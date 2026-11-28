@@ -514,6 +514,9 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
                 .update_job_state(&JobMessage::Finished(id, true));
             return;
         }
+        let pending = doc
+            .parse_directory_diff()
+            .without(&doc.take_directory_applied());
         let entries: Vec<crate::document::DirEntry> = listing
             .entries
             .iter()
@@ -524,6 +527,10 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
             })
             .collect();
         doc.populate_directory_buffer(entries);
+        if !pending.is_empty() {
+            let fs = crate::fs_backend::backend();
+            doc.rebase_directory_edits(&pending, |path| fs.path_exists(path));
+        }
 
         if let Some(target_name) = self.scheduler.explorer_cursor_entry.take() {
             let line_pos = doc
@@ -679,7 +686,7 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
             doc.set_path(&preview_path);
             doc.convert_to_image_view(image);
         } else if let Some(text) = res.file_text {
-            doc.convert_to_file();
+            doc.convert_to_file_preview();
             doc.set_path(&preview_path);
             doc.replace_content(&text, crate::document::ops::ContentKind::Load);
         }

@@ -22,7 +22,7 @@ fn bug_explorer_rename_overwrites_existing_file() {
     std::fs::write(dir.path().join("b.txt"), b"from b").unwrap();
 
     let diff = rename_diff(dir.path(), &[("a.txt", "b.txt")]);
-    let errors = apply_directory_diff_to_fs(dir.path(), &diff);
+    let errors = apply_directory_diff_to_fs(dir.path(), &diff).errors;
 
     assert_eq!(errors.len(), 1);
     assert_eq!(std::fs::read(dir.path().join("a.txt")).unwrap(), b"from a");
@@ -37,7 +37,7 @@ fn rename_dir_onto_existing_dir_is_refused() {
     std::fs::write(dir.path().join("a").join("f"), b"from a").unwrap();
 
     let diff = rename_diff(dir.path(), &[("a", "b")]);
-    let errors = apply_directory_diff_to_fs(dir.path(), &diff);
+    let errors = apply_directory_diff_to_fs(dir.path(), &diff).errors;
 
     assert_eq!(errors.len(), 1);
     assert!(dir.path().join("a").join("f").exists());
@@ -51,7 +51,7 @@ fn rename_swap_exchanges_both_files() {
     std::fs::write(dir.path().join("b.txt"), b"from b").unwrap();
 
     let diff = rename_diff(dir.path(), &[("a.txt", "b.txt"), ("b.txt", "a.txt")]);
-    let errors = apply_directory_diff_to_fs(dir.path(), &diff);
+    let errors = apply_directory_diff_to_fs(dir.path(), &diff).errors;
 
     assert!(errors.is_empty(), "{errors:?}");
     assert_eq!(std::fs::read(dir.path().join("a.txt")).unwrap(), b"from b");
@@ -65,7 +65,7 @@ fn rename_chain_shifts_without_clobbering() {
     std::fs::write(dir.path().join("b"), b"B").unwrap();
 
     let diff = rename_diff(dir.path(), &[("a", "b"), ("b", "c")]);
-    let errors = apply_directory_diff_to_fs(dir.path(), &diff);
+    let errors = apply_directory_diff_to_fs(dir.path(), &diff).errors;
 
     assert!(errors.is_empty(), "{errors:?}");
     assert!(!dir.path().join("a").exists());
@@ -81,7 +81,7 @@ fn rename_chain_ending_on_existing_file_is_refused_whole() {
     std::fs::write(dir.path().join("c"), b"C").unwrap();
 
     let diff = rename_diff(dir.path(), &[("a", "b"), ("b", "c")]);
-    let errors = apply_directory_diff_to_fs(dir.path(), &diff);
+    let errors = apply_directory_diff_to_fs(dir.path(), &diff).errors;
 
     assert_eq!(errors.len(), 2, "{errors:?}");
     assert_eq!(std::fs::read(dir.path().join("a")).unwrap(), b"A");
@@ -96,7 +96,7 @@ fn two_renames_to_one_name_apply_only_the_first() {
     std::fs::write(dir.path().join("b"), b"B").unwrap();
 
     let diff = rename_diff(dir.path(), &[("a", "c"), ("b", "c")]);
-    let errors = apply_directory_diff_to_fs(dir.path(), &diff);
+    let errors = apply_directory_diff_to_fs(dir.path(), &diff).errors;
 
     assert_eq!(errors.len(), 1, "{errors:?}");
     assert_eq!(std::fs::read(dir.path().join("c")).unwrap(), b"A");
@@ -109,7 +109,7 @@ fn case_only_rename_is_not_mistaken_for_a_collision() {
     std::fs::write(dir.path().join("file.txt"), b"x").unwrap();
 
     let diff = rename_diff(dir.path(), &[("file.txt", "FILE.txt")]);
-    let errors = apply_directory_diff_to_fs(dir.path(), &diff);
+    let errors = apply_directory_diff_to_fs(dir.path(), &diff).errors;
 
     assert!(errors.is_empty(), "{errors:?}");
     let names: Vec<String> = std::fs::read_dir(dir.path())

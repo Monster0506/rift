@@ -106,11 +106,13 @@ impl<T: TerminalBackend> Editor<T> {
         &mut self,
         buf: DocumentId,
         target: Option<PathBuf>,
-        _force: bool,
+        force: bool,
         quit: &mut Option<SaveQuit>,
     ) -> SaveOutcome {
         match self.prepare_save(buf, target) {
-            Some((handle, _, dispatch, path)) => self.write_save(handle, dispatch, path, quit),
+            Some((handle, _, dispatch, path)) => {
+                self.write_save(handle, dispatch, path, force, quit)
+            }
             None => SaveOutcome::NotSaved,
         }
     }
@@ -142,7 +144,7 @@ impl<T: TerminalBackend> Editor<T> {
             return SaveOutcome::NotSaved;
         };
         match decision {
-            SaveDecision::Proceed => self.write_save(handle, dispatch, path, quit),
+            SaveDecision::Proceed => self.write_save(handle, dispatch, path, force, quit),
             SaveDecision::Cancel => SaveOutcome::NotSaved,
             SaveDecision::Hold(hold) => {
                 if !self.exit_requested() && doc.matches_kind(kind) && hold.activate() {
@@ -204,7 +206,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             current
         });
-        let result = self.write_save(save.handle, dispatch, save.path, &mut quit);
+        let result = self.write_save(save.handle, dispatch, save.path, save.force, &mut quit);
         if let Some(quit) = quit {
             self.finish_save_quit(result, &quit);
         }
@@ -215,6 +217,7 @@ impl<T: TerminalBackend> Editor<T> {
         handle: DocumentHandle,
         dispatch: SaveDispatch,
         path: Option<PathBuf>,
+        force: bool,
         quit: &mut Option<SaveQuit>,
     ) -> SaveOutcome {
         let buf = handle.doc_id();
@@ -247,7 +250,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(path) = &path {
             doc.set_path(path);
         }
-        if self.save_special_buffer(handle) != SaveResult::Saved {
+        if self.save_special_buffer(handle, force) != SaveResult::Saved {
             return SaveOutcome::NotSaved;
         }
         self.deliver_save_post(buf, path, false);
@@ -458,7 +461,7 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = buf;
     }
 
-    fn save_special_buffer(&mut self, handle: DocumentHandle) -> SaveResult {
+    fn save_special_buffer(&mut self, handle: DocumentHandle, force: bool) -> SaveResult {
         let Some(doc) = self.document_manager.get_document_by_handle(handle) else {
             return SaveResult::Rejected;
         };
@@ -477,7 +480,7 @@ impl<T: TerminalBackend> Editor<T> {
                     SaveResult::Failed
                 }
             }
-            SaveDispatch::Directory => self.apply_directory_diff(handle.doc_id()),
+            SaveDispatch::Directory => self.apply_directory_diff(handle.doc_id(), force),
             SaveDispatch::Clipboard => self.apply_clipboard_diff(handle.doc_id()),
             SaveDispatch::ClipboardEntry => self.apply_clipboard_entry_save(handle.doc_id()),
             SaveDispatch::GitCommitMessage => self.apply_git_commit_message(handle.doc_id()),

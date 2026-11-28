@@ -14,6 +14,7 @@ mod display_map_tests;
 mod editor_lsp_tests;
 mod editor_paste_tests;
 mod esc_cursor_tests;
+mod explorer_edit_tests;
 mod explorer_preview_tests;
 mod ghost_cut_tests;
 mod key_input_tests;

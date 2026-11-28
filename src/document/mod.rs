@@ -86,11 +86,38 @@ pub(crate) struct DirEntry {
     pub(crate) id: u16,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct DirectoryDiff {
     pub(crate) renames: Vec<(PathBuf, String)>,
     pub(crate) deletes: Vec<PathBuf>,
     pub(crate) creates: Vec<String>,
+}
+
+impl DirectoryDiff {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.renames.is_empty() && self.deletes.is_empty() && self.creates.is_empty()
+    }
+
+    #[must_use]
+    pub(crate) fn without(self, applied: &Self) -> Self {
+        Self {
+            renames: self
+                .renames
+                .into_iter()
+                .filter(|(old, _)| !applied.renames.iter().any(|(done, _)| done == old))
+                .collect(),
+            deletes: self
+                .deletes
+                .into_iter()
+                .filter(|path| !applied.deletes.contains(path))
+                .collect(),
+            creates: self
+                .creates
+                .into_iter()
+                .filter(|name| !applied.creates.contains(name))
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -679,9 +706,21 @@ impl Document {
     state_get!(pub(crate) fn directory_entries(&self) -> &[DirEntry] = DIRECTORY_STATE_KEY, |s| s.entries.as_slice());
     state_get!(pub(crate) fn directory_show_hidden(&self) -> bool = DIRECTORY_STATE_KEY, |s| s.show_hidden);
     state_set!(pub(crate) fn set_directory_show_hidden(&mut self, show_hidden: bool) = DIRECTORY_STATE_KEY, |s| s.show_hidden = show_hidden);
+    state_set!(pub(crate) fn set_directory_applied(&mut self, applied: DirectoryDiff) = DIRECTORY_STATE_KEY, |s| s.applied = applied);
+
+    pub(crate) fn take_directory_applied(&mut self) -> DirectoryDiff {
+        self.state
+            .try_get_mut(DIRECTORY_STATE_KEY)
+            .map_or_else(DirectoryDiff::default, |s| std::mem::take(&mut s.applied))
+    }
 
     pub(crate) fn convert_to_file(&mut self) {
         self.kind = BufferKind::for_builtin(BufferKindId::FILE);
+        self.state = StateSlot::new(FILE_STATE_KEY, FileState);
+    }
+
+    pub(crate) fn convert_to_file_preview(&mut self) {
+        self.kind = BufferKind::for_builtin(BufferKindId::FILE_PREVIEW);
         self.state = StateSlot::new(FILE_STATE_KEY, FileState);
     }
 
@@ -693,6 +732,7 @@ impl Document {
                 path,
                 entries: vec![],
                 show_hidden: false,
+                applied: DirectoryDiff::default(),
             },
         );
     }

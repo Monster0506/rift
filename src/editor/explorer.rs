@@ -33,30 +33,46 @@ impl<T: TerminalBackend> Editor<T> {
         self.job_manager.spawn(job);
     }
 
+    fn explorer_target_doc(&self) -> (crate::document::DocumentId, bool) {
+        match &self.panel_layout {
+            Some(l)
+                if l.kind == PanelKind::FileExplorer
+                    && self.split_tree.focused_window_id() == l.dir_win_id =>
+            {
+                (l.dir_doc_id, true)
+            }
+            _ => (self.active_document_id(), false),
+        }
+    }
+
+    fn refuse_with_pending_directory_edits(&mut self, doc_id: crate::document::DocumentId) -> bool {
+        let pending = self
+            .document_manager
+            .get_document(doc_id)
+            .is_some_and(|doc| !doc.parse_directory_diff().is_empty());
+        if pending {
+            self.notify(
+                crate::notification::NotificationType::Warning,
+                "Unsaved changes — write with :w first".to_string(),
+            );
+        }
+        pending
+    }
+
     pub(super) fn handle_explorer_select(&mut self) {
-        let is_explorer_dir = self.panel_layout.as_ref().is_some_and(|l| {
-            l.kind == PanelKind::FileExplorer && self.split_tree.focused_window_id() == l.dir_win_id
-        });
-        if is_explorer_dir {
+        let (doc_id, in_panel) = self.explorer_target_doc();
+        if self.refuse_with_pending_directory_edits(doc_id) {
+            return;
+        }
+        if in_panel {
             self.handle_explorer_split_select();
             return;
         }
 
         let (doc_id, line_text, dir_path, entry_info) = {
-            let Some(doc) = self
-                .document_manager
-                .get_document(self.active_document_id())
-            else {
+            let Some(doc) = self.document_manager.get_document(doc_id) else {
                 return;
             };
-            let diff = doc.parse_directory_diff();
-            if !diff.renames.is_empty() || !diff.deletes.is_empty() || !diff.creates.is_empty() {
-                self.notify(
-                    crate::notification::NotificationType::Warning,
-                    "Unsaved changes — write with :w first".to_string(),
-                );
-                return;
-            }
             let cursor = doc.buffer().cursor();
             let line_num = doc.buffer().line_index.get_line_at(cursor);
             let line_bytes = doc.buffer().get_line_bytes(line_num);
@@ -94,10 +110,11 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn handle_explorer_parent(&mut self) {
-        let is_explorer_dir = self.panel_layout.as_ref().is_some_and(|l| {
-            l.kind == PanelKind::FileExplorer && self.split_tree.focused_window_id() == l.dir_win_id
-        });
-        if is_explorer_dir {
+        let (doc_id, in_panel) = self.explorer_target_doc();
+        if self.refuse_with_pending_directory_edits(doc_id) {
+            return;
+        }
+        if in_panel {
             self.handle_explorer_split_parent();
             return;
         }
@@ -135,7 +152,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
         let preview_doc_id = dir_doc_id.next();
-        let preview_doc = match crate::document::Document::new_directory(
+        let mut preview_doc = match crate::document::Document::new_directory(
             preview_doc_id,
             std::path::PathBuf::from("[preview]"),
         ) {
@@ -145,6 +162,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
+        preview_doc.set_read_only(true);
         if !self.open_split_panel(
             PanelKind::FileExplorer,
             dir_doc,
@@ -159,20 +177,39 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn close_split_panel(&mut self) {
-        if self.panel_layout.as_ref().is_some_and(|layout| {
-            layout.kind == PanelKind::Clipboard
-                && [layout.dir_doc_id, layout.preview_doc_id]
+        self.close_split_panel_with(false);
+    }
+
+    fn panel_refuses_close(&mut self) -> bool {
+        let Some(layout) = &self.panel_layout else {
+            return false;
+        };
+        let doc = |id| self.document_manager.get_document(id);
+        let message = match layout.kind {
+            PanelKind::Clipboard
+                if [layout.dir_doc_id, layout.preview_doc_id]
                     .into_iter()
-                    .any(|id| {
-                        self.document_manager
-                            .get_document(id)
-                            .is_some_and(crate::document::Document::is_dirty)
-                    })
-        }) {
-            self.notify(
-                crate::notification::NotificationType::Error,
-                "Clipboard has unsaved edits; save or undo them before closing".to_string(),
-            );
+                    .any(|id| doc(id).is_some_and(crate::document::Document::is_dirty)) =>
+            {
+                "Clipboard has unsaved edits; save or undo them before closing"
+            }
+            PanelKind::FileExplorer
+                if doc(layout.dir_doc_id)
+                    .is_some_and(|dir| !dir.parse_directory_diff().is_empty()) =>
+            {
+                "Explorer has unsaved changes; write with :w or discard with :q!"
+            }
+            _ => return false,
+        };
+        self.notify(
+            crate::notification::NotificationType::Error,
+            message.to_string(),
+        );
+        true
+    }
+
+    pub(super) fn close_split_panel_with(&mut self, force: bool) {
+        if !force && self.panel_refuses_close() {
             return;
         }
         let Some(layout) = self.panel_layout.take() else {
@@ -531,16 +568,9 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         let doc = self.document_manager.get_document(layout.dir_doc_id)?;
-        let cursor = doc.buffer().cursor();
-        let line_num = doc.buffer().line_index.get_line_at(cursor);
-        let line_bytes = doc.buffer().get_line_bytes(line_num);
-        let line_text = String::from_utf8_lossy(&line_bytes).trim_end().to_string();
-        let dir_path = doc.directory_path()?.clone();
-        let entry_name = line_text.trim_end_matches('/');
-        if entry_name.is_empty() || entry_name == ".." {
-            return None;
-        }
-        Some(dir_path.join(entry_name))
+        let line_num = doc.buffer().line_index.get_line_at(doc.buffer().cursor());
+        let (name, _) = doc.annotations.directory_entry_info_at_line(line_num)?;
+        Some(doc.directory_path()?.join(name))
     }
 
     pub(super) fn update_explorer_preview(&mut self) {
@@ -640,14 +670,6 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.get_document(layout.dir_doc_id) else {
                 return;
             };
-            let diff = doc.parse_directory_diff();
-            if !diff.renames.is_empty() || !diff.deletes.is_empty() || !diff.creates.is_empty() {
-                self.notify(
-                    crate::notification::NotificationType::Warning,
-                    "Unsaved changes — write with :w first".to_string(),
-                );
-                return;
-            }
             let cursor = doc.buffer().cursor();
             let line_num = doc.buffer().line_index.get_line_at(cursor);
             let line_bytes = doc.buffer().get_line_bytes(line_num);
@@ -808,15 +830,8 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
 
-        if let Some(doc) = self.document_manager.get_document(dir_doc_id) {
-            let diff = doc.parse_directory_diff();
-            if !diff.renames.is_empty() || !diff.deletes.is_empty() || !diff.creates.is_empty() {
-                self.notify(
-                    crate::notification::NotificationType::Warning,
-                    "Unsaved changes — write with :w first".to_string(),
-                );
-                return;
-            }
+        if self.refuse_with_pending_directory_edits(dir_doc_id) {
+            return;
         }
 
         let new_show_hidden = !show_hidden;
@@ -858,15 +873,8 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
 
-        if let Some(doc) = self.document_manager.get_document(dir_doc_id) {
-            let diff = doc.parse_directory_diff();
-            if !diff.renames.is_empty() || !diff.deletes.is_empty() || !diff.creates.is_empty() {
-                self.notify(
-                    crate::notification::NotificationType::Warning,
-                    "Unsaved changes — write with :w first".to_string(),
-                );
-                return;
-            }
+        if self.refuse_with_pending_directory_edits(dir_doc_id) {
+            return;
         }
 
         let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
@@ -902,6 +910,7 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn apply_directory_diff(
         &mut self,
         doc_id: crate::document::DocumentId,
+        force: bool,
     ) -> crate::document::runtime::SaveResult {
         use crate::document::runtime::SaveResult;
         let (dir_doc_id, dir_path, dir_show_hidden, diff) = {
@@ -917,19 +926,47 @@ impl<T: TerminalBackend> Editor<T> {
             (doc.id, path, show_hidden, doc.parse_directory_diff())
         };
 
-        if diff.renames.is_empty() && diff.deletes.is_empty() && diff.creates.is_empty() {
+        if diff.is_empty() {
             return SaveResult::Saved;
         }
 
-        let errors = apply_directory_diff_to_fs(&dir_path, &diff);
-        let result = if errors.is_empty() {
+        if !force {
+            let fs = crate::fs_backend::backend();
+            let populated: Vec<String> = diff
+                .deletes
+                .iter()
+                .filter(|path| {
+                    fs.is_dir(path)
+                        && fs
+                            .list_children(path)
+                            .is_ok_and(|children| !children.is_empty())
+                })
+                .map(|path| format!("{}/", path.file_name().unwrap_or_default().display()))
+                .collect();
+            if !populated.is_empty() {
+                self.notify(
+                    crate::notification::NotificationType::Warning,
+                    format!(
+                        "Deleting {} removes everything inside; write with :w! to confirm",
+                        populated.join(", ")
+                    ),
+                );
+                return SaveResult::Failed;
+            }
+        }
+
+        let outcome = apply_directory_diff_to_fs(&dir_path, &diff);
+        let result = if outcome.errors.is_empty() {
             SaveResult::Saved
         } else {
             SaveResult::Failed
         };
 
-        for err in errors {
+        for err in outcome.errors {
             self.notify(crate::notification::NotificationType::Error, err);
+        }
+        if let Some(doc) = self.document_manager.get_document_mut(dir_doc_id) {
+            doc.set_directory_applied(outcome.applied);
         }
 
         let reload = crate::job_manager::jobs::explorer::DirectoryListJob::new(
@@ -1024,10 +1061,11 @@ fn run_renames(
     fs: &dyn crate::fs_backend::FileSystem,
     plan: Vec<(std::path::PathBuf, std::path::PathBuf)>,
     errors: &mut Vec<String>,
-) {
+) -> Vec<std::path::PathBuf> {
     let destinations: std::collections::HashSet<std::path::PathBuf> =
         plan.iter().map(|(_, new)| new.clone()).collect();
     let mut staged = Vec::new();
+    let mut renamed = Vec::new();
 
     for (old, new) in plan {
         if !destinations.contains(&old) {
@@ -1049,6 +1087,7 @@ fn run_renames(
             fs.rename(&src, &new).map_err(|e| e.message)
         };
         let Err(msg) = result else {
+            renamed.push(old);
             continue;
         };
 
@@ -1063,25 +1102,39 @@ fn run_renames(
             ));
         }
     }
+    renamed
+}
+
+struct DirectoryApply {
+    errors: Vec<String>,
+    applied: crate::document::DirectoryDiff,
 }
 
 fn apply_directory_diff_to_fs(
     dir_path: &std::path::Path,
     diff: &crate::document::DirectoryDiff,
-) -> Vec<String> {
+) -> DirectoryApply {
     let fs = crate::fs_backend::backend();
     let mut errors: Vec<String> = Vec::new();
+    let mut applied = crate::document::DirectoryDiff::default();
 
     let plan = plan_renames(fs, dir_path, &diff.renames, &mut errors);
-    run_renames(fs, plan, &mut errors);
+    let renamed = run_renames(fs, plan, &mut errors);
+    applied.renames = diff
+        .renames
+        .iter()
+        .filter(|(old, _)| renamed.contains(old))
+        .cloned()
+        .collect();
 
     for path in &diff.deletes {
-        if let Err(e) = fs.delete_recursive(path) {
-            errors.push(format!(
+        match fs.delete_recursive(path) {
+            Ok(()) => applied.deletes.push(path.clone()),
+            Err(e) => errors.push(format!(
                 "delete {}: {}",
                 path.file_name().unwrap_or_default().display(),
                 e.message
-            ));
+            )),
         }
     }
 
@@ -1101,16 +1154,17 @@ fn apply_directory_diff_to_fs(
         } else {
             fs.create_file(&new_path)
         };
-        if let Err(e) = result {
-            errors.push(format!(
+        match result {
+            Ok(()) => applied.creates.push(name.clone()),
+            Err(e) => errors.push(format!(
                 "create {}: {}",
                 new_path.file_name().unwrap_or_default().display(),
                 e.message
-            ));
+            )),
         }
     }
 
-    errors
+    DirectoryApply { errors, applied }
 }
 
 #[cfg(test)]

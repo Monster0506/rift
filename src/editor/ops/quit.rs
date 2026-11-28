@@ -83,7 +83,7 @@ impl<T: TerminalBackend> Editor<T> {
             fid == l.dir_win_id || fid == l.preview_win_id
         });
         if in_explorer {
-            self.close_split_panel();
+            self.close_split_panel_with(force);
             return false;
         }
         if self.split_tree.window_count() > 1 {

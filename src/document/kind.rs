@@ -38,11 +38,6 @@ impl BufferKind {
     }
 
     #[must_use]
-    pub(super) fn directory() -> Self {
-        Self::for_builtin(BufferKindId::DIRECTORY)
-    }
-
-    #[must_use]
     pub(super) fn undotree() -> Self {
         Self::for_builtin(BufferKindId::UNDO_TREE)
     }

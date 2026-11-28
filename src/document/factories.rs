@@ -4,13 +4,12 @@ use crate::annotations::AnnotationStore;
 use crate::buffer::TextBuffer;
 use crate::document::kind::BufferKind;
 use crate::document::runtime::{
-    BufferListState, ClipboardState, DirectoryState, DocumentHandle, FileState, GitBlameState,
+    BufferListState, ClipboardState, DocumentHandle, FileState, GitBlameState,
     GitCommitMessageState, GitLogState, GitOutputState, GitRebaseTodoState, GitStatusState,
     MessagesState, ScratchState, StateSlot, TerminalState, UndoTreeState, BUFFER_LIST_STATE_KEY,
-    CLIPBOARD_STATE_KEY, DIRECTORY_STATE_KEY, FILE_STATE_KEY, GIT_BLAME_STATE_KEY,
-    GIT_COMMIT_MESSAGE_STATE_KEY, GIT_LOG_STATE_KEY, GIT_OUTPUT_STATE_KEY,
-    GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY, MESSAGES_STATE_KEY, SCRATCH_STATE_KEY,
-    TERMINAL_STATE_KEY, UNDO_TREE_STATE_KEY,
+    CLIPBOARD_STATE_KEY, FILE_STATE_KEY, GIT_BLAME_STATE_KEY, GIT_COMMIT_MESSAGE_STATE_KEY,
+    GIT_LOG_STATE_KEY, GIT_OUTPUT_STATE_KEY, GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY,
+    MESSAGES_STATE_KEY, SCRATCH_STATE_KEY, TERMINAL_STATE_KEY, UNDO_TREE_STATE_KEY,
 };
 use crate::error::{ErrorType, RiftError};
 use crate::history::UndoTree;
@@ -355,15 +354,7 @@ impl Document {
     pub(crate) fn new_directory(id: super::DocumentId, path: PathBuf) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         let mut doc = Self::panel_skeleton(id, buffer);
-        doc.kind = BufferKind::directory();
-        doc.state = StateSlot::new(
-            DIRECTORY_STATE_KEY,
-            DirectoryState {
-                path,
-                entries: Vec::new(),
-                show_hidden: false,
-            },
-        );
+        doc.convert_to_directory(path);
         Ok(doc)
     }
 

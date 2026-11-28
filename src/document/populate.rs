@@ -563,18 +563,121 @@ impl Document {
             })
             .collect();
 
-        let deletes: Vec<std::path::PathBuf> = entries
+        let mut deleted: Vec<&DirEntry> = entries
             .iter()
             .filter(|e| e.id != 0 && !seen_ids.contains(&e.id))
-            .map(|e| e.path.clone())
-            .filter(|p| !protected_dirs.contains(p))
+            .filter(|e| !protected_dirs.contains(&e.path))
             .collect();
+        creates.retain(|line| {
+            let name = line.trim_end_matches('/');
+            let is_dir = line.ends_with('/');
+            deleted
+                .iter()
+                .position(|e| {
+                    e.is_dir == is_dir && e.path.file_name().and_then(|n| n.to_str()) == Some(name)
+                })
+                .map(|moved| deleted.remove(moved))
+                .is_none()
+        });
 
         DirectoryDiff {
             renames,
-            deletes,
+            deletes: deleted.into_iter().map(|e| e.path.clone()).collect(),
             creates,
         }
+    }
+
+    pub(crate) fn rebase_directory_edits(
+        &mut self,
+        pending: &DirectoryDiff,
+        exists: impl Fn(&std::path::Path) -> bool,
+    ) {
+        let Some(state) = self.state.try_get(DIRECTORY_STATE_KEY) else {
+            return;
+        };
+        let line_of_id: std::collections::HashMap<u16, usize> = self
+            .annotations
+            .directory_entries_by_line()
+            .into_iter()
+            .map(|(line, id)| (id, line))
+            .collect();
+        let line_of = |path: &std::path::Path| {
+            state
+                .entries
+                .iter()
+                .find(|e| e.path == path)
+                .and_then(|e| line_of_id.get(&e.id).map(|&line| (line, e.is_dir)))
+        };
+        let mut line_edits: Vec<(usize, Option<String>)> = pending
+            .renames
+            .iter()
+            .filter_map(|(old, new_name)| {
+                line_of(old).map(|(line, is_dir)| {
+                    let text = if is_dir {
+                        format!("{new_name}/")
+                    } else {
+                        new_name.clone()
+                    };
+                    (line, Some(text))
+                })
+            })
+            .chain(
+                pending
+                    .deletes
+                    .iter()
+                    .filter_map(|path| line_of(path).map(|(line, _)| (line, None))),
+            )
+            .collect();
+        let creates: Vec<String> = pending
+            .creates
+            .iter()
+            .filter(|name| !exists(&state.path.join(name.trim_end_matches('/'))))
+            .cloned()
+            .collect();
+        if line_edits.is_empty() && creates.is_empty() {
+            return;
+        }
+        line_edits.sort_by_key(|edit| std::cmp::Reverse(edit.0));
+
+        self.begin_transaction("Rebase");
+        for (line, text) in line_edits {
+            let len = self.buffer.len();
+            let Some(start) = self.buffer.line_index.get_start(line) else {
+                continue;
+            };
+            let next = self.buffer.line_index.get_start(line + 1);
+            let resolved = match text {
+                Some(text) => super::ops::Resolved {
+                    start,
+                    end: next.map_or(len, |next| next - 1),
+                    text: text.chars().map(Character::from).collect(),
+                },
+                None => super::ops::Resolved {
+                    start: if next.is_none() {
+                        start.saturating_sub(1)
+                    } else {
+                        start
+                    },
+                    end: next.unwrap_or(len),
+                    text: Vec::new(),
+                },
+            };
+            let _ = self.apply_resolved(resolved, super::ops::Origin::Generated);
+        }
+        for name in creates {
+            let end = self.buffer.len();
+            let _ = self.apply_resolved(
+                super::ops::Resolved {
+                    start: end,
+                    end,
+                    text: std::iter::once(Character::Newline)
+                        .chain(name.chars().map(Character::from))
+                        .collect(),
+                },
+                super::ops::Origin::Generated,
+            );
+        }
+        self.commit_transaction();
     }
 
     /// Coalesce terminal wakeups without copying the terminal grid until a frame.

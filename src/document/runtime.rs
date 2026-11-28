@@ -32,6 +32,7 @@ impl BufferKindId {
     pub(crate) const UNDO_FILE_VIEW: Self = Self(NonZeroU32::new(17).unwrap());
     pub(crate) const IMAGE_VIEW: Self = Self(NonZeroU32::new(18).unwrap());
     pub(crate) const GIT_OUTPUT: Self = Self(NonZeroU32::new(19).unwrap());
+    pub(crate) const FILE_PREVIEW: Self = Self(NonZeroU32::new(20).unwrap());
 
     const RESERVED_BUILTIN_END: u32 = 64;
 
@@ -416,6 +417,7 @@ pub(super) struct DirectoryState {
     pub(super) path: PathBuf,
     pub(super) entries: Vec<DirEntry>,
     pub(super) show_hidden: bool,
+    pub(super) applied: super::DirectoryDiff,
 }
 pub(super) static DIRECTORY_STATE_KEY: StateKey<DirectoryState> = StateKey::new("directory");
 
@@ -967,7 +969,7 @@ impl BufferKindRegistry {
             id: BufferKindId::DIRECTORY,
             name: "directory".into(),
             policies: BufferPolicies {
-                read_only: ReadOnlyPolicy::FixedWritable,
+                read_only: ReadOnlyPolicy::DocumentOverride,
                 close: ClosePolicy::ConfirmDirty,
                 ..BufferPolicies::read_only_panel()
             },
@@ -1338,6 +1340,28 @@ impl BufferKindRegistry {
             reload_dispatch: ReloadDispatch::ImageAsText,
             #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: IMAGE_VIEW_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
+            owner: DescriptorOwner::BuiltIn,
+            tombstone: None,
+        })?;
+
+        self.register_builtin(KindDescriptor {
+            id: BufferKindId::FILE_PREVIEW,
+            name: "file_preview".into(),
+            policies: BufferPolicies {
+                read_only: ReadOnlyPolicy::FixedReadOnly,
+                close: ClosePolicy::DiscardDirty,
+                language_services: LanguageServicesPolicy::Virtual,
+                ..BufferPolicies::file_default()
+            },
+            action_dispatch: ActionDispatch::Disabled,
+            save_dispatch: SaveDispatch::Reject,
+            display_name: DisplayNameStrategy::FileName,
+            help_lines: None,
+            on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Unsupported,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
+            state_key: FILE_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
