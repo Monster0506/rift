@@ -500,7 +500,8 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
         let handle = doc.handle();
-        let implicit_target = target.is_none();
+        let force =
+            force || (target.is_none() && doc.descriptor().save_dispatch == SaveDispatch::File);
         let message = target
             .as_deref()
             .or_else(|| doc.path())
@@ -510,12 +511,7 @@ impl<T: TerminalBackend> Editor<T> {
             window: self.split_tree.focused_window_id(),
             message,
         };
-        self.save_buffer_with_quit(
-            handle.doc_id(),
-            target,
-            force || implicit_target,
-            Some(quit),
-        );
+        self.save_buffer_with_quit(handle.doc_id(), target, force, Some(quit));
     }
 
     fn finish_save_quit(&mut self, outcome: SaveOutcome, quit: &SaveQuit) {

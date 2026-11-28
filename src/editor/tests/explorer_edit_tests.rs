@@ -82,6 +82,149 @@ fn moving_an_entry_line_keeps_the_file_contents() {
 }
 
 #[test]
+fn cut_moves_a_file_into_a_child_directory_only_on_write() {
+    let dir = fixture();
+    let source = dir.path().join("a.txt");
+    let destination = dir.path().join("sub/a.txt");
+    let mut editor = explorer(dir.path());
+    goto_entry(&mut editor, "a.txt");
+    press(&mut editor, &keys("dd"));
+    goto_entry(&mut editor, "sub/");
+    press(&mut editor, &keys("<CR>"));
+    settle(&mut editor);
+    press(&mut editor, &keys("pp"));
+
+    assert_eq!(std::fs::read(&source).unwrap(), b"AAAA");
+    assert!(!destination.exists());
+    assert_eq!(
+        listing_text(&editor)
+            .lines()
+            .filter(|line| *line == "a.txt")
+            .count(),
+        1
+    );
+
+    press(&mut editor, &keys("u"));
+    editor.execute_command_line("w");
+    assert!(source.exists());
+    press(&mut editor, &keys("<C-r>"));
+    editor.execute_command_line("wq");
+    settle(&mut editor);
+
+    assert!(editor.panel_layout.is_none());
+    assert!(!source.exists());
+    assert_eq!(std::fs::read(&destination).unwrap(), b"AAAA");
+}
+
+#[test]
+fn counted_cut_moves_a_directory_and_file_through_the_parent() {
+    let dir = fixture();
+    let source = dir.path().join("source");
+    std::fs::create_dir(&source).unwrap();
+    std::fs::rename(dir.path().join("sub"), source.join("sub")).unwrap();
+    std::fs::rename(dir.path().join("a.txt"), source.join("a.txt")).unwrap();
+    let mut editor = explorer(&source);
+    goto_entry(&mut editor, "sub/");
+    press(&mut editor, &keys("2dd-"));
+    settle(&mut editor);
+    press(&mut editor, &keys("P"));
+    editor.execute_command_line("w");
+    settle(&mut editor);
+
+    assert!(!source.join("sub").exists());
+    assert!(!source.join("a.txt").exists());
+    assert_eq!(
+        std::fs::read(dir.path().join("sub/inner.txt")).unwrap(),
+        b"I"
+    );
+    assert_eq!(std::fs::read(dir.path().join("a.txt")).unwrap(), b"AAAA");
+}
+
+#[test]
+fn a_name_collision_keeps_a_pasted_move_pending_without_overwriting() {
+    let dir = fixture();
+    let source = dir.path().join("a.txt");
+    let destination = dir.path().join("sub/a.txt");
+    std::fs::write(&destination, b"existing").unwrap();
+    let mut editor = explorer(dir.path());
+    goto_entry(&mut editor, "a.txt");
+    press(&mut editor, &keys("dd"));
+    goto_entry(&mut editor, "sub/");
+    press(&mut editor, &keys("<CR>"));
+    settle(&mut editor);
+    press(&mut editor, &keys("p"));
+    editor.execute_command_line("w");
+    settle(&mut editor);
+
+    assert_eq!(std::fs::read(&source).unwrap(), b"AAAA");
+    assert_eq!(std::fs::read(&destination).unwrap(), b"existing");
+    assert!(notified(&editor, "destination already exists"));
+
+    press(&mut editor, &keys("G0cwrenamed<Esc>"));
+    editor.execute_command_line("w");
+    settle(&mut editor);
+
+    assert!(!source.exists());
+    assert_eq!(std::fs::read(&destination).unwrap(), b"existing");
+    assert_eq!(
+        std::fs::read(dir.path().join("sub/renamed.txt")).unwrap(),
+        b"AAAA"
+    );
+}
+
+#[test]
+fn yank_uses_the_same_paste_flow_but_preserves_the_source() {
+    let dir = fixture();
+    let source = dir.path().join("a.txt");
+    let folder = dir.path().join("sub");
+    let destination = folder.join("a.txt");
+    std::fs::write(&destination, b"existing").unwrap();
+    let mut editor = explorer(dir.path());
+    goto_entry(&mut editor, "a.txt");
+    press(&mut editor, &keys("yy"));
+    goto_entry(&mut editor, "sub/");
+    press(&mut editor, &keys("<CR>"));
+    settle(&mut editor);
+    press(&mut editor, &keys("p"));
+    editor.execute_command_line("w");
+    settle(&mut editor);
+
+    assert_eq!(std::fs::read(&destination).unwrap(), b"existing");
+    press(&mut editor, &keys("G0cwcopy<Esc>"));
+    assert!(!folder.join("copy.txt").exists());
+    editor.execute_command_line("w");
+    settle(&mut editor);
+
+    assert_eq!(std::fs::read(&source).unwrap(), b"AAAA");
+    assert_eq!(std::fs::read(&destination).unwrap(), b"existing");
+    assert_eq!(std::fs::read(folder.join("copy.txt")).unwrap(), b"AAAA");
+}
+
+#[test]
+fn yanking_a_directory_copies_its_tree_without_removing_the_source() {
+    let dir = fixture();
+    std::fs::create_dir(dir.path().join("target")).unwrap();
+    let mut editor = explorer(dir.path());
+    goto_entry(&mut editor, "sub/");
+    press(&mut editor, &keys("yy"));
+    goto_entry(&mut editor, "target/");
+    press(&mut editor, &keys("<CR>"));
+    settle(&mut editor);
+    press(&mut editor, &keys("P"));
+    editor.execute_command_line("w");
+    settle(&mut editor);
+
+    assert_eq!(
+        std::fs::read(dir.path().join("sub/inner.txt")).unwrap(),
+        b"I"
+    );
+    assert_eq!(
+        std::fs::read(dir.path().join("target/sub/inner.txt")).unwrap(),
+        b"I"
+    );
+}
+
+#[test]
 fn leaving_a_directory_with_unsaved_changes_is_refused() {
     let dir = fixture();
     let mut editor = explorer(dir.path());
@@ -195,6 +338,10 @@ fn deleting_a_non_empty_directory_needs_a_forced_write() {
     assert!(dir.path().join("sub").join("inner.txt").exists());
     assert_eq!(pending(&editor).deletes, vec![dir.path().join("sub")]);
     assert!(notified(&editor, ":w!"));
+
+    editor.execute_command_line("wq");
+    assert!(editor.panel_layout.is_some());
+    assert!(dir.path().join("sub/inner.txt").exists());
 
     editor.execute_command_line("w!");
     settle(&mut editor);

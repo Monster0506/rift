@@ -86,37 +86,47 @@ pub(crate) struct DirEntry {
     pub(crate) id: u16,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TransferKind {
+    Copy,
+    Move,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DirectoryTransfer {
+    pub(crate) source: PathBuf,
+    pub(crate) name: String,
+    pub(crate) is_dir: bool,
+    pub(crate) kind: TransferKind,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct DirectoryDiff {
     pub(crate) renames: Vec<(PathBuf, String)>,
+    pub(crate) transfers: Vec<DirectoryTransfer>,
     pub(crate) deletes: Vec<PathBuf>,
     pub(crate) creates: Vec<String>,
 }
 
 impl DirectoryDiff {
     pub(crate) fn is_empty(&self) -> bool {
-        self.renames.is_empty() && self.deletes.is_empty() && self.creates.is_empty()
+        self.renames.is_empty()
+            && self.transfers.is_empty()
+            && self.deletes.is_empty()
+            && self.creates.is_empty()
     }
 
-    #[must_use]
-    pub(crate) fn without(self, applied: &Self) -> Self {
-        Self {
-            renames: self
-                .renames
-                .into_iter()
-                .filter(|(old, _)| !applied.renames.iter().any(|(done, _)| done == old))
-                .collect(),
-            deletes: self
-                .deletes
-                .into_iter()
-                .filter(|path| !applied.deletes.contains(path))
-                .collect(),
-            creates: self
-                .creates
-                .into_iter()
-                .filter(|name| !applied.creates.contains(name))
-                .collect(),
+    fn without(mut self, applied: &Self) -> Self {
+        if applied.is_empty() {
+            return self;
         }
+        self.renames
+            .retain(|(old, _)| !applied.renames.iter().any(|(done, _)| done == old));
+        self.transfers
+            .retain(|entry| !applied.transfers.contains(entry));
+        self.deletes.retain(|path| !applied.deletes.contains(path));
+        self.creates.retain(|name| !applied.creates.contains(name));
+        self
     }
 }
 
@@ -706,14 +716,14 @@ impl Document {
     state_get!(pub(crate) fn directory_entries(&self) -> &[DirEntry] = DIRECTORY_STATE_KEY, |s| s.entries.as_slice());
     state_get!(pub(crate) fn directory_show_hidden(&self) -> bool = DIRECTORY_STATE_KEY, |s| s.show_hidden);
     state_set!(pub(crate) fn set_directory_show_hidden(&mut self, show_hidden: bool) = DIRECTORY_STATE_KEY, |s| s.show_hidden = show_hidden);
-    state_set!(pub(crate) fn set_directory_applied(&mut self, applied: DirectoryDiff) = DIRECTORY_STATE_KEY, |s| s.applied = applied);
-
-    pub(crate) fn take_directory_applied(&mut self) -> DirectoryDiff {
-        self.state
-            .try_get_mut(DIRECTORY_STATE_KEY)
-            .map_or_else(DirectoryDiff::default, |s| std::mem::take(&mut s.applied))
+    pub(crate) fn record_directory_applied(&mut self, mut applied: DirectoryDiff) {
+        if let Some(state) = self.state.try_get_mut(DIRECTORY_STATE_KEY) {
+            state.applied.renames.append(&mut applied.renames);
+            state.applied.transfers.append(&mut applied.transfers);
+            state.applied.deletes.append(&mut applied.deletes);
+            state.applied.creates.append(&mut applied.creates);
+        }
     }
-
     pub(crate) fn convert_to_file(&mut self) {
         self.kind = BufferKind::for_builtin(BufferKindId::FILE);
         self.state = StateSlot::new(FILE_STATE_KEY, FileState);
@@ -731,6 +741,7 @@ impl Document {
             DirectoryState {
                 path,
                 entries: vec![],
+                incoming: Vec::new(),
                 show_hidden: false,
                 applied: DirectoryDiff::default(),
             },

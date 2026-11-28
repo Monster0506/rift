@@ -135,6 +135,13 @@ impl FileSystem for NativeFileSystem {
         Ok(())
     }
 
+    fn copy_new(&self, source: &Path, destination: &Path) -> Result<(), RiftError> {
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        Ok(FsCopyJob::copy_new(source, destination)?)
+    }
+
     fn delete_recursive(&self, path: &Path) -> Result<(), RiftError> {
         if path.is_dir() {
             fs::remove_dir_all(path)?;

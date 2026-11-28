@@ -416,6 +416,7 @@ pub(super) static TERMINAL_STATE_KEY: StateKey<TerminalState> = StateKey::new("t
 pub(super) struct DirectoryState {
     pub(super) path: PathBuf,
     pub(super) entries: Vec<DirEntry>,
+    pub(super) incoming: Vec<(DirEntry, super::TransferKind)>,
     pub(super) show_hidden: bool,
     pub(super) applied: super::DirectoryDiff,
 }

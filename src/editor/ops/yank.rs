@@ -6,6 +6,7 @@ use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(crate) fn yank(&mut self, clip: Clip) {
+        self.explorer_register = None;
         self.clipboard_ring.push(clip);
         #[cfg(feature = "plugins")]
         self.raise(EventPayload::TextYank {

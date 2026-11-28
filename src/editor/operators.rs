@@ -163,6 +163,11 @@ impl<T: TerminalBackend> Editor<T> {
             return false;
         };
         if op == OperatorType::Yank {
+            let explorer_register = if motion.is_none() {
+                doc.capture_directory_entries(count, crate::document::TransferKind::Copy)
+            } else {
+                None
+            };
             let clip = match motion {
                 Some(motion) => crate::document::ops::compute_motion_range(
                     motion,
@@ -176,6 +181,9 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let capture = clip.and_then(|clip| OperatorClip::capture(doc, clip));
             self.publish_operator_clip(capture);
+            if let Some(entries) = explorer_register {
+                self.explorer_register = Some(super::explorer::ExplorerRegister::new(entries));
+            }
             self.set_mode(Mode::Normal);
             return true;
         }
@@ -207,6 +215,11 @@ impl<T: TerminalBackend> Editor<T> {
             .then(|| clip.clone())
             .flatten();
         let capture = clip.and_then(|clip| OperatorClip::capture(&doc, clip));
+        let explorer_register = if op == OperatorType::Delete && motion.is_none() {
+            doc.capture_directory_entries(count, crate::document::TransferKind::Move)
+        } else {
+            None
+        };
         let command = match (op, motion) {
             (OperatorType::Change, Some(motion)) => Command::Change(motion, count),
             (OperatorType::Change, None) => Command::ChangeLine(count),
@@ -233,6 +246,9 @@ impl<T: TerminalBackend> Editor<T> {
         self.set_mode(Mode::Normal);
         if changed {
             self.publish_operator_clip(capture);
+            if let Some(entries) = explorer_register {
+                self.explorer_register = Some(super::explorer::ExplorerRegister::new(entries));
+            }
             if !self.dot_repeat.is_replaying() {
                 self.dot_repeat.record_single(command);
             }

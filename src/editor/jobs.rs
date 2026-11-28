@@ -514,9 +514,7 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
                 .update_job_state(&JobMessage::Finished(id, true));
             return;
         }
-        let pending = doc
-            .parse_directory_diff()
-            .without(&doc.take_directory_applied());
+        let pending = doc.parse_directory_diff();
         let entries: Vec<crate::document::DirEntry> = listing
             .entries
             .iter()

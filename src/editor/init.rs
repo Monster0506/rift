@@ -119,6 +119,7 @@ impl<T: TerminalBackend> Editor<T> {
             clipboard_ring: crate::clipboard::ClipboardRing::new(),
             system_clipboard_cache: crate::clipboard::SystemClipboardCache::new(),
             clipboard_panel_register: None,
+            explorer_register: None,
             post_paste_state: None,
             file_load_jobs: std::collections::HashMap::new(),
             #[cfg(feature = "lsp")]

@@ -131,6 +131,8 @@ impl Document {
         };
         state.path = dir_path;
         state.entries = entries;
+        state.incoming.clear();
+        state.applied = DirectoryDiff::default();
         state.show_hidden = show_hidden;
         self.history.mark_saved();
     }
@@ -477,6 +479,185 @@ impl Document {
         self.history.mark_saved();
     }
 
+    pub(crate) fn directory_entry_at_line(&self, line: usize) -> Option<&DirEntry> {
+        let state = self.state.try_get(DIRECTORY_STATE_KEY)?;
+        let index =
+            usize::from(self.annotations.directory_entry_id_at_line(line)?).checked_sub(1)?;
+        if index < state.entries.len() {
+            state.entries.get(index)
+        } else {
+            state
+                .incoming
+                .get(index - state.entries.len())
+                .map(|(entry, _)| entry)
+        }
+    }
+
+    pub(crate) fn capture_directory_entries(
+        &self,
+        count: usize,
+        kind: super::TransferKind,
+    ) -> Option<Vec<super::DirectoryTransfer>> {
+        let path = self.directory_path()?;
+        let first = self.buffer.line_index.get_line_at(self.buffer.cursor());
+        let end = first
+            .saturating_add(count)
+            .min(self.buffer.last_real_line() + 1);
+        (first..end)
+            .map(|line| {
+                let entry = self.directory_entry_at_line(line)?;
+                if entry.path.parent() != Some(path.as_path()) {
+                    return None;
+                }
+                let bytes = self.buffer.get_line_bytes(line);
+                let text = std::str::from_utf8(&bytes).ok()?.trim_end_matches('\n');
+                let name = if entry.is_dir {
+                    text.strip_suffix('/').unwrap_or(text)
+                } else {
+                    text
+                };
+                if name.trim().is_empty() {
+                    return None;
+                }
+                Some(super::DirectoryTransfer {
+                    source: entry.path.clone(),
+                    name: name.to_owned(),
+                    is_dir: entry.is_dir,
+                    kind,
+                })
+            })
+            .collect()
+    }
+
+    pub(crate) fn put_directory_entries(
+        &mut self,
+        entries: &[super::DirectoryTransfer],
+        before: bool,
+    ) -> bool {
+        if self.is_read_only() {
+            return false;
+        }
+        let line = self.buffer.line_index.get_line_at(self.buffer.cursor());
+        let after = line.saturating_sub(usize::from(before));
+        let first = if self.buffer.is_empty() { 0 } else { after + 1 };
+        self.begin_transaction("Put explorer entries");
+        let inserted = self.insert_directory_entries(entries, after);
+        if inserted {
+            if let Some(start) = self.buffer.line_index.get_start(first) {
+                let _ = self.set_cursor(start, super::ops::CursorCause::Programmatic);
+            }
+        }
+        self.commit_transaction();
+        inserted
+    }
+
+    fn insert_directory_entries(
+        &mut self,
+        entries: &[super::DirectoryTransfer],
+        after: usize,
+    ) -> bool {
+        if entries.is_empty() {
+            return false;
+        }
+        let Some(state) = self.state.try_get_mut(DIRECTORY_STATE_KEY) else {
+            return false;
+        };
+        let present: HashSet<_> = self
+            .annotations
+            .directory_entries_by_line()
+            .into_iter()
+            .map(|(_, id)| id)
+            .collect();
+        let mut rows = Vec::new();
+        let mut text = Vec::new();
+        let empty = self.buffer.is_empty();
+        for entry in entries {
+            let local = (entry.kind == super::TransferKind::Move)
+                .then(|| {
+                    state
+                        .entries
+                        .iter()
+                        .find(|existing| existing.path == entry.source)
+                })
+                .flatten();
+            let incoming = state.incoming.iter().find_map(|(existing, kind)| {
+                (existing.path == entry.source && *kind == entry.kind).then_some(existing)
+            });
+            let id = if let Some(existing) = local.or(incoming) {
+                existing.id
+            } else {
+                let Ok(id) = u16::try_from(state.entries.len() + state.incoming.len() + 1) else {
+                    return false;
+                };
+                state.incoming.push((
+                    DirEntry {
+                        path: entry.source.clone(),
+                        is_dir: entry.is_dir,
+                        id,
+                    },
+                    entry.kind,
+                ));
+                id
+            };
+            if present.contains(&id) {
+                continue;
+            }
+            if !empty || !rows.is_empty() {
+                text.push(Character::Newline);
+            }
+            text.extend(entry.name.chars().map(Character::from));
+            if entry.is_dir {
+                text.push(Character::from('/'));
+            }
+            rows.push((id, entry));
+        }
+        if rows.is_empty() {
+            return false;
+        }
+        let pos = self
+            .buffer
+            .line_index
+            .get_start(after + 1)
+            .map_or(self.buffer.len(), |next| next - 1);
+        if !self
+            .apply_resolved(
+                super::ops::Resolved {
+                    start: pos,
+                    end: pos,
+                    text,
+                },
+                super::ops::Origin::Generated,
+            )
+            .is_ok_and(|changed| changed)
+        {
+            return false;
+        }
+        let first = if empty { 0 } else { after + 1 };
+        for (line, (id, entry)) in (first..).zip(rows) {
+            let original_name = entry
+                .source
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+            self.annotations
+                .create_fs_entry(line, id, original_name, entry.is_dir);
+        }
+        true
+    }
+
+    fn directory_line_text(&self, line: usize) -> String {
+        let index = &self.buffer.line_index;
+        let start = index.get_start(line).unwrap_or(0);
+        let len = self.buffer.len();
+        let end = index.get_end(line, len).unwrap_or(len);
+        self.buffer
+            .iter_at(start)
+            .take(end - start)
+            .filter(|&c| c != Character::Newline)
+            .map(Character::to_char_lossy)
+            .collect()
+    }
+
     pub(crate) fn parse_directory_diff(&self) -> DirectoryDiff {
         let Some(state) = self.state.try_get(DIRECTORY_STATE_KEY) else {
             return DirectoryDiff::default();
@@ -492,29 +673,12 @@ impl Document {
 
         let total_lines = self.buffer.get_total_lines();
         let mut renames: Vec<(std::path::PathBuf, String)> = Vec::new();
+        let mut transfers = Vec::new();
         let mut creates: Vec<String> = Vec::new();
         let mut seen_ids: HashSet<u16> = HashSet::new();
 
         for line_idx in 0..total_lines {
-            let line_start = self.buffer.line_index.get_start(line_idx).unwrap_or(0);
-            let line_end = self
-                .buffer
-                .line_index
-                .get_end(line_idx, self.buffer.len())
-                .unwrap_or(self.buffer.len());
-
-            let line_text: String = self
-                .buffer
-                .iter_at(line_start)
-                .take(line_end - line_start)
-                .filter_map(|c| {
-                    if c == Character::Newline {
-                        None
-                    } else {
-                        Some(c.to_char_lossy())
-                    }
-                })
-                .collect();
+            let line_text = self.directory_line_text(line_idx);
 
             let annotation_entry_id = self.annotations.directory_entry_id_at_line(line_idx);
 
@@ -523,7 +687,7 @@ impl Document {
                     continue;
                 }
 
-                let primary_name = line_text.trim_end_matches('/').trim().to_string();
+                let primary_name = line_text.trim_end_matches('/').trim();
 
                 if primary_name.is_empty() {
                     continue;
@@ -531,18 +695,29 @@ impl Document {
 
                 seen_ids.insert(entry_id);
 
+                if let Some((entry, kind)) = usize::from(entry_id)
+                    .checked_sub(entries.len() + 1)
+                    .and_then(|index| state.incoming.get(index))
+                {
+                    transfers.push(super::DirectoryTransfer {
+                        source: entry.path.clone(),
+                        name: primary_name.to_owned(),
+                        is_dir: entry.is_dir,
+                        kind: *kind,
+                    });
+                    continue;
+                }
                 if let Some(entry) = id_map.get(&entry_id) {
                     let orig_name = entry
                         .path
                         .file_name()
                         .and_then(|n| n.to_str())
-                        .unwrap_or("")
-                        .to_string();
+                        .unwrap_or("");
 
                     if entry.is_dir && primary_name.contains('/') {
                         creates.push(line_text.trim().to_string());
                     } else if primary_name != orig_name {
-                        renames.push((entry.path.clone(), primary_name));
+                        renames.push((entry.path.clone(), primary_name.to_owned()));
                     }
                 }
             } else {
@@ -555,7 +730,8 @@ impl Document {
 
         let protected_dirs: HashSet<std::path::PathBuf> = renames
             .iter()
-            .filter_map(|(_, new_name)| {
+            .map(|(_, name)| name)
+            .filter_map(|new_name| {
                 let p = std::path::Path::new(new_name.as_str());
                 p.parent()
                     .filter(|parent| *parent != std::path::Path::new(""))
@@ -582,9 +758,11 @@ impl Document {
 
         DirectoryDiff {
             renames,
+            transfers,
             deletes: deleted.into_iter().map(|e| e.path.clone()).collect(),
             creates,
         }
+        .without(&state.applied)
     }
 
     pub(crate) fn rebase_directory_edits(
@@ -634,7 +812,7 @@ impl Document {
             .filter(|name| !exists(&state.path.join(name.trim_end_matches('/'))))
             .cloned()
             .collect();
-        if line_edits.is_empty() && creates.is_empty() {
+        if line_edits.is_empty() && creates.is_empty() && pending.transfers.is_empty() {
             return;
         }
         line_edits.sort_by_key(|edit| std::cmp::Reverse(edit.0));
@@ -677,6 +855,10 @@ impl Document {
                 super::ops::Origin::Generated,
             );
         }
+        self.insert_directory_entries(
+            &pending.transfers,
+            self.buffer.get_total_lines().saturating_sub(1),
+        );
         self.commit_transaction();
     }
 

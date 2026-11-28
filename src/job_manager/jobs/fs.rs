@@ -69,7 +69,12 @@ impl FsCopyJob {
     pub(crate) fn copy_recursive_pub(source: &Path, destination: &Path) -> std::io::Result<()> {
         let signal = CancellationSignal::new_uncancelled();
         let mut visited = HashSet::new();
-        Self::copy_recursive(source, destination, &signal, &mut visited)
+        Self::copy_recursive(source, destination, &signal, &mut visited, false)
+    }
+
+    pub(crate) fn copy_new(source: &Path, destination: &Path) -> std::io::Result<()> {
+        let signal = CancellationSignal::new_uncancelled();
+        Self::copy_recursive(source, destination, &signal, &mut HashSet::new(), true)
     }
 
     fn copy_recursive(
@@ -77,6 +82,7 @@ impl FsCopyJob {
         destination: &Path,
         signal: &CancellationSignal,
         visited: &mut HashSet<PathBuf>,
+        exclusive: bool,
     ) -> std::io::Result<()> {
         if signal.is_cancelled() {
             return Err(std::io::Error::new(
@@ -94,7 +100,14 @@ impl FsCopyJob {
         }
 
         if source_meta.is_dir() {
-            if destination.starts_with(source) {
+            if destination.starts_with(source)
+                || (exclusive
+                    && destination.parent().is_some_and(|parent| {
+                        fs::canonicalize(source).is_ok_and(|source| {
+                            fs::canonicalize(parent).is_ok_and(|parent| parent.starts_with(source))
+                        })
+                    }))
+            {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
                     format!(
@@ -110,23 +123,46 @@ impl FsCopyJob {
                 }
             }
 
-            fs::create_dir_all(destination)?;
-            for entry in fs::read_dir(source)? {
-                if signal.is_cancelled() {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Interrupted,
-                        "Cancelled",
-                    ));
-                }
-                let entry = entry?;
-                let dest_child = destination.join(entry.file_name());
-                Self::copy_recursive(&entry.path(), &dest_child, signal, visited)?;
+            if exclusive {
+                fs::create_dir(destination)?;
+            } else {
+                fs::create_dir_all(destination)?;
             }
+            let result = (|| {
+                for entry in fs::read_dir(source)? {
+                    if signal.is_cancelled() {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::Interrupted,
+                            "Cancelled",
+                        ));
+                    }
+                    let entry = entry?;
+                    let dest_child = destination.join(entry.file_name());
+                    Self::copy_recursive(&entry.path(), &dest_child, signal, visited, exclusive)?;
+                }
+                Ok(())
+            })();
+            if exclusive && result.is_err() {
+                let _ = fs::remove_dir_all(destination);
+            }
+            result?;
         } else {
             if let Some(parent) = destination.parent() {
                 fs::create_dir_all(parent)?;
             }
-            fs::copy(source, destination)?;
+            if exclusive {
+                let mut input = fs::File::open(source)?;
+                let mut output = fs::File::create_new(destination)?;
+                let result = std::io::copy(&mut input, &mut output)
+                    .and_then(|_| output.set_permissions(source_meta.permissions()));
+                drop(output);
+                if result.is_err() {
+                    let _ = fs::remove_file(destination);
+                }
+                result?;
+            } else {
+                fs::copy(source, destination)?;
+            }
         }
         Ok(())
     }
@@ -149,7 +185,13 @@ impl Job for FsCopyJob {
         ));
 
         let mut visited = HashSet::new();
-        match Self::copy_recursive(&self.source, &self.destination, &signal, &mut visited) {
+        match Self::copy_recursive(
+            &self.source,
+            &self.destination,
+            &signal,
+            &mut visited,
+            false,
+        ) {
             Ok(()) => {
                 let _ = sender.send(JobMessage::Finished(id, false));
             }

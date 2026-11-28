@@ -1,12 +1,48 @@
 use super::ops::windows::PanelSplit;
 use super::Editor;
 use super::{PanelKind, PanelLayout};
+use crate::document::{DirectoryDiff, DirectoryTransfer, TransferKind};
 use crate::term::TerminalBackend;
 
 #[derive(Debug, Clone)]
 pub(super) struct PendingExplorerPreview {
     path: std::path::PathBuf,
     pub(super) job_id: usize,
+}
+
+pub(super) struct ExplorerRegister {
+    entries: Vec<DirectoryTransfer>,
+    detached: bool,
+}
+
+impl ExplorerRegister {
+    pub(super) const fn new(entries: Vec<DirectoryTransfer>) -> Self {
+        Self {
+            entries,
+            detached: false,
+        }
+    }
+
+    fn is_attached_cut(&self) -> bool {
+        !self.detached
+            && self
+                .entries
+                .first()
+                .is_some_and(|entry| entry.kind == TransferKind::Move)
+    }
+
+    fn covers(&self, diff: &DirectoryDiff) -> bool {
+        self.is_attached_cut()
+            && diff.renames.is_empty()
+            && diff.transfers.is_empty()
+            && diff.creates.is_empty()
+            && self.entries.len() == diff.deletes.len()
+            && {
+                let sources: std::collections::HashSet<_> =
+                    self.entries.iter().map(|entry| &entry.source).collect();
+                diff.deletes.iter().all(|path| sources.contains(path))
+            }
+    }
 }
 
 impl<T: TerminalBackend> Editor<T> {
@@ -23,7 +59,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             doc.convert_to_directory(new_path.clone());
             doc.set_directory_show_hidden(show_hidden);
-            doc.replace_content("", crate::document::ops::ContentKind::Render);
+            doc.replace_content("", crate::document::ops::ContentKind::Load);
         }
         let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
             doc_id,
@@ -51,21 +87,61 @@ impl<T: TerminalBackend> Editor<T> {
             .get_document(doc_id)
             .is_some_and(|doc| !doc.parse_directory_diff().is_empty());
         if pending {
-            self.notify(
-                crate::notification::NotificationType::Warning,
-                "Unsaved changes — write with :w first".to_string(),
-            );
+            self.notify_pending_directory_edits();
         }
         pending
     }
 
+    pub(super) fn put_explorer_register(&mut self, before: bool) -> Option<bool> {
+        let layout = self.panel_layout.as_ref()?;
+        if layout.kind != PanelKind::FileExplorer || layout.dir_doc_id != self.active_document_id()
+        {
+            return None;
+        }
+        let cut = self.explorer_register.as_ref()?;
+        let doc = self.document_manager.get_document_mut(layout.dir_doc_id)?;
+        Some(doc.put_directory_entries(&cut.entries, before))
+    }
+
+    fn allow_explorer_navigation(&mut self, doc_id: crate::document::DocumentId) -> bool {
+        let Some(doc) = self.document_manager.get_document(doc_id) else {
+            return false;
+        };
+        let diff = doc.parse_directory_diff();
+        if diff.is_empty() {
+            if self
+                .explorer_register
+                .as_ref()
+                .is_some_and(ExplorerRegister::is_attached_cut)
+            {
+                self.explorer_register = None;
+            }
+            return true;
+        }
+        if let Some(cut) = &mut self.explorer_register {
+            if cut.covers(&diff) {
+                cut.detached = true;
+                return true;
+            }
+        }
+        self.notify_pending_directory_edits();
+        false
+    }
+
+    fn notify_pending_directory_edits(&mut self) {
+        self.notify(
+            crate::notification::NotificationType::Warning,
+            "Unsaved changes — write with :w first".to_string(),
+        );
+    }
+
     pub(super) fn handle_explorer_select(&mut self) {
         let (doc_id, in_panel) = self.explorer_target_doc();
-        if self.refuse_with_pending_directory_edits(doc_id) {
-            return;
-        }
         if in_panel {
             self.handle_explorer_split_select();
+            return;
+        }
+        if self.refuse_with_pending_directory_edits(doc_id) {
             return;
         }
 
@@ -111,11 +187,11 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn handle_explorer_parent(&mut self) {
         let (doc_id, in_panel) = self.explorer_target_doc();
-        if self.refuse_with_pending_directory_edits(doc_id) {
-            return;
-        }
         if in_panel {
             self.handle_explorer_split_parent();
+            return;
+        }
+        if self.refuse_with_pending_directory_edits(doc_id) {
             return;
         }
 
@@ -215,6 +291,9 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(layout) = self.panel_layout.take() else {
             return;
         };
+        if layout.kind == PanelKind::FileExplorer {
+            self.explorer_register = None;
+        }
 
         let (keep, close) = match layout.kind {
             PanelKind::UndoTree | PanelKind::Regions => (layout.preview_win_id, layout.dir_win_id),
@@ -569,8 +648,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let doc = self.document_manager.get_document(layout.dir_doc_id)?;
         let line_num = doc.buffer().line_index.get_line_at(doc.buffer().cursor());
-        let (name, _) = doc.annotations.directory_entry_info_at_line(line_num)?;
-        Some(doc.directory_path()?.join(name))
+        Some(doc.directory_entry_at_line(line_num)?.path.clone())
     }
 
     pub(super) fn update_explorer_preview(&mut self) {
@@ -696,9 +774,15 @@ impl<T: TerminalBackend> Editor<T> {
         let target_path = dir_path.join(&entry_name);
 
         if is_dir {
+            if !self.allow_explorer_navigation(layout.dir_doc_id) {
+                return;
+            }
             self.reload_directory_buffer(layout.dir_doc_id, target_path);
             self.update_explorer_preview();
         } else {
+            if self.refuse_with_pending_directory_edits(layout.dir_doc_id) {
+                return;
+            }
             self.close_split_panel();
             if let Err(e) = self.open_file(Some(target_path.display().to_string()), false) {
                 self.notify_error(e);
@@ -729,6 +813,9 @@ impl<T: TerminalBackend> Editor<T> {
                 None => return,
             }
         };
+        if !self.allow_explorer_navigation(layout.dir_doc_id) {
+            return;
+        }
 
         self.scheduler.explorer_cursor_entry = child_name;
 
@@ -965,8 +1052,23 @@ impl<T: TerminalBackend> Editor<T> {
         for err in outcome.errors {
             self.notify(crate::notification::NotificationType::Error, err);
         }
+        if let Some(cut) = &mut self.explorer_register {
+            cut.entries.retain(|entry| {
+                !outcome.applied.deletes.contains(&entry.source)
+                    && !outcome
+                        .applied
+                        .transfers
+                        .iter()
+                        .any(|done| done.kind == TransferKind::Move && done.source == entry.source)
+                    && !outcome
+                        .applied
+                        .renames
+                        .iter()
+                        .any(|(old, _)| *old == entry.source)
+            });
+        }
         if let Some(doc) = self.document_manager.get_document_mut(dir_doc_id) {
-            doc.set_directory_applied(outcome.applied);
+            doc.record_directory_applied(outcome.applied);
         }
 
         let reload = crate::job_manager::jobs::explorer::DirectoryListJob::new(
@@ -993,21 +1095,54 @@ fn is_same_entry(
     a: &std::path::Path,
     b: &std::path::Path,
 ) -> bool {
-    fs.canonicalize(a) == fs.canonicalize(b)
+    a.parent() == b.parent() && fs.canonicalize(a) == fs.canonicalize(b)
+}
+
+fn transfer_target(
+    dir: &std::path::Path,
+    entry: &DirectoryTransfer,
+) -> Result<std::path::PathBuf, String> {
+    let name = std::path::Path::new(&entry.name);
+    let mut parts = name.components();
+    if matches!(parts.next(), Some(std::path::Component::Normal(_))) && parts.next().is_none() {
+        Ok(dir.join(name))
+    } else {
+        Err(format!(
+            "{}: use a single name in the destination folder",
+            entry.name
+        ))
+    }
 }
 
 fn plan_renames(
     fs: &dyn crate::fs_backend::FileSystem,
     dir_path: &std::path::Path,
-    renames: &[(std::path::PathBuf, String)],
+    diff: &DirectoryDiff,
     errors: &mut Vec<String>,
 ) -> Vec<(std::path::PathBuf, std::path::PathBuf)> {
     let mut targeted = std::collections::HashSet::new();
     let mut plan = Vec::new();
 
-    for (old_path, new_name) in renames {
-        let new_path = old_path.parent().unwrap_or(dir_path).join(new_name);
-
+    let destinations = diff
+        .renames
+        .iter()
+        .map(|(old, name)| Ok((old, old.parent().unwrap_or(dir_path).join(name))))
+        .chain(
+            diff.transfers
+                .iter()
+                .filter(|entry| entry.kind == TransferKind::Move)
+                .map(|entry| {
+                    transfer_target(dir_path, entry).map(|target| (&entry.source, target))
+                }),
+        );
+    for destination in destinations {
+        let (old_path, new_path) = match destination {
+            Ok(paths) => paths,
+            Err(error) => {
+                errors.push(error);
+                continue;
+            }
+        };
         if fs.is_dir(old_path) {
             let old_canonical = fs.canonicalize(old_path);
             let new_parent_raw = new_path.parent().unwrap_or(&new_path);
@@ -1031,8 +1166,9 @@ fn plan_renames(
         let before = plan.len();
 
         plan.retain(|(old, new)| {
-            let blocked =
-                fs.path_exists(new) && !sources.contains(new) && !is_same_entry(fs, old, new);
+            let blocked = std::fs::symlink_metadata(new).is_ok()
+                && !sources.contains(new)
+                && !is_same_entry(fs, old, new);
             if blocked {
                 errors.push(rename_error(old, "destination already exists"));
             }
@@ -1081,7 +1217,7 @@ fn run_renames(
     }
 
     for (src, old, new) in staged {
-        let result = if fs.path_exists(&new) && !is_same_entry(fs, &src, &new) {
+        let result = if std::fs::symlink_metadata(&new).is_ok() && !is_same_entry(fs, &src, &new) {
             Err("destination already exists".to_string())
         } else {
             fs.rename(&src, &new).map_err(|e| e.message)
@@ -1118,7 +1254,22 @@ fn apply_directory_diff_to_fs(
     let mut errors: Vec<String> = Vec::new();
     let mut applied = crate::document::DirectoryDiff::default();
 
-    let plan = plan_renames(fs, dir_path, &diff.renames, &mut errors);
+    for entry in diff
+        .transfers
+        .iter()
+        .filter(|entry| entry.kind == TransferKind::Copy)
+    {
+        let result = transfer_target(dir_path, entry).and_then(|target| {
+            fs.copy_new(&entry.source, &target)
+                .map_err(|error| error.message)
+        });
+        match result {
+            Ok(()) => applied.transfers.push(entry.clone()),
+            Err(error) => errors.push(format!("copy {}: {error}", entry.name)),
+        }
+    }
+
+    let plan = plan_renames(fs, dir_path, diff, &mut errors);
     let renamed = run_renames(fs, plan, &mut errors);
     applied.renames = diff
         .renames
@@ -1126,6 +1277,12 @@ fn apply_directory_diff_to_fs(
         .filter(|(old, _)| renamed.contains(old))
         .cloned()
         .collect();
+    applied.transfers.extend(
+        diff.transfers
+            .iter()
+            .filter(|entry| entry.kind == TransferKind::Move && renamed.contains(&entry.source))
+            .cloned(),
+    );
 
     for path in &diff.deletes {
         match fs.delete_recursive(path) {

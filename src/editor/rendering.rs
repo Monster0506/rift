@@ -1666,7 +1666,7 @@ impl<T: TerminalBackend> Editor<T> {
             .get_document(doc_id)
             .map_or_default(super::super::document::Document::parse_directory_diff);
 
-        if diff.renames.is_empty() && diff.deletes.is_empty() && diff.creates.is_empty() {
+        if diff.is_empty() {
             self.render_system
                 .compositor
                 .clear_layer(LayerPriority::EXPLORER_DIFF);
@@ -1679,6 +1679,24 @@ impl<T: TerminalBackend> Editor<T> {
             let old_name = old_path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
             let text = format!("~ {old_name} -> {new_name}");
             let row: Vec<Cell> = text
+                .chars()
+                .take(MAX_WIDTH)
+                .map(|c| Cell::from_char(c).with_colors(Some(Color::Yellow), None))
+                .collect();
+            rows.push(row);
+        }
+        for entry in &diff.transfers {
+            let source = entry
+                .source
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy();
+            let operation = match entry.kind {
+                crate::document::TransferKind::Copy => "copy",
+                crate::document::TransferKind::Move => "move",
+            };
+            let text = format!("{operation} {source} -> {}", entry.name);
+            let row = text
                 .chars()
                 .take(MAX_WIDTH)
                 .map(|c| Cell::from_char(c).with_colors(Some(Color::Yellow), None))

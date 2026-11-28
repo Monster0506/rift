@@ -169,6 +169,7 @@ pub struct Editor<T: TerminalBackend> {
     clipboard_ring: crate::clipboard::ClipboardRing,
     system_clipboard_cache: crate::clipboard::SystemClipboardCache,
     clipboard_panel_register: Option<ClipboardPanelRegister>,
+    explorer_register: Option<explorer::ExplorerRegister>,
     post_paste_state: Option<PostPasteState>,
     file_load_jobs: std::collections::HashMap<usize, jobs::FileLoad>,
     #[cfg(feature = "lsp")]

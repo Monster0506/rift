@@ -491,6 +491,9 @@ impl<T: TerminalBackend> Editor<T> {
             };
             return self.replace_visual_selection(register);
         }
+        if let Some(changed) = self.put_explorer_register(before) {
+            return changed;
+        }
         let active = self.active_document_id();
         let ghost_doc = self
             .document_manager

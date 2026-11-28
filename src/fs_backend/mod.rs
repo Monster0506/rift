@@ -72,6 +72,8 @@ pub(crate) trait FileSystem: Send + Sync {
     /// Returns an error if the source cannot be moved to `new`.
     fn rename(&self, old: &Path, new: &Path) -> Result<(), RiftError>;
 
+    fn copy_new(&self, source: &Path, destination: &Path) -> Result<(), RiftError>;
+
     /// Recursively delete a directory, or a single file if `path` isn't one.
     ///
     /// # Errors

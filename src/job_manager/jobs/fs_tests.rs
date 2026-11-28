@@ -140,7 +140,7 @@ fn copy_recursive_does_not_loop_on_self_referential_symlink() {
     let dst = dir.path().join("looped_copy");
     let signal = fresh_signal();
     let mut visited = HashSet::new();
-    let result = FsCopyJob::copy_recursive(&src, &dst, &signal, &mut visited);
+    let result = FsCopyJob::copy_recursive(&src, &dst, &signal, &mut visited, false);
 
     assert!(
         result.is_ok(),
