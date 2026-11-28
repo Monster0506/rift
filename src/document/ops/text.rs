@@ -379,8 +379,33 @@ impl DocumentWrite<'_> {
 
 impl Document {
     pub(crate) fn replace_content(&mut self, content: impl Into<Content>, kind: ContentKind) {
+        self.swap_buffer(content.into());
+        if kind == ContentKind::Load || self.history.can_undo() || self.history.can_redo() {
+            self.history = UndoTree::new();
+        }
+        self.current_transaction = None;
+        self.transaction_depth = 0;
+        self.pending_annotation_snapshot = None;
+        self.annotation_undo_stack.clear();
+        self.annotation_redo_stack.clear();
+        if kind == ContentKind::Load {
+            self.syntax = None;
+            self.clear_selection();
+            self.set_annotations(crate::annotations::kind::well_known::TEXT_COLOR, []);
+        }
+        self.record_text_change();
+        self.reparse_syntax();
+    }
+
+    pub(in crate::document) fn restore_snapshot_text(&mut self, text: &[Character]) {
+        self.swap_buffer(Content::Text(text.to_vec()));
+        self.record_text_change();
+        self.reparse_syntax();
+    }
+
+    fn swap_buffer(&mut self, content: Content) {
         self.commit_pending_ghost();
-        let mut buffer = match content.into() {
+        let mut buffer = match content {
             Content::Text(chars) => TextBuffer::from_chars(&chars),
             Content::Lines(lines) => TextBuffer::from_line_index(lines),
         };
@@ -393,19 +418,6 @@ impl Document {
         if let Some(syntax) = &mut self.syntax {
             syntax.invalidate_trees();
         }
-        if kind == ContentKind::Load {
-            self.syntax = None;
-            self.history = UndoTree::new();
-            self.current_transaction = None;
-            self.transaction_depth = 0;
-            self.pending_annotation_snapshot = None;
-            self.annotation_undo_stack.clear();
-            self.annotation_redo_stack.clear();
-            self.clear_selection();
-            self.set_annotations(crate::annotations::kind::well_known::TEXT_COLOR, []);
-        }
-        self.record_text_change();
-        self.reparse_syntax();
     }
 
     pub(crate) fn reload_content(&mut self, lines: crate::buffer::line_index::LineIndex) {

@@ -328,7 +328,7 @@ impl Document {
         let replay_path = self.history.goto_seq(target)?;
 
         if let Some(snapshot) = &replay_path.snapshot_restore {
-            self.replace_content(&snapshot.full_text, super::ContentKind::Render);
+            self.restore_snapshot_text(&snapshot.full_text);
             self.annotations.restore(snapshot.annotations.clone());
             self.annotation_undo_stack.clear();
             self.annotation_redo_stack.clear();

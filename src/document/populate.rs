@@ -386,10 +386,6 @@ impl Document {
         };
         state.entries = entries.iter().cloned().collect();
         state.inserted.clear();
-        self.history = crate::history::UndoTree::new();
-        self.annotation_undo_stack.clear();
-        self.annotation_redo_stack.clear();
-        self.pending_annotation_snapshot = None;
         self.history.mark_saved();
     }
 

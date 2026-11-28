@@ -3,6 +3,51 @@ use crate::document::ops::{ContentKind, Edit, EditSource};
 use crate::document::runtime::BufferKindRegistry;
 
 #[test]
+fn refreshing_an_edited_directory_listing_leaves_nothing_stale_to_undo() {
+    use crate::document::DirEntry;
+    let entries = |names: &[&str]| -> Vec<DirEntry> {
+        names
+            .iter()
+            .map(|name| DirEntry {
+                path: std::path::PathBuf::from("/tmp").join(name),
+                is_dir: false,
+                id: 0,
+            })
+            .collect()
+    };
+    let mut doc = Document::new_directory(
+        crate::document::DocumentId::new(1),
+        std::path::PathBuf::from("/tmp"),
+    )
+    .unwrap();
+    doc.populate_directory_buffer(entries(&["alpha.txt", "beta.txt"]));
+    let end = doc.buffer().len();
+    doc.edit(Edit::insert(end, "\nnew.txt"), EditSource::User)
+        .unwrap();
+    doc.populate_directory_buffer(entries(&["zeta.txt"]));
+    let refreshed = doc.buffer().to_string();
+
+    assert!(!doc.undo());
+    assert_eq!(doc.buffer().to_string(), refreshed);
+    assert!(!doc.is_dirty());
+}
+
+#[test]
+fn replacing_content_forgets_history_written_against_the_old_text() {
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
+    doc.edit(Edit::type_text("one\ntwo\nthree"), EditSource::User)
+        .unwrap();
+    doc.replace_content("x", ContentKind::Render);
+
+    assert!(!doc.undo());
+    assert!(!doc.redo());
+    assert_eq!(doc.buffer().to_string(), "x");
+    doc.edit(Edit::type_text("y"), EditSource::User).unwrap();
+    assert!(doc.undo());
+    assert_eq!(doc.buffer().to_string(), "x");
+}
+
+#[test]
 fn a_read_only_edit_is_distinguishable_from_a_boundary_no_op() {
     let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     assert!(!doc.edit(Edit::DeleteBackward, EditSource::User).unwrap());
