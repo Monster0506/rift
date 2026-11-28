@@ -711,7 +711,14 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
         let Some(load) = self.take_file_load(id, token, res.document_id, res.is_reload) else {
             return;
         };
-        self.preserve_file_save_history(load.token.handle);
+        let undoable = res.is_reload
+            && self
+                .document_manager
+                .get_document_by_handle(load.token.handle)
+                .is_some_and(|doc| doc.image().is_none());
+        if !undoable {
+            self.preserve_file_save_history(load.token.handle);
+        }
         let Some(doc) = self
             .document_manager
             .get_document_by_handle_mut(load.token.handle)
@@ -719,18 +726,28 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
             return;
         };
 
-        doc.replace_content(res.line_index, crate::document::ops::ContentKind::Load);
+        if undoable {
+            doc.reload_content(res.line_index);
+        } else {
+            doc.replace_content(res.line_index, crate::document::ops::ContentKind::Load);
+        }
         let _ = doc.set_option("line_ending", Some(res.line_ending.name()));
         let _ = doc.set_option("bomb", Some(if res.has_bom { "true" } else { "false" }));
-        #[cfg(feature = "lsp")]
-        if res.is_reload {
-            doc.mark_lsp_full_sync();
+        #[cfg(feature = "treesitter")]
+        let needs_syntax = !undoable || doc.syntax.is_none();
+        if !undoable {
+            #[cfg(feature = "lsp")]
+            if res.is_reload {
+                doc.mark_lsp_full_sync();
+            }
+            self.restore_persisted_undo(res.document_id, res.content_hash);
         }
-        self.restore_persisted_undo(res.document_id, res.content_hash);
 
         if res.is_reload {
             #[cfg(feature = "treesitter")]
-            self.attach_syntax_for_document(res.document_id);
+            if needs_syntax {
+                self.attach_syntax_for_document(res.document_id);
+            }
             #[cfg(feature = "plugins")]
             self.raise(crate::plugin::events::EventPayload::BufReload {
                 buf: res.document_id,

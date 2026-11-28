@@ -408,6 +408,31 @@ impl Document {
         self.reparse_syntax();
     }
 
+    pub(crate) fn reload_content(&mut self, lines: crate::buffer::line_index::LineIndex) {
+        let disk = TextBuffer::from_line_index(lines);
+        let (old_len, new_len) = (self.buffer.len(), disk.len());
+        let prefix = self
+            .buffer
+            .chars(0..old_len)
+            .zip(disk.chars(0..new_len))
+            .take_while(|(old, new)| old == new)
+            .count();
+        let suffix = (1..=old_len.min(new_len) - prefix)
+            .take_while(|&back| self.buffer.char_at(old_len - back) == disk.char_at(new_len - back))
+            .count();
+        let changed = Resolved {
+            start: prefix,
+            end: old_len - suffix,
+            text: disk.chars(prefix..new_len - suffix).collect(),
+        };
+        if changed.start < changed.end || !changed.text.is_empty() {
+            self.begin_transaction("Reload");
+            let _ = self.apply_resolved(changed, Origin::Generated);
+            self.commit_transaction();
+        }
+        self.history.mark_saved();
+    }
+
     pub(crate) const fn buffer_replaced(&self) -> bool {
         self.buffer_replaced
     }

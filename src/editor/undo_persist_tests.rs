@@ -123,6 +123,30 @@ fn undo_file_is_not_written_when_persistent_undo_is_explicitly_disabled() {
     );
 }
 
+fn editor_with_undo_dir(undo_dir: &std::path::Path) -> Editor<MockTerminal> {
+    let mut editor = create_editor();
+    for (name, value) in [
+        ("undofile", "true"),
+        ("undodir", undo_dir.to_str().unwrap()),
+    ] {
+        editor
+            .set_option(
+                name,
+                Some(value),
+                crate::command_line::settings::resolver::OptionScope::Global,
+            )
+            .unwrap();
+    }
+    editor
+}
+
+fn open_path(editor: &mut Editor<MockTerminal>, path: &std::path::Path) {
+    editor
+        .open_file(Some(path.to_string_lossy().into_owned()), false)
+        .unwrap();
+    drain_jobs(editor);
+}
+
 #[test]
 fn persisted_undo_matches_the_saved_snapshot_after_later_edits() {
     let dir = tempfile::tempdir().unwrap();
@@ -130,36 +154,70 @@ fn persisted_undo_matches_the_saved_snapshot_after_later_edits() {
     std::fs::write(&file_path, "BASE_TEXT").unwrap();
     let undo_dir = dir.path().join("undo");
 
-    let mut editor = create_editor();
-    editor
-        .set_option(
-            "undofile",
-            Some("true"),
-            crate::command_line::settings::resolver::OptionScope::Global,
-        )
-        .unwrap();
-    editor
-        .set_option(
-            "undodir",
-            Some(undo_dir.to_str().unwrap()),
-            crate::command_line::settings::resolver::OptionScope::Global,
-        )
-        .unwrap();
-    editor
-        .open_file(Some(file_path.to_string_lossy().into_owned()), false)
-        .unwrap();
-    drain_jobs(&mut editor);
+    let mut editor = editor_with_undo_dir(&undo_dir);
+    open_path(&mut editor, &file_path);
     let buf = editor.active_document_id();
-
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('A')));
     editor.save_buffer(buf, None, false);
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('Z')));
     drain_jobs(&mut editor);
     assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "ABASE_TEXT");
 
+    let mut restarted = editor_with_undo_dir(&undo_dir);
+    open_path(&mut restarted, &file_path);
+    assert_eq!(
+        restarted.active_document().buffer().to_string(),
+        "ABASE_TEXT"
+    );
+    restarted.handle_action(&Action::Editor(EditorAction::Undo));
+    assert_eq!(
+        restarted.active_document().buffer().to_string(),
+        "BASE_TEXT"
+    );
+}
+
+#[test]
+fn reloading_is_one_undo_step_that_keeps_earlier_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = dir.path().join("notes.txt");
+    std::fs::write(&file_path, "one\ntwo\n").unwrap();
+
+    let mut editor = create_editor();
+    open_path(&mut editor, &file_path);
+    let buf = editor.active_document_id();
+    editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
+    std::fs::write(&file_path, "one\nTWO\nthree\n").unwrap();
+
     editor.reload_document(buf, true).unwrap();
     drain_jobs(&mut editor);
-    assert_eq!(editor.active_document().buffer().to_string(), "ABASE_TEXT");
+    let text = |editor: &mut Editor<MockTerminal>| editor.active_document().buffer().to_string();
+    assert_eq!(text(&mut editor), "one\nTWO\nthree\n");
+    assert!(!editor.active_document().is_dirty());
+
     editor.handle_action(&Action::Editor(EditorAction::Undo));
-    assert_eq!(editor.active_document().buffer().to_string(), "BASE_TEXT");
+    assert_eq!(text(&mut editor), "Xone\ntwo\n");
+    assert!(editor.active_document().is_dirty());
+    editor.handle_action(&Action::Editor(EditorAction::Undo));
+    assert_eq!(text(&mut editor), "one\ntwo\n");
+    editor.handle_action(&Action::Editor(EditorAction::Redo));
+    editor.handle_action(&Action::Editor(EditorAction::Redo));
+    assert_eq!(text(&mut editor), "one\nTWO\nthree\n");
+    assert!(!editor.active_document().is_dirty());
+}
+
+#[test]
+fn reloading_unchanged_content_adds_no_undo_step() {
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = dir.path().join("same.txt");
+    std::fs::write(&file_path, "same\n").unwrap();
+
+    let mut editor = create_editor();
+    open_path(&mut editor, &file_path);
+    let buf = editor.active_document_id();
+    let seq = editor.active_document().history.current_seq();
+
+    editor.reload_document(buf, false).unwrap();
+    drain_jobs(&mut editor);
+    assert_eq!(editor.active_document().history.current_seq(), seq);
+    assert!(!editor.active_document().is_dirty());
 }
