@@ -1,5 +1,6 @@
 use super::*;
 use crate::document::ops::{ContentKind, Edit, EditSource};
+use crate::document::runtime::BufferKindRegistry;
 
 #[test]
 fn a_read_only_edit_is_distinguishable_from_a_boundary_no_op() {

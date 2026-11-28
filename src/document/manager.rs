@@ -273,6 +273,7 @@ impl DocumentManager {
         self.public_tabs().filter_map(|id| self.documents.get(&id))
     }
 
+    #[cfg(any(debug_assertions, test))]
     pub(crate) fn check_invariants(&self) -> Vec<String> {
         let mut out = Vec::new();
 

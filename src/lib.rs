@@ -27,6 +27,7 @@ mod fs_backend;
 mod git;
 mod history;
 mod image_view;
+#[cfg(any(debug_assertions, test))]
 mod invariants;
 #[cfg(feature = "ipc")]
 mod ipc;

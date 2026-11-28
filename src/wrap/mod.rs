@@ -287,6 +287,7 @@ impl DisplayMap {
         self.complete
     }
 
+    #[cfg(any(debug_assertions, test))]
     pub(crate) fn check_invariants(
         &self,
         buf_len: usize,

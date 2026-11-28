@@ -223,6 +223,7 @@ impl LineIndex {
         self.table.bytes_range(range)
     }
 
+    #[cfg(any(debug_assertions, test))]
     pub(super) fn check_invariants(&self) -> Vec<String> {
         let mut out = Vec::new();
         self.ensure_built();

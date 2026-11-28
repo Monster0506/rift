@@ -72,6 +72,7 @@ impl Region {
         a_start < b_end && b_start < a_end
     }
 
+    #[cfg(any(debug_assertions, test))]
     fn check_invariants(&self, buf: &TextBuffer) -> Vec<String> {
         let mut out = Vec::new();
         if self.anchor == usize::MAX || self.cursor == usize::MAX {
@@ -231,6 +232,7 @@ impl SelectionSet {
         Some((region, needle))
     }
 
+    #[cfg(any(debug_assertions, test))]
     pub(crate) fn check_invariants(
         &self,
         buf: &TextBuffer,

@@ -144,6 +144,7 @@ impl PieceTable {
         self.len() == 0
     }
 
+    #[cfg(any(debug_assertions, test))]
     pub(super) fn check_invariants(&self) -> Vec<String> {
         let mut out = Vec::new();
         check_tree_metadata(self.root.as_deref(), &mut out);
@@ -1323,6 +1324,7 @@ fn get_char_idx_recursive(
             )
     }
 }
+#[cfg(any(debug_assertions, test))]
 fn check_tree_metadata(node: Option<&Node>, out: &mut Vec<String>) {
     if let Some(n) = node {
         let left_len = n.left.as_ref().map_or(0, |l| l.len);

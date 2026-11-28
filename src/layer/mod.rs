@@ -580,6 +580,7 @@ impl LayerCompositor {
         }
     }
 
+    #[cfg(any(debug_assertions, test))]
     pub(crate) fn check_invariants(&self) -> Vec<String> {
         let mut out = self.buffer.check_invariants();
         if self.buffer.rows() != self.rows {

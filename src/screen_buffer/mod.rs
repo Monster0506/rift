@@ -158,12 +158,14 @@ impl DoubleBuffer {
         }
     }
 
+    #[cfg(any(debug_assertions, test))]
     /// Get the number of rows
     #[must_use]
     pub(crate) const fn rows(&self) -> usize {
         self.rows
     }
 
+    #[cfg(any(debug_assertions, test))]
     /// Get the number of columns
     #[must_use]
     pub(crate) const fn cols(&self) -> usize {
@@ -315,6 +317,7 @@ impl DoubleBuffer {
         hit.is_some()
     }
 
+    #[cfg(any(debug_assertions, test))]
     pub(crate) fn check_invariants(&self) -> Vec<String> {
         let mut out = Vec::new();
         let expected = self.rows * self.cols;

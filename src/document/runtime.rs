@@ -447,11 +447,13 @@ pub(super) struct ClipboardEntryState {
 pub(super) static CLIPBOARD_ENTRY_STATE_KEY: StateKey<ClipboardEntryState> =
     StateKey::new("clipboard_entry");
 
+#[cfg(any(feature = "lsp", feature = "plugins", debug_assertions, test))]
 #[derive(Debug, Clone)]
 pub(super) struct LocationListState {
     #[cfg(feature = "lsp")]
     pub(super) entries: Vec<LocationEntry>,
 }
+#[cfg(any(feature = "lsp", feature = "plugins", debug_assertions, test))]
 pub(super) static LOCATION_LIST_STATE_KEY: StateKey<LocationListState> =
     StateKey::new("location_list");
 
@@ -571,6 +573,7 @@ impl StateSlot {
     }
 
     #[must_use]
+    #[cfg(any(debug_assertions, test, feature = "plugins"))]
     pub(crate) const fn key_id(&self) -> StateKeyId {
         self.key_id
     }
@@ -606,6 +609,7 @@ pub(crate) struct KindDescriptor {
     pub(crate) help_lines: Option<Arc<[String]>>,
     pub(crate) on_close: CloseHandler,
     pub(crate) reload_dispatch: ReloadDispatch,
+    #[cfg(any(debug_assertions, test, feature = "plugins"))]
     pub(crate) state_key: StateKeyId,
     #[cfg(feature = "plugins")]
     pub(crate) owner: DescriptorOwner,
@@ -630,6 +634,7 @@ impl KindDescriptor {
     }
 
     #[must_use]
+    #[cfg(any(debug_assertions, test, feature = "plugins"))]
     pub(crate) const fn state_key(&self) -> StateKeyId {
         self.state_key
     }
@@ -924,6 +929,7 @@ impl BufferKindRegistry {
             help_lines: None,
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::File,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: FILE_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -950,6 +956,7 @@ impl BufferKindRegistry {
             help_lines: None,
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Unsupported,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: TERMINAL_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -970,6 +977,7 @@ impl BufferKindRegistry {
             help_lines: None,
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Directory,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: DIRECTORY_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -986,6 +994,7 @@ impl BufferKindRegistry {
             help_lines: None,
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::UndoTree,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: UNDO_TREE_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1006,6 +1015,7 @@ impl BufferKindRegistry {
             help_lines: None,
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Messages,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: MESSAGES_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1029,6 +1039,7 @@ impl BufferKindRegistry {
             help_lines: None,
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Clipboard,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: CLIPBOARD_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1045,6 +1056,7 @@ impl BufferKindRegistry {
             help_lines: None,
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Unsupported,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: CLIPBOARD_ENTRY_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1061,6 +1073,7 @@ impl BufferKindRegistry {
             help_lines: None,
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Unsupported,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: LOCATION_LIST_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1077,6 +1090,7 @@ impl BufferKindRegistry {
             help_lines: None,
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Unsupported,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: REGIONS_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1097,6 +1111,7 @@ impl BufferKindRegistry {
             help_lines: None,
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Unsupported,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: SCRATCH_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1134,6 +1149,7 @@ impl BufferKindRegistry {
             help_lines: Some(status_help.into()),
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Git,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: GIT_STATUS_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1150,6 +1166,7 @@ impl BufferKindRegistry {
             help_lines: None,
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Unsupported,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: GIT_COMMIT_MESSAGE_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1177,6 +1194,7 @@ impl BufferKindRegistry {
             help_lines: Some(blame_help.into()),
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Git,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: GIT_BLAME_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1201,6 +1219,7 @@ impl BufferKindRegistry {
             help_lines: Some(log_help.into()),
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Git,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: GIT_LOG_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1217,6 +1236,7 @@ impl BufferKindRegistry {
             help_lines: None,
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Git,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: GIT_OUTPUT_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1251,6 +1271,7 @@ impl BufferKindRegistry {
             help_lines: Some(rebase_help.into()),
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::Unsupported,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: GIT_REBASE_TODO_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1270,6 +1291,7 @@ impl BufferKindRegistry {
             help_lines: None,
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::BufferList,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: BUFFER_LIST_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1291,6 +1313,7 @@ impl BufferKindRegistry {
             help_lines: Some(undo_file_view_help.into()),
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::UndoFileView,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: UNDO_FILE_VIEW_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1313,6 +1336,7 @@ impl BufferKindRegistry {
             help_lines: Some(image_view_help.into()),
             on_close: CloseHandler::NOOP,
             reload_dispatch: ReloadDispatch::ImageAsText,
+            #[cfg(any(debug_assertions, test, feature = "plugins"))]
             state_key: IMAGE_VIEW_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,

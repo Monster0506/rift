@@ -433,6 +433,7 @@ impl TextBuffer {
         }
     }
 
+    #[cfg(any(debug_assertions, test))]
     pub(crate) fn check_invariants(&self, tier: crate::invariants::InvariantTier) -> Vec<String> {
         use crate::invariants::InvariantTier;
 

@@ -20,14 +20,13 @@ use crate::buffer::api::BufferView;
 use crate::buffer::TextBuffer;
 use crate::document::kind::BufferKind;
 use crate::document::runtime::{
-    BufferKindId, BufferKindRegistry, BufferPolicies, ClipboardEntryState, DirectoryState,
-    DocumentHandle, FileState, GhostCutPolicy, ImageViewState, KeyFallback, KindDescriptor,
-    ReadOnlyPolicy, RegionsState, ScratchState, StateSlot, TextProjection, UndoFileViewState,
-    BUFFER_LIST_STATE_KEY, CLIPBOARD_ENTRY_STATE_KEY, CLIPBOARD_STATE_KEY, DIRECTORY_STATE_KEY,
-    FILE_STATE_KEY, GIT_BLAME_STATE_KEY, GIT_COMMIT_MESSAGE_STATE_KEY, GIT_LOG_STATE_KEY,
-    GIT_OUTPUT_STATE_KEY, GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY, IMAGE_VIEW_STATE_KEY,
-    REGIONS_STATE_KEY, SCRATCH_STATE_KEY, TERMINAL_STATE_KEY, UNDO_FILE_VIEW_STATE_KEY,
-    UNDO_TREE_STATE_KEY,
+    BufferKindId, BufferPolicies, ClipboardEntryState, DirectoryState, DocumentHandle, FileState,
+    GhostCutPolicy, ImageViewState, KeyFallback, KindDescriptor, ReadOnlyPolicy, RegionsState,
+    ScratchState, StateSlot, TextProjection, UndoFileViewState, BUFFER_LIST_STATE_KEY,
+    CLIPBOARD_ENTRY_STATE_KEY, CLIPBOARD_STATE_KEY, DIRECTORY_STATE_KEY, FILE_STATE_KEY,
+    GIT_BLAME_STATE_KEY, GIT_COMMIT_MESSAGE_STATE_KEY, GIT_LOG_STATE_KEY, GIT_OUTPUT_STATE_KEY,
+    GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY, IMAGE_VIEW_STATE_KEY, REGIONS_STATE_KEY,
+    SCRATCH_STATE_KEY, TERMINAL_STATE_KEY, UNDO_FILE_VIEW_STATE_KEY, UNDO_TREE_STATE_KEY,
 };
 #[cfg(feature = "lsp")]
 use crate::document::runtime::{LocationListState, LOCATION_LIST_STATE_KEY};
@@ -266,9 +265,10 @@ impl Document {
         self.reparse_syntax();
     }
 
+    #[cfg(any(debug_assertions, test))]
     pub(crate) fn check_invariants(
         &self,
-        registry: &BufferKindRegistry,
+        registry: &crate::document::runtime::BufferKindRegistry,
         tier: crate::invariants::InvariantTier,
     ) -> Vec<String> {
         use crate::invariants::InvariantTier;

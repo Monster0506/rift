@@ -20,6 +20,7 @@ mod git_status;
 mod handle_action;
 mod history;
 mod init;
+#[cfg(any(debug_assertions, test))]
 mod invariants;
 mod jobs;
 #[cfg(feature = "lsp")]

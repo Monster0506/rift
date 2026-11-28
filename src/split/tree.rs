@@ -556,6 +556,7 @@ impl SplitTree {
         self.windows.len()
     }
 
+    #[cfg(any(debug_assertions, test))]
     pub(crate) fn check_invariants(
         &self,
         document_manager: &crate::document::manager::DocumentManager,
@@ -603,6 +604,7 @@ impl SplitTree {
         out
     }
 
+    #[cfg(any(debug_assertions, test))]
     fn collect_leaves(node: &SplitNode, out: &mut Vec<WindowId>) {
         match node {
             SplitNode::Leaf(id) => out.push(*id),
@@ -613,6 +615,7 @@ impl SplitTree {
         }
     }
 
+    #[cfg(any(debug_assertions, test))]
     fn check_ratios(node: &SplitNode, out: &mut Vec<String>) {
         if let SplitNode::Split {
             ratio,
