@@ -11,8 +11,9 @@ use crate::ipc::channel_backend::ChannelBackend;
 use crate::ipc::protocol::{
     b64_encode, InitializeParams, RenderUpdateParams, SessionEndingParams, ERR_UNAUTHORIZED,
 };
-use crate::ipc::session::{data_dir, generate_token, session_path, SessionInfo};
+use crate::ipc::session::{generate_token, session_path, SessionInfo};
 use crate::key::InputEvent;
+use crate::paths::rift_dir;
 use crate::term::Size;
 use crate::transport::{read_framed, write_framed};
 
@@ -168,7 +169,7 @@ pub fn detach() -> anyhow::Result<()> {
         .filter(|a| a != "--detach" && a != "-d")
         .collect();
 
-    let sessions_dir = data_dir().join("sessions");
+    let sessions_dir = rift_dir().join("sessions");
     let existing: std::collections::HashSet<std::path::PathBuf> = std::fs::read_dir(&sessions_dir)
         .ok()
         .into_iter()

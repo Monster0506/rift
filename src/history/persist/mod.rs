@@ -65,7 +65,7 @@ pub(crate) fn expand_tilde(path: &str) -> PathBuf {
 #[must_use]
 pub(crate) fn resolve_undo_dir(configured: Option<&Path>) -> PathBuf {
     configured.map_or_else(
-        || crate::editor::user_config_dir().join("undofiles"),
+        || crate::paths::rift_dir().join("undofiles"),
         Path::to_path_buf,
     )
 }

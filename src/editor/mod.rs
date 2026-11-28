@@ -76,20 +76,6 @@ use crate::term::TerminalBackend;
 #[cfg(any(feature = "plugins", feature = "lsp", feature = "treesitter"))]
 use std::sync::Arc;
 
-pub(crate) fn user_config_dir() -> std::path::PathBuf {
-    if cfg!(windows) {
-        std::env::var("APPDATA")
-            .map_or_else(|_| std::path::PathBuf::from("."), std::path::PathBuf::from)
-            .join("rift")
-    } else {
-        let base = std::env::var("XDG_CONFIG_HOME").ok().map_or_else(
-            || std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config"),
-            std::path::PathBuf::from,
-        );
-        base.join("rift")
-    }
-}
-
 #[cfg(feature = "plugins")]
 fn plugin_dirs() -> Vec<std::path::PathBuf> {
     #[cfg(not(test))]
@@ -102,7 +88,7 @@ fn plugin_dirs() -> Vec<std::path::PathBuf> {
     let runtime: Option<std::path::PathBuf> = None;
     runtime
         .into_iter()
-        .chain(std::iter::once(user_config_dir().join("plugins")))
+        .chain(std::iter::once(crate::paths::rift_dir().join("plugins")))
         .collect()
 }
 

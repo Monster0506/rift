@@ -1,6 +1,6 @@
-use super::Editor;
 #[cfg(feature = "plugins")]
-use super::{plugin_dirs, user_config_dir};
+use super::plugin_dirs;
+use super::Editor;
 use crate::command_line::commands::parser::CommandParser;
 use crate::document::{Document, DocumentId};
 use crate::dot_repeat::DotRepeat;
@@ -237,7 +237,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     #[cfg(feature = "plugins")]
     pub(super) fn load_plugins(&mut self) {
-        let init_lua = user_config_dir().join("init.lua");
+        let init_lua = crate::paths::rift_dir().join("init.lua");
         for err in self.load_plugins_from(&plugin_dirs(), &init_lua) {
             self.notify(crate::notification::NotificationType::Error, err);
         }

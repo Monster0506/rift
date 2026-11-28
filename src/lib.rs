@@ -42,6 +42,7 @@ mod movement;
 mod notification;
 mod num;
 mod paint;
+mod paths;
 #[cfg(feature = "plugins")]
 mod plugin;
 mod render;

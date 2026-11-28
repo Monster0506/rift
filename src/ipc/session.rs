@@ -1,3 +1,4 @@
+use crate::paths::rift_dir;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -10,30 +11,9 @@ pub(super) struct SessionInfo {
     pub(super) token: String,
 }
 
-pub(crate) fn data_dir() -> PathBuf {
-    #[cfg(windows)]
-    {
-        std::env::var("APPDATA")
-            .map_or_else(|_| PathBuf::from("."), PathBuf::from)
-            .join("rift")
-    }
-    #[cfg(not(windows))]
-    {
-        std::env::var("XDG_DATA_HOME")
-            .ok()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                PathBuf::from(std::env::var("HOME").unwrap_or_default())
-                    .join(".local")
-                    .join("share")
-            })
-            .join("rift")
-    }
-}
-
 #[must_use]
 pub(super) fn session_path(pid: u32) -> PathBuf {
-    data_dir().join("sessions").join(format!("{pid}.json"))
+    rift_dir().join("sessions").join(format!("{pid}.json"))
 }
 
 /// Write session info as pretty JSON, creating parent directories as needed.
@@ -126,7 +106,7 @@ pub fn print_newest() -> ExitCode {
 /// # Errors
 /// Returns `Err` if the sessions directory cannot be read or no live session exists.
 fn find_local() -> anyhow::Result<PathBuf> {
-    let sessions_dir = data_dir().join("sessions");
+    let sessions_dir = rift_dir().join("sessions");
 
     let mut entries: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(&sessions_dir)
         .map_err(|e| anyhow::anyhow!("no sessions directory ({e}) -- is a daemon running?"))?

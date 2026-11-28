@@ -31,7 +31,7 @@ struct BrokerDescriptor {
 
 #[must_use]
 fn broker_dir() -> PathBuf {
-    crate::ipc::session::data_dir().join("lsp")
+    crate::paths::rift_dir().join("lsp")
 }
 
 /// Stable cache key for one (server command, args, project root) combination.
