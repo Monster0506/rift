@@ -121,7 +121,7 @@ fn hunk_verb_action(
 
 impl<T: TerminalBackend> Editor<T> {
     /// Resolve the git repository root to operate on: the active buffer's own repo root if it's already a git buffer, else discovered from the active file's directory (falling back to cwd), mirroring `OpenExplorer`'s target-path resolution.
-    fn resolve_git_repo_root(&mut self) -> Result<PathBuf, RiftError> {
+    pub(super) fn resolve_git_repo_root(&mut self) -> Result<PathBuf, RiftError> {
         if let Some(root) = self.active_document().git_repo_root() {
             return Ok(root.to_path_buf());
         }
@@ -143,89 +143,6 @@ impl<T: TerminalBackend> Editor<T> {
         crate::git::discover_repo(&base_dir).map(|p| p.root)
     }
 
-    /// `<Space>gs` opens a `GitStatus` buffer in the active window. Open a split first to create another instance.
-    pub(super) fn open_git_status(&mut self) {
-        self.open_git_status_inner();
-    }
-
-    /// `:Git diff`/`:Git diff --cached`: open status, and once the async snapshot populates, expand every hunk in the given section (`true` = staged); the closest structured equivalent to a bare `git diff`.
-    fn open_git_status_expand_all(&mut self, staged_side: bool) {
-        if let Some(id) = self.open_git_status_inner() {
-            self.scheduler.git_status_expand_all.insert(id, staged_side);
-        }
-    }
-
-    fn open_git_status_inner(&mut self) -> Option<crate::document::DocumentId> {
-        let repo_root = match self.resolve_git_repo_root() {
-            Ok(root) => root,
-            Err(e) => {
-                self.notify_error(e);
-                return None;
-            }
-        };
-
-        let id = self.document_manager.next_id();
-        let doc = match crate::document::Document::new_git_status(id, repo_root.clone()) {
-            Ok(d) => d,
-            Err(e) => {
-                self.notify_error(e);
-                return None;
-            }
-        };
-        self.open_buffer(doc, crate::document::manager::Placement::Background);
-        if let Err(e) = self.focus_document(id) {
-            self.notify_error(e);
-            return None;
-        }
-
-        let job = crate::job_manager::jobs::git::GitStatusJob::new(id, repo_root);
-        self.job_manager.spawn(job);
-
-        Some(id)
-    }
-
-    /// After a status snapshot arrives, expands every entry in the requested section.
-    pub(super) fn spawn_expand_all_git_status_hunks(
-        &mut self,
-        doc_id: crate::document::DocumentId,
-        staged_side: bool,
-    ) {
-        let Some(doc) = self.document_manager.get_document(doc_id) else {
-            return;
-        };
-        if !doc.is_git_status() {
-            return;
-        }
-        let Some(repo_root) = doc.git_repo_root().map(Path::to_path_buf) else {
-            return;
-        };
-        let Some(snapshot) = doc.git_status_snapshot() else {
-            return;
-        };
-        let paths: Vec<PathBuf> = snapshot
-            .entries
-            .iter()
-            .filter(|e| {
-                if staged_side {
-                    e.is_staged()
-                } else {
-                    e.is_unstaged()
-                }
-            })
-            .map(|e| e.path.clone())
-            .collect();
-        for path in paths {
-            let job = crate::job_manager::jobs::git::GitDiffJob::new(
-                doc_id,
-                repo_root.clone(),
-                path,
-                staged_side,
-                false,
-            );
-            self.job_manager.spawn(job);
-        }
-    }
-
     pub(super) fn refresh_git_status_buffers_for(&mut self, repo_root: &Path) {
         let doc_ids: Vec<crate::document::DocumentId> = self
             .document_manager
@@ -234,10 +151,9 @@ impl<T: TerminalBackend> Editor<T> {
             .map(|d| d.id)
             .collect();
         for doc_id in doc_ids {
-            let job =
-                crate::job_manager::jobs::git::GitStatusJob::new(doc_id, repo_root.to_path_buf());
-            let job_id = self.job_manager.spawn(job);
-            self.git_status_refresh_jobs.insert(doc_id, job_id);
+            if let Some(job_id) = self.refresh_git_view(doc_id) {
+                self.git_status_refresh_jobs.insert(doc_id, job_id);
+            }
         }
     }
 
@@ -386,14 +302,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        let job = crate::job_manager::jobs::git::GitDiffJob::new(
-            doc_id,
-            repo_root,
-            path,
-            staged_side,
-            untracked,
-        );
-        self.job_manager.spawn(job);
+        self.fetch_git_status_hunks(doc_id, repo_root, path, staged_side, untracked);
     }
 
     /// `]c`/`[c`: move the cursor to the next/previous expanded hunk header.
@@ -436,7 +345,7 @@ impl<T: TerminalBackend> Editor<T> {
             Head,
             File(PathBuf),
         }
-        let (selection, repo_root) = {
+        let selection = {
             let doc = self.active_document();
             let repo_root = match doc.git_repo_root() {
                 Some(r) => r.to_path_buf(),
@@ -444,7 +353,7 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let cursor = doc.buffer().cursor();
             let line = doc.buffer().line_index.get_line_at(cursor);
-            let selection = if doc.annotations.git_hunk_at_line(line).is_some() {
+            if doc.annotations.git_hunk_at_line(line).is_some() {
                 Some(Selection::Hunk)
             } else if doc.annotations.is_git_status_head_at_line(line) {
                 Some(Selection::Head)
@@ -452,14 +361,11 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(Selection::File(repo_root.join(path)))
             } else {
                 None
-            };
-            (selection, repo_root)
+            }
         };
         match selection {
             Some(Selection::Hunk) => self.git_status_toggle_expand(),
-            Some(Selection::Head) => {
-                self.open_git_log(repo_root, None);
-            }
+            Some(Selection::Head) => self.open_git(crate::git::query::GitQuery::new(["log"])),
             Some(Selection::File(path)) => {
                 if let Err(e) = self.open_file(Some(path.display().to_string()), false) {
                     self.notify_error(e);
@@ -471,9 +377,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// `b` in the status buffer: blame the file under the cursor.
     pub(super) fn git_status_blame_cursor(&mut self) {
-        if let Some((path, repo_root)) = self.resolve_git_blame_target(None) {
-            self.open_git_blame(path, repo_root);
-        }
+        self.open_git(crate::git::query::GitQuery::new(["blame"]));
     }
 
     /// `r` in the status buffer: start a rebase onto the current branch's
@@ -682,141 +586,23 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// `:Git <args>` escape hatch: run an arbitrary git subcommand and show its output. View-only; no `--no-ext-diff`, so a configured `diff.external` etc. is respected for anything that falls through. Fugitive convention: bare `:Git`/`:G` opens the status buffer, bare `:Git log` opens the log browser, bare `:Git`.
-    pub(super) fn run_git_command(&mut self, args: String) {
-        let trimmed = args.trim();
-        if trimmed.is_empty() {
-            self.open_git_status();
-            return;
-        }
-        if trimmed == "log" {
-            let repo_root = match self.resolve_git_repo_root() {
-                Ok(root) => root,
-                Err(e) => {
-                    self.notify_error(e);
-                    return;
-                }
-            };
-            self.open_git_log(repo_root, None);
-            return;
-        }
-        if trimmed == "diff" {
-            self.open_git_status_expand_all(false);
-            return;
-        }
-        if trimmed == "diff --cached" || trimmed == "diff --staged" {
-            self.open_git_status_expand_all(true);
-            return;
-        }
-        // `blame <path>` opens the structured view. Flag arguments use the raw command output path.
-        if let Some(rest) = trimmed.strip_prefix("blame").filter(|rest| {
-            rest.is_empty() || (rest.starts_with(' ') && !rest.trim_start().starts_with('-'))
-        }) {
-            let path_arg = rest.trim();
-            let arg = if path_arg.is_empty() {
-                None
-            } else {
-                Some(path_arg)
-            };
-            if let Some((path, repo_root)) = self.resolve_git_blame_target(arg) {
-                self.open_git_blame(path, repo_root);
-            }
-            return;
-        }
-        if trimmed == "show" {
-            let repo_root = match self.resolve_git_repo_root() {
-                Ok(root) => root,
-                Err(e) => {
-                    self.notify_error(e);
-                    return;
-                }
-            };
-            self.open_git_log_expand_head(repo_root);
-            return;
-        }
-        let repo_root = match self.resolve_git_repo_root() {
-            Ok(root) => root,
-            Err(e) => {
-                self.notify_error(e);
-                return;
-            }
-        };
-        let job = crate::job_manager::jobs::git::GitCommandJob::new(repo_root, args);
-        self.job_manager.spawn(job);
-    }
-
-    /// Resolve `(path, repo_root)` for a blame request; an explicit `arg` path wins; otherwise the Status buffer's cursor file if that's the active buffer; otherwise the active file buffer's own path. This is the one place that resolution lives: `open_git_blame` itself takes plain explicit arguments and never.
-    fn resolve_git_blame_target(&mut self, arg: Option<&str>) -> Option<(PathBuf, PathBuf)> {
-        if let Some(arg) = arg {
-            let repo_root = match self.resolve_git_repo_root() {
-                Ok(root) => root,
-                Err(e) => {
-                    self.notify_error(e);
-                    return None;
-                }
-            };
-            return Some((repo_root.join(arg), repo_root));
-        }
+    pub(super) fn resolve_git_blame_target(&mut self) -> Option<PathBuf> {
         let doc = self.active_document();
         if doc.is_git_status() {
             let repo_root = doc.git_repo_root()?.to_path_buf();
             let cursor = doc.buffer().cursor();
             let line = doc.buffer().line_index.get_line_at(cursor);
             let (path, ..) = doc.annotations.git_status_entry_at_line(line)?;
-            return Some((repo_root.join(path), repo_root));
+            return Some(repo_root.join(path));
         }
-        if let Some(path) = doc.path().map(std::path::Path::to_path_buf) {
-            let base_dir = path
-                .parent()
-                .unwrap_or_else(|| Path::new("."))
-                .to_path_buf();
-            return match crate::git::discover_repo(&base_dir) {
-                Ok(r) => Some((path, r.root)),
-                Err(e) => {
-                    self.notify_error(e);
-                    None
-                }
-            };
+        if let Some(path) = doc.path() {
+            return Some(path.to_path_buf());
         }
         self.notify(
             crate::notification::NotificationType::Error,
             "No file to blame".to_string(),
         );
         None
-    }
-
-    /// Show a `GitCommandJob`'s output: a scratch buffer for anything
-    /// non-trivial, or just a notification for a short one-line result.
-    pub(super) fn show_git_command_result(&mut self, args: &str, output: &str, success: bool) {
-        let trimmed = output.trim();
-        if trimmed.lines().count() <= 1 && trimmed.len() <= 200 {
-            let kind = if success {
-                crate::notification::NotificationType::Info
-            } else {
-                crate::notification::NotificationType::Error
-            };
-            self.notify(
-                kind,
-                if trimmed.is_empty() {
-                    format!("git {args}: done")
-                } else {
-                    trimmed.to_string()
-                },
-            );
-            return;
-        }
-
-        let id = self.document_manager.next_id();
-        let lines: Vec<String> = output
-            .lines()
-            .map(std::string::ToString::to_string)
-            .collect();
-        let mut doc = crate::document::Document::new_scratch(id, format!("[Git: {args}]"), &lines);
-        doc.set_read_only(true);
-        self.open_buffer(doc, crate::document::manager::Placement::Background);
-        if let Err(e) = self.focus_document(id) {
-            self.notify_error(e);
-        }
     }
 
     /// `g?` in a git status/log/blame/rebase-todo buffer: open a read-only

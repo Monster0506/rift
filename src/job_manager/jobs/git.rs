@@ -1,553 +1,122 @@
-//! Background jobs for git status/diff, following the `DirectoryListJob` template (`job_manager::jobs::explorer`): construct with a `doc_id`, `run()` shells out and sends a `Custom` payload back.
-
 use crate::document::DocumentId;
+use crate::git::query::{GitOutput, GitQuery, GitView};
 use crate::job_manager::{CancellationSignal, Job, JobMessage, JobPayload, JobRef, JobTarget};
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 
-/// Result of a `GitStatusJob`: a freshly parsed status snapshot for `doc_id`.
-#[derive(Debug)]
-pub struct GitStatusResult {
-    pub(crate) doc_id: DocumentId,
-    pub(crate) repo_root: PathBuf,
-    pub(crate) snapshot: crate::git::status::StatusSnapshot,
-    /// HEAD's subject line, for the status header's `HEAD <sha> <subject>` summary (Enter on it opens the Log browser). `None` on an unborn branch with no commits yet.
-    pub(crate) head_subject: Option<String>,
-}
-impl JobPayload for GitStatusResult {
-    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
-        editor.apply_git_status(job.id, job.token, *self);
-    }
-}
-
-/// Runs `git status --porcelain=v2 --branch --untracked-files=all` and parses it.
-#[derive(Debug)]
-pub(crate) struct GitStatusJob {
-    doc_id: DocumentId,
-    repo_root: PathBuf,
-    token: Option<crate::job_manager::AsyncToken>,
-}
-
-impl GitStatusJob {
-    #[must_use]
-    pub(crate) const fn new(doc_id: DocumentId, repo_root: PathBuf) -> Self {
-        Self {
-            doc_id,
-            repo_root,
-            token: None,
-        }
-    }
-}
-
-impl Job for GitStatusJob {
-    fn name(&self) -> &'static str {
-        "git-status"
-    }
-
-    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
-        self.token
-    }
-
-    fn target_document_id(&self) -> Option<crate::document::DocumentId> {
-        Some(self.doc_id)
-    }
-
-    fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
-        Some(crate::job_manager::AsyncOpDomain::GitStatus)
-    }
-    fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
-        if signal.is_cancelled() {
-            return;
-        }
-        match crate::git::run_checked(
-            &self.repo_root,
-            &[
-                "status",
-                "--porcelain=v2",
-                "--branch",
-                "--untracked-files=all",
-            ],
-        ) {
-            Ok(stdout) => {
-                let snapshot = crate::git::status::parse_status(&stdout);
-                let head_subject =
-                    crate::git::run_checked(&self.repo_root, &["log", "-1", "--format=%s"])
-                        .ok()
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty());
-                let result = Box::new(GitStatusResult {
-                    doc_id: self.doc_id,
-                    repo_root: self.repo_root,
-                    snapshot,
-                    head_subject,
-                });
-                if let Some(token) = self.token {
-                    crate::job_manager::send_job_result_with_token(&sender, id, token, result);
-                } else {
-                    crate::job_manager::send_job_result(&sender, id, result);
-                }
-            }
-            Err(e) => {
-                let _ = sender.send(JobMessage::Error(id, e));
-            }
-        }
-    }
-
-    fn is_silent(&self) -> bool {
-        true
-    }
-}
-
-/// Result of a `GitDiffJob`: hunks for one file's diff, to expand inline
-/// under its entry in a status buffer.
-#[derive(Debug)]
-pub struct GitDiffResult {
-    pub(crate) doc_id: DocumentId,
-    pub(crate) path: PathBuf,
-    /// `true` = this came from `git diff --cached` (the staged side).
-    pub(crate) staged_side: bool,
-    pub(crate) hunks: Vec<crate::git::diff::Hunk>,
-}
-impl JobPayload for GitDiffResult {
-    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
-        editor.apply_git_diff(job.id, job.token, *self);
-    }
-}
-
-/// Runs `git diff --no-ext-diff [--cached] -- <path>` scoped to one file and
-/// parses it, for status-buffer hunk expansion (`=`).
-#[derive(Debug)]
-pub(crate) struct GitDiffJob {
-    doc_id: DocumentId,
-    repo_root: PathBuf,
-    path: PathBuf,
-    staged_side: bool,
-    /// Untracked (no index entry at all yet): fetched via `git diff --no-index` against `/dev/null` instead of `git diff [--cached]`, since a plain `git diff` never shows untracked paths.
-    untracked: bool,
-    token: Option<crate::job_manager::AsyncToken>,
-}
-
-impl GitDiffJob {
-    #[must_use]
-    pub(crate) const fn new(
-        doc_id: DocumentId,
-        repo_root: PathBuf,
+#[derive(Debug, Clone)]
+pub(crate) enum GitSink {
+    Open,
+    Refresh(DocumentId),
+    StatusHunks {
+        doc: DocumentId,
         path: PathBuf,
         staged_side: bool,
-        untracked: bool,
-    ) -> Self {
-        Self {
-            doc_id,
-            repo_root,
-            path,
-            staged_side,
-            untracked,
-            token: None,
+    },
+    CommitBody {
+        doc: DocumentId,
+        sha: String,
+    },
+}
+
+impl GitSink {
+    pub(crate) const fn doc(&self) -> Option<DocumentId> {
+        match self {
+            Self::Open => None,
+            Self::Refresh(doc) | Self::StatusHunks { doc, .. } | Self::CommitBody { doc, .. } => {
+                Some(*doc)
+            }
+        }
+    }
+
+    pub(crate) const fn domain(&self, view: GitView) -> Option<crate::job_manager::AsyncOpDomain> {
+        use crate::job_manager::AsyncOpDomain;
+        match self {
+            Self::Open => None,
+            Self::Refresh(_) => match view {
+                GitView::Status => Some(AsyncOpDomain::GitStatus),
+                GitView::Log | GitView::Show => Some(AsyncOpDomain::GitLog),
+                GitView::Blame => Some(AsyncOpDomain::GitBlame),
+                GitView::Text => Some(AsyncOpDomain::GitOutput),
+                GitView::Diff => None,
+            },
+            Self::StatusHunks { .. } => Some(AsyncOpDomain::GitDiff),
+            Self::CommitBody { .. } => Some(AsyncOpDomain::GitShow),
         }
     }
 }
 
-impl Job for GitDiffJob {
-    fn name(&self) -> &'static str {
-        "git-diff"
-    }
-
-    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
-        self.token
-    }
-
-    fn target_document_id(&self) -> Option<crate::document::DocumentId> {
-        Some(self.doc_id)
-    }
-
-    fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
-        Some(crate::job_manager::AsyncOpDomain::GitDiff)
-    }
-    fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
-        if signal.is_cancelled() {
-            return;
-        }
-        let path_str = self.path.to_string_lossy().into_owned();
-        let stdout = if self.untracked {
-            // A plain `git diff` never shows untracked paths at all; diff against `/dev/null` directly. `--src-prefix`/`--dst-prefix` force the conventional `a/`/`b/` headers `parse_unified_diff` and `git apply --cached` (staging) both expect; `--no-index` otherwise numbers them `1/`/`2/` outside a real repo pair.
-            let args = [
-                "diff",
-                "--no-ext-diff",
-                "--no-index",
-                "-U3",
-                "--src-prefix=a/",
-                "--dst-prefix=b/",
-                "--",
-                "/dev/null",
-                &path_str,
-            ];
-            // `--no-index` exits 1 (not a failure) whenever there IS a difference; always true here, since the file exists and `/dev/null` doesn't; so read stdout regardless of `success`.
-            match crate::git::run(&self.repo_root, &args) {
-                Ok(out) => out.stdout,
-                Err(e) => {
-                    let _ = sender.send(JobMessage::Error(id, e));
-                    return;
-                }
-            }
-        } else {
-            let mut args = vec!["diff", "--no-ext-diff", "-U3"];
-            if self.staged_side {
-                args.push("--cached");
-            }
-            args.push("--");
-            args.push(&path_str);
-            match crate::git::run_checked(&self.repo_root, &args) {
-                Ok(stdout) => stdout,
-                Err(e) => {
-                    let _ = sender.send(JobMessage::Error(id, e));
-                    return;
-                }
-            }
-        };
-
-        let files = crate::git::diff::parse_unified_diff(&stdout);
-        let hunks = files.into_iter().next().map_or_default(|f| f.hunks);
-        let result = Box::new(GitDiffResult {
-            doc_id: self.doc_id,
-            path: self.path,
-            staged_side: self.staged_side,
-            hunks,
-        });
-        if let Some(token) = self.token {
-            crate::job_manager::send_job_result_with_token(&sender, id, token, result);
-        } else {
-            crate::job_manager::send_job_result(&sender, id, result);
-        }
-    }
-
-    fn is_silent(&self) -> bool {
-        true
-    }
-}
-
-/// Result of a `GitBlameJob`: a freshly parsed blame listing for `doc_id`.
 #[derive(Debug)]
-pub struct GitBlameResult {
-    pub(crate) doc_id: DocumentId,
-    pub(crate) lines: Vec<crate::git::blame::BlameLine>,
+pub struct GitResult {
+    pub(crate) repo_root: PathBuf,
+    pub(crate) query: GitQuery,
+    pub(crate) view: GitView,
+    pub(crate) sink: GitSink,
+    pub(crate) output: GitOutput,
 }
-impl JobPayload for GitBlameResult {
+impl JobPayload for GitResult {
     fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
-        editor.apply_git_blame(job.id, job.token, *self);
+        editor.apply_git(job.id, job.token, *self);
     }
 }
 
-/// Runs `git blame --porcelain [<commit>] -- <path>` and parses it.
 #[derive(Debug)]
-pub(crate) struct GitBlameJob {
-    doc_id: DocumentId,
+pub(crate) struct GitJob {
     repo_root: PathBuf,
-    path: PathBuf,
-    at_commit: Option<String>,
-    token: Option<crate::job_manager::AsyncToken>,
+    query: GitQuery,
+    view: GitView,
+    sink: GitSink,
 }
 
-impl GitBlameJob {
+impl GitJob {
     #[must_use]
     pub(crate) const fn new(
-        doc_id: DocumentId,
         repo_root: PathBuf,
-        path: PathBuf,
-        at_commit: Option<String>,
+        query: GitQuery,
+        view: GitView,
+        sink: GitSink,
     ) -> Self {
         Self {
-            doc_id,
             repo_root,
-            path,
-            at_commit,
-            token: None,
+            query,
+            view,
+            sink,
         }
     }
 }
 
-impl Job for GitBlameJob {
+impl Job for GitJob {
     fn name(&self) -> &'static str {
-        "git-blame"
+        "git"
     }
 
-    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
-        self.token
-    }
-
-    fn target_document_id(&self) -> Option<crate::document::DocumentId> {
-        Some(self.doc_id)
+    fn target_document_id(&self) -> Option<DocumentId> {
+        self.sink.doc()
     }
 
     fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
-        Some(crate::job_manager::AsyncOpDomain::GitBlame)
+        self.sink.domain(self.view)
     }
 
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;
         }
-        let path_str = self.path.to_string_lossy().into_owned();
-        let mut args = vec!["blame", "--porcelain"];
-        if let Some(commit) = &self.at_commit {
-            args.push(commit);
-        }
-        args.push("--");
-        args.push(&path_str);
-
-        match crate::git::run_checked(&self.repo_root, &args) {
-            Ok(stdout) => {
-                let lines = crate::git::blame::parse_blame(&stdout);
-                let result = Box::new(GitBlameResult {
-                    doc_id: self.doc_id,
-                    lines,
+        match crate::git::query::run(&self.repo_root, &self.query, self.view) {
+            Ok(output) => {
+                let result = Box::new(GitResult {
+                    repo_root: self.repo_root,
+                    query: self.query,
+                    view: self.view,
+                    sink: self.sink,
+                    output,
                 });
-                if let Some(token) = self.token {
-                    crate::job_manager::send_job_result_with_token(&sender, id, token, result);
-                } else {
-                    crate::job_manager::send_job_result(&sender, id, result);
-                }
+                crate::job_manager::send_job_result(&sender, id, result);
             }
             Err(e) => {
                 let _ = sender.send(JobMessage::Error(id, e));
             }
         }
-    }
-
-    fn is_silent(&self) -> bool {
-        true
-    }
-}
-
-/// Result of a `GitLogJob`: a freshly parsed commit listing for `doc_id`.
-#[derive(Debug)]
-pub struct GitLogResult {
-    pub(crate) doc_id: DocumentId,
-    pub(crate) commits: Vec<crate::git::log::CommitSummary>,
-}
-impl JobPayload for GitLogResult {
-    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
-        editor.apply_git_log(job.id, job.token, *self);
-    }
-}
-
-/// Runs `git log --format=<LOG_FORMAT> [-- <path>]` and parses it.
-#[derive(Debug)]
-pub(crate) struct GitLogJob {
-    doc_id: DocumentId,
-    repo_root: PathBuf,
-    path: Option<PathBuf>,
-    token: Option<crate::job_manager::AsyncToken>,
-}
-
-impl GitLogJob {
-    #[must_use]
-    pub(crate) const fn new(doc_id: DocumentId, repo_root: PathBuf, path: Option<PathBuf>) -> Self {
-        Self {
-            doc_id,
-            repo_root,
-            path,
-            token: None,
-        }
-    }
-}
-
-impl Job for GitLogJob {
-    fn name(&self) -> &'static str {
-        "git-log"
-    }
-
-    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
-        self.token
-    }
-
-    fn target_document_id(&self) -> Option<crate::document::DocumentId> {
-        Some(self.doc_id)
-    }
-
-    fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
-        Some(crate::job_manager::AsyncOpDomain::GitLog)
-    }
-    fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
-        if signal.is_cancelled() {
-            return;
-        }
-        let format_arg = format!("--format={}", crate::git::log::LOG_FORMAT);
-        let mut args = vec!["log", &format_arg];
-        let path_str = self.path.as_ref().map(|p| p.to_string_lossy().into_owned());
-        if let Some(p) = &path_str {
-            args.push("--");
-            args.push(p);
-        }
-
-        match crate::git::run_checked(&self.repo_root, &args) {
-            Ok(stdout) => {
-                let commits = crate::git::log::parse_log(&stdout);
-                let result = Box::new(GitLogResult {
-                    doc_id: self.doc_id,
-                    commits,
-                });
-                if let Some(token) = self.token {
-                    crate::job_manager::send_job_result_with_token(&sender, id, token, result);
-                } else {
-                    crate::job_manager::send_job_result(&sender, id, result);
-                }
-            }
-            Err(e) => {
-                let _ = sender.send(JobMessage::Error(id, e));
-            }
-        }
-    }
-
-    fn is_silent(&self) -> bool {
-        true
-    }
-}
-
-/// Result of a `GitShowJob`: the raw `git show` body for one commit, to
-/// expand inline under it in a log buffer. Opaque text, not reparsed.
-#[derive(Debug)]
-pub struct GitShowResult {
-    pub(crate) doc_id: DocumentId,
-    pub(crate) sha: String,
-    pub(crate) body: String,
-}
-impl JobPayload for GitShowResult {
-    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
-        editor.apply_git_show(job.id, job.token, *self);
-    }
-}
-
-/// Runs `git show <sha>` for view-only output and honors a configured `diff.external`.
-#[derive(Debug)]
-pub(crate) struct GitShowJob {
-    doc_id: DocumentId,
-    repo_root: PathBuf,
-    sha: String,
-    token: Option<crate::job_manager::AsyncToken>,
-}
-
-impl GitShowJob {
-    #[must_use]
-    pub(crate) const fn new(doc_id: DocumentId, repo_root: PathBuf, sha: String) -> Self {
-        Self {
-            doc_id,
-            repo_root,
-            sha,
-            token: None,
-        }
-    }
-
-    #[must_use]
-    pub(crate) const fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
-        self.token = Some(token);
-        self
-    }
-}
-
-impl Job for GitShowJob {
-    fn name(&self) -> &'static str {
-        "git-show"
-    }
-
-    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
-        self.token
-    }
-
-    fn target_document_id(&self) -> Option<crate::document::DocumentId> {
-        Some(self.doc_id)
-    }
-
-    fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
-        Some(crate::job_manager::AsyncOpDomain::GitShow)
-    }
-    fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
-        if signal.is_cancelled() {
-            return;
-        }
-        match crate::git::run_checked(&self.repo_root, &["show", &self.sha]) {
-            Ok(stdout) => {
-                let result = Box::new(GitShowResult {
-                    doc_id: self.doc_id,
-                    sha: self.sha,
-                    body: stdout,
-                });
-                if let Some(token) = self.token {
-                    crate::job_manager::send_job_result_with_token(&sender, id, token, result);
-                } else {
-                    crate::job_manager::send_job_result(&sender, id, result);
-                }
-            }
-            Err(e) => {
-                let _ = sender.send(JobMessage::Error(id, e));
-            }
-        }
-    }
-
-    fn is_silent(&self) -> bool {
-        true
-    }
-}
-
-/// Result of a `GitCommandJob`: combined stdout+stderr for an arbitrary
-/// `git <args>` invocation (`:Git <args>` escape hatch).
-#[derive(Debug)]
-pub struct GitCommandResult {
-    pub(crate) repo_root: PathBuf,
-    pub(crate) args: String,
-    pub(crate) output: String,
-    pub(crate) success: bool,
-}
-impl JobPayload for GitCommandResult {
-    fn apply(self: Box<Self>, editor: &mut dyn JobTarget, job: JobRef) {
-        editor.apply_git_command(job.id, *self);
-    }
-}
-
-/// Runs `git <args>` with whitespace splitting and captures stdout plus stderr for display.
-#[derive(Debug)]
-pub(crate) struct GitCommandJob {
-    repo_root: PathBuf,
-    args: String,
-}
-
-impl GitCommandJob {
-    #[must_use]
-    pub(crate) const fn new(repo_root: PathBuf, args: String) -> Self {
-        Self { repo_root, args }
-    }
-}
-
-impl Job for GitCommandJob {
-    fn name(&self) -> &'static str {
-        "git-command"
-    }
-
-    fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
-        if signal.is_cancelled() {
-            return;
-        }
-        let arg_tokens: Vec<&str> = self.args.split_whitespace().collect();
-        let output = crate::git::run(&self.repo_root, &arg_tokens);
-        let (text, success) = match output {
-            Ok(out) => {
-                let mut combined = out.stdout;
-                if !out.stderr.is_empty() {
-                    if !combined.is_empty() && !combined.ends_with('\n') {
-                        combined.push('\n');
-                    }
-                    combined.push_str(&out.stderr);
-                }
-                (combined, out.success)
-            }
-            Err(e) => (e.message, false),
-        };
-        let result = Box::new(GitCommandResult {
-            repo_root: self.repo_root,
-            args: self.args,
-            output: text,
-            success,
-        });
-        crate::job_manager::send_job_result(&sender, id, result);
     }
 
     fn is_silent(&self) -> bool {

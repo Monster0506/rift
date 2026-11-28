@@ -13,13 +13,16 @@ impl<T: TerminalBackend> Editor<T> {
     /// Panics if the focused window is not a leaf of the split tree.
     pub(super) fn open_git_blame(
         &mut self,
-        path: std::path::PathBuf,
-        repo_root: std::path::PathBuf,
+        path: &std::path::Path,
+        repo_root: &std::path::Path,
+        flags: Vec<String>,
+        at_commit: Option<&str>,
+        lines: Vec<crate::git::blame::BlameLine>,
     ) {
         let linked_doc_id = self
             .document_manager
             .documents_iter()
-            .find(|d| d.path() == Some(path.as_path()))
+            .find(|d| d.path() == Some(path))
             .map(|d| d.id);
         let linked_doc_id = if let Some(id) = linked_doc_id {
             id
@@ -32,12 +35,13 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         let blame_doc_id = self.document_manager.next_id();
-        let blame_doc = match crate::document::Document::new_git_blame(
+        let mut blame_doc = match crate::document::Document::new_git_blame(
             blame_doc_id,
-            repo_root.clone(),
+            repo_root.to_path_buf(),
             linked_doc_id,
-            path.clone(),
-            None,
+            path.to_path_buf(),
+            flags,
+            at_commit.map(str::to_string),
         ) {
             Ok(d) => d,
             Err(e) => {
@@ -45,6 +49,7 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
+        blame_doc.populate_git_blame_buffer(lines);
         self.open_buffer(blame_doc, crate::document::manager::Placement::Background);
 
         let focused = self.split_tree.focused_window_id();
@@ -63,9 +68,9 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        let job =
-            crate::job_manager::jobs::git::GitBlameJob::new(blame_doc_id, repo_root, path, None);
-        self.job_manager.spawn(job);
+        if at_commit.is_some() {
+            self.set_git_blame_source(repo_root, path, linked_doc_id, focused, at_commit);
+        }
     }
 
     pub(super) fn git_blame_walk_back(&mut self) {
@@ -115,16 +120,10 @@ impl<T: TerminalBackend> Editor<T> {
             if doc.buffer_kind_id() == BufferKindId::GIT_BLAME {
                 let current_commit = doc.git_blame_at_commit().map(str::to_string);
                 doc.push_git_blame_history(current_commit);
-                doc.set_git_blame_at_commit(Some(parent_commit.clone()));
+                doc.set_git_blame_at_commit(Some(parent_commit));
             }
         }
-        self.job_manager
-            .spawn(crate::job_manager::jobs::git::GitBlameJob::new(
-                doc_id,
-                repo_root,
-                path,
-                Some(parent_commit),
-            ));
+        self.refresh_git_view(doc_id);
     }
 
     pub(super) fn git_blame_walk_forward(&mut self) {
@@ -161,10 +160,7 @@ impl<T: TerminalBackend> Editor<T> {
                 doc.rewind_git_blame_history();
             }
         }
-        self.job_manager
-            .spawn(crate::job_manager::jobs::git::GitBlameJob::new(
-                doc_id, repo_root, path, previous,
-            ));
+        self.refresh_git_view(doc_id);
     }
 
     fn set_git_blame_source(

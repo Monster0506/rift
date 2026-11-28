@@ -8,7 +8,9 @@ use crate::job_manager::jobs::file_operations::FileSaveJob;
 #[cfg(feature = "plugins")]
 use crate::plugin::events::SaveHold;
 use crate::time::Instant;
-use std::collections::{HashMap, HashSet, VecDeque};
+#[cfg(feature = "plugins")]
+use std::collections::HashSet;
+use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -40,8 +42,6 @@ pub(super) struct Scheduler {
     pub(super) git_gutter_diff: Debounced<DocumentId>,
     pub(super) explorer_preview: Option<PendingExplorerPreview>,
     pub(super) explorer_cursor_entry: Option<String>,
-    pub(super) git_status_expand_all: HashMap<DocumentId, bool>,
-    pub(super) git_log_expand_head: HashSet<DocumentId>,
     pub(super) queued_file_saves: VecDeque<QueuedFileSave>,
     pub(super) running_file_saves: HashMap<usize, FileSaveRequest>,
     #[cfg(feature = "plugins")]
@@ -101,8 +101,6 @@ impl Scheduler {
             git_gutter_diff: Debounced::new(GIT_GUTTER_DEBOUNCE),
             explorer_preview: None,
             explorer_cursor_entry: None,
-            git_status_expand_all: HashMap::new(),
-            git_log_expand_head: HashSet::new(),
             queued_file_saves: VecDeque::new(),
             running_file_saves: HashMap::new(),
             #[cfg(feature = "plugins")]
@@ -152,8 +150,6 @@ impl Scheduler {
     pub(super) fn forget_document(&mut self, id: DocumentId) {
         self.syntax_reparse.cancel(id);
         self.git_gutter_diff.cancel(id);
-        self.git_status_expand_all.remove(&id);
-        self.git_log_expand_head.remove(&id);
         #[cfg(feature = "plugins")]
         self.held_saves.remove(&id);
     }

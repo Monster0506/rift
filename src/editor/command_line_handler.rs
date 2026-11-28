@@ -32,7 +32,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.open_terminal_from_input(cmd);
                 return false;
             }
-            ParsedCommand::Git { args, .. } => self.run_git_from_command(args),
+            ParsedCommand::Git { args, .. } => self.run_git_from_command(&args),
             ParsedCommand::Checkpoint { .. } => {
                 self.create_checkpoint();
             }

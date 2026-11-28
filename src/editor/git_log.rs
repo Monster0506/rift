@@ -1,53 +1,8 @@
-//! Git log browser: open, populate, and inline `git show` expansion
-//! (Phase 8). Pure read/navigate;  no `:w` reconciliation.
-
 use super::Editor;
 use crate::document::runtime::BufferKindId;
 use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
-    /// Open a git log browser, repo-wide (`path: None`) or scoped to one file's history (`path: Some`). `repo_root` is caller-supplied, never re-derived from "whatever's currently active".
-    pub(super) fn open_git_log(
-        &mut self,
-        repo_root: std::path::PathBuf,
-        path: Option<std::path::PathBuf>,
-    ) -> Option<crate::document::DocumentId> {
-        self.open_git_log_scoped(repo_root, path)
-    }
-
-    /// `:Git show`: open a repo-wide log browser, then expand HEAD's entry once the commit list populates; the closest structured equivalent to a bare `git show`.
-    pub(super) fn open_git_log_expand_head(&mut self, repo_root: std::path::PathBuf) {
-        if let Some(id) = self.open_git_log_scoped(repo_root, None) {
-            self.scheduler.git_log_expand_head.insert(id);
-        }
-    }
-
-    fn open_git_log_scoped(
-        &mut self,
-        repo_root: std::path::PathBuf,
-        path: Option<std::path::PathBuf>,
-    ) -> Option<crate::document::DocumentId> {
-        let id = self.document_manager.next_id();
-        let doc = match crate::document::Document::new_git_log(id, repo_root.clone(), path.clone())
-        {
-            Ok(d) => d,
-            Err(e) => {
-                self.notify_error(e);
-                return None;
-            }
-        };
-        self.open_buffer(doc, crate::document::manager::Placement::Background);
-        if let Err(e) = self.focus_document(id) {
-            self.notify_error(e);
-            return None;
-        }
-
-        let job = crate::job_manager::jobs::git::GitLogJob::new(id, repo_root, path);
-        self.job_manager.spawn(job);
-
-        Some(id)
-    }
-
     /// `=`/`<CR>` in a log buffer: toggle inline `git show` expansion for
     /// the commit under the cursor.
     pub(super) fn git_log_toggle_expand(&mut self) {
@@ -76,8 +31,6 @@ impl<T: TerminalBackend> Editor<T> {
             }
             return;
         }
-
-        let job = crate::job_manager::jobs::git::GitShowJob::new(doc_id, repo_root, sha);
-        self.job_manager.spawn(job);
+        self.fetch_git_commit_body(doc_id, repo_root, sha);
     }
 }

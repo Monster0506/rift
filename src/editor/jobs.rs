@@ -282,7 +282,7 @@ impl<T: TerminalBackend> Editor<T> {
         doc.matches_kind(token.expected_kind)
     }
 
-    fn resolve_and_validate_token(
+    pub(super) fn resolve_and_validate_token(
         &self,
         job_id: usize,
         token: Option<AsyncToken>,
@@ -550,203 +550,13 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
             .update_job_state(&JobMessage::Finished(id, true));
     }
 
-    fn apply_git_status(
+    fn apply_git(
         &mut self,
         id: usize,
         token: Option<AsyncToken>,
-        result: crate::job_manager::jobs::git::GitStatusResult,
+        result: crate::job_manager::jobs::git::GitResult,
     ) {
-        let doc_id = result.doc_id;
-        let Some(token) = self.resolve_and_validate_token(
-            id,
-            token,
-            doc_id,
-            crate::job_manager::AsyncOpDomain::GitStatus,
-        ) else {
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
-            return;
-        };
-        let Some(doc) = self
-            .document_manager
-            .get_document_by_handle_mut(token.handle)
-        else {
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
-            return;
-        };
-        let root_matches =
-            doc.is_git_status() && doc.git_repo_root() == Some(result.repo_root.as_path());
-        if !root_matches {
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
-            return;
-        }
-        doc.populate_git_status_buffer(result.snapshot, result.head_subject);
-        if let Some(staged_side) = self.scheduler.git_status_expand_all.remove(&doc_id) {
-            self.spawn_expand_all_git_status_hunks(doc_id, staged_side);
-        }
-        self.job_manager
-            .update_job_state(&JobMessage::Finished(id, true));
-    }
-
-    fn apply_git_diff(
-        &mut self,
-        id: usize,
-        token: Option<AsyncToken>,
-        result: crate::job_manager::jobs::git::GitDiffResult,
-    ) {
-        let doc_id = result.doc_id;
-        let Some(token) = self.resolve_and_validate_token(
-            id,
-            token,
-            doc_id,
-            crate::job_manager::AsyncOpDomain::GitDiff,
-        ) else {
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
-            return;
-        };
-        let Some(doc) = self
-            .document_manager
-            .get_document_by_handle_mut(token.handle)
-        else {
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
-            return;
-        };
-        if doc.is_git_status() {
-            doc.set_git_status_expanded(result.path, result.staged_side, result.hunks);
-        }
-        self.job_manager
-            .update_job_state(&JobMessage::Finished(id, true));
-    }
-
-    fn apply_git_blame(
-        &mut self,
-        id: usize,
-        token: Option<AsyncToken>,
-        result: crate::job_manager::jobs::git::GitBlameResult,
-    ) {
-        let doc_id = result.doc_id;
-        let Some(token) = self.resolve_and_validate_token(
-            id,
-            token,
-            doc_id,
-            crate::job_manager::AsyncOpDomain::GitBlame,
-        ) else {
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
-            return;
-        };
-        let Some(doc) = self
-            .document_manager
-            .get_document_by_handle_mut(token.handle)
-        else {
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
-            return;
-        };
-        if doc.is_git_blame() {
-            doc.populate_git_blame_buffer(result.lines);
-        }
-        self.job_manager
-            .update_job_state(&JobMessage::Finished(id, true));
-    }
-
-    fn apply_git_log(
-        &mut self,
-        id: usize,
-        token: Option<AsyncToken>,
-        result: crate::job_manager::jobs::git::GitLogResult,
-    ) {
-        let doc_id = result.doc_id;
-        let Some(token) = self.resolve_and_validate_token(
-            id,
-            token,
-            doc_id,
-            crate::job_manager::AsyncOpDomain::GitLog,
-        ) else {
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
-            return;
-        };
-        let Some(doc) = self
-            .document_manager
-            .get_document_by_handle_mut(token.handle)
-        else {
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
-            return;
-        };
-        if doc.is_git_log() {
-            doc.populate_git_log_buffer(result.commits);
-        }
-        if self.scheduler.git_log_expand_head.remove(&doc_id) {
-            let head = if doc.is_git_log() {
-                doc.git_repo_root().map(std::path::Path::to_path_buf).zip(
-                    doc.git_log_commits()
-                        .and_then(|c| c.first().map(|c| c.sha.clone())),
-                )
-            } else {
-                None
-            };
-            if let Some((repo_root, sha)) = head {
-                let show_token = self.job_manager.next_token(
-                    token.handle,
-                    token.expected_kind,
-                    crate::job_manager::AsyncOpDomain::GitShow,
-                );
-                let job = crate::job_manager::jobs::git::GitShowJob::new(doc_id, repo_root, sha)
-                    .with_token(show_token);
-                self.job_manager.spawn_with_token(job, show_token);
-            }
-        }
-        self.job_manager
-            .update_job_state(&JobMessage::Finished(id, true));
-    }
-
-    fn apply_git_show(
-        &mut self,
-        id: usize,
-        token: Option<AsyncToken>,
-        result: crate::job_manager::jobs::git::GitShowResult,
-    ) {
-        let doc_id = result.doc_id;
-        let Some(token) = self.resolve_and_validate_token(
-            id,
-            token,
-            doc_id,
-            crate::job_manager::AsyncOpDomain::GitShow,
-        ) else {
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
-            return;
-        };
-        let Some(doc) = self
-            .document_manager
-            .get_document_by_handle_mut(token.handle)
-        else {
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
-            return;
-        };
-        if doc.is_git_log() {
-            doc.set_git_log_expanded(Some(result.sha), Some(result.body));
-        }
-        self.job_manager
-            .update_job_state(&JobMessage::Finished(id, true));
-    }
-
-    fn apply_git_command(
-        &mut self,
-        id: usize,
-        result: crate::job_manager::jobs::git::GitCommandResult,
-    ) {
-        self.refresh_git_status_buffers_for(&result.repo_root);
-        self.show_git_command_result(&result.args, &result.output, result.success);
-        self.job_manager
-            .update_job_state(&JobMessage::Finished(id, true));
+        self.finish_git_job(id, token, result);
     }
 
     fn apply_git_gutter(

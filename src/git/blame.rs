@@ -164,6 +164,30 @@ pub(crate) fn parse_blame(input: &str) -> Vec<BlameLine> {
     result
 }
 
+pub(crate) fn parse_blame_exact(input: &str) -> Option<Vec<BlameLine>> {
+    const KEYS: [&str; 11] = [
+        "author ",
+        "author-mail ",
+        "author-time ",
+        "author-tz ",
+        "committer ",
+        "committer-mail ",
+        "committer-time ",
+        "committer-tz ",
+        "summary ",
+        "previous ",
+        "filename ",
+    ];
+    let shaped = input.lines().all(|line| {
+        line.starts_with('\t')
+            || line == "boundary"
+            || KEYS.iter().any(|key| line.starts_with(key))
+            || parse_header(line).is_some()
+    });
+    let lines = parse_blame(input);
+    (shaped && (input.trim().is_empty() || !lines.is_empty())).then_some(lines)
+}
+
 #[cfg(test)]
 #[path = "blame_tests.rs"]
 mod blame_tests;

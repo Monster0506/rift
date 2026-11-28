@@ -8,6 +8,7 @@ pub(crate) mod apply;
 pub(crate) mod blame;
 pub(crate) mod diff;
 pub(crate) mod log;
+pub(crate) mod query;
 pub(crate) mod rebase;
 pub(crate) mod status;
 

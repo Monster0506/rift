@@ -461,7 +461,7 @@ fn edit_pause_auto_resumes_after_amending_via_ca_in_status_buffer() {
     // Edit a file normally in Rift and stage it via the Status buffer's
     // machinery (not a raw shell git command).
     std::fs::write(dir.join("a.txt"), "a-edited\n").unwrap();
-    editor.open_git_status();
+    editor.open_git(crate::git::query::GitQuery::new(["status"]));
     drain_jobs(&mut editor);
     {
         let status_doc = editor

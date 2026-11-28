@@ -67,6 +67,9 @@ impl Document {
                 .file_name()
                 .map_or_else(|| path.to_string_lossy(), |name| name.to_string_lossy());
         }
+        if let Some(label) = self.git_output_label() {
+            return Cow::Owned(label);
+        }
         if let Some(path) = self.git_blame_path() {
             let name = path
                 .file_name()

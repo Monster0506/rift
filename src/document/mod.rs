@@ -25,8 +25,9 @@ use crate::document::runtime::{
     ReadOnlyPolicy, RegionsState, ScratchState, StateSlot, TextProjection, UndoFileViewState,
     BUFFER_LIST_STATE_KEY, CLIPBOARD_ENTRY_STATE_KEY, CLIPBOARD_STATE_KEY, DIRECTORY_STATE_KEY,
     FILE_STATE_KEY, GIT_BLAME_STATE_KEY, GIT_COMMIT_MESSAGE_STATE_KEY, GIT_LOG_STATE_KEY,
-    GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY, IMAGE_VIEW_STATE_KEY, REGIONS_STATE_KEY,
-    SCRATCH_STATE_KEY, TERMINAL_STATE_KEY, UNDO_FILE_VIEW_STATE_KEY, UNDO_TREE_STATE_KEY,
+    GIT_OUTPUT_STATE_KEY, GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY, IMAGE_VIEW_STATE_KEY,
+    REGIONS_STATE_KEY, SCRATCH_STATE_KEY, TERMINAL_STATE_KEY, UNDO_FILE_VIEW_STATE_KEY,
+    UNDO_TREE_STATE_KEY,
 };
 #[cfg(feature = "lsp")]
 use crate::document::runtime::{LocationListState, LOCATION_LIST_STATE_KEY};
@@ -759,7 +760,6 @@ impl Document {
     }
 
     state_get!(pub(crate) fn buffer_list_entries(&self) -> &[DocumentId] = BUFFER_LIST_STATE_KEY, |s| s.entries.as_slice());
-    state_get!(pub(crate) fn git_status_snapshot(&self) -> &crate::git::status::StatusSnapshot = GIT_STATUS_STATE_KEY, |s| &s.snapshot);
 
     pub(crate) fn git_status_hunk(
         &self,
@@ -808,7 +808,6 @@ impl Document {
     }
 
     state_get_opt!(pub(crate) fn git_blame_wrap_key(&self) -> (DocumentId, usize, usize, u64) = GIT_BLAME_STATE_KEY, |s| s.wrap_key);
-    state_get!(pub(crate) fn git_log_path(&self) -> Option<&Path> = GIT_LOG_STATE_KEY, |s| s.path.as_deref());
     state_get!(pub(crate) fn git_log_commits(&self) -> &[crate::git::log::CommitSummary] = GIT_LOG_STATE_KEY, |s| s.commits.as_slice());
     state_get_opt!(pub(crate) fn git_log_expanded(&self) -> &str = GIT_LOG_STATE_KEY, |s| s.expanded.as_deref());
     #[cfg(test)]
@@ -819,6 +818,28 @@ impl Document {
     state_set!(pub(crate) fn set_git_rebase_pause(&mut self, pause: Option<crate::git::rebase::RebasePause>) = GIT_REBASE_TODO_STATE_KEY, |s| s.pause = pause);
     state_get!(pub(crate) fn git_rebase_steps(&self) -> &[crate::git::rebase::RebaseStep] = GIT_REBASE_TODO_STATE_KEY, |s| s.steps.as_slice());
     state_get!(pub(crate) fn git_rebase_message_overrides(&self) -> &std::collections::HashMap<String, String> = GIT_REBASE_TODO_STATE_KEY, |s| &s.message_overrides);
+
+    pub(crate) fn git_view_query(
+        &self,
+    ) -> Option<(crate::git::query::GitQuery, crate::git::query::GitView)> {
+        use crate::git::query::{GitQuery, GitView};
+        if let Some(s) = self.state.try_get(GIT_STATUS_STATE_KEY) {
+            return Some((s.query.clone(), GitView::Status));
+        }
+        if let Some(s) = self.state.try_get(GIT_LOG_STATE_KEY) {
+            return Some((s.query.clone(), s.query.view()));
+        }
+        if let Some(s) = self.state.try_get(GIT_OUTPUT_STATE_KEY) {
+            return Some((s.query.clone(), GitView::Text));
+        }
+        let s = self.state.try_get(GIT_BLAME_STATE_KEY)?;
+        let mut args = vec!["blame".to_string()];
+        args.extend(s.flags.iter().cloned());
+        args.extend(s.at_commit.iter().cloned());
+        args.push("--".to_string());
+        args.push(s.path.to_string_lossy().into_owned());
+        Some((GitQuery::new(args), GitView::Blame))
+    }
 
     pub(crate) fn git_repo_root(&self) -> Option<&Path> {
         if let Some(s) = self.state.try_get(GIT_STATUS_STATE_KEY) {
@@ -836,7 +857,28 @@ impl Document {
         if let Some(s) = self.state.try_get(GIT_REBASE_TODO_STATE_KEY) {
             return Some(&s.repo_root);
         }
+        if let Some(s) = self.state.try_get(GIT_OUTPUT_STATE_KEY) {
+            return Some(&s.repo_root);
+        }
         None
+    }
+
+    pub(crate) fn git_output_label(&self) -> Option<String> {
+        self.state
+            .try_get(GIT_OUTPUT_STATE_KEY)
+            .map(|s| format!("[Git: {}]", s.query.label()))
+    }
+
+    pub(crate) fn is_git_output(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::GIT_OUTPUT
+    }
+
+    pub(crate) fn populate_git_output(&mut self, text: &str) {
+        self.replace_content(
+            text.trim_end_matches('\n'),
+            crate::document::ops::ContentKind::Render,
+        );
+        self.history.mark_saved();
     }
 }
 

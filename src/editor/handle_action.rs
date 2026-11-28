@@ -178,7 +178,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_git_action(&mut self, action: &Action, editor_action: &EditorAction) -> bool {
         match editor_action {
             EditorAction::GitStatus => {
-                self.open_git_status();
+                self.open_git(crate::git::query::GitQuery::new(["status"]));
                 true
             }
             EditorAction::GitCommitNew => {

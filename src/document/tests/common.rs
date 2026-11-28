@@ -110,9 +110,12 @@ pub(super) fn unmerged_entry(path: &str) -> crate::git::status::StatusEntry {
 }
 
 pub(super) fn make_git_status_doc(entries: Vec<crate::git::status::StatusEntry>) -> Document {
-    let mut doc =
-        Document::new_git_status(crate::document::DocumentId::new(1), PathBuf::from("/repo"))
-            .unwrap();
+    let mut doc = Document::new_git_status(
+        crate::document::DocumentId::new(1),
+        PathBuf::from("/repo"),
+        crate::git::query::GitQuery::new(["status"]),
+    )
+    .unwrap();
     let snapshot = crate::git::status::StatusSnapshot {
         branch: crate::git::status::BranchInfo::default(),
         entries,

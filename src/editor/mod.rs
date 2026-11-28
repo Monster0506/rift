@@ -14,6 +14,7 @@ mod file_ops;
 mod git_blame;
 mod git_gutter;
 mod git_log;
+mod git_query;
 mod git_rebase;
 mod git_status;
 mod handle_action;

@@ -88,37 +88,7 @@ pub trait JobTarget: LspTarget {
         token: Option<AsyncToken>,
         listing: jobs::explorer::DirectoryListing,
     );
-    fn apply_git_status(
-        &mut self,
-        id: usize,
-        token: Option<AsyncToken>,
-        result: jobs::git::GitStatusResult,
-    );
-    fn apply_git_diff(
-        &mut self,
-        id: usize,
-        token: Option<AsyncToken>,
-        result: jobs::git::GitDiffResult,
-    );
-    fn apply_git_blame(
-        &mut self,
-        id: usize,
-        token: Option<AsyncToken>,
-        result: jobs::git::GitBlameResult,
-    );
-    fn apply_git_log(
-        &mut self,
-        id: usize,
-        token: Option<AsyncToken>,
-        result: jobs::git::GitLogResult,
-    );
-    fn apply_git_show(
-        &mut self,
-        id: usize,
-        token: Option<AsyncToken>,
-        result: jobs::git::GitShowResult,
-    );
-    fn apply_git_command(&mut self, id: usize, result: jobs::git::GitCommandResult);
+    fn apply_git(&mut self, id: usize, token: Option<AsyncToken>, result: jobs::git::GitResult);
     fn apply_git_gutter(
         &mut self,
         id: usize,
@@ -168,6 +138,7 @@ pub enum AsyncOpDomain {
     GitBlame,
     GitLog,
     GitShow,
+    GitOutput,
     UndoTree,
     ExplorerPreview,
     FileSave,
@@ -605,6 +576,7 @@ impl JobManager {
         self.jobs.values().any(|h| !h.handle.is_finished())
     }
     /// Spawns a job with an explicitly registered `AsyncToken`.
+    #[cfg(any(feature = "treesitter", test))]
     pub(crate) fn spawn_with_token<J: Job>(&mut self, job: J, token: AsyncToken) -> usize {
         let id = self.spawn(job);
         self.register_job_token(id, token);
@@ -617,6 +589,7 @@ impl JobManager {
 
     /// Generates a fresh `AsyncToken` for the given document handle, kind, and domain,
     /// advancing the request epoch so any older token for this domain becomes stale.
+    #[cfg(any(feature = "treesitter", feature = "terminal_emulation", test))]
     pub(crate) fn next_token(
         &mut self,
         handle: DocumentHandle,
@@ -631,6 +604,7 @@ impl JobManager {
     }
 
     /// Registers an `AsyncToken` for a specific job ID.
+    #[cfg(any(feature = "treesitter", test))]
     fn register_job_token(&mut self, job_id: usize, token: AsyncToken) {
         self.job_tokens.insert(job_id, token);
     }

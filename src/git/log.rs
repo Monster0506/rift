@@ -19,46 +19,48 @@ pub(crate) struct CommitSummary {
 
 /// Parse the full stdout of `git log --format=<LOG_FORMAT>`. A chunk that doesn't split into exactly the 8 fields `LOG_FORMAT` produces; an empty trailing chunk after the final record separator, or a stream truncated mid-record; is skipped rather than panicking or corrupting the commits already parsed.
 pub(crate) fn parse_log(input: &str) -> Vec<CommitSummary> {
-    let mut result = Vec::new();
+    input
+        .split('\u{1e}')
+        .filter(|chunk| !chunk.is_empty())
+        .filter_map(parse_record)
+        .collect()
+}
 
-    for chunk in input.split('\u{1e}') {
-        if chunk.is_empty() {
-            continue;
-        }
-        let fields: Vec<&str> = chunk.split('\u{1f}').collect();
-        if fields.len() != 8 {
-            continue;
-        }
+pub(crate) fn parse_log_exact(input: &str) -> Option<Vec<CommitSummary>> {
+    input
+        .split('\u{1e}')
+        .filter(|chunk| !chunk.trim().is_empty())
+        .map(|chunk| {
+            parse_record(chunk).filter(|commit| {
+                commit.sha.len() >= 40 && commit.sha.bytes().all(|b| b.is_ascii_hexdigit())
+            })
+        })
+        .collect()
+}
 
-        // Git inserts one incidental newline between the previous record's `%x1e` and this record's `%H`; strip exactly that one, but only from the hash field; never from `body`, where a leading newline would be an intentional blank first line.
-        let sha = fields[0]
-            .strip_prefix('\n')
-            .unwrap_or(fields[0])
-            .to_string();
-        let short_sha = fields[1].to_string();
-        let author_name = fields[2].to_string();
-        let author_email = fields[3].to_string();
-        let author_time: i64 = fields[4].trim().parse().unwrap_or(0);
-        let parents = fields[5]
+fn parse_record(chunk: &str) -> Option<CommitSummary> {
+    let fields: Vec<&str> = chunk.split('\u{1f}').collect();
+    if fields.len() != 8 {
+        return None;
+    }
+    // Git inserts one incidental newline between the previous record's `%x1e` and this record's `%H`; strip exactly that one, but only from the hash field; never from `body`, where a leading newline would be an intentional blank first line.
+    let sha = fields[0]
+        .strip_prefix('\n')
+        .unwrap_or(fields[0])
+        .to_string();
+    Some(CommitSummary {
+        sha,
+        short_sha: fields[1].to_string(),
+        author_name: fields[2].to_string(),
+        author_email: fields[3].to_string(),
+        author_time: fields[4].trim().parse().unwrap_or(0),
+        subject: fields[6].to_string(),
+        body: fields[7].to_string(),
+        parents: fields[5]
             .split_ascii_whitespace()
             .map(str::to_string)
-            .collect();
-        let subject = fields[6].to_string();
-        let body = fields[7].to_string();
-
-        result.push(CommitSummary {
-            sha,
-            short_sha,
-            author_name,
-            author_email,
-            author_time,
-            subject,
-            body,
-            parents,
-        });
-    }
-
-    result
+            .collect(),
+    })
 }
 
 #[cfg(test)]

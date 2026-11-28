@@ -31,6 +31,7 @@ impl BufferKindId {
     pub(crate) const BUFFER_LIST: Self = Self(NonZeroU32::new(16).unwrap());
     pub(crate) const UNDO_FILE_VIEW: Self = Self(NonZeroU32::new(17).unwrap());
     pub(crate) const IMAGE_VIEW: Self = Self(NonZeroU32::new(18).unwrap());
+    pub(crate) const GIT_OUTPUT: Self = Self(NonZeroU32::new(19).unwrap());
 
     const RESERVED_BUILTIN_END: u32 = 64;
 
@@ -292,9 +293,7 @@ pub(crate) enum ReloadDispatch {
     UndoTree,
     Messages,
     Clipboard,
-    GitStatus,
-    GitBlame,
-    GitLog,
+    Git,
     BufferList,
     UndoFileView,
     ImageAsText,
@@ -471,6 +470,7 @@ pub(super) static SCRATCH_STATE_KEY: StateKey<ScratchState> = StateKey::new("scr
 #[derive(Debug, Clone)]
 pub(super) struct GitStatusState {
     pub(super) repo_root: PathBuf,
+    pub(super) query: crate::git::query::GitQuery,
     pub(super) snapshot: crate::git::status::StatusSnapshot,
     pub(super) expanded_diffs: HashMap<(PathBuf, bool), Vec<crate::git::diff::Hunk>>,
     pub(super) head_subject: Option<String>,
@@ -491,6 +491,7 @@ pub(super) struct GitBlameState {
     pub(super) linked_doc_id: DocumentId,
     pub(super) linked_window_id: crate::split::window::WindowId,
     pub(super) path: PathBuf,
+    pub(super) flags: Vec<String>,
     pub(super) at_commit: Option<String>,
     pub(super) history: Vec<Option<String>>,
     pub(super) lines: Vec<crate::git::blame::BlameLine>,
@@ -502,12 +503,19 @@ pub(super) static GIT_BLAME_STATE_KEY: StateKey<GitBlameState> = StateKey::new("
 #[derive(Debug, Clone)]
 pub(super) struct GitLogState {
     pub(super) repo_root: PathBuf,
-    pub(super) path: Option<PathBuf>,
+    pub(super) query: crate::git::query::GitQuery,
     pub(super) commits: Vec<crate::git::log::CommitSummary>,
     pub(super) expanded: Option<String>,
     pub(super) expanded_body: Option<String>,
 }
 pub(super) static GIT_LOG_STATE_KEY: StateKey<GitLogState> = StateKey::new("git_log");
+
+#[derive(Debug, Clone)]
+pub(super) struct GitOutputState {
+    pub(super) repo_root: PathBuf,
+    pub(super) query: crate::git::query::GitQuery,
+}
+pub(super) static GIT_OUTPUT_STATE_KEY: StateKey<GitOutputState> = StateKey::new("git_output");
 
 #[derive(Debug, Clone)]
 pub(super) struct GitRebaseTodoState {
@@ -1125,7 +1133,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Git Status]".into()),
             help_lines: Some(status_help.into()),
             on_close: CloseHandler::NOOP,
-            reload_dispatch: ReloadDispatch::GitStatus,
+            reload_dispatch: ReloadDispatch::Git,
             state_key: GIT_STATUS_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1168,7 +1176,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Git Blame]".into()),
             help_lines: Some(blame_help.into()),
             on_close: CloseHandler::NOOP,
-            reload_dispatch: ReloadDispatch::GitBlame,
+            reload_dispatch: ReloadDispatch::Git,
             state_key: GIT_BLAME_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
@@ -1192,8 +1200,24 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Git Log]".into()),
             help_lines: Some(log_help.into()),
             on_close: CloseHandler::NOOP,
-            reload_dispatch: ReloadDispatch::GitLog,
+            reload_dispatch: ReloadDispatch::Git,
             state_key: GIT_LOG_STATE_KEY.id(),
+            #[cfg(feature = "plugins")]
+            owner: DescriptorOwner::BuiltIn,
+            tombstone: None,
+        })?;
+
+        self.register_builtin(KindDescriptor {
+            id: BufferKindId::GIT_OUTPUT,
+            name: "git_output".into(),
+            policies: BufferPolicies::read_only_panel(),
+            action_dispatch: ActionDispatch::Disabled,
+            save_dispatch: SaveDispatch::Reject,
+            display_name: DisplayNameStrategy::Label("[Git]".into()),
+            help_lines: None,
+            on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Git,
+            state_key: GIT_OUTPUT_STATE_KEY.id(),
             #[cfg(feature = "plugins")]
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,

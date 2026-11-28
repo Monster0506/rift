@@ -102,8 +102,8 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    pub(in crate::editor) fn run_git_from_command(&mut self, args: String) {
-        self.run_git_command(args);
+    pub(in crate::editor) fn run_git_from_command(&mut self, args: &str) {
+        self.open_git(crate::git::query::GitQuery::parse(args));
         self.state.clear_command_line();
     }
 

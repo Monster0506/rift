@@ -131,6 +131,13 @@ pub(crate) fn parse_status(input: &str) -> StatusSnapshot {
     snapshot
 }
 
+pub(crate) fn parse_status_exact(input: &str) -> Option<StatusSnapshot> {
+    input
+        .lines()
+        .all(|line| line.is_empty() || line.starts_with("# ") || parse_entry_line(line).is_some())
+        .then(|| parse_status(input))
+}
+
 fn parse_branch_header(rest: &str, branch: &mut BranchInfo) {
     let Some((key, value)) = rest.split_once(' ') else {
         return;

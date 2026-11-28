@@ -5,12 +5,12 @@ use crate::buffer::TextBuffer;
 use crate::document::kind::BufferKind;
 use crate::document::runtime::{
     BufferListState, ClipboardState, DirectoryState, DocumentHandle, FileState, GitBlameState,
-    GitCommitMessageState, GitLogState, GitRebaseTodoState, GitStatusState, MessagesState,
-    ScratchState, StateSlot, TerminalState, UndoTreeState, BUFFER_LIST_STATE_KEY,
+    GitCommitMessageState, GitLogState, GitOutputState, GitRebaseTodoState, GitStatusState,
+    MessagesState, ScratchState, StateSlot, TerminalState, UndoTreeState, BUFFER_LIST_STATE_KEY,
     CLIPBOARD_STATE_KEY, DIRECTORY_STATE_KEY, FILE_STATE_KEY, GIT_BLAME_STATE_KEY,
-    GIT_COMMIT_MESSAGE_STATE_KEY, GIT_LOG_STATE_KEY, GIT_REBASE_TODO_STATE_KEY,
-    GIT_STATUS_STATE_KEY, MESSAGES_STATE_KEY, SCRATCH_STATE_KEY, TERMINAL_STATE_KEY,
-    UNDO_TREE_STATE_KEY,
+    GIT_COMMIT_MESSAGE_STATE_KEY, GIT_LOG_STATE_KEY, GIT_OUTPUT_STATE_KEY,
+    GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY, MESSAGES_STATE_KEY, SCRATCH_STATE_KEY,
+    TERMINAL_STATE_KEY, UNDO_TREE_STATE_KEY,
 };
 use crate::error::{ErrorType, RiftError};
 use crate::history::UndoTree;
@@ -444,6 +444,7 @@ impl Document {
     pub(crate) fn new_git_status(
         id: super::DocumentId,
         repo_root: PathBuf,
+        query: crate::git::query::GitQuery,
     ) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         let mut doc = Self::panel_skeleton(id, buffer);
@@ -452,6 +453,7 @@ impl Document {
             GIT_STATUS_STATE_KEY,
             GitStatusState {
                 repo_root,
+                query,
                 snapshot: crate::git::status::StatusSnapshot::default(),
                 expanded_diffs: std::collections::HashMap::new(),
                 head_subject: None,
@@ -483,6 +485,7 @@ impl Document {
         repo_root: PathBuf,
         linked_doc_id: super::DocumentId,
         path: PathBuf,
+        flags: Vec<String>,
         at_commit: Option<String>,
     ) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
@@ -502,6 +505,7 @@ impl Document {
                 linked_doc_id,
                 linked_window_id: WindowId::new(0),
                 path,
+                flags,
                 at_commit,
                 history: Vec::new(),
                 lines: Vec::new(),
@@ -517,7 +521,7 @@ impl Document {
     pub(crate) fn new_git_log(
         id: super::DocumentId,
         repo_root: PathBuf,
-        path: Option<PathBuf>,
+        query: crate::git::query::GitQuery,
     ) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         let mut doc = Self::panel_skeleton(id, buffer);
@@ -526,13 +530,25 @@ impl Document {
             GIT_LOG_STATE_KEY,
             GitLogState {
                 repo_root,
-                path,
+                query,
                 commits: Vec::new(),
                 expanded: None,
                 expanded_body: None,
             },
         );
         Ok(doc)
+    }
+
+    pub(crate) fn new_git_output(
+        id: super::DocumentId,
+        repo_root: PathBuf,
+        query: crate::git::query::GitQuery,
+        text: &str,
+    ) -> Self {
+        let mut doc = Self::panel_skeleton(id, TextBuffer::from_text(text.trim_end_matches('\n')));
+        doc.kind = BufferKind::for_builtin(super::runtime::BufferKindId::GIT_OUTPUT);
+        doc.state = StateSlot::new(GIT_OUTPUT_STATE_KEY, GitOutputState { repo_root, query });
+        doc
     }
 
     /// # Errors

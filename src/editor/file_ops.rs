@@ -39,45 +39,6 @@ fn reopen_image_as_text<T: TerminalBackend>(
     Ok(())
 }
 
-fn reload_git_status<T: TerminalBackend>(editor: &mut Editor<T>, doc_id: DocumentId) {
-    let Some(repo_root) = editor
-        .document_manager
-        .get_document(doc_id)
-        .and_then(|d| d.git_repo_root())
-        .map(std::path::Path::to_path_buf)
-    else {
-        return;
-    };
-    editor.refresh_git_status_buffers_for(&repo_root);
-}
-
-fn reload_git_log<T: TerminalBackend>(editor: &mut Editor<T>, doc_id: DocumentId) {
-    let Some((repo_root, path)) = editor.document_manager.get_document(doc_id).and_then(|d| {
-        let repo_root = d.git_repo_root()?.to_path_buf();
-        let path = d.git_log_path().flatten().map(std::path::Path::to_path_buf);
-        Some((repo_root, path))
-    }) else {
-        return;
-    };
-    let job = crate::job_manager::jobs::git::GitLogJob::new(doc_id, repo_root, path);
-    editor.job_manager.spawn(job);
-}
-
-fn reload_git_blame<T: TerminalBackend>(editor: &mut Editor<T>, doc_id: DocumentId) {
-    let Some((repo_root, path, at_commit)) =
-        editor.document_manager.get_document(doc_id).and_then(|d| {
-            let repo_root = d.git_repo_root()?.to_path_buf();
-            let path = d.git_blame_path()?.to_path_buf();
-            let at_commit = d.git_blame_at_commit().map(str::to_string);
-            Some((repo_root, path, at_commit))
-        })
-    else {
-        return;
-    };
-    let job = crate::job_manager::jobs::git::GitBlameJob::new(doc_id, repo_root, path, at_commit);
-    editor.job_manager.spawn(job);
-}
-
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn reload_document(
         &mut self,
@@ -110,9 +71,9 @@ impl<T: TerminalBackend> Editor<T> {
             ReloadDispatch::UndoTree => self.refresh_undotree(buf),
             ReloadDispatch::Messages => self.refresh_messages_buffer(buf),
             ReloadDispatch::Clipboard => self.refresh_clipboard_buffer(buf),
-            ReloadDispatch::GitStatus => reload_git_status(self, buf),
-            ReloadDispatch::GitBlame => reload_git_blame(self, buf),
-            ReloadDispatch::GitLog => reload_git_log(self, buf),
+            ReloadDispatch::Git => {
+                self.refresh_git_view(buf);
+            }
             ReloadDispatch::BufferList => self.refresh_buffer_list(buf),
             ReloadDispatch::UndoFileView => reload_undo_file_view_handler(self, buf)?,
             ReloadDispatch::ImageAsText => reopen_image_as_text(self, buf)?,

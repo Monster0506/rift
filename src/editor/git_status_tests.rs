@@ -1,7 +1,6 @@
 use super::Editor;
 use crate::test_utils::MockTerminal;
 use std::fmt::Write as _;
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 pub(super) fn create_editor() -> Editor<MockTerminal> {
@@ -58,7 +57,7 @@ fn open_git_status_populates_sections_from_a_real_repo() {
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
 
-    editor.open_git_status();
+    editor.open_git(crate::git::query::GitQuery::new(["status"]));
     drain_jobs(&mut editor);
 
     let doc = editor
@@ -81,7 +80,7 @@ fn cursor_stage_action_runs_git_add_and_refreshes_the_buffer() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.open_git_status();
+    editor.open_git(crate::git::query::GitQuery::new(["status"]));
     drain_jobs(&mut editor);
 
     let doc_id = editor.active_document_id();
@@ -136,7 +135,7 @@ fn unstage_rename_line_unstages_both_paths() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("renamed.txt"));
-    editor.open_git_status();
+    editor.open_git(crate::git::query::GitQuery::new(["status"]));
     drain_jobs(&mut editor);
     cursor_to_entry(&mut editor, "renamed.txt");
     editor.git_status_cursor_action("unstage");
@@ -156,7 +155,7 @@ fn unstage_in_repo_without_commits_unstages_file() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("new.txt"));
-    editor.open_git_status();
+    editor.open_git(crate::git::query::GitQuery::new(["status"]));
     drain_jobs(&mut editor);
     cursor_to_entry(&mut editor, "new.txt");
     editor.git_status_cursor_action("unstage");
@@ -177,7 +176,7 @@ fn fast_double_toggle_in_status_unstages_file() {
     let path = dir.path().join("tracked.txt").display().to_string();
     let mut editor = Editor::with_file(backend, Some(&path)).unwrap();
     drain_jobs_replay(&mut editor);
-    editor.open_git_status();
+    editor.open_git(crate::git::query::GitQuery::new(["status"]));
     drain_jobs_replay(&mut editor);
     cursor_to_entry(&mut editor, "tracked.txt");
 
@@ -202,7 +201,7 @@ fn git_status_buffer_is_read_only_and_wq_reports_cannot_be_saved() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.open_git_status();
+    editor.open_git(crate::git::query::GitQuery::new(["status"]));
     drain_jobs(&mut editor);
 
     let doc = editor
@@ -372,7 +371,7 @@ fn discard_untracked_entry_deletes_the_file_from_disk() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.open_git_status();
+    editor.open_git(crate::git::query::GitQuery::new(["status"]));
     drain_jobs(&mut editor);
 
     let doc_id = editor.active_document_id();
@@ -454,7 +453,7 @@ fn cursor_stage_action_on_a_single_diff_line_stages_only_that_line() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("multi.txt"));
-    editor.open_git_status();
+    editor.open_git(crate::git::query::GitQuery::new(["status"]));
     drain_jobs(&mut editor);
     {
         let doc = editor
@@ -516,7 +515,7 @@ fn expanding_an_untracked_files_entry_shows_its_hunk_diff() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.open_git_status();
+    editor.open_git(crate::git::query::GitQuery::new(["status"]));
     drain_jobs(&mut editor);
 
     let doc_id = editor.active_document_id();
@@ -553,7 +552,7 @@ fn cursor_stage_action_on_an_untracked_files_hunk_line_stages_only_that_line() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.open_git_status();
+    editor.open_git(crate::git::query::GitQuery::new(["status"]));
     drain_jobs(&mut editor);
 
     let doc_id = editor.active_document_id();
@@ -624,7 +623,7 @@ fn discard_on_an_untracked_files_hunk_line_is_not_supported_and_leaves_it_untouc
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.open_git_status();
+    editor.open_git(crate::git::query::GitQuery::new(["status"]));
     drain_jobs(&mut editor);
 
     let doc_id = editor.active_document_id();
@@ -676,7 +675,11 @@ fn open_git_blame_populates_one_line_per_source_line() {
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
     let source_window_id = editor.split_tree.focused_window_id();
     let source_doc_id = editor.active_document_id();
-    editor.open_git_blame(dir.path().join("tracked.txt"), dir.path().to_path_buf());
+    editor.open_git(crate::git::query::GitQuery::new([
+        "blame".to_string(),
+        "--".to_string(),
+        dir.path().join("tracked.txt").display().to_string(),
+    ]));
     drain_jobs(&mut editor);
 
     let blame_window_id = editor.split_tree.focused_window_id();
@@ -773,7 +776,11 @@ fn git_blame_uses_a_third_of_its_parent_split_width() {
         .unwrap()
         .cols;
 
-    editor.open_git_blame(dir.path().join("tracked.txt"), dir.path().to_path_buf());
+    editor.open_git(crate::git::query::GitQuery::new([
+        "blame".to_string(),
+        "--".to_string(),
+        dir.path().join("tracked.txt").display().to_string(),
+    ]));
     drain_jobs(&mut editor);
 
     let blame_window_id = editor.split_tree.focused_window_id();
@@ -835,7 +842,11 @@ fn git_blame_inserts_and_skips_source_soft_wrap_spacers() {
     let mut editor = create_editor();
     open_and_load(&mut editor, &path);
     let source_window_id = editor.split_tree.focused_window_id();
-    editor.open_git_blame(path, dir.path().to_path_buf());
+    editor.open_git(crate::git::query::GitQuery::new([
+        "blame".to_string(),
+        "--".to_string(),
+        path.display().to_string(),
+    ]));
     drain_jobs(&mut editor);
     editor.update_and_render().unwrap();
 
@@ -948,7 +959,11 @@ fn git_blame_keeps_source_scrolled_to_its_logical_line() {
         .unwrap();
     open_and_load(&mut editor, &path);
     let source_window_id = editor.split_tree.focused_window_id();
-    editor.open_git_blame(path, dir.path().to_path_buf());
+    editor.open_git(crate::git::query::GitQuery::new([
+        "blame".to_string(),
+        "--".to_string(),
+        path.display().to_string(),
+    ]));
     drain_jobs(&mut editor);
     let offset = editor
         .active_document()
@@ -1098,7 +1113,11 @@ fn git_blame_walk_back_re_blames_at_the_parent_commit() {
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
     let source_window_id = editor.split_tree.focused_window_id();
     let source_doc_id = editor.active_document_id();
-    editor.open_git_blame(dir.path().join("tracked.txt"), dir.path().to_path_buf());
+    editor.open_git(crate::git::query::GitQuery::new([
+        "blame".to_string(),
+        "--".to_string(),
+        dir.path().join("tracked.txt").display().to_string(),
+    ]));
     drain_jobs(&mut editor);
 
     let doc_id = editor.active_document_id();
@@ -1159,7 +1178,11 @@ fn git_blame_walk_back_on_the_root_commit_shows_a_notice_instead_of_a_raw_git_er
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.open_git_blame(dir.path().join("tracked.txt"), dir.path().to_path_buf());
+    editor.open_git(crate::git::query::GitQuery::new([
+        "blame".to_string(),
+        "--".to_string(),
+        dir.path().join("tracked.txt").display().to_string(),
+    ]));
     drain_jobs(&mut editor);
     let doc_id = editor.active_document_id();
 
@@ -1196,7 +1219,11 @@ fn git_blame_walk_back_from_a_middle_line_re_blames_that_lines_own_history() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.open_git_blame(dir.path().join("tracked.txt"), dir.path().to_path_buf());
+    editor.open_git(crate::git::query::GitQuery::new([
+        "blame".to_string(),
+        "--".to_string(),
+        dir.path().join("tracked.txt").display().to_string(),
+    ]));
     drain_jobs(&mut editor);
     let doc_id = editor.active_document_id();
 
@@ -1231,7 +1258,7 @@ fn open_git_log_lists_commits_and_expand_shows_git_show_body() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.open_git_log(dir.path().to_path_buf(), None);
+    editor.open_git(crate::git::query::GitQuery::new(["log"]));
     drain_jobs(&mut editor);
 
     let doc = editor
@@ -1257,29 +1284,19 @@ fn open_git_log_lists_commits_and_expand_shows_git_show_body() {
 }
 
 #[test]
-fn git_command_escape_hatch_runs_and_shows_output() {
+fn git_command_without_a_view_shows_gits_output() {
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.run_git_command("log -1".to_string());
+    editor.open_git(crate::git::query::GitQuery::parse("cat-file -p HEAD"));
     drain_jobs(&mut editor);
 
-    let doc = editor
-        .document_manager
-        .get_document(editor.active_document_id())
-        .unwrap();
-    assert_eq!(
-        doc.display_name(),
-        "[Git: log -1]",
-        "multi-line git output should open a scratch buffer, not just a notification"
-    );
+    let doc = editor.active_document();
+    assert_eq!(doc.display_name(), "[Git: cat-file -p HEAD]");
     let text = doc.buffer().to_string();
-    assert!(
-        text.contains("init"),
-        "expected git log output in a scratch buffer: {text}"
-    );
+    assert!(text.contains("init"), "{text}");
 }
 
 #[test]
@@ -1289,7 +1306,7 @@ fn bare_git_command_opens_the_status_buffer() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.run_git_command(String::new());
+    editor.open_git(crate::git::query::GitQuery::parse(""));
     drain_jobs(&mut editor);
 
     let doc = editor
@@ -1310,7 +1327,7 @@ fn bare_git_log_command_opens_the_log_buffer() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.run_git_command("log".to_string());
+    editor.open_git(crate::git::query::GitQuery::parse("log"));
     drain_jobs(&mut editor);
 
     let doc = editor
@@ -1325,58 +1342,27 @@ fn bare_git_log_command_opens_the_log_buffer() {
 }
 
 #[test]
-fn bare_git_diff_command_opens_status_with_unstaged_hunks_expanded() {
+fn git_diff_command_shows_the_patch_for_its_arguments() {
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
     std::fs::write(dir.path().join("tracked.txt"), "line ONE\nline two\n").unwrap();
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.run_git_command("diff".to_string());
+    editor.open_git(crate::git::query::GitQuery::parse("diff"));
     drain_jobs(&mut editor);
+    let text = editor.active_document().buffer().to_string();
+    assert!(text.contains("line ONE"), "{text}");
 
-    let doc = editor
-        .document_manager
-        .get_document(editor.active_document_id())
-        .unwrap();
-    assert!(
-        doc.is_git_status(),
-        "bare :Git diff must open the status buffer: {:?}",
-        doc.kind
-    );
-    assert!(
-        doc.is_git_status_expanded(&PathBuf::from("tracked.txt"), false),
-        "the unstaged hunk must already be expanded: {}",
-        doc.buffer()
-    );
-}
-
-#[test]
-fn bare_git_diff_cached_command_opens_status_with_staged_hunks_expanded() {
-    let dir = tempfile::tempdir().unwrap();
-    init_repo_with_commit(dir.path());
-    std::fs::write(dir.path().join("tracked.txt"), "line ONE\nline two\n").unwrap();
     crate::git::run_checked(dir.path(), &["add", "tracked.txt"]).unwrap();
-
-    let mut editor = create_editor();
-    open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.run_git_command("diff --cached".to_string());
+    editor.open_git(crate::git::query::GitQuery::parse("diff --cached"));
     drain_jobs(&mut editor);
-
-    let doc = editor
-        .document_manager
-        .get_document(editor.active_document_id())
-        .unwrap();
-    assert!(
-        doc.is_git_status(),
-        "bare :Git diff --cached must open the status buffer: {:?}",
-        doc.kind
+    assert_eq!(
+        editor.active_document().display_name(),
+        "[Git: diff --cached]"
     );
-    assert!(
-        doc.is_git_status_expanded(&PathBuf::from("tracked.txt"), true),
-        "the staged hunk must already be expanded: {}",
-        doc.buffer()
-    );
+    let text = editor.active_document().buffer().to_string();
+    assert!(text.contains("line ONE"), "{text}");
 }
 
 #[test]
@@ -1386,7 +1372,7 @@ fn bare_git_blame_command_blames_the_active_file() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.run_git_command("blame".to_string());
+    editor.open_git(crate::git::query::GitQuery::parse("blame"));
     drain_jobs(&mut editor);
 
     let doc = editor
@@ -1410,7 +1396,7 @@ fn git_blame_command_with_explicit_path_blames_that_file_not_the_active_one() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.run_git_command("blame other.txt".to_string());
+    editor.open_git(crate::git::query::GitQuery::parse("blame other.txt"));
     drain_jobs(&mut editor);
 
     let doc = editor
@@ -1426,44 +1412,48 @@ fn git_blame_command_with_explicit_path_blames_that_file_not_the_active_one() {
 }
 
 #[test]
-fn git_blame_command_with_a_flag_falls_through_to_raw_output() {
+fn git_blame_command_keeps_its_flags_on_the_active_file() {
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.run_git_command("blame -C".to_string());
+    editor.open_git(crate::git::query::GitQuery::parse("blame -w"));
     drain_jobs(&mut editor);
 
-    let doc = editor
-        .document_manager
-        .get_document(editor.active_document_id())
-        .unwrap();
-    assert!(
-        !doc.is_git_blame(),
-        "a flag argument must not open the structured blame view"
-    );
+    let doc = editor.active_document();
+    assert!(doc.is_git_blame(), "{:?}", doc.kind);
+    let (query, _) = doc.git_view_query().unwrap();
+    assert_eq!(query.blame_target().flags, ["-w"]);
 }
 
 #[test]
-fn git_log_command_with_a_flag_falls_through_to_raw_output() {
+fn git_log_with_a_range_is_the_same_log_view_and_reloads_its_range() {
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
+    std::fs::write(dir.path().join("tracked.txt"), "line one\nline 2\n").unwrap();
+    crate::git::run_checked(dir.path(), &["commit", "-am", "second", "--quiet"]).unwrap();
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.run_git_command("log -1".to_string());
+    editor.open_git(crate::git::query::GitQuery::parse("log HEAD~1..HEAD"));
     drain_jobs(&mut editor);
 
-    let doc = editor
-        .document_manager
-        .get_document(editor.active_document_id())
-        .unwrap();
-    assert!(
-        !doc.is_git_log(),
-        "a flag argument must not open the structured log view"
-    );
-    assert_eq!(doc.display_name(), "[Git: log -1]");
+    let doc = editor.active_document();
+    assert!(doc.is_git_log(), "{:?}", doc.kind);
+    let subjects = |doc: &crate::document::Document| -> Vec<String> {
+        doc.git_log_commits()
+            .unwrap()
+            .iter()
+            .map(|c| c.subject.clone())
+            .collect()
+    };
+    assert_eq!(subjects(doc), ["second"]);
+
+    let id = editor.active_document_id();
+    editor.reload_document(id, false).unwrap();
+    drain_jobs(&mut editor);
+    assert_eq!(subjects(editor.active_document()), ["second"]);
 }
 
 #[test]
@@ -1474,7 +1464,7 @@ fn b_key_in_status_buffer_blames_the_file_under_cursor() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.open_git_status();
+    editor.open_git(crate::git::query::GitQuery::new(["status"]));
     drain_jobs(&mut editor);
     {
         let doc = editor
@@ -1534,7 +1524,7 @@ fn r_key_in_status_buffer_starts_a_rebase_onto_upstream() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.open_git_status();
+    editor.open_git(crate::git::query::GitQuery::new(["status"]));
     drain_jobs(&mut editor);
 
     editor.git_status_rebase_cursor();
@@ -1553,7 +1543,7 @@ fn status_buffer_shows_head_summary_line_and_enter_opens_log() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.open_git_status();
+    editor.open_git(crate::git::query::GitQuery::new(["status"]));
     drain_jobs(&mut editor);
 
     let doc_id = editor.active_document_id();
@@ -1620,7 +1610,11 @@ fn git_blame_and_log_buffers_block_insert_and_delete() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.open_git_blame(dir.path().join("tracked.txt"), dir.path().to_path_buf());
+    editor.open_git(crate::git::query::GitQuery::new([
+        "blame".to_string(),
+        "--".to_string(),
+        dir.path().join("tracked.txt").display().to_string(),
+    ]));
     drain_jobs(&mut editor);
 
     let doc = editor
@@ -1644,7 +1638,7 @@ fn git_blame_and_log_buffers_block_insert_and_delete() {
         "dd must not mutate GitBlame"
     );
 
-    editor.open_git_log(dir.path().to_path_buf(), None);
+    editor.open_git(crate::git::query::GitQuery::new(["log"]));
     drain_jobs(&mut editor);
     let doc = editor
         .document_manager
@@ -1675,7 +1669,7 @@ fn bare_git_show_command_opens_log_with_head_expanded() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.run_git_command("show".to_string());
+    editor.open_git(crate::git::query::GitQuery::parse("show"));
     drain_jobs(&mut editor);
 
     let doc = editor
@@ -1720,7 +1714,7 @@ fn g_question_mark_opens_a_read_only_help_buffer_for_each_git_buffer_kind() {
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
 
-    editor.open_git_status();
+    editor.open_git(crate::git::query::GitQuery::new(["status"]));
     drain_jobs(&mut editor);
     editor.open_git_help();
     let doc = editor
@@ -1736,7 +1730,11 @@ fn g_question_mark_opens_a_read_only_help_buffer_for_each_git_buffer_kind() {
     );
 
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.open_git_blame(dir.path().join("tracked.txt"), dir.path().to_path_buf());
+    editor.open_git(crate::git::query::GitQuery::new([
+        "blame".to_string(),
+        "--".to_string(),
+        dir.path().join("tracked.txt").display().to_string(),
+    ]));
     drain_jobs(&mut editor);
     editor.open_git_help();
     let text = editor
@@ -1751,7 +1749,7 @@ fn g_question_mark_opens_a_read_only_help_buffer_for_each_git_buffer_kind() {
         "expected the walk-back entry: {text}"
     );
 
-    editor.open_git_log(dir.path().to_path_buf(), None);
+    editor.open_git(crate::git::query::GitQuery::new(["log"]));
     drain_jobs(&mut editor);
     editor.open_git_help();
     let text = editor
@@ -1897,7 +1895,7 @@ fn bug_g_lands_past_trailing_newline() {
     let path = dir.path().join("tracked.txt").display().to_string();
     let mut editor = Editor::with_file(backend, Some(&path)).unwrap();
     drain_jobs_replay(&mut editor);
-    editor.open_git_status();
+    editor.open_git(crate::git::query::GitQuery::new(["status"]));
     drain_jobs_replay(&mut editor);
 
     let keys = crate::key::notation::parse_key_sequence("G").unwrap();
@@ -1918,7 +1916,7 @@ fn reload_on_git_status_buffer_refreshes_entries_via_native_dispatch() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
-    editor.open_git_status();
+    editor.open_git(crate::git::query::GitQuery::new(["status"]));
     drain_jobs(&mut editor);
     let text_before = editor.active_document().buffer().to_string();
     assert!(!text_before.contains("fresh.txt"));
@@ -1941,7 +1939,8 @@ fn reload_on_git_log_buffer_refreshes_entries_via_native_dispatch() {
     init_repo_with_commit(dir.path());
 
     let mut editor = create_editor();
-    editor.open_git_log(dir.path().to_path_buf(), None);
+    open_and_load(&mut editor, &dir.path().join("tracked.txt"));
+    editor.open_git(crate::git::query::GitQuery::new(["log"]));
     drain_jobs(&mut editor);
 
     let text_before = editor.active_document().buffer().to_string();
@@ -1971,7 +1970,11 @@ fn reload_on_git_blame_buffer_refreshes_entries_via_native_dispatch() {
     let mut editor = create_editor();
     let path = dir.path().join("tracked.txt");
     open_and_load(&mut editor, &path);
-    editor.open_git_blame(path.clone(), dir.path().to_path_buf());
+    editor.open_git(crate::git::query::GitQuery::new([
+        "blame".to_string(),
+        "--".to_string(),
+        path.clone().display().to_string(),
+    ]));
     drain_jobs(&mut editor);
 
     let lines_before = editor

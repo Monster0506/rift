@@ -227,6 +227,14 @@ pub(crate) fn parse_unified_diff(input: &str) -> Vec<FileDiff> {
     files
 }
 
+pub(crate) fn parse_unified_diff_exact(input: &str) -> Option<Vec<FileDiff>> {
+    if input.trim().is_empty() {
+        return Some(Vec::new());
+    }
+    let files = parse_unified_diff(input);
+    (input.starts_with("diff ") && !files.is_empty()).then_some(files)
+}
+
 fn parse_one_file<'a, I: Iterator<Item = &'a str>>(
     diff_git_line: &str,
     lines: &mut Peekable<I>,
