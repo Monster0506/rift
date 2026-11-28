@@ -314,9 +314,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.update_selection_highlights();
         for (_, window) in self.split_tree.windows() {
             if let Some(doc) = self.document_manager.get_document_mut(window.document_id) {
-                if visible.binary_search(&doc.id).is_err() {
-                    doc.sync_terminal_if_dirty();
-                }
                 doc.refresh_ghost_preview();
             }
         }

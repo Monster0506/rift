@@ -1,5 +1,11 @@
 use std::path::PathBuf;
 
+#[cfg(test)]
+pub(crate) fn rift_dir() -> PathBuf {
+    std::env::temp_dir().join(format!("rift-test-{}", std::process::id()))
+}
+
+#[cfg(not(test))]
 pub(crate) fn rift_dir() -> PathBuf {
     if cfg!(windows) {
         std::env::var("APPDATA")
