@@ -39,6 +39,13 @@ impl<T: TerminalBackend> Editor<T> {
         private_preview: Option<crate::document::Document>,
         placement: PanelSplit,
     ) -> bool {
+        if self.panel_layout.is_some() {
+            self.notify(
+                crate::notification::NotificationType::Warning,
+                "Close the current panel before opening another".to_string(),
+            );
+            return false;
+        }
         let original_win = self.split_tree.focused_window_id();
         let original_doc_id = self.active_document_id();
         let dir_doc_id = self.open_buffer(list, Placement::Private);
@@ -86,6 +93,9 @@ impl<T: TerminalBackend> Editor<T> {
         direction: SplitDirection,
         doc_id: DocumentId,
     ) -> Option<WindowId> {
+        if self.panel_owns_private_buffer(doc_id) {
+            return None;
+        }
         let size = self
             .term
             .get_size()
@@ -114,6 +124,9 @@ impl<T: TerminalBackend> Editor<T> {
         doc_id: DocumentId,
         ratio: f64,
     ) -> Option<WindowId> {
+        if self.panel_owns_private_buffer(doc_id) {
+            return None;
+        }
         let size = self
             .term
             .get_size()
@@ -147,6 +160,13 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(crate) fn close_window(&mut self, id: WindowId) -> bool {
+        if self
+            .panel_layout
+            .as_ref()
+            .is_some_and(|layout| layout.contains_window(id))
+        {
+            return false;
+        }
         #[cfg(feature = "plugins")]
         let Some(buf) = self
             .split_tree
@@ -319,6 +339,9 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(crate) fn focus_window_showing(&mut self, target: WindowId, buf: DocumentId) {
+        if !self.window_accepts_buffer(target, buf) {
+            return;
+        }
         let Some(target_buf) = self
             .split_tree
             .get_window(target)
@@ -357,6 +380,29 @@ impl<T: TerminalBackend> Editor<T> {
                 win: target.get(),
                 buf,
             });
+        }
+    }
+
+    fn panel_owns_private_buffer(&self, id: DocumentId) -> bool {
+        self.panel_layout.as_ref().is_some_and(|layout| {
+            layout.requires_buffer(id) && self.document_manager.is_private(id)
+        })
+    }
+
+    pub(in crate::editor) fn window_accepts_buffer(
+        &self,
+        window: WindowId,
+        id: DocumentId,
+    ) -> bool {
+        let Some(layout) = &self.panel_layout else {
+            return true;
+        };
+        if let Some(required) = layout.required_buffer(window) {
+            id == required
+        } else if window == layout.preview_win_id {
+            !self.document_manager.is_private(id)
+        } else {
+            !self.panel_owns_private_buffer(id)
         }
     }
 
@@ -410,6 +456,9 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(crate) fn show_in_window(&mut self, win: WindowId, doc_id: DocumentId) {
+        if !self.window_accepts_buffer(win, doc_id) {
+            return;
+        }
         let Some(doc) = self.document_manager.get_document(doc_id) else {
             return;
         };

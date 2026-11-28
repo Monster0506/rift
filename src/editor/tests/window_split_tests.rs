@@ -20,6 +20,46 @@ fn splits_of_one_buffer_restore_their_own_cursor_positions() {
 }
 
 #[test]
+fn exchanging_split_panes_restores_each_cursors_position_for_a_shared_buffer() {
+    use crate::document::ops::CursorCause;
+    use crate::split::tree::SplitDirection;
+
+    let mut editor = editor_with_text("abcdefgh");
+    let left = editor.split_tree.focused_window_id();
+    let doc = editor.active_document_id();
+    editor
+        .active_document()
+        .set_cursor(2, CursorCause::User)
+        .unwrap();
+    let right = editor.split_window(SplitDirection::Vertical, doc).unwrap();
+    editor
+        .active_document()
+        .set_cursor(5, CursorCause::User)
+        .unwrap();
+
+    assert!(editor.swap_windows());
+    assert_eq!(editor.split_tree.focused_window_id(), left);
+    assert_eq!(editor.active_document().buffer().cursor(), 2);
+    editor.focus_previous_window();
+    assert_eq!(editor.split_tree.focused_window_id(), right);
+    assert_eq!(editor.active_document().buffer().cursor(), 5);
+}
+
+#[test]
+fn page_motions_use_the_height_of_the_focused_split() {
+    let mut editor = editor_with_text(&"line\n".repeat(80));
+    editor.execute_command_line("split");
+    editor.update_and_render().unwrap();
+    let page = editor.focused_viewport().visible_rows();
+    assert!(page < editor.render_system.viewport.visible_rows());
+
+    press(&mut editor, &keys("<PageDown>"));
+    assert_eq!(editor.active_document().buffer().get_line(), page);
+    press(&mut editor, &keys("<PageDown><PageUp>"));
+    assert_eq!(editor.active_document().buffer().get_line(), page);
+}
+
+#[test]
 fn showing_a_buffer_again_preserves_its_cursor_update_while_unfocused() {
     use crate::document::{manager::Placement, Document};
 

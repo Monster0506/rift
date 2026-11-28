@@ -269,7 +269,6 @@ pub(in crate::document) enum Origin {
     Source(EditSource),
     Replay,
     Generated,
-    GhostPaint,
 }
 
 pub(in crate::document) struct Resolved {
@@ -380,6 +379,7 @@ impl DocumentWrite<'_> {
 
 impl Document {
     pub(crate) fn replace_content(&mut self, content: impl Into<Content>, kind: ContentKind) {
+        self.commit_pending_ghost();
         let mut buffer = match content.into() {
             Content::Text(chars) => TextBuffer::from_chars(&chars),
             Content::Lines(lines) => TextBuffer::from_line_index(lines),
@@ -508,6 +508,7 @@ impl Document {
             ));
         }
 
+        self.commit_pending_ghost();
         let cursor_before = self.buffer.cursor();
         let removed: Vec<Character> = self.buffer.chars(start..end).collect();
         let start_line = self.buffer.line_index.get_line_at(start);
@@ -531,21 +532,19 @@ impl Document {
 
         let line_inserts: Vec<usize> = (0..inserted_newlines).map(|i| start_line + 1 + i).collect();
 
-        if origin != Origin::GhostPaint {
-            let (op, description, hint) = history_entry(
-                removed,
-                &text,
-                Range::new(history_start, history_end),
-                start_byte..new_end_byte,
-                &line_inserts,
-            );
-            if origin == Origin::Replay {
-                self.content_version = self.content_version.wrapping_add(1);
-                #[cfg(feature = "lsp")]
-                self.pending_lsp_edits.push(op);
-            } else {
-                self.record_edit(op, &description, hint, cursor_before);
-            }
+        let (op, description, hint) = history_entry(
+            removed,
+            &text,
+            Range::new(history_start, history_end),
+            start_byte..new_end_byte,
+            &line_inserts,
+        );
+        if origin == Origin::Replay {
+            self.content_version = self.content_version.wrapping_add(1);
+            #[cfg(feature = "lsp")]
+            self.pending_lsp_edits.push(op);
+        } else {
+            self.record_edit(op, &description, hint, cursor_before);
         }
 
         if let Some(syntax) = &mut self.syntax {
@@ -572,9 +571,7 @@ impl Document {
         }
 
         self.mark_syntax_stale();
-        if origin != Origin::GhostPaint {
-            self.record_text_change();
-        }
+        self.record_text_change();
         Ok(true)
     }
 

@@ -12,7 +12,7 @@ fn new_cut_commits_the_previously_pending_ghost_first() {
     )));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
     assert_eq!(editor.active_document().buffer().to_string(), "bcdef");
-    assert_eq!(editor.active_document().pending_ghost.len(), 1);
+    assert_eq!(editor.active_document().ghost_count(), 1);
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
@@ -20,7 +20,7 @@ fn new_cut_commits_the_previously_pending_ghost_first() {
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
 
     assert_eq!(editor.active_document().buffer().to_string(), "cdef");
-    assert_eq!(editor.active_document().pending_ghost.len(), 1);
+    assert_eq!(editor.active_document().ghost_count(), 1);
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(editor.active_document().buffer().to_string(), "cdef");
@@ -45,11 +45,11 @@ fn escape_commits_every_entry_in_a_multi_region_ghost_list() {
         OperatorType::Delete,
     )));
     assert_eq!(editor.active_document().buffer().to_string(), "234789");
-    assert_eq!(editor.active_document().pending_ghost.len(), 2);
+    assert_eq!(editor.active_document().ghost_count(), 2);
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(editor.active_document().buffer().to_string(), "234789");
-    assert!(editor.active_document().pending_ghost.is_empty());
+    assert_eq!(editor.active_document().ghost_count(), 0);
 }
 
 #[test]
@@ -64,11 +64,11 @@ fn entering_insert_mode_resolves_a_pending_ghost_via_the_mutation_hook() {
     )));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
     assert_eq!(editor.active_document().buffer().to_string(), "bcdef");
-    assert_eq!(editor.active_document().pending_ghost.len(), 1);
+    assert_eq!(editor.active_document().ghost_count(), 1);
 
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
 
-    assert!(editor.active_document().pending_ghost.is_empty());
+    assert_eq!(editor.active_document().ghost_count(), 0);
     assert_eq!(editor.active_document().buffer().to_string(), "bcdef");
 }
 
@@ -87,7 +87,7 @@ fn undo_with_a_pending_ghost_materializes_then_undoes_it_in_one_step() {
 
     assert!(editor.active_document().undo());
     assert_eq!(editor.active_document().buffer().to_string(), "abcdef");
-    assert!(editor.active_document().pending_ghost.is_empty());
+    assert_eq!(editor.active_document().ghost_count(), 0);
 }
 
 #[test]
@@ -102,12 +102,12 @@ fn save_commits_pending_ghost_before_writing() {
     )));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
     assert_eq!(editor.active_document().buffer().to_string(), "bcdef");
-    assert_eq!(editor.active_document().pending_ghost.len(), 1);
+    assert_eq!(editor.active_document().ghost_count(), 1);
 
     editor.save_buffer(editor.active_document_id(), None, false);
 
     assert_eq!(editor.active_document().buffer().to_string(), "bcdef");
-    assert!(editor.active_document().pending_ghost.is_empty());
+    assert_eq!(editor.active_document().ghost_count(), 0);
 }
 
 #[test]
@@ -169,11 +169,11 @@ fn put_drains_every_documents_pending_ghost_but_inserts_only_the_most_recent() {
 
     let doc1 = editor.document_manager.get_document(doc1_id).unwrap();
     assert_eq!(doc1.buffer().to_string(), "bcdef");
-    assert!(doc1.pending_ghost.is_empty());
+    assert_eq!(doc1.ghost_count(), 0);
 
     let doc2 = editor.document_manager.get_document(doc2_id).unwrap();
     assert_eq!(doc2.buffer().to_string(), "xyz");
-    assert!(doc2.pending_ghost.is_empty());
+    assert_eq!(doc2.ghost_count(), 0);
 }
 
 #[test]
@@ -285,7 +285,7 @@ fn set_noghostcut_makes_dw_delete_immediately() {
         "def",
         "d{{motion}} deletes right away with ghostcut off"
     );
-    assert!(editor.active_document().pending_ghost.is_empty());
+    assert_eq!(editor.active_document().ghost_count(), 0);
 }
 
 #[test]
@@ -307,7 +307,7 @@ fn set_noghostcut_makes_dd_delete_immediately() {
         editor.active_document().buffer().to_string(),
         "two\nthree\n"
     );
-    assert!(editor.active_document().pending_ghost.is_empty());
+    assert_eq!(editor.active_document().ghost_count(), 0);
 }
 
 #[test]
@@ -331,7 +331,7 @@ fn set_noghostcut_makes_banked_region_delete_immediate() {
     )));
 
     assert_eq!(editor.active_document().buffer().to_string(), "234789");
-    assert!(editor.active_document().pending_ghost.is_empty());
+    assert_eq!(editor.active_document().ghost_count(), 0);
 }
 
 #[test]
@@ -350,5 +350,5 @@ fn set_ghostcut_can_be_re_enabled() {
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
 
     assert_eq!(editor.active_document().buffer().to_string(), "bcdef");
-    assert_eq!(editor.active_document().pending_ghost.len(), 1);
+    assert_eq!(editor.active_document().ghost_count(), 1);
 }

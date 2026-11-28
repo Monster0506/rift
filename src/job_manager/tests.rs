@@ -558,3 +558,59 @@ fn test_long_lived_job_runs_while_every_permit_is_held() {
         "a long-lived job must not wait for a concurrency permit"
     );
 }
+
+#[cfg(feature = "terminal_emulation")]
+#[test]
+fn terminal_listeners_do_not_starve_short_jobs_or_swallow_child_exit() {
+    use crate::term::TerminalEvent;
+    use jobs::terminal_job::TerminalInputJob;
+
+    let mut manager = JobManager::new();
+    let terminals: Vec<_> = (1..=MAX_CONCURRENT_JOBS)
+        .map(|id| {
+            let doc = DocumentId::new(id as u64);
+            let handle = DocumentHandle::new(doc, 1);
+            let kind = crate::document::runtime::BufferKindId::TERMINAL;
+            let token = AsyncToken::with_domain(handle, kind, 1, AsyncOpDomain::Terminal);
+            let (tx, rx) = mpsc::channel();
+            let job = manager.spawn(TerminalInputJob::new(token, rx));
+            (job, tx)
+        })
+        .collect();
+    let short = manager.spawn(NamedJob {
+        name: "short job",
+        silent: true,
+    });
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let msg = manager
+            .receiver()
+            .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+            .expect("short work must finish with every terminal still open");
+        if matches!(msg, JobMessage::Finished(id, _) if id == short) {
+            break;
+        }
+    }
+
+    let (terminal, tx) = &terminals[0];
+    tx.send(TerminalEvent::Wakeup).unwrap();
+    tx.send(TerminalEvent::Wakeup).unwrap();
+    tx.send(TerminalEvent::ChildExit(0)).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let mut saw_output = false;
+    loop {
+        let msg = manager
+            .receiver()
+            .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+            .expect("child exit must be delivered even if the channel stays open");
+        if let JobMessage::CustomToken(id, _, payload) = msg {
+            assert_eq!(id, *terminal);
+            if payload.is_terminal_output() {
+                saw_output = true;
+            } else {
+                assert!(saw_output);
+                break;
+            }
+        }
+    }
+}

@@ -5,6 +5,7 @@ use crate::time::UNIX_EPOCH;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 pub(crate) const MAGIC: [u8; 8] = *b"\x89RiftUDO";
@@ -109,21 +110,39 @@ fn decode_payload(version: u16, payload: &[u8]) -> Result<Decoded, String> {
 ///
 /// # Errors
 /// Returns `Err` when `undo_dir` cannot be created or the file cannot be written.
+#[cfg(test)]
 pub(crate) fn save(
     undo_dir: &Path,
     doc_path: &Path,
     tree: &UndoTree,
     content_hash: Sha256Digest,
 ) -> std::io::Result<()> {
+    save_at(undo_dir, doc_path, tree, tree.current_seq(), content_hash)
+}
+
+pub(crate) fn save_at(
+    undo_dir: &Path,
+    doc_path: &Path,
+    tree: &UndoTree,
+    saved_seq: EditSeq,
+    content_hash: Sha256Digest,
+) -> std::io::Result<()> {
+    if !tree.nodes.contains_key(&saved_seq) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "saved edit sequence not present in undo tree",
+        ));
+    }
     std::fs::create_dir_all(undo_dir)?;
     let canonical_path = doc_path.to_string_lossy();
-    let payload = v1::encode(&canonical_path, content_hash, tree.current_seq(), tree);
-
-    let mut out = Vec::with_capacity(MAGIC.len() + 2 + payload.len());
-    out.extend_from_slice(&MAGIC);
-    out.extend_from_slice(&CURRENT_VERSION.to_le_bytes());
-    out.extend_from_slice(&payload);
-    std::fs::write(undo_file_path(undo_dir, doc_path), out)
+    let payload = v1::encode(&canonical_path, content_hash, saved_seq, tree);
+    let mut temp = tempfile::NamedTempFile::new_in(undo_dir)?;
+    temp.write_all(&MAGIC)?;
+    temp.write_all(&CURRENT_VERSION.to_le_bytes())?;
+    temp.write_all(&payload)?;
+    temp.persist(undo_file_path(undo_dir, doc_path))
+        .map(|_| ())
+        .map_err(|err| err.error)
 }
 
 fn build_tree(nodes: Vec<DecodedNode>, current: EditSeq) -> Option<UndoTree> {

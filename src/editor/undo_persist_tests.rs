@@ -122,3 +122,44 @@ fn undo_file_is_not_written_when_persistent_undo_is_explicitly_disabled() {
         "undofile explicitly off; no undodir should be created"
     );
 }
+
+#[test]
+fn persisted_undo_matches_the_saved_snapshot_after_later_edits() {
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = dir.path().join("base.txt");
+    std::fs::write(&file_path, "BASE_TEXT").unwrap();
+    let undo_dir = dir.path().join("undo");
+
+    let mut editor = create_editor();
+    editor
+        .set_option(
+            "undofile",
+            Some("true"),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
+    editor
+        .set_option(
+            "undodir",
+            Some(undo_dir.to_str().unwrap()),
+            crate::command_line::settings::resolver::OptionScope::Global,
+        )
+        .unwrap();
+    editor
+        .open_file(Some(file_path.to_string_lossy().into_owned()), false)
+        .unwrap();
+    drain_jobs(&mut editor);
+    let buf = editor.active_document_id();
+
+    editor.handle_action(&Action::Editor(EditorAction::InsertChar('A')));
+    editor.save_buffer(buf, None, false);
+    editor.handle_action(&Action::Editor(EditorAction::InsertChar('Z')));
+    drain_jobs(&mut editor);
+    assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "ABASE_TEXT");
+
+    editor.reload_document(buf, true).unwrap();
+    drain_jobs(&mut editor);
+    assert_eq!(editor.active_document().buffer().to_string(), "ABASE_TEXT");
+    editor.handle_action(&Action::Editor(EditorAction::Undo));
+    assert_eq!(editor.active_document().buffer().to_string(), "BASE_TEXT");
+}

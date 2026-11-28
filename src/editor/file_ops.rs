@@ -96,7 +96,7 @@ impl<T: TerminalBackend> Editor<T> {
                         "No file name",
                     ));
                 };
-                if !force && doc.is_dirty() {
+                if !force && (doc.is_dirty() || doc.has_pending_edits()) {
                     return Err(RiftError {
                         severity: ErrorSeverity::Warning,
                         kind: ErrorType::Execution,
@@ -140,16 +140,15 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .neighbor_tab(self.active_document_id(), forward)
         {
-            let _ = self.focus_document(target);
+            if let Err(error) = self.focus_document(target) {
+                self.notify_error(error);
+            }
         }
         self.state.clear_command_line();
     }
 
     pub(super) fn do_buffer_goto(&mut self, index: usize) {
-        let Some(target) = self
-            .document_manager
-            .get_document_id_at(index.saturating_sub(1))
-        else {
+        let Some(target) = self.document_manager.public_tab_at(index.saturating_sub(1)) else {
             self.notify(
                 crate::notification::NotificationType::Warning,
                 format!("Buffer {index} does not exist"),
@@ -157,25 +156,16 @@ impl<T: TerminalBackend> Editor<T> {
             self.state.clear_command_line();
             return;
         };
-        let old_buf = self.active_document_id();
-        if target == old_buf {
-            self.state.clear_command_line();
-            return;
-        }
+        self.state.clear_command_line();
         if let Err(e) = self.focus_document(target) {
             self.notify_error(e);
-            return;
         }
-        self.state.clear_command_line();
     }
 
     pub(super) fn do_buffer_delete(&mut self, index: Option<usize>, force: bool) {
         let target = match index {
             Some(i) => {
-                if let Some(id) = self
-                    .document_manager
-                    .get_document_id_at(i.saturating_sub(1))
-                {
+                if let Some(id) = self.document_manager.public_tab_at(i.saturating_sub(1)) {
                     id
                 } else {
                     self.notify(

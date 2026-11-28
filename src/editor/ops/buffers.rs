@@ -2,6 +2,7 @@
 pub(crate) mod manager;
 
 use super::super::Editor;
+use crate::document::runtime::DocumentHandle;
 use crate::document::DocumentId;
 use crate::error::{ErrorType, RiftError};
 use crate::term::TerminalBackend;
@@ -94,6 +95,9 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(crate) fn focus_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
         let window = self.split_tree.focused_window_id();
+        if !self.window_accepts_buffer(window, id) {
+            return Err(Self::panel_buffer_in_use());
+        }
         let previous = self.active_document_id();
         self.focus_document_with(id, |editor| {
             editor.show_focused_buffer(window, previous, id);
@@ -159,6 +163,13 @@ impl<T: TerminalBackend> Editor<T> {
         id: DocumentId,
         intent: crate::document::manager::RemovalIntent,
     ) -> Result<(), RiftError> {
+        if self
+            .panel_layout
+            .as_ref()
+            .is_some_and(|layout| layout.requires_buffer(id))
+        {
+            return Err(Self::panel_buffer_in_use());
+        }
         let plan = self.document_manager.prepare_removal(id, intent)?;
         #[cfg(feature = "plugins")]
         self.scheduler.held_saves.remove(&id);
@@ -203,6 +214,44 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
+        self.forget_closed_document(id, handle);
+
+        if self
+            .document_manager
+            .get_document_by_handle(handle)
+            .is_none()
+        {
+            return Ok(());
+        }
+        let active = self.active_document_id();
+        let is_panel_original = self
+            .panel_layout
+            .as_ref()
+            .is_some_and(|layout| layout.original_doc_id == id);
+        if active != id
+            && !is_panel_original
+            && !self
+                .split_tree
+                .windows()
+                .any(|(_, window)| window.document_id == id)
+        {
+            self.remove_buffer(plan, kind_id, id, None);
+            return Ok(());
+        }
+        let replacement = self.closed_buffer_replacement(id, active, plan.replacement)?;
+        if active == id {
+            let window = self.split_tree.focused_window_id();
+            self.focus_document_with(replacement, |editor| {
+                editor.show_focused_buffer(window, id, replacement);
+                editor.remove_buffer(plan, kind_id, id, Some(replacement));
+            })
+        } else {
+            self.remove_buffer(plan, kind_id, id, Some(replacement));
+            Ok(())
+        }
+    }
+
+    fn forget_closed_document(&mut self, id: DocumentId, handle: DocumentHandle) {
         #[cfg(feature = "lsp")]
         self.lsp_notify_close(id);
 
@@ -219,30 +268,41 @@ impl<T: TerminalBackend> Editor<T> {
         {
             self.search_highlights_synced = None;
         }
+    }
 
-        if self
-            .document_manager
-            .get_document_by_handle(handle)
-            .is_none()
-        {
-            return Ok(());
-        }
-        if self.active_document_id() == id {
-            let replacement = if let Some(next) = plan.replacement {
-                next
-            } else {
-                let doc = crate::document::Document::new(self.document_manager.next_id())?;
-                self.open_buffer(doc, Placement::Background)
-            };
-            let window = self.split_tree.focused_window_id();
-            self.focus_document_with(replacement, |editor| {
-                editor.show_focused_buffer(window, id, replacement);
-                editor.remove_buffer(plan, kind_id, id, replacement);
-            })
+    fn closed_buffer_replacement(
+        &mut self,
+        id: DocumentId,
+        active: DocumentId,
+        planned: Option<DocumentId>,
+    ) -> Result<DocumentId, RiftError> {
+        let replacement = if active != id && !self.document_manager.is_private(active) {
+            active
+        } else if let Some(next) = planned {
+            next
         } else {
-            self.remove_buffer(plan, kind_id, id, self.active_document_id());
-            Ok(())
+            let doc = crate::document::Document::new(self.document_manager.next_id())?;
+            self.open_buffer(doc, Placement::Background)
+        };
+        if let Some(layout) = self
+            .panel_layout
+            .as_mut()
+            .filter(|layout| layout.original_doc_id == id)
+        {
+            layout.original_doc_id = replacement;
+            if layout.preview_doc_id == id {
+                layout.preview_doc_id = replacement;
+            }
         }
+        Ok(replacement)
+    }
+
+    fn panel_buffer_in_use() -> RiftError {
+        RiftError::warning(
+            ErrorType::Execution,
+            "PANEL_BUFFER_IN_USE",
+            "Close the panel before changing its buffers",
+        )
     }
 
     fn remove_buffer(
@@ -250,10 +310,12 @@ impl<T: TerminalBackend> Editor<T> {
         plan: manager::PreparedRemoval,
         kind_id: crate::document::runtime::BufferKindId,
         id: DocumentId,
-        replacement: DocumentId,
+        replacement: Option<DocumentId>,
     ) {
-        for window in self.split_tree.windows_for_document(id) {
-            self.show_in_window(window, replacement);
+        if let Some(replacement) = replacement {
+            for window in self.split_tree.windows_for_document(id) {
+                self.show_in_window(window, replacement);
+            }
         }
         if self.document_manager.commit_removal(plan).is_none() {
             return;

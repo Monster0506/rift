@@ -135,7 +135,7 @@ fn set_aware_delete_keeps_syntax_highlights_in_sync() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
-    assert!(!editor.active_document().pending_ghost.is_empty());
+    assert_ne!(editor.active_document().ghost_count(), 0);
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(editor.active_document().buffer().to_string(), "");
 
@@ -176,28 +176,19 @@ fn ghost_paint_keeps_syntax_highlights_in_sync_while_painted() {
         OperatorType::Delete,
     )));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Down)));
-    assert!(!editor.active_document().pending_ghost.is_empty());
+    assert_ne!(editor.active_document().ghost_count(), 0);
 
-    let doc_id = editor.active_document_id();
-    editor
-        .document_manager
-        .get_document_mut(doc_id)
-        .unwrap()
-        .begin_ghost_paint();
+    let text = editor.active_document().buffer().to_string();
+    editor.update_and_render().unwrap();
 
+    assert_eq!(editor.active_document().buffer().to_string(), text);
     let painted_highlights = document_highlights(&mut editor);
     let fresh_highlights = fresh_highlights(&mut editor);
 
     assert_eq!(
         painted_highlights, fresh_highlights,
-        "ghost paint must trigger a real reparse, not just shift stale node ranges"
+        "painting a ghost preview must leave the live syntax tree in sync with the live text"
     );
-
-    editor
-        .document_manager
-        .get_document_mut(doc_id)
-        .unwrap()
-        .end_ghost_paint();
 }
 
 #[cfg(feature = "treesitter")]

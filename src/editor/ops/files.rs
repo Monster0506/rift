@@ -16,6 +16,7 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .get_document(doc_id)
             .expect("file loads target a registered document");
+        let revision = doc.version();
         self.job_manager
             .register_document_handle(doc.handle(), doc.buffer_kind_id());
         let job = self.job_manager.spawn(FileLoadJob::new(doc_id, path, mode));
@@ -24,7 +25,7 @@ impl<T: TerminalBackend> Editor<T> {
             .job_token(job)
             .expect("registered file loads have a token");
         self.file_load_jobs
-            .insert(job, super::super::jobs::FileLoad::new(token));
+            .insert(job, super::super::jobs::FileLoad::new(token, revision));
     }
 
     pub(crate) fn open_file_from_input(&mut self, path: Option<String>, force: bool) -> bool {

@@ -3,6 +3,48 @@ use super::*;
 use crate::test_utils::MockTerminal;
 
 #[test]
+fn explorer_panes_keep_their_buffers_during_switches_and_exchange() {
+    use crate::document::manager::RemovalIntent;
+    use crate::invariants::InvariantTier;
+
+    let mut editor = create_editor();
+    let original = editor.active_document_id();
+    let dir = tempfile::tempdir().unwrap();
+    editor.open_explorer(dir.path().to_path_buf());
+    let layout = editor.panel_layout.clone().unwrap();
+
+    editor.execute_command_line("b 1");
+    editor.execute_command_line("bn");
+    assert_eq!(editor.active_document_id(), layout.dir_doc_id);
+    assert!(!editor.close_window(layout.preview_win_id));
+    assert!(editor
+        .close_buffer(layout.preview_doc_id, RemovalIntent::Force)
+        .is_err());
+
+    editor.focus_window(layout.preview_win_id);
+    editor.execute_command_line("b 1");
+    assert_eq!(editor.active_document_id(), layout.preview_doc_id);
+    assert!(editor.swap_windows());
+    assert_eq!(editor.split_tree.focused_window_id(), layout.dir_win_id);
+    assert_eq!(editor.active_document_id(), layout.dir_doc_id);
+    assert!(editor.assert_invariants(InvariantTier::Fast).is_empty());
+
+    editor.execute_command_line("q");
+    assert!(editor.panel_layout.is_none());
+    assert_eq!(editor.active_document_id(), original);
+    assert_eq!(editor.split_tree.window_count(), 1);
+    assert!(editor
+        .document_manager
+        .get_document(layout.dir_doc_id)
+        .is_none());
+    assert!(editor
+        .document_manager
+        .get_document(layout.preview_doc_id)
+        .is_none());
+    assert!(editor.assert_invariants(InvariantTier::Fast).is_empty());
+}
+
+#[test]
 fn test_explorer_toggle_hidden_flips_show_hidden() {
     use crate::action::{Action, EditorAction};
 

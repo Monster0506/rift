@@ -435,6 +435,7 @@ impl AnnotationStore {
         }
     }
 
+    #[cfg(any(feature = "plugins", test))]
     pub(crate) fn remove(&mut self, id: AnnotationId) -> bool {
         let before = self.annotations.len();
         self.annotations.retain(|a| a.id != id);
@@ -501,7 +502,6 @@ impl AnnotationStore {
             .collect()
     }
 
-    #[cfg(any(feature = "plugins", test))]
     pub(crate) fn iter(&self) -> impl Iterator<Item = &Annotation> {
         self.annotations.iter()
     }

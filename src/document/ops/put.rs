@@ -14,7 +14,6 @@ pub(crate) enum PutAt {
         end: usize,
         before: bool,
     },
-    Verbatim(usize),
     Paste,
     Selection {
         anchor: usize,
@@ -57,13 +56,6 @@ impl Document {
                     (end, end.saturating_sub(1))
                 };
                 self.put_beside(clip, char_at, line_of, !before);
-            }
-            PutAt::Verbatim(at) => {
-                let _ = self.set_cursor(at, crate::document::ops::CursorCause::Programmatic);
-                self.begin_transaction("Put");
-                let _ = self.apply_edit(Edit::insert(at, clip.text()), EditSource::User);
-                self.commit_transaction();
-                let _ = self.set_cursor(at, crate::document::ops::CursorCause::Programmatic);
             }
             PutAt::Paste => {
                 if clip.text().is_empty() {

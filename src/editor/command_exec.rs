@@ -13,7 +13,7 @@ impl<T: TerminalBackend> Editor<T> {
             || current_mode == Mode::Replace
             || current_mode.is_visual()
         {
-            let viewport_height = self.render_system.viewport.visible_rows();
+            let viewport_height = self.focused_viewport().visible_rows();
 
             let (doc_id, content_width, cursor) = self.command_content_geometry();
 
@@ -71,9 +71,7 @@ impl<T: TerminalBackend> Editor<T> {
             .unwrap();
         let gutter_width = Self::line_number_gutter_width(doc);
         let content_width = self
-            .split_tree
-            .focused_window()
-            .viewport
+            .focused_viewport()
             .visible_cols()
             .saturating_sub(gutter_width)
             .max(1);

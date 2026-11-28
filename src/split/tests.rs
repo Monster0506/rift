@@ -923,29 +923,39 @@ fn focus_previous_returns_none_when_no_history() {
 // --- Window exchange ---
 
 #[test]
-fn exchange_windows_swaps_documents() {
-    let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
+fn exchange_windows_moves_pane_state_and_keeps_the_focused_position() {
+    use crate::document::DocumentId;
+    use crate::viewport::ScrollPosition;
+
+    let [first, second] = [1, 2].map(DocumentId::new);
+    let mut tree = SplitTree::new(first, 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(
-            SplitDirection::Horizontal,
-            w1,
-            crate::document::DocumentId::new(2),
-            12,
-            80,
-        )
+        .split(SplitDirection::Horizontal, w1, second, 12, 80)
         .unwrap();
+    tree.set_focus(w2);
+    let scroll = ScrollPosition {
+        top_line: 3,
+        top_visual_row: 7,
+        left_col: 2,
+    };
+    let window = tree.get_window_mut(w2).unwrap();
+    window.saved_cursor = Some(14);
+    window.viewport.set_scroll_position(scroll);
 
+    let before = tree.compute_layout(24, 80);
     assert!(tree.exchange_windows(w1, w2));
+    let after = tree.compute_layout(24, 80);
 
-    assert_eq!(
-        tree.get_window(w1).unwrap().document_id,
-        crate::document::DocumentId::new(2)
-    );
-    assert_eq!(
-        tree.get_window(w2).unwrap().document_id,
-        crate::document::DocumentId::new(1)
-    );
+    assert_eq!((after[0].window_id, after[1].window_id), (w2, w1));
+    assert_eq!((after[0].row, after[1].row), (before[0].row, before[1].row));
+    assert_eq!(tree.focused_window_id(), w1);
+    assert_eq!(tree.previous_window(), Some(w2));
+    assert_eq!(tree.get_window(w1).unwrap().document_id, first);
+    let moved = tree.get_window(w2).unwrap();
+    assert_eq!(moved.document_id, second);
+    assert_eq!(moved.saved_cursor, Some(14));
+    assert_eq!(moved.viewport.scroll_position(), scroll);
 }
 
 #[test]

@@ -219,6 +219,7 @@ pub(super) fn syntax_colors_state() -> State {
 
 pub(super) fn base_blit_key() -> ContentBlitKey {
     ContentBlitKey {
+        ghost: false,
         revision: 1,
         buf_len: 100,
         tab_width: 4,

@@ -5,7 +5,7 @@ use crate::document::DocumentId;
 use crate::document::LineEnding;
 use crate::history::EditSeq;
 use crate::job_manager::{CancellationSignal, Job, JobMessage, JobPayload, JobRef, JobTarget};
-use std::fs;
+use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
@@ -31,7 +31,6 @@ pub(crate) struct FileSaveJob {
     line_ending: LineEnding,
     has_bom: bool,
     saved_seq: EditSeq,
-    token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl FileSaveJob {
@@ -51,18 +50,65 @@ impl FileSaveJob {
             line_ending,
             has_bom,
             saved_seq,
-            token: None,
         }
+    }
+}
+
+impl FileSaveJob {
+    fn write(
+        &self,
+        signal: &CancellationSignal,
+    ) -> std::io::Result<Option<crate::history::persist::Sha256Digest>> {
+        if signal.is_cancelled() {
+            return Ok(None);
+        }
+        let parent = self
+            .path
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let mut temp = tempfile::NamedTempFile::new_in(parent)?;
+        let mut writer = std::io::BufWriter::new(temp.as_file_mut());
+        let mut hash = Sha256::new();
+        let line_ending = self.line_ending.as_bytes();
+        if self.has_bom {
+            writer.write_all(&crate::document::factories::UTF8_BOM)?;
+        }
+        let mut bytes = Vec::new();
+        for chunk in self.piece_table.chunks() {
+            if signal.is_cancelled() {
+                return Ok(None);
+            }
+            bytes.reserve(chunk.len());
+            for ch in chunk {
+                if *ch == Character::Newline {
+                    writer.write_all(&bytes)?;
+                    writer.write_all(line_ending)?;
+                    hash.update(&bytes);
+                    hash.update(b"\n");
+                    bytes.clear();
+                } else {
+                    ch.encode_utf8(&mut bytes);
+                }
+            }
+            writer.write_all(&bytes)?;
+            hash.update(&bytes);
+            bytes.clear();
+        }
+        writer.flush()?;
+        drop(writer);
+        temp.as_file().sync_all()?;
+        if signal.is_cancelled() {
+            return Ok(None);
+        }
+        temp.persist(&self.path).map_err(|err| err.error)?;
+        Ok(Some(hash.finalize().into()))
     }
 }
 
 impl Job for FileSaveJob {
     fn name(&self) -> &'static str {
         "file-save"
-    }
-
-    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
-        self.token
     }
 
     fn target_document_id(&self) -> Option<DocumentId> {
@@ -74,87 +120,20 @@ impl Job for FileSaveJob {
     }
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         crate::perf_span!("document_save", crate::perf::PerfFields::default());
-        let parent = self.path.parent().unwrap_or_else(|| Path::new("."));
-        let temp_path = parent.join(format!(
-            "{}~",
-            self.path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("file")
-        ));
-
-        let do_write = || -> std::io::Result<()> {
-            let file = fs::File::create(&temp_path)?;
-            let line_ending_bytes = self.line_ending.as_bytes();
-
-            let mut writer = std::io::BufWriter::new(file);
-            if self.has_bom {
-                writer.write_all(&crate::document::factories::UTF8_BOM)?;
+        match self.write(&signal) {
+            Ok(Some(content_hash)) => {
+                let result = FileSaveResult {
+                    document_id: self.document_id,
+                    saved_seq: self.saved_seq,
+                    path: self.path,
+                    content_hash,
+                };
+                crate::job_manager::send_job_result(&sender, id, Box::new(result));
             }
-
-            for chunk in self.piece_table.chunks() {
-                if signal.is_cancelled() {
-                    return Ok(());
-                }
-
-                let mut current_chunk_bytes = Vec::with_capacity(chunk.len());
-                for ch in chunk {
-                    if *ch == Character::Newline {
-                        if !current_chunk_bytes.is_empty() {
-                            writer.write_all(&current_chunk_bytes)?;
-                            current_chunk_bytes.clear();
-                        }
-                        writer.write_all(line_ending_bytes)?;
-                    } else {
-                        ch.encode_utf8(&mut current_chunk_bytes);
-                    }
-                }
-                if !current_chunk_bytes.is_empty() {
-                    writer.write_all(&current_chunk_bytes)?;
-                }
-            }
-
-            writer.flush()?;
-
-            if signal.is_cancelled() {
-                return Ok(());
-            }
-
-            writer.get_ref().sync_all()?;
-            drop(writer); // Close file
-            fs::rename(&temp_path, &self.path)?;
-
-            Ok(())
-        };
-
-        match do_write() {
-            Ok(()) => {
-                if signal.is_cancelled() {
-                    let _ = fs::remove_file(&temp_path);
-                    let _ = sender.send(JobMessage::Cancelled(id));
-                } else {
-                    let result = FileSaveResult {
-                        document_id: self.document_id,
-                        saved_seq: self.saved_seq,
-                        path: self.path.clone(),
-                        content_hash: crate::history::persist::sha256(
-                            &self.piece_table.to_logical_bytes(),
-                        ),
-                    };
-                    if let Some(token) = self.token {
-                        crate::job_manager::send_job_result_with_token(
-                            &sender,
-                            id,
-                            token,
-                            Box::new(result),
-                        );
-                    } else {
-                        crate::job_manager::send_job_result(&sender, id, Box::new(result));
-                    }
-                }
+            Ok(None) => {
+                let _ = sender.send(JobMessage::Cancelled(id));
             }
             Err(e) => {
-                let _ = fs::remove_file(&temp_path);
                 let _ = sender.send(JobMessage::Error(id, e.into()));
             }
         }

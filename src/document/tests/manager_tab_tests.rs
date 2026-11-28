@@ -148,3 +148,77 @@ fn neighboring_a_private_tab_returns_the_first_public_tab() {
     assert_eq!(manager.neighbor_tab(private, false), Some(first));
     assert_eq!(manager.neighbor_tab(second, true), Some(first));
 }
+
+#[test]
+fn public_tab_numbering_and_removal_skip_private_entries() {
+    use crate::document::{
+        manager::{Placement, RemovalIntent},
+        DocumentId,
+    };
+
+    let mut manager = create_manager();
+    let [first, private, last, trailing_private] = [1, 2, 3, 4].map(DocumentId::new);
+    for (id, placement) in [
+        (first, Placement::Background),
+        (private, Placement::Private),
+        (last, Placement::Background),
+        (trailing_private, Placement::Private),
+    ] {
+        manager.insert(Document::new(id).unwrap(), placement);
+    }
+
+    assert_eq!(manager.tab_count(), 2);
+    assert_eq!(manager.get_document_id_at(1), Some(private));
+    assert_eq!(manager.tab_index(last), Some(2));
+    assert_eq!(manager.public_tab_at(0), Some(first));
+    assert_eq!(manager.public_tab_at(1), Some(last));
+    assert_eq!(manager.public_tab_at(2), None);
+    assert_eq!(
+        manager
+            .get_buffer_list(private)
+            .into_iter()
+            .map(|info| (info.index, info.id, info.is_current))
+            .collect::<Vec<_>>(),
+        [(0, first, false), (1, last, false)]
+    );
+    assert_eq!(
+        manager
+            .prepare_removal(first, RemovalIntent::Normal)
+            .unwrap()
+            .replacement,
+        Some(last)
+    );
+    assert_eq!(
+        manager
+            .prepare_removal(last, RemovalIntent::Normal)
+            .unwrap()
+            .replacement,
+        Some(first)
+    );
+
+    manager.remove_document(last).unwrap();
+    assert!(manager
+        .prepare_removal(first, RemovalIntent::Normal)
+        .unwrap()
+        .needs_replacement());
+}
+
+#[test]
+fn open_file_lookup_ignores_a_private_preview_of_the_same_path() {
+    use crate::document::manager::Placement;
+
+    let mut manager = create_manager();
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("preview.txt");
+    let private = manager.next_id();
+    let mut preview = Document::new(private).unwrap();
+    preview.set_path(&path);
+    manager.insert(preview, Placement::Private);
+    assert_eq!(manager.find_open_document_id(&path), None);
+
+    let public = manager.next_id();
+    let mut file = Document::new(public).unwrap();
+    file.set_path(&path);
+    manager.insert(file, Placement::Background);
+    assert_eq!(manager.find_open_document_id(&path), Some(public));
+}

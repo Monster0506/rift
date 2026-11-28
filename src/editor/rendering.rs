@@ -8,6 +8,65 @@ use crate::screen_buffer::FrameStats;
 use crate::split::layout::WindowLayout;
 use crate::term::TerminalBackend;
 
+use crate::buffer::TextBuffer;
+use crate::document::Document;
+use std::ops::Range;
+
+struct PaintSyntax {
+    highlights: Option<Vec<(Range<usize>, u32)>>,
+    injections: Option<Vec<(Range<usize>, String)>>,
+}
+
+fn paint_syntax(doc: &mut Document, span: Range<usize>) -> PaintSyntax {
+    let live = doc.ghost_preview().map_or_else(
+        || span.clone(),
+        |ghost| ghost.live_byte(span.start)..ghost.live_byte(span.end),
+    );
+    let mut highlights = doc.with_syntax(|syntax, buffer| syntax.highlights(buffer, live.clone()));
+    let mut injections =
+        doc.with_syntax(|syntax, buffer| syntax.injection_highlights_named(buffer, live));
+    if let Some(ghost) = doc.ghost_preview() {
+        for (range, _) in highlights.iter_mut().flatten() {
+            *range = ghost.project_bytes(range.clone());
+        }
+        for (range, _) in injections.iter_mut().flatten() {
+            *range = ghost.project_bytes(range.clone());
+        }
+    }
+    PaintSyntax {
+        highlights,
+        injections,
+    }
+}
+
+fn paint_buffer(doc: &Document) -> &TextBuffer {
+    doc.ghost_preview()
+        .map_or_else(|| doc.buffer(), |ghost| &ghost.buffer)
+}
+
+fn paint_annotations(doc: &Document) -> &crate::annotations::AnnotationStore {
+    doc.ghost_preview()
+        .map_or(&doc.annotations, |ghost| &ghost.annotations)
+}
+
+fn paint_cursor(doc: &Document, cursor: usize) -> usize {
+    doc.ghost_preview()
+        .map_or(cursor, |ghost| ghost.project_char(cursor))
+}
+
+fn cursor_geometry(
+    buffer: &TextBuffer,
+    annotations: &crate::annotations::AnnotationStore,
+    cursor: usize,
+    tab_width: usize,
+) -> (usize, usize) {
+    let line = buffer.line_index.get_line_at(cursor);
+    let start = buffer.line_index.get_line_start(line);
+    let col = render::calculate_cursor_column_at(buffer, line, tab_width, cursor)
+        + annotations.leading_width_in(buffer.char_to_byte(start), buffer.char_to_byte(cursor) + 1);
+    (line, col)
+}
+
 type FrameState = (
     crate::document::DocumentId,
     bool,
@@ -95,9 +154,6 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn update_state(&mut self) -> Option<FrameState> {
         crate::perf_span!("update_state", crate::perf::PerfFields::default());
-        self.deliver_frame_events();
-        #[cfg(feature = "plugins")]
-        self.update_annotation_hover();
         self.apply_frame_invalidation();
         if self.split_tree.window_count() == 1 {
             let rows = self.render_system.viewport.visible_rows();
@@ -112,14 +168,19 @@ impl<T: TerminalBackend> Editor<T> {
             doc.recompute_directory_highlights();
         }
 
-        let (cursor_line, cursor_col, total_lines, is_terminal) = {
+        let (cursor_line, cursor_col, cursor_char, total_lines, is_terminal) = {
             let doc = self.document_manager.get_document(doc_id)?;
-            let tw = doc.options().tab_width();
-            let line = doc.buffer().get_line();
-            let cursor = doc.buffer().cursor();
-            let line_start = doc.buffer().line_index.get_start(line).unwrap_or(0);
-            let col = render::calculate_cursor_column_at(doc.buffer(), line, tw, cursor)
-                + doc.annotations.leading_width_in(line_start, cursor + 1);
+            let tab_width = doc.options().tab_width();
+            let text = doc.buffer();
+            let logical = cursor_geometry(text, &doc.annotations, text.cursor(), tab_width);
+            self.state.update_cursor(logical.0, logical.1);
+            let buffer = paint_buffer(doc);
+            let cursor = buffer.cursor();
+            let (line, col) = if doc.ghost_preview().is_some() {
+                cursor_geometry(buffer, paint_annotations(doc), cursor, tab_width)
+            } else {
+                logical
+            };
             doc.display_name()
                 .as_ref()
                 .clone_into(&mut self.state.file_name);
@@ -129,19 +190,19 @@ impl<T: TerminalBackend> Editor<T> {
                 doc.buffer().len(),
                 doc.options().line_ending(),
             );
-            let total = doc.buffer().get_total_lines();
-            (line, col, total, doc.is_terminal())
+            (
+                line,
+                col,
+                cursor,
+                buffer.get_total_lines(),
+                doc.is_terminal(),
+            )
         };
-        self.state.update_cursor(cursor_line, cursor_col);
 
         self.refresh_search_highlights();
         self.state.notifications.prune_expired();
         let gutter_width = self.active_gutter_cols(doc_id);
 
-        let cursor_char = self
-            .document_manager
-            .get_document(doc_id)
-            .map_or(0, |d| d.buffer().cursor());
         let visible_rows = self.render_system.viewport.visible_rows();
         let display_map = {
             let content_width = self
@@ -151,7 +212,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .saturating_sub(gutter_width)
                 .max(1);
             crate::perf_span!("display_map_resolve", crate::perf::PerfFields::default());
-            self.resolve_display_map_cached(doc_id, content_width, cursor_char, visible_rows)
+            self.resolve_display_map(doc_id, content_width, cursor_char, visible_rows, true)
         };
 
         let needs_clear = if let Some(ref dm) = display_map {
@@ -238,23 +299,6 @@ impl<T: TerminalBackend> Editor<T> {
         ids
     }
 
-    fn begin_ghost_paint(&mut self, visible: &[crate::document::DocumentId]) {
-        for &id in visible {
-            if let Some(doc) = self.document_manager.get_document_mut(id) {
-                doc.begin_ghost_paint();
-            }
-        }
-    }
-
-    fn end_ghost_paint(&mut self, visible: &[crate::document::DocumentId]) {
-        for &id in visible {
-            if let Some(doc) = self.document_manager.get_document_mut(id) {
-                doc.end_ghost_paint();
-            }
-        }
-        self.drain_syntax_sync();
-    }
-
     /// # Errors
     /// Returns an error if the frame fails to render or the terminal cannot be written.
     pub(super) fn update_and_render(&mut self) -> Result<(), RiftError> {
@@ -264,15 +308,25 @@ impl<T: TerminalBackend> Editor<T> {
                 doc.sync_terminal_if_dirty();
             }
         }
-        self.begin_ghost_paint(&visible);
-        let result = self.update_and_render_painted();
-        self.end_ghost_paint(&visible);
+        self.deliver_frame_events();
+        #[cfg(feature = "plugins")]
+        self.update_annotation_hover();
+        self.update_selection_highlights();
+        for (_, window) in self.split_tree.windows() {
+            if let Some(doc) = self.document_manager.get_document_mut(window.document_id) {
+                if visible.binary_search(&doc.id).is_err() {
+                    doc.sync_terminal_if_dirty();
+                }
+                doc.refresh_ghost_preview();
+            }
+        }
+        let result = self.paint_frame();
         if result.is_ok() {
             self.unrendered_key_count = 0;
             self.scheduler.last_frame_at = Some(crate::time::Instant::now());
             self.scheduler.terminal_frame_dirty = false;
-            for id in visible {
-                if let Some(doc) = self.document_manager.get_document_mut(id) {
+            for (_, window) in self.split_tree.windows() {
+                if let Some(doc) = self.document_manager.get_document_mut(window.document_id) {
                     doc.clear_terminal_scroll();
                 }
             }
@@ -280,15 +334,13 @@ impl<T: TerminalBackend> Editor<T> {
         result
     }
 
-    fn update_and_render_painted(&mut self) -> Result<(), RiftError> {
+    fn paint_frame(&mut self) -> Result<(), RiftError> {
         #[cfg(feature = "perf_instrumentation")]
         let _frame_guard = crate::perf::begin_frame();
 
         let Some((_doc_id, needs_clear, display_map, scroll_hint)) = self.update_state() else {
             return Ok(());
         };
-
-        self.update_selection_highlights();
 
         let multi_window = self.split_tree.window_count() > 1;
         if multi_window {
@@ -434,10 +486,11 @@ impl<T: TerminalBackend> Editor<T> {
                     vp.visible_rows(),
                 )
             };
-        let cursor = doc.buffer().cursor();
-        let line = doc.buffer().line_index.get_line_at(cursor);
+        let buffer = paint_buffer(doc);
+        let cursor = buffer.cursor();
+        let line = buffer.get_line();
         let row = self
-            .resolve_display_map_cached(doc_id, content_width, cursor, rows)
+            .resolve_display_map(doc_id, content_width, cursor, rows, true)
             .map_or_else(
                 || line.saturating_sub(top_line),
                 |dm| dm.char_to_visual_row(cursor).saturating_sub(top_visual),
@@ -452,31 +505,54 @@ impl<T: TerminalBackend> Editor<T> {
         cursor_char: usize,
         extend_margin_rows: usize,
     ) -> Option<std::sync::Arc<crate::wrap::DisplayMap>> {
+        self.resolve_display_map(
+            doc_id,
+            content_width,
+            cursor_char,
+            extend_margin_rows,
+            false,
+        )
+    }
+
+    fn resolve_display_map(
+        &mut self,
+        doc_id: crate::document::DocumentId,
+        content_width: usize,
+        cursor_char: usize,
+        extend_margin_rows: usize,
+        paint: bool,
+    ) -> Option<std::sync::Arc<crate::wrap::DisplayMap>> {
         use std::sync::Arc;
         const CACHE_CAP: usize = 8;
         let soft_wrap = self.state.settings.soft_wrap();
         let wrap_width = self.state.settings.wrap_width();
         let include_lsp = self.state.settings.lsp().virtual_text;
         let doc = self.document_manager.get_document_mut(doc_id)?;
-        let revision = doc.buffer().revision();
-        let buf_len = doc.buffer().len();
+        let ghost = paint && doc.ghost_preview().is_some();
+        let edits = if ghost {
+            Vec::new()
+        } else {
+            doc.take_char_edits()
+        };
+        let (buffer, annotations) = if ghost {
+            (paint_buffer(doc), paint_annotations(doc))
+        } else {
+            (doc.buffer(), &doc.annotations)
+        };
+        let revision = buffer.revision();
+        let buf_len = buffer.len();
         let annotations_revision = doc.annotations.revision();
         let params = super::resolve_wrap_params(doc, content_width, soft_wrap, wrap_width);
-        let edits = doc.take_char_edits();
-
-        let eol_rows = |doc: &crate::document::Document| {
-            doc.annotations.trailing_adornment_lines(include_lsp, |b| {
-                doc.buffer()
-                    .line_index
-                    .get_line_at(doc.buffer().byte_to_char(b))
+        let eol_rows = || {
+            annotations.trailing_adornment_lines(include_lsp, |b| {
+                buffer.line_index.get_line_at(buffer.byte_to_char(b))
             })
         };
 
         let mut map: Option<Arc<crate::wrap::DisplayMap>> = None;
-        let slot = self
-            .display_map_cache
-            .iter()
-            .position(|e| e.doc_id == doc_id && e.content_width == content_width);
+        let slot = self.display_map_cache.iter().position(|e| {
+            e.doc_id == doc_id && e.content_width == content_width && e.ghost == ghost
+        });
         if let Some(pos) = slot {
             let entry = self.display_map_cache.remove(pos);
             let valid = match (&params, &entry.map) {
@@ -491,7 +567,7 @@ impl<T: TerminalBackend> Editor<T> {
                         || entry
                             .map
                             .as_deref()
-                            .is_none_or(|m| m.eol_rows() == eol_rows(doc));
+                            .is_none_or(|m| m.eol_rows() == eol_rows());
                     if same_rows {
                         map = entry.map;
                     }
@@ -499,11 +575,11 @@ impl<T: TerminalBackend> Editor<T> {
                     if let Some(combined) = combine_char_edits(&edits) {
                         if let Some(mut m) = entry.map {
                             if Arc::make_mut(&mut m).apply_edit(
-                                doc.buffer(),
+                                buffer,
                                 combined.pos,
                                 combined.del,
                                 combined.ins,
-                                eol_rows(doc),
+                                eol_rows(),
                             ) {
                                 map = Some(m);
                             }
@@ -515,7 +591,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let mut map = map.or_else(|| {
             params.map(|(w, tw)| {
-                Arc::new(crate::wrap::DisplayMap::empty(w, tw).with_eol_rows(eol_rows(doc)))
+                Arc::new(crate::wrap::DisplayMap::empty(w, tw).with_eol_rows(eol_rows()))
             })
         });
 
@@ -525,9 +601,9 @@ impl<T: TerminalBackend> Editor<T> {
         if !already_covered {
             if let Some(m) = map.as_mut() {
                 let mm = Arc::make_mut(m);
-                mm.extend_to_char(doc.buffer(), cursor_char);
+                mm.extend_to_char(buffer, cursor_char);
                 let row = mm.char_to_visual_row(cursor_char);
-                mm.extend_to_row(doc.buffer(), row + extend_margin_rows + 1);
+                mm.extend_to_row(buffer, row + extend_margin_rows + 1);
             }
         }
 
@@ -537,6 +613,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.display_map_cache.push(super::DisplayMapCacheEntry {
             doc_id,
             revision,
+            ghost,
             buf_len,
             content_width,
             annotations_revision,
@@ -624,40 +701,39 @@ impl<T: TerminalBackend> Editor<T> {
         doc.recompute_directory_highlights();
 
         let (start_logical, end_logical, start_byte, end_byte) =
-            Self::visible_span(doc, &render_system.viewport, display_map);
-
-        let highlights =
-            doc.with_syntax(|syntax, buffer| syntax.highlights(buffer, start_byte..end_byte));
-        let injection_hl =
-            doc.with_syntax(|s, buffer| s.injection_highlights_named(buffer, start_byte..end_byte));
+            Self::visible_span(paint_buffer(doc), &render_system.viewport, display_map);
+        let syntax = paint_syntax(doc, start_byte..end_byte);
+        let buffer = paint_buffer(doc);
+        let annotations = paint_annotations(doc);
+        let projected_search = doc
+            .ghost_preview()
+            .filter(|_| !state.search_matches.is_empty())
+            .map(|ghost| ghost.project_search(&state.search_matches));
         let capture_names = doc
             .syntax
             .as_ref()
             .map(crate::syntax::Syntax::capture_names);
 
-        let annotation_styles = doc.annotations.presentation_spans(
+        let annotation_styles = annotations.presentation_spans(
             state.settings.syntax_colors(),
             Some(kind_registry),
             start_byte..end_byte,
         );
-        let annotation_adornments = doc.annotations.line_adornments(
+        let annotation_adornments = annotations.line_adornments(
             state.settings.syntax_colors(),
             Some(kind_registry),
             start_byte..end_byte,
             start_logical..end_logical,
             state.settings.lsp().virtual_text,
-            |b| {
-                doc.buffer()
-                    .line_index
-                    .get_line_at(doc.buffer().byte_to_char(b))
-            },
+            |b| buffer.line_index.get_line_at(buffer.byte_to_char(b)),
         );
-        let annotation_inline = doc.annotations.inline_adornments(
+        let annotation_inline = annotations.inline_adornments(
             state.settings.syntax_colors(),
             Some(kind_registry),
             start_byte..end_byte,
         );
-        let annotation_concealed = Self::concealed_outside_cursor_line(doc, start_byte..end_byte);
+        let annotation_concealed =
+            Self::concealed_outside_cursor_line(buffer, annotations, start_byte..end_byte);
 
         let syntax_generation = Self::syntax_generation(doc);
         let annotations_revision = doc.annotations.revision();
@@ -665,7 +741,7 @@ impl<T: TerminalBackend> Editor<T> {
         let git_gutter_colors_data = git_gutter::git_gutter_render_colors(doc);
 
         let state = render::RenderState {
-            buf: doc.buffer(),
+            buf: buffer,
             state,
             current_mode: *current_mode,
             pending_key: input.keys.last().copied(),
@@ -673,9 +749,11 @@ impl<T: TerminalBackend> Editor<T> {
             needs_clear,
             tab_width: doc.options().tab_width(),
             intrinsic: render::IntrinsicLayers {
-                syntax: highlights.as_deref(),
+                syntax: syntax.highlights.as_deref(),
                 capture_map: capture_names,
-                injections: injection_hl.as_deref(),
+                injections: syntax.injections.as_deref(),
+                ghost: doc.ghost_preview(),
+                projected_search: projected_search.as_deref(),
                 terminal_cells: doc
                     .terminal_cell_colors()
                     .filter(|colors| !colors.is_empty()),
@@ -707,7 +785,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn visible_span(
-        doc: &crate::document::Document,
+        buffer: &TextBuffer,
         viewport: &crate::viewport::Viewport,
         display_map: Option<&crate::wrap::DisplayMap>,
     ) -> (usize, usize, usize, usize) {
@@ -727,28 +805,24 @@ impl<T: TerminalBackend> Editor<T> {
                             .saturating_sub(1)
                             .min(dm.total_visual_rows().saturating_sub(1)),
                     )
-                    .map_or_else(|| doc.buffer().get_total_lines(), |r| r.logical_line + 1);
+                    .map_or_else(|| buffer.get_total_lines(), |r| r.logical_line + 1);
                 (start_l, end_l)
             },
         );
-        let start_char = doc
-            .buffer()
-            .line_index
-            .get_start(start_logical)
-            .unwrap_or(0);
-        let end_char = if end_logical < doc.buffer().get_total_lines() {
-            doc.buffer()
+        let start_char = buffer.line_index.get_start(start_logical).unwrap_or(0);
+        let end_char = if end_logical < buffer.get_total_lines() {
+            buffer
                 .line_index
                 .get_start(end_logical)
-                .unwrap_or(doc.buffer().len())
+                .unwrap_or(buffer.len())
         } else {
-            doc.buffer().len()
+            buffer.len()
         };
         (
             start_logical,
             end_logical,
-            doc.buffer().char_to_byte(start_char),
-            doc.buffer().char_to_byte(end_char),
+            buffer.char_to_byte(start_char),
+            buffer.char_to_byte(end_char),
         )
     }
 
@@ -900,17 +974,15 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.get_document(doc_id) else {
                 return;
             };
-            let cursor_pos = window.view_cursor(doc.buffer());
-            let tab_width = doc.options().tab_width();
-            let cursor_line = doc.buffer().line_index.get_line_at(cursor_pos);
-            let line_start = doc.buffer().line_index.get_start(cursor_line).unwrap_or(0);
-            let cursor_col = render::calculate_cursor_column_at(
-                doc.buffer(),
-                cursor_line,
-                tab_width,
+            let buffer = paint_buffer(doc);
+            let cursor_pos = paint_cursor(doc, window.view_cursor(doc.buffer()));
+            let (cursor_line, cursor_col) = cursor_geometry(
+                buffer,
+                paint_annotations(doc),
                 cursor_pos,
-            ) + doc.annotations.leading_width_in(line_start, cursor_pos + 1);
-            let total_lines = doc.buffer().get_total_lines();
+                doc.options().tab_width(),
+            );
+            let total_lines = buffer.get_total_lines();
             let viewport_col = if doc.is_terminal() { 0 } else { cursor_col };
             let gutter_width = Self::line_number_gutter_width(doc);
             let terminal_resize = if doc.is_terminal() {
@@ -956,7 +1028,7 @@ impl<T: TerminalBackend> Editor<T> {
         if soft_wrap {
             let content_width = layout.cols.saturating_sub(gutter_width).max(1);
             if let Some(dm) =
-                self.resolve_display_map_cached(doc_id, content_width, cursor_pos, layout.rows + 1)
+                self.resolve_display_map(doc_id, content_width, cursor_pos, layout.rows + 1, true)
             {
                 let cursor_visual_row = dm.char_to_visual_row(cursor_pos);
                 let total_visual = dm.total_visual_rows();
@@ -1079,8 +1151,8 @@ impl<T: TerminalBackend> Editor<T> {
         let window = self.split_tree.get_window(id)?;
         let doc = self.document_manager.get_document(window.document_id)?;
         let width = Self::window_content_width(doc, cols);
-        let cursor = window.view_cursor(doc.buffer());
-        self.resolve_display_map_cached(window.document_id, width, cursor, rows + 1)
+        let cursor = paint_cursor(doc, window.view_cursor(doc.buffer()));
+        self.resolve_display_map(window.document_id, width, cursor, rows + 1, true)
     }
 
     fn render_multi_window(&mut self, needs_clear: bool) -> Result<(), RiftError> {
@@ -1206,44 +1278,43 @@ impl<T: TerminalBackend> Editor<T> {
         let tab_width = doc.options().tab_width();
         let gutter_width = Self::line_number_gutter_width(doc);
         let (start_line, end_line, start_byte, end_byte) =
-            Self::visible_span(doc, &window.viewport, display_map);
-
-        let highlights =
-            doc.with_syntax(|syntax, buffer| syntax.highlights(buffer, start_byte..end_byte));
-        let injection_hl =
-            doc.with_syntax(|s, buffer| s.injection_highlights_named(buffer, start_byte..end_byte));
+            Self::visible_span(paint_buffer(doc), &window.viewport, display_map);
+        let syntax = paint_syntax(doc, start_byte..end_byte);
+        let buffer = paint_buffer(doc);
+        let annotations = paint_annotations(doc);
+        let projected_search = doc
+            .ghost_preview()
+            .filter(|_| !state.search_matches.is_empty())
+            .map(|ghost| ghost.project_search(&state.search_matches));
         let capture_names = doc
             .syntax
             .as_ref()
             .map(crate::syntax::Syntax::capture_names);
-        let annotation_styles = doc.annotations.presentation_spans(
+        let annotation_styles = annotations.presentation_spans(
             state.settings.syntax_colors(),
             Some(kind_registry),
             start_byte..end_byte,
         );
-        let annotation_adornments = doc.annotations.line_adornments(
+        let annotation_adornments = annotations.line_adornments(
             state.settings.syntax_colors(),
             Some(kind_registry),
             start_byte..end_byte,
             start_line..end_line,
             state.settings.lsp().virtual_text,
-            |b| {
-                doc.buffer()
-                    .line_index
-                    .get_line_at(doc.buffer().byte_to_char(b))
-            },
+            |b| buffer.line_index.get_line_at(buffer.byte_to_char(b)),
         );
-        let annotation_inline = doc.annotations.inline_adornments(
+        let annotation_inline = annotations.inline_adornments(
             state.settings.syntax_colors(),
             Some(kind_registry),
             start_byte..end_byte,
         );
-        let annotation_concealed = Self::concealed_outside_cursor_line(doc, start_byte..end_byte);
+        let annotation_concealed =
+            Self::concealed_outside_cursor_line(buffer, annotations, start_byte..end_byte);
 
         let git_gutter_colors_data = git_gutter::git_gutter_render_colors(doc);
 
         let ctx = render::DrawContext {
-            buf: doc.buffer(),
+            buf: buffer,
             viewport: &window.viewport,
             current_mode: *current_mode,
             pending_key: input.keys.last().copied(),
@@ -1252,9 +1323,11 @@ impl<T: TerminalBackend> Editor<T> {
             needs_clear,
             tab_width,
             intrinsic: render::IntrinsicLayers {
-                syntax: highlights.as_deref(),
+                syntax: syntax.highlights.as_deref(),
                 capture_map: capture_names,
-                injections: injection_hl.as_deref(),
+                injections: syntax.injections.as_deref(),
+                ghost: doc.ghost_preview(),
+                projected_search: projected_search.as_deref(),
                 terminal_cells: doc
                     .terminal_cell_colors()
                     .filter(|colors| !colors.is_empty()),
@@ -1291,24 +1364,20 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn line_number_gutter_width(doc: &crate::document::Document) -> usize {
-        let lines = doc.buffer().last_real_line() + 1;
+        let lines = paint_buffer(doc).last_real_line() + 1;
         crate::state::State::doc_gutter_cols(doc.options().show_line_numbers(), lines)
     }
 
     fn concealed_outside_cursor_line(
-        doc: &crate::document::Document,
-        span: std::ops::Range<usize>,
+        buffer: &TextBuffer,
+        annotations: &crate::annotations::AnnotationStore,
+        span: Range<usize>,
     ) -> Vec<(usize, usize)> {
-        let cursor_line = doc.buffer().line_index.get_line_at(doc.buffer().cursor());
-        doc.annotations
+        let cursor_line = buffer.get_line();
+        annotations
             .concealed_ranges(span)
             .into_iter()
-            .filter(|(s, _)| {
-                doc.buffer()
-                    .line_index
-                    .get_line_at(doc.buffer().byte_to_char(*s))
-                    != cursor_line
-            })
+            .filter(|(s, _)| buffer.line_index.get_line_at(buffer.byte_to_char(*s)) != cursor_line)
             .collect()
     }
 
@@ -1425,7 +1494,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let focused_vp = &split_tree.focused_window().viewport;
         let render_state = render::RenderState {
-            buf: focused_doc.buffer(),
+            buf: paint_buffer(focused_doc),
             state,
             current_mode: *current_mode,
             pending_key: input.keys.last().copied(),
@@ -1433,6 +1502,7 @@ impl<T: TerminalBackend> Editor<T> {
             needs_clear,
             tab_width: focused_tab_width,
             intrinsic: render::IntrinsicLayers {
+                ghost: focused_doc.ghost_preview(),
                 terminal_cells: focused_doc
                     .terminal_cell_colors()
                     .filter(|colors| !colors.is_empty()),

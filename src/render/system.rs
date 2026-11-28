@@ -253,6 +253,7 @@ impl RenderSystem {
     fn content_draw_state(ctx: &DrawContext) -> ContentDrawState {
         let effective_line_numbers = ctx.show_line_numbers;
         ContentDrawState {
+            ghost: ctx.intrinsic.ghost.is_some(),
             revision: ctx.buf.revision(),
             top_line: ctx.viewport.top_line(),
             top_visual_row: ctx.viewport.top_visual_row(),
@@ -305,7 +306,11 @@ impl RenderSystem {
         let (search_match_index, search_total_matches) = if ctx.state.search_matches.is_empty() {
             (None, 0)
         } else {
-            let cursor_offset = ctx.buf.cursor();
+            let cursor = ctx.buf.cursor();
+            let cursor_offset = ctx
+                .intrinsic
+                .ghost
+                .map_or(cursor, |ghost| ghost.live_char(cursor));
             let idx = match_index_at_cursor(&ctx.state.search_matches, cursor_offset);
             (idx, ctx.state.search_matches.len())
         };

@@ -67,16 +67,34 @@ impl Job for TerminalInputJob {
         Some(self.token)
     }
 
+    fn is_long_lived(&self) -> bool {
+        true
+    }
+
     fn run(self: Box<Self>, id: usize, tx: Sender<JobMessage>, signal: CancellationSignal) {
+        let mut pending = None;
         loop {
             if signal.is_cancelled() {
                 break;
             }
 
-            match self.rx.recv_timeout(std::time::Duration::from_millis(50)) {
+            let event = pending.take().map_or_else(
+                || self.rx.recv_timeout(std::time::Duration::from_millis(50)),
+                Ok,
+            );
+            match event {
                 Ok(event) => match event {
                     TerminalEvent::Wakeup => {
-                        while matches!(self.rx.try_recv(), Ok(TerminalEvent::Wakeup)) {}
+                        for _ in 0..255 {
+                            match self.rx.try_recv() {
+                                Ok(TerminalEvent::Wakeup | TerminalEvent::Title) => {}
+                                Ok(exit @ TerminalEvent::ChildExit(_)) => {
+                                    pending = Some(exit);
+                                    break;
+                                }
+                                Err(_) => break,
+                            }
+                        }
                         if tx
                             .send(JobMessage::CustomToken(
                                 id,
@@ -108,6 +126,9 @@ impl Job for TerminalInputJob {
                     break;
                 }
             }
+        }
+        if !signal.is_cancelled() {
+            let _ = tx.send(JobMessage::Finished(id, true));
         }
     }
 

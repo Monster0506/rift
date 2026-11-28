@@ -24,6 +24,7 @@ pub(crate) struct CursorInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ContentDrawState {
+    ghost: bool,
     revision: u64,
     top_line: usize,
     top_visual_row: usize,
@@ -44,6 +45,7 @@ struct ContentDrawState {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ContentBlitKey {
+    ghost: bool,
     revision: u64,
     buf_len: usize,
     tab_width: usize,
@@ -137,6 +139,7 @@ fn compute_content_blit_key(ctx: &DrawContext, visible_rows: usize) -> ContentBl
         ctx.kind_registry_generation,
     );
     ContentBlitKey {
+        ghost: ctx.intrinsic.ghost.is_some(),
         revision: ctx.buf.revision(),
         buf_len: ctx.buf.len(),
         tab_width: ctx.tab_width,
@@ -251,6 +254,8 @@ pub(crate) type LineAdornment<'a> = (usize, std::borrow::Cow<'a, str>, Color);
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct IntrinsicLayers<'a> {
+    pub(crate) ghost: Option<&'a crate::document::GhostPreview>,
+    pub(crate) projected_search: Option<&'a [crate::search::SearchMatch]>,
     pub(crate) syntax: Option<&'a [(std::ops::Range<usize>, u32)]>,
     pub(crate) capture_map: Option<&'a [&'a str]>,
     pub(crate) injections: Option<&'a [(std::ops::Range<usize>, String)]>,
@@ -416,6 +421,7 @@ impl<'a> DrawContext<'a> {
     #[must_use]
     fn search_matches(&self) -> &'a [crate::search::SearchMatch] {
         self.search_matches_override
+            .or(self.intrinsic.projected_search)
             .unwrap_or_else(|| &self.state.search_matches)
     }
 }

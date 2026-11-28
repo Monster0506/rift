@@ -213,6 +213,7 @@ pub struct Editor<T: TerminalBackend> {
 }
 
 struct DisplayMapCacheEntry {
+    ghost: bool,
     doc_id: DocumentId,
     revision: u64,
     buf_len: usize,
@@ -248,6 +249,28 @@ struct PanelLayout {
     dir_doc_id: DocumentId,
     preview_doc_id: DocumentId,
     original_doc_id: DocumentId,
+}
+
+impl PanelLayout {
+    fn contains_window(&self, window: crate::split::window::WindowId) -> bool {
+        window == self.dir_win_id || window == self.preview_win_id
+    }
+
+    fn required_buffer(&self, window: crate::split::window::WindowId) -> Option<DocumentId> {
+        if window == self.dir_win_id {
+            Some(self.dir_doc_id)
+        } else if window == self.preview_win_id && self.kind != PanelKind::BufferList {
+            Some(self.preview_doc_id)
+        } else {
+            None
+        }
+    }
+
+    fn requires_buffer(&self, id: DocumentId) -> bool {
+        self.required_buffer(self.dir_win_id) == Some(id)
+            || self.required_buffer(self.preview_win_id) == Some(id)
+            || (self.kind == PanelKind::UndoTree && self.original_doc_id == id)
+    }
 }
 
 impl<T: TerminalBackend> Drop for Editor<T> {

@@ -321,7 +321,7 @@ fn test_dt_on_char_not_found_does_nothing() {
 
     assert_eq!(editor.active_document().buffer().len(), 6);
     assert_eq!(editor.active_document().buffer().cursor(), 0);
-    assert!(editor.active_document().pending_ghost.is_empty());
+    assert_eq!(editor.active_document().ghost_count(), 0);
 }
 
 #[test]
@@ -343,7 +343,7 @@ fn test_dt_does_not_cross_line_boundary() {
         "bcdef\naXXa\n"
     );
     assert_eq!(editor.active_document().buffer().cursor(), 0);
-    assert!(editor.active_document().pending_ghost.is_empty());
+    assert_eq!(editor.active_document().ghost_count(), 0);
 }
 
 #[test]
@@ -361,11 +361,11 @@ fn test_dtf_on_abcdef_leaves_f_only() {
     )));
 
     assert_eq!(editor.active_document().buffer().to_string(), "f");
-    assert_eq!(editor.active_document().pending_ghost.len(), 1);
+    assert_eq!(editor.active_document().ghost_count(), 1);
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(editor.active_document().buffer().to_string(), "f");
-    assert!(editor.active_document().pending_ghost.is_empty());
+    assert_eq!(editor.active_document().ghost_count(), 0);
 }
 
 #[test]
@@ -414,7 +414,7 @@ fn test_dg_deletes_from_cursor_to_end_of_file() {
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
     assert_eq!(editor.active_document().buffer().len(), 0);
-    assert_eq!(editor.active_document().pending_ghost.len(), 1);
+    assert_eq!(editor.active_document().ghost_count(), 1);
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(editor.active_document().buffer().len(), 0);
@@ -435,7 +435,7 @@ fn test_dg_with_count_deletes_to_specific_line() {
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
     assert!(editor.active_document().buffer().get_total_lines() < lines_before);
-    assert_eq!(editor.active_document().pending_ghost.len(), 1);
+    assert_eq!(editor.active_document().ghost_count(), 1);
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     let doc = editor.active_document();

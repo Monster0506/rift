@@ -24,6 +24,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.split_tree
                 .check_invariants(&self.document_manager, tier),
         );
+        self.check_panel_layout(&mut out);
         extend(
             &mut out,
             "compositor",
@@ -116,6 +117,57 @@ impl<T: TerminalBackend> Editor<T> {
                 "editor.command_line",
                 format!("command_line_cursor {cursor} is not a char boundary in {line:?}"),
             ));
+        }
+    }
+
+    fn check_panel_layout(&self, out: &mut Vec<Violation>) {
+        let Some(layout) = &self.panel_layout else {
+            return;
+        };
+        let area = "editor.panel_layout";
+        if layout.dir_win_id == layout.preview_win_id {
+            out.push(Violation::new(
+                area,
+                "panel list and preview share a window",
+            ));
+        }
+        if !self.document_manager.is_private(layout.dir_doc_id) {
+            out.push(Violation::new(
+                area,
+                format!("panel list buffer {} is not private", layout.dir_doc_id),
+            ));
+        }
+        for id in [layout.dir_win_id, layout.preview_win_id] {
+            if self.split_tree.get_window(id).is_none() {
+                out.push(Violation::new(
+                    area,
+                    format!("panel window {id} is missing"),
+                ));
+            }
+        }
+        if self
+            .document_manager
+            .get_document(layout.original_doc_id)
+            .is_none()
+        {
+            out.push(Violation::new(
+                area,
+                format!(
+                    "panel original document {} is missing",
+                    layout.original_doc_id
+                ),
+            ));
+        }
+        for (id, window) in self.split_tree.windows() {
+            if !self.window_accepts_buffer(*id, window.document_id) {
+                out.push(Violation::new(
+                    area,
+                    format!(
+                        "window {id} is showing unexpected panel buffer {}",
+                        window.document_id
+                    ),
+                ));
+            }
         }
     }
 

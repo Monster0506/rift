@@ -589,11 +589,20 @@ fn split_editor_recording_layout_on(event: &str) -> Editor<MockTerminal> {
                end \
                return table.concat(t, ' ') \
              end \
-             rift.on('{event}', function() _G.seen = _G.layout() end)"
+             rift.on('{event}', function(ev) \
+               _G.seen = _G.layout() \
+               _G.seen_event = ev \
+               _G.seen_focus = rift.windows.current() \
+               _G.seen_previous = rift.windows.previous() \
+             end)"
         ),
     );
     editor.update_lua_state();
-    lua_ok(&editor, "_G.before = _G.layout()");
+    lua_ok(
+        &editor,
+        "_G.before = _G.layout(); _G.before_windows = rift.windows.list() \
+         _G.before_focus = rift.windows.current(); _G.before_previous = rift.windows.previous()",
+    );
     editor
 }
 
@@ -603,6 +612,19 @@ fn assert_handler_saw_the_updated_layout(editor: &Editor<MockTerminal>) {
         editor,
         "assert(_G.seen ~= nil and _G.seen ~= _G.before and _G.seen == _G.layout(), \
            tostring(_G.before) .. ' -> ' .. tostring(_G.seen) .. ' vs ' .. _G.layout())",
+    );
+}
+
+fn assert_handler_saw_the_exchanged_panes(editor: &Editor<MockTerminal>) {
+    assert_handler_saw_the_updated_layout(editor);
+    lua_ok(
+        editor,
+        "local old_left, old_right = table.unpack(_G.before_windows) \
+         local left, right = table.unpack(rift.windows.list()) \
+         assert(left.id == old_right.id and left.buf == old_right.buf and left.col == old_left.col) \
+         assert(right.id == old_left.id and right.buf == old_left.buf and right.col == old_right.col) \
+         assert(_G.seen_event.win1 == _G.before_focus and _G.seen_event.win2 == _G.before_previous) \
+         assert(_G.seen_focus == _G.before_previous and _G.seen_previous == _G.before_focus)",
     );
 }
 
@@ -639,7 +661,7 @@ fn win_swapped_from_split_command_reads_the_updated_window_list() {
         crate::command_line::commands::types::SplitSubcommand::Exchange,
     );
 
-    assert_handler_saw_the_updated_layout(&editor);
+    assert_handler_saw_the_exchanged_panes(&editor);
 }
 
 #[test]
@@ -649,7 +671,7 @@ fn win_swapped_from_plugin_mutation_reads_the_updated_window_list() {
     lua_ok(&editor, "rift.windows.exchange()");
     editor.apply_plugin_mutations();
 
-    assert_handler_saw_the_updated_layout(&editor);
+    assert_handler_saw_the_exchanged_panes(&editor);
 }
 
 const RECORD_NEW_BUFFER_IN_LIST: &str = "rift.on('BufOpen', function(ev) \
@@ -1294,4 +1316,26 @@ fn window_lifecycle_hooks_see_the_completed_layout_change() {
         &editor,
         &format!("assert(opened == {id} and closed == {id})"),
     );
+}
+
+#[test]
+fn ghost_preview_is_painted_without_reaching_plugin_callbacks() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = lua_editor("red blue\n");
+    lua_ok(
+        &editor,
+        "rift.on('TextChangedCoarse', function(ev) _G.seen = rift.get_lines(1, 1)[1] end)",
+    );
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::NextWord)));
+    assert_eq!(editor.active_document().ghost_count(), 1);
+
+    let screen = render_ascii(&mut editor);
+
+    assert!(screen.contains("red blue"), "{screen}");
+    assert_eq!(editor.active_document().buffer().to_string(), "blue\n");
+    lua_ok(&editor, "assert(_G.seen == 'blue', tostring(_G.seen))");
 }

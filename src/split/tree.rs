@@ -484,29 +484,33 @@ impl SplitTree {
         }
     }
 
-    /// # Panics
-    /// Does not panic: both ids are verified present before the lookups.
     pub(super) fn exchange_windows(&mut self, id1: WindowId, id2: WindowId) -> bool {
         if id1 == id2 || !self.windows.contains_key(&id1) || !self.windows.contains_key(&id2) {
             return false;
         }
-        let (doc1, cursor1, scroll1) = {
-            let w = &self.windows[&id1];
-            (w.document_id, w.saved_cursor, w.viewport.scroll_position())
+        let exchange = |id| {
+            if id == id1 {
+                id2
+            } else if id == id2 {
+                id1
+            } else {
+                id
+            }
         };
-        let (doc2, cursor2, scroll2) = {
-            let w = &self.windows[&id2];
-            (w.document_id, w.saved_cursor, w.viewport.scroll_position())
-        };
-        let w1 = self.windows.get_mut(&id1).unwrap();
-        w1.document_id = doc2;
-        w1.saved_cursor = cursor2;
-        w1.viewport.set_scroll_position(scroll2);
-        let w2 = self.windows.get_mut(&id2).unwrap();
-        w2.document_id = doc1;
-        w2.saved_cursor = cursor1;
-        w2.viewport.set_scroll_position(scroll1);
+        Self::map_leaf_ids(&mut self.root, exchange);
+        self.focused_window = exchange(self.focused_window);
+        self.previous_window = self.previous_window.map(exchange);
         true
+    }
+
+    fn map_leaf_ids(node: &mut SplitNode, map: impl Fn(WindowId) -> WindowId + Copy) {
+        match node {
+            SplitNode::Leaf(id) => *id = map(*id),
+            SplitNode::Split { first, second, .. } => {
+                Self::map_leaf_ids(first, map);
+                Self::map_leaf_ids(second, map);
+            }
+        }
     }
 
     #[cfg(test)]

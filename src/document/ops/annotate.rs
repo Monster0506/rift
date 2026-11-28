@@ -25,6 +25,7 @@ impl Document {
         self.annotations.clear_by_kind_prefix(prefix);
     }
 
+    #[cfg(feature = "plugins")]
     pub(crate) fn unannotate(&mut self, id: AnnotationId) -> bool {
         self.annotations.remove(id)
     }

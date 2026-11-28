@@ -22,14 +22,16 @@ fn syntax_for(
 
 pub(super) struct FileLoad {
     pub(super) token: AsyncToken,
+    revision: u64,
     #[cfg(feature = "lsp")]
     goto: Option<(usize, u32)>,
 }
 
 impl FileLoad {
-    pub(super) fn new(token: AsyncToken) -> Self {
+    pub(super) fn new(token: AsyncToken, revision: u64) -> Self {
         Self {
             token,
+            revision,
             #[cfg(feature = "lsp")]
             goto: None,
         }
@@ -219,13 +221,30 @@ impl<T: TerminalBackend> Editor<T> {
         id: usize,
         token: Option<AsyncToken>,
         doc_id: DocumentId,
+        is_reload: bool,
     ) -> Option<FileLoad> {
-        self.file_load_jobs.remove(&id).filter(|load| {
+        let load = self.file_load_jobs.remove(&id).filter(|load| {
             self.job_manager.is_job_running(id)
                 && load.token.doc_id() == doc_id
                 && token.is_none_or(|token| token == load.token)
                 && self.is_async_token_valid(&load.token)
-        })
+        })?;
+        if self
+            .document_manager
+            .get_document_by_handle(load.token.handle)
+            .is_some_and(|doc| doc.version() == load.revision)
+        {
+            Some(load)
+        } else {
+            self.notify(
+                crate::notification::NotificationType::Warning,
+                "File load ignored: buffer changed during load",
+            );
+            if !is_reload {
+                self.announce_buffer(doc_id);
+            }
+            None
+        }
     }
 
     pub(super) fn finish_history_syntax(&mut self, doc_id: DocumentId) {
@@ -324,26 +343,31 @@ impl<T: TerminalBackend> Editor<T> {
                     silent,
                     format!("{name}: finished"),
                 );
+                self.settle_file_save(id);
             }
             JobMessage::Error(id, err) => {
                 self.file_load_jobs.remove(&id);
-                if self
-                    .job_manager
-                    .job_token(id)
-                    .is_none_or(|token| self.is_async_token_valid(&token))
+                if self.scheduler.running_file_saves.contains_key(&id)
+                    || self
+                        .job_manager
+                        .job_token(id)
+                        .is_none_or(|token| self.is_async_token_valid(&token))
                 {
                     self.handle_job_error(id, &err);
                 }
+                self.settle_file_save(id);
             }
             JobMessage::Cancelled(id) => {
                 self.file_load_jobs.remove(&id);
-                if self
-                    .job_manager
-                    .job_token(id)
-                    .is_none_or(|token| self.is_async_token_valid(&token))
+                if self.scheduler.running_file_saves.contains_key(&id)
+                    || self
+                        .job_manager
+                        .job_token(id)
+                        .is_none_or(|token| self.is_async_token_valid(&token))
                 {
                     self.handle_job_cancelled(id);
                 }
+                self.settle_file_save(id);
             }
             JobMessage::CustomToken(id, token, payload) => {
                 self.apply_job_payload(id, Some(token), payload);
@@ -363,7 +387,9 @@ impl<T: TerminalBackend> Editor<T> {
         token: Option<AsyncToken>,
         payload: Box<dyn JobPayload>,
     ) {
-        if token.is_none_or(|token| self.is_async_token_valid(&token)) {
+        if self.scheduler.running_file_saves.contains_key(&id)
+            || token.is_none_or(|token| self.is_async_token_valid(&token))
+        {
             payload.apply(self, JobRef { id, token });
         } else {
             self.file_load_jobs.remove(&id);
@@ -398,7 +424,6 @@ impl<T: TerminalBackend> Editor<T> {
             crate::notification::NotificationType::Warning,
             format!("{name} cancelled"),
         );
-        self.cancel_quit_after_save(id);
     }
 }
 
@@ -864,24 +889,7 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
         token: Option<AsyncToken>,
         res: crate::job_manager::jobs::file_operations::FileSaveResult,
     ) {
-        let Some(token) = self.resolve_and_validate_token(
-            id,
-            token,
-            res.document_id,
-            crate::job_manager::AsyncOpDomain::FileSave,
-        ) else {
-            self.job_manager
-                .update_job_state(&JobMessage::Finished(id, true));
-            return;
-        };
-        self.finish_save(super::ops::save::CompletedSave::File {
-            job: id,
-            handle: token.handle,
-            result: res,
-        });
-
-        self.job_manager
-            .update_job_state(&JobMessage::Finished(id, true));
+        self.finish_file_save(id, token, res);
     }
 
     fn apply_file_load(
@@ -890,9 +898,10 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
         token: Option<AsyncToken>,
         res: crate::job_manager::jobs::file_operations::FileLoadResult,
     ) {
-        let Some(load) = self.take_file_load(id, token, res.document_id) else {
+        let Some(load) = self.take_file_load(id, token, res.document_id, res.is_reload) else {
             return;
         };
+        self.preserve_file_save_history(load.token.handle);
         let Some(doc) = self
             .document_manager
             .get_document_by_handle_mut(load.token.handle)
@@ -931,7 +940,7 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
         token: Option<AsyncToken>,
         res: crate::job_manager::jobs::file_operations::ImageLoadResult,
     ) {
-        let Some(load) = self.take_file_load(id, token, res.document_id) else {
+        let Some(load) = self.take_file_load(id, token, res.document_id, res.is_reload) else {
             return;
         };
         #[cfg(feature = "lsp")]
@@ -941,6 +950,7 @@ impl<T: TerminalBackend> JobTarget for Editor<T> {
                 self.lsp_notify_close(res.document_id);
             }
         }
+        self.preserve_file_save_history(load.token.handle);
         if let Some(doc) = self
             .document_manager
             .get_document_by_handle_mut(load.token.handle)

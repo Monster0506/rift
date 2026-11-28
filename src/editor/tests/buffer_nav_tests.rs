@@ -236,16 +236,24 @@ fn test_handle_execution_result_quit_only_checks_current_buffer() {
 }
 
 #[test]
-fn test_cancelled_save_clears_quit_after_job() {
+fn test_cancelled_save_clears_its_pending_quit() {
     let mut editor = create_editor();
     let job_id = 42;
-    editor.scheduler.quit_after_job = Some((job_id, editor.split_tree.focused_window_id()));
+    let doc = editor.active_document();
+    let request = crate::editor::scheduler::FileSaveRequest {
+        handle: doc.handle(),
+        kind: doc.buffer_kind_id(),
+        destination: std::path::PathBuf::from("pending.txt"),
+        quit: Some(editor.split_tree.focused_window_id()),
+        detached_history: None,
+    };
+    editor.scheduler.running_file_saves.insert(job_id, request);
 
     editor.handle_job_message(crate::job_manager::JobMessage::Cancelled(job_id));
 
-    assert_eq!(
-        editor.scheduler.quit_after_job, None,
-        "a cancelled save tied to a pending quit must clear quit_after_job"
+    assert!(
+        editor.scheduler.running_file_saves.is_empty(),
+        "a cancelled save tied to a pending quit must settle"
     );
     assert!(
         !editor.should_quit(),
@@ -400,6 +408,48 @@ fn test_bd_by_index_deletes_a_non_current_buffer() {
             .tab_index(editor.active_document_id()),
         Some(1)
     );
+}
+
+#[test]
+fn public_buffer_commands_agree_when_private_tabs_are_interleaved() {
+    use crate::document::{manager::Placement, Document};
+
+    let mut editor = create_editor();
+    let original = editor.active_document_id();
+    let ordinary_window = editor.split_tree.focused_window_id();
+    editor.execute_command_line("vsplit");
+    editor.open_clipboard();
+    let layout = editor.panel_layout.clone().unwrap();
+    let id = editor.document_manager.next_id();
+    editor.open_buffer(
+        Document::new_scratch(id, "[public]".to_string(), &[]),
+        Placement::Background,
+    );
+    assert_eq!(editor.document_manager.tab_index(id), Some(3));
+
+    editor.execute_command_line("ls");
+    assert!(editor.state.notifications.iter_active().any(|notice| {
+        notice.message.contains("[2] [public]:") && !notice.message.contains("Clipboard")
+    }));
+
+    editor.focus_window(ordinary_window);
+    editor.execute_command_line("b 2");
+    assert_eq!(editor.active_document_id(), id);
+    editor.execute_command_line("b 3");
+    assert_eq!(editor.active_document_id(), id);
+    editor.execute_command_line("bd 2");
+    assert_eq!(editor.active_document_id(), original);
+    assert!(editor.document_manager.get_document(id).is_none());
+
+    editor.focus_window(layout.dir_win_id);
+    assert_eq!(editor.active_document_id(), layout.dir_doc_id);
+    editor.execute_command_line("bd 1");
+    assert!(editor.document_manager.get_document(original).is_none());
+    let replacement = editor.document_manager.public_tab_at(0).unwrap();
+    assert_eq!(editor.document_manager.tab_count(), 1);
+    assert_eq!(editor.active_document_id(), layout.dir_doc_id);
+    editor.close_split_panel();
+    assert_eq!(editor.active_document_id(), replacement);
 }
 
 #[test]

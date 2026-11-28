@@ -1,34 +1,24 @@
 #[cfg(feature = "plugins")]
 use super::super::scheduler::HeldSave;
-use super::super::scheduler::SaveQuit;
+use super::super::scheduler::{FileSaveRequest, QueuedFileSave, SaveQuit};
 use super::super::Editor;
 use crate::document::runtime::{BufferKindId, DocumentHandle, SaveDispatch, SaveResult};
 use crate::document::DocumentId;
 use crate::error::{ErrorType, RiftError};
 use crate::job_manager::jobs::file_operations::{FileSaveJob, FileSaveResult};
+use crate::job_manager::{AsyncOpDomain, AsyncToken};
 use crate::notification::NotificationType;
 #[cfg(feature = "plugins")]
 use crate::plugin::events::{EventPayload, SaveDecision, SaveRequestId};
 use crate::term::TerminalBackend;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[derive(Clone, Copy)]
 pub(crate) enum SaveOutcome {
-    Queued(usize),
+    Queued,
     Saved,
     NotSaved,
-}
-
-pub(in crate::editor) enum CompletedSave {
-    File {
-        job: usize,
-        handle: DocumentHandle,
-        result: FileSaveResult,
-    },
-    Special {
-        buf: DocumentId,
-        path: Option<PathBuf>,
-    },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -61,7 +51,7 @@ impl<T: TerminalBackend> Editor<T> {
         let result = self.start_save(buf, target, force, &mut quit);
         self.state.clear_command_line();
         if let Some(quit) = quit {
-            self.finish_save_quit(result, quit);
+            self.finish_save_quit(result, &quit);
         }
         result
     }
@@ -117,10 +107,10 @@ impl<T: TerminalBackend> Editor<T> {
         buf: DocumentId,
         target: Option<PathBuf>,
         _force: bool,
-        _quit: &mut Option<SaveQuit>,
+        quit: &mut Option<SaveQuit>,
     ) -> SaveOutcome {
         match self.prepare_save(buf, target) {
-            Some((handle, _, dispatch, path)) => self.write_save(handle, dispatch, path),
+            Some((handle, _, dispatch, path)) => self.write_save(handle, dispatch, path, quit),
             None => SaveOutcome::NotSaved,
         }
     }
@@ -152,7 +142,7 @@ impl<T: TerminalBackend> Editor<T> {
             return SaveOutcome::NotSaved;
         };
         match decision {
-            SaveDecision::Proceed => self.write_save(handle, dispatch, path),
+            SaveDecision::Proceed => self.write_save(handle, dispatch, path, quit),
             SaveDecision::Cancel => SaveOutcome::NotSaved,
             SaveDecision::Hold(hold) => {
                 if !self.exit_requested() && doc.matches_kind(kind) && hold.activate() {
@@ -206,7 +196,7 @@ impl<T: TerminalBackend> Editor<T> {
         let dispatch = doc.descriptor().save_dispatch;
         doc.commit_pending_ghost();
 
-        let quit = save.quit.filter(|quit| {
+        let mut quit = save.quit.filter(|quit| {
             let current = self.active_document_id() == buf
                 && self.split_tree.focused_window_id() == quit.window;
             if !current {
@@ -214,9 +204,9 @@ impl<T: TerminalBackend> Editor<T> {
             }
             current
         });
-        let result = self.write_save(save.handle, dispatch, save.path);
+        let result = self.write_save(save.handle, dispatch, save.path, &mut quit);
         if let Some(quit) = quit {
-            self.finish_save_quit(result, quit);
+            self.finish_save_quit(result, &quit);
         }
     }
 
@@ -225,6 +215,7 @@ impl<T: TerminalBackend> Editor<T> {
         handle: DocumentHandle,
         dispatch: SaveDispatch,
         path: Option<PathBuf>,
+        quit: &mut Option<SaveQuit>,
     ) -> SaveOutcome {
         let buf = handle.doc_id();
         let Some(doc) = self.document_manager.get_document_by_handle_mut(handle) else {
@@ -232,6 +223,14 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let path = match (dispatch, path) {
             (SaveDispatch::File, Some(path)) => {
+                doc.checkpoint_edit_session();
+                let request = FileSaveRequest {
+                    handle,
+                    kind: doc.buffer_kind_id(),
+                    destination: save_destination(&path),
+                    quit: None,
+                    detached_history: None,
+                };
                 let job = FileSaveJob::new(
                     buf,
                     doc.buffer().line_index.table.clone(),
@@ -240,7 +239,8 @@ impl<T: TerminalBackend> Editor<T> {
                     doc.options().has_bom(),
                     doc.history.current_seq(),
                 );
-                return SaveOutcome::Queued(self.job_manager.spawn(job));
+                self.enqueue_file_save(job, request, quit.take());
+                return SaveOutcome::Queued;
             }
             (_, path) => path,
         };
@@ -250,34 +250,191 @@ impl<T: TerminalBackend> Editor<T> {
         if self.save_special_buffer(handle) != SaveResult::Saved {
             return SaveOutcome::NotSaved;
         }
-        self.finish_save(CompletedSave::Special { buf, path });
+        self.deliver_save_post(buf, path, false);
         SaveOutcome::Saved
     }
 
-    pub(in crate::editor) fn finish_save(&mut self, completion: CompletedSave) {
-        let (buf, path, file) = match completion {
-            CompletedSave::Special { buf, path } => (buf, path, None),
-            CompletedSave::File {
-                job,
-                handle,
-                result,
-            } => {
-                let Some(doc) = self.document_manager.get_document_by_handle_mut(handle) else {
-                    return;
-                };
-                doc.mark_as_saved(result.saved_seq);
-                doc.set_path(&result.path);
-                self.persist_undo_after_save(result.document_id, result.content_hash);
-                self.notify(
-                    NotificationType::Success,
-                    format!("Written to {}", result.path.display()),
-                );
-                (result.document_id, Some(result.path), Some((job, handle)))
+    fn enqueue_file_save(
+        &mut self,
+        job: FileSaveJob,
+        mut request: FileSaveRequest,
+        quit: Option<SaveQuit>,
+    ) {
+        let mut superseded_quit = false;
+        for existing in self.scheduler.running_file_saves.values_mut().chain(
+            self.scheduler
+                .queued_file_saves
+                .iter_mut()
+                .map(|save| &mut save.request),
+        ) {
+            if existing.handle == request.handle {
+                superseded_quit |= existing.quit.take().is_some();
             }
+        }
+        if superseded_quit {
+            self.notify_save_quit_aborted();
+        }
+        if let Some(quit) = quit {
+            request.quit = Some(quit.window);
+            if let Some(message) = quit.message {
+                self.notify(NotificationType::Info, message);
+            }
+        }
+        self.scheduler
+            .queued_file_saves
+            .push_back(QueuedFileSave { job, request });
+        self.start_queued_file_saves();
+    }
+
+    fn start_queued_file_saves(&mut self) {
+        let mut index = 0;
+        while let Some(save) = self.scheduler.queued_file_saves.get(index) {
+            let request = &save.request;
+            if self
+                .scheduler
+                .running_file_saves
+                .values()
+                .chain(
+                    self.scheduler
+                        .queued_file_saves
+                        .iter()
+                        .take(index)
+                        .map(|save| &save.request),
+                )
+                .any(|other| request.conflicts_with(other))
+            {
+                index += 1;
+                continue;
+            }
+            let Some(save) = self.scheduler.queued_file_saves.remove(index) else {
+                break;
+            };
+            let request = save.request;
+            if self
+                .document_manager
+                .get_document_by_handle(request.handle)
+                .is_none_or(|doc| !doc.matches_kind(request.kind))
+            {
+                if request.quit.is_some() {
+                    self.notify_save_quit_aborted();
+                }
+                continue;
+            }
+            self.job_manager
+                .register_document_handle(request.handle, request.kind);
+            let id = self.job_manager.spawn(save.job);
+            self.scheduler.running_file_saves.insert(id, request);
+        }
+    }
+
+    pub(in crate::editor) fn settle_file_save(&mut self, job: usize) {
+        if let Some(save) = self.scheduler.running_file_saves.remove(&job) {
+            if save.quit.is_some() {
+                self.notify(
+                    NotificationType::Warning,
+                    "Quit aborted: save did not complete",
+                );
+            }
+            self.start_queued_file_saves();
+        }
+    }
+
+    pub(in crate::editor) fn preserve_file_save_history(&mut self, handle: DocumentHandle) {
+        let mut saves = self
+            .scheduler
+            .running_file_saves
+            .values_mut()
+            .chain(
+                self.scheduler
+                    .queued_file_saves
+                    .iter_mut()
+                    .map(|save| &mut save.request),
+            )
+            .filter(|save| save.handle == handle && save.detached_history.is_none())
+            .peekable();
+        if saves.peek().is_none() {
+            return;
+        }
+        if let Some(doc) = self.document_manager.get_document_by_handle_mut(handle) {
+            let history = Arc::new(std::mem::take(&mut doc.history));
+            for save in saves {
+                save.detached_history = Some(Arc::clone(&history));
+            }
+        }
+    }
+
+    pub(in crate::editor) fn finish_file_save(
+        &mut self,
+        job: usize,
+        token: Option<AsyncToken>,
+        result: FileSaveResult,
+    ) {
+        let Some(save) = self.scheduler.running_file_saves.get(&job) else {
+            return;
         };
+        if !self.job_manager.is_job_running(job)
+            || token != self.job_manager.job_token(job)
+            || !token.is_some_and(|token| {
+                token.handle == save.handle
+                    && token.expected_kind == save.kind
+                    && token.domain == AsyncOpDomain::FileSave
+                    && token.doc_id() == result.document_id
+            })
+        {
+            return;
+        }
+        let handle = save.handle;
+        let Some(doc) = self.document_manager.get_document_by_handle_mut(handle) else {
+            return;
+        };
+        let live = save.detached_history.is_none()
+            && doc.matches_kind(save.kind)
+            && doc.history.nodes.contains_key(&result.saved_seq);
+        if live {
+            doc.mark_as_saved(result.saved_seq);
+            doc.set_path(&result.path);
+        }
+        if let Some(history) = &save.detached_history {
+            let path = crate::fs_backend::backend().canonicalize(&result.path);
+            self.persist_undo_after_save(&path, history, result.saved_seq, result.content_hash);
+        } else if live {
+            let Some(doc) = self.document_manager.get_document_by_handle(handle) else {
+                return;
+            };
+            self.persist_undo_after_save(
+                doc.path().unwrap_or(&result.path),
+                &doc.history,
+                result.saved_seq,
+                result.content_hash,
+            );
+        }
+        self.notify(
+            NotificationType::Success,
+            format!("Written to {}", result.path.display()),
+        );
+        self.deliver_save_post(result.document_id, Some(result.path), true);
+        if let Some(save) = self.scheduler.running_file_saves.get_mut(&job) {
+            if let Some(window) = save.quit.take() {
+                if live
+                    && !self
+                        .scheduler
+                        .queued_file_saves
+                        .iter()
+                        .any(|pending| pending.request.destination == save.destination)
+                {
+                    self.quit_after_completed_save(handle, window, SaveKind::File);
+                } else {
+                    self.notify_save_quit_aborted();
+                }
+            }
+        }
+        self.request_frame();
+    }
+
+    fn deliver_save_post(&mut self, buf: DocumentId, path: Option<PathBuf>, file: bool) {
         #[cfg(feature = "plugins")]
         let path = {
-            let (event_path, lsp_path) = if cfg!(feature = "lsp") && file.is_some() {
+            let (event_path, lsp_path) = if cfg!(feature = "lsp") && file {
                 (path.clone(), path)
             } else {
                 (path, None)
@@ -290,35 +447,15 @@ impl<T: TerminalBackend> Editor<T> {
             lsp_path
         };
         #[cfg(feature = "lsp")]
-        if let Some(path) = path {
-            if file.is_some() {
+        if file {
+            if let Some(path) = path {
                 self.lsp_manager.did_save(&path, None);
             }
         }
         #[cfg(not(feature = "lsp"))]
-        drop(path);
-        if let Some((job, handle)) = file {
-            if let Some((_, window)) = self.scheduler.quit_after_job.take_if(|(id, _)| *id == job) {
-                self.quit_after_completed_save(handle, window, SaveKind::File);
-            }
-            self.request_frame();
-        }
+        let _ = (path, file);
         #[cfg(not(feature = "plugins"))]
         let _ = buf;
-    }
-
-    pub(in crate::editor) fn cancel_quit_after_save(&mut self, job: usize) {
-        if self
-            .scheduler
-            .quit_after_job
-            .take_if(|(id, _)| *id == job)
-            .is_some()
-        {
-            self.notify(
-                NotificationType::Warning,
-                "Quit aborted: save was cancelled",
-            );
-        }
     }
 
     fn save_special_buffer(&mut self, handle: DocumentHandle) -> SaveResult {
@@ -378,18 +515,9 @@ impl<T: TerminalBackend> Editor<T> {
         );
     }
 
-    fn finish_save_quit(&mut self, outcome: SaveOutcome, quit: SaveQuit) {
-        match outcome {
-            SaveOutcome::Queued(job) => {
-                self.scheduler.quit_after_job = Some((job, quit.window));
-                if let Some(message) = quit.message {
-                    self.notify(NotificationType::Info, message);
-                }
-            }
-            SaveOutcome::Saved => {
-                self.quit_after_completed_save(quit.handle, quit.window, SaveKind::Special);
-            }
-            SaveOutcome::NotSaved => {}
+    fn finish_save_quit(&mut self, outcome: SaveOutcome, quit: &SaveQuit) {
+        if matches!(outcome, SaveOutcome::Saved) {
+            self.quit_after_completed_save(quit.handle, quit.window, SaveKind::Special);
         }
     }
 
@@ -409,7 +537,8 @@ impl<T: TerminalBackend> Editor<T> {
         let doc = self.document_manager.get_document_by_handle(handle);
         if self.split_tree.focused_window_id() == window
             && self.active_document_id() == handle.doc_id()
-            && (kind == SaveKind::Special || doc.is_some_and(|doc| !doc.is_dirty()))
+            && (kind == SaveKind::Special
+                || doc.is_some_and(|doc| !doc.is_dirty() && !doc.has_pending_edits()))
         {
             self.quit(super::quit::QuitRequest::Close { force: false });
         } else if kind == SaveKind::Special && doc.is_none() {
@@ -417,5 +546,19 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             self.notify_save_quit_aborted();
         }
+    }
+}
+
+fn save_destination(path: &Path) -> PathBuf {
+    let canonical = path
+        .parent()
+        .and_then(|parent| std::fs::canonicalize(parent).ok())
+        .zip(path.file_name())
+        .map(|(parent, name)| parent.join(name));
+    let destination = canonical.as_deref().unwrap_or(path);
+    if cfg!(windows) {
+        PathBuf::from(destination.to_string_lossy().to_lowercase())
+    } else {
+        canonical.unwrap_or_else(|| path.to_path_buf())
     }
 }

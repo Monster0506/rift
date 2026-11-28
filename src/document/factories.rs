@@ -146,9 +146,7 @@ impl Document {
             lsp_synced_revision: 0,
             #[cfg(feature = "lsp")]
             lsp_full_sync_needed: false,
-            pending_ghost: Vec::new(),
-            ghost_clip: None,
-            ghost_paint_cursor: None,
+            ghost_preview: None,
             syntax_settle: super::syntax_sync::SyntaxSettle::default(),
         }
     }

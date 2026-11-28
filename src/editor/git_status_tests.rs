@@ -675,6 +675,7 @@ fn open_git_blame_populates_one_line_per_source_line() {
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
     let source_window_id = editor.split_tree.focused_window_id();
+    let source_doc_id = editor.active_document_id();
     editor.open_git_blame(dir.path().join("tracked.txt"), dir.path().to_path_buf());
     drain_jobs(&mut editor);
 
@@ -683,6 +684,7 @@ fn open_git_blame_populates_one_line_per_source_line() {
         .document_manager
         .get_document(editor.active_document_id())
         .unwrap();
+    let blame_doc_id = doc.id;
     assert!(doc.is_git_blame());
     let text = doc.buffer().to_string();
     let lines: Vec<&str> = text.lines().collect();
@@ -736,6 +738,14 @@ fn open_git_blame_populates_one_line_per_source_line() {
         blame_layout.col < source_layout.col,
         "blame must open to the left of its linked source"
     );
+
+    assert!(editor.swap_windows());
+    assert_eq!(editor.split_tree.focused_window_id(), source_window_id);
+    assert_eq!(editor.active_document_id(), source_doc_id);
+    assert_eq!(editor.git_blame_partner_window_id(), Some(blame_window_id));
+    editor.focus_previous_window();
+    assert_eq!(editor.active_document_id(), blame_doc_id);
+    assert_eq!(editor.git_blame_partner_window_id(), Some(source_window_id));
 }
 
 #[test]

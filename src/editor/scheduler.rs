@@ -1,16 +1,17 @@
 use super::super::split::window::WindowId;
 use super::explorer::PendingExplorerPreview;
-#[cfg(feature = "plugins")]
 use crate::document::runtime::BufferKindId;
 use crate::document::runtime::DocumentHandle;
 use crate::document::DocumentId;
+use crate::history::UndoTree;
+use crate::job_manager::jobs::file_operations::FileSaveJob;
 #[cfg(feature = "plugins")]
 use crate::plugin::events::SaveHold;
 use crate::time::Instant;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
-#[cfg(feature = "plugins")]
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 pub(super) const SYNTAX_REPARSE_DEBOUNCE: Duration = Duration::from_millis(40);
@@ -41,7 +42,8 @@ pub(super) struct Scheduler {
     pub(super) explorer_cursor_entry: Option<String>,
     pub(super) git_status_expand_all: HashMap<DocumentId, bool>,
     pub(super) git_log_expand_head: HashSet<DocumentId>,
-    pub(super) quit_after_job: Option<(usize, WindowId)>,
+    pub(super) queued_file_saves: VecDeque<QueuedFileSave>,
+    pub(super) running_file_saves: HashMap<usize, FileSaveRequest>,
     #[cfg(feature = "plugins")]
     pub(super) save_pre_in_progress: HashSet<DocumentId>,
     #[cfg(feature = "plugins")]
@@ -67,6 +69,25 @@ pub(super) struct SaveQuit {
     pub(super) message: Option<String>,
 }
 
+pub(super) struct FileSaveRequest {
+    pub(super) handle: DocumentHandle,
+    pub(super) kind: BufferKindId,
+    pub(super) destination: PathBuf,
+    pub(super) quit: Option<WindowId>,
+    pub(super) detached_history: Option<Arc<UndoTree>>,
+}
+
+impl FileSaveRequest {
+    pub(super) fn conflicts_with(&self, other: &Self) -> bool {
+        self.handle == other.handle || self.destination == other.destination
+    }
+}
+
+pub(super) struct QueuedFileSave {
+    pub(super) job: FileSaveJob,
+    pub(super) request: FileSaveRequest,
+}
+
 impl Scheduler {
     pub(super) fn new() -> Self {
         Self {
@@ -82,7 +103,8 @@ impl Scheduler {
             explorer_cursor_entry: None,
             git_status_expand_all: HashMap::new(),
             git_log_expand_head: HashSet::new(),
-            quit_after_job: None,
+            queued_file_saves: VecDeque::new(),
+            running_file_saves: HashMap::new(),
             #[cfg(feature = "plugins")]
             save_pre_in_progress: HashSet::new(),
             #[cfg(feature = "plugins")]

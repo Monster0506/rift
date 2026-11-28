@@ -3,6 +3,7 @@ pub(crate) mod clipboard;
 pub(crate) mod definitions;
 pub(crate) mod factories;
 mod ghost;
+pub(crate) use ghost::GhostPreview;
 pub(crate) mod kind;
 pub(crate) use crate::editor::ops::buffers::manager;
 pub(crate) mod ops;
@@ -120,12 +121,6 @@ pub(crate) enum GitStatusAction {
     },
 }
 
-pub(crate) struct GhostCut {
-    at: usize,
-    text: Vec<crate::character::Character>,
-    painted: Option<(usize, crate::annotations::AnnotationId)>,
-}
-
 #[cfg(feature = "lsp")]
 #[derive(Debug, Clone)]
 pub(crate) struct LocationEntry {
@@ -217,9 +212,7 @@ pub(crate) struct Document {
     lsp_synced_revision: u64,
     #[cfg(feature = "lsp")]
     lsp_full_sync_needed: bool,
-    pub(crate) pending_ghost: Vec<GhostCut>,
-    ghost_clip: Option<crate::clipboard::Clip>,
-    ghost_paint_cursor: Option<usize>,
+    ghost_preview: Option<GhostPreview>,
     syntax_settle: syntax_sync::SyntaxSettle,
 }
 
@@ -262,8 +255,7 @@ impl Document {
         Some(f(syntax, &self.buffer))
     }
 
-    #[cfg(test)]
-    const fn version(&self) -> u64 {
+    pub(crate) const fn version(&self) -> u64 {
         self.content_version
     }
 

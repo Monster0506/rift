@@ -54,6 +54,27 @@ impl Document {
         self.commit_transaction();
     }
 
+    pub(crate) fn has_pending_edits(&self) -> bool {
+        self.current_transaction
+            .as_ref()
+            .is_some_and(|tx| !tx.is_empty())
+    }
+
+    pub(crate) fn checkpoint_edit_session(&mut self) {
+        if !self.has_pending_edits() {
+            return;
+        }
+        let Some(tx) = &self.current_transaction else {
+            return;
+        };
+        let description = tx.description.clone();
+        let depth = self.transaction_depth;
+        self.transaction_depth = 1;
+        self.commit_transaction();
+        self.begin_transaction(description);
+        self.transaction_depth = depth;
+    }
+
     pub(in crate::document) fn begin_transaction(&mut self, description: impl Into<String>) {
         if self.transaction_depth == 0 {
             self.commit_pending_ghost();

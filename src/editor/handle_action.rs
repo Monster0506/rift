@@ -491,31 +491,18 @@ impl<T: TerminalBackend> Editor<T> {
             };
             return self.replace_visual_selection(register);
         }
-        let active_doc_id = self.active_document_id();
-        let cursor_before_resolve = self
-            .document_manager
-            .get_document(self.active_document_id())
-            .map(|d| d.buffer().cursor());
-        let ghost_put = self
+        let active = self.active_document_id();
+        let ghost_doc = self
             .document_manager
             .most_recent_ghost_doc()
-            .and_then(|doc_id| {
-                let doc = self.document_manager.get_document(doc_id)?;
-                let (text, live_start, clip) = doc.most_recent_ghost()?;
-                let same_location =
-                    doc_id == active_doc_id && cursor_before_resolve == Some(live_start);
-                if same_location {
-                    return Some((Clip::from_plain(text.to_vec()), Some(live_start)));
-                }
-                Some((clip.clone(), None))
-            });
-        let (clip, same_location_origin) = match ghost_put {
-            Some(put) => put,
-            None => match self.clipboard_ring.most_recent() {
-                Some(clip) => (clip.clone(), None),
-                None => return false,
-            },
+            .and_then(|id| self.document_manager.get_document(id));
+        let source = ghost_doc
+            .and_then(crate::document::Document::most_recent_ghost)
+            .or_else(|| self.clipboard_ring.most_recent());
+        let Some(clip) = source.cloned() else {
+            return false;
         };
+        let restore_here = ghost_doc.is_some_and(|doc| doc.id == active && doc.ghost_at_cursor());
 
         match self.try_run_set_aware_put(before, &clip) {
             Ok(true) => {
@@ -530,8 +517,8 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .get_document(self.active_document_id())
             .map_or(0, |d| d.buffer().cursor());
-        let result = if let Some(origin) = same_location_origin {
-            self.put_into_active(&clip, PutAt::Verbatim(origin))
+        let result = if restore_here {
+            self.active_document().restore_ghost()
         } else {
             self.put_into_active(&clip, PutAt::Cursor { before })
         };
@@ -557,8 +544,7 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .most_recent_ghost_doc()
             .and_then(|id| self.document_manager.get_document(id))
-            .and_then(|doc| doc.most_recent_ghost())
-            .map(|(_, _, clip)| clip)
+            .and_then(crate::document::Document::most_recent_ghost)
             .or_else(|| self.clipboard_ring.most_recent())
             .cloned();
         let Some(clip) = clip else {

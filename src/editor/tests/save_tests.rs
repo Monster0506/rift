@@ -50,13 +50,15 @@ use std::time::{Duration, Instant};
 fn settle(editor: &mut Editor<MockTerminal>) {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        let idle = !editor.job_manager.any_job_thread_alive();
+        let idle = !editor.job_manager.any_job_thread_alive()
+            && editor.scheduler.running_file_saves.is_empty();
         while let Ok(msg) = editor.job_manager.receiver().try_recv() {
             editor.handle_job_message(msg);
         }
-        if idle || Instant::now() >= deadline {
+        if idle && !editor.job_manager.any_job_thread_alive() {
             return;
         }
+        assert!(Instant::now() < deadline, "editor jobs did not settle");
         std::thread::sleep(Duration::from_millis(10));
     }
 }
@@ -178,6 +180,121 @@ fn w_own_path_writes() {
 }
 
 #[test]
+fn saving_keeps_an_existing_sibling_backup_file() {
+    let (dir, a, _) = setup();
+    let backup = dir.path().join("a.txt~");
+    std::fs::write(&backup, "backup").unwrap();
+    let mut editor = create_editor();
+    open(&mut editor, &a);
+    type_text(&mut editor, "Z");
+    let expected = editor.active_document().buffer().to_string();
+
+    editor.save_buffer(editor.active_document_id(), None, false);
+    settle(&mut editor);
+
+    assert_eq!(std::fs::read_to_string(&a).unwrap(), expected);
+    assert_eq!(std::fs::read_to_string(&backup).unwrap(), "backup");
+}
+
+#[test]
+fn queued_saves_to_the_same_destination_publish_in_request_order() {
+    let (dir, a, b) = setup();
+    let mut editor = create_editor();
+    open(&mut editor, &a);
+    let first_buf = editor.active_document_id();
+    open(&mut editor, &b);
+    let second_buf = editor.active_document_id();
+    let destination = dir.path().join("new.txt");
+
+    let spawned = editor.job_manager.total_spawned();
+    editor.save_buffer(first_buf, Some(destination.clone()), true);
+    editor.save_buffer(second_buf, Some(dir.path().join(".").join("new.txt")), true);
+
+    assert_eq!(editor.job_manager.total_spawned(), spawned + 1);
+    assert_eq!(editor.scheduler.queued_file_saves.len(), 1);
+    loop {
+        let msg = editor
+            .job_manager
+            .receiver()
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap();
+        if matches!(&msg, crate::job_manager::JobMessage::Finished(id, _) if *id == spawned + 1) {
+            assert_eq!(std::fs::read_to_string(&destination).unwrap(), "a");
+            editor.handle_job_message(msg);
+            break;
+        }
+        editor.handle_job_message(msg);
+    }
+    settle(&mut editor);
+    assert_eq!(std::fs::read_to_string(&destination).unwrap(), "b");
+}
+
+#[test]
+fn successive_save_as_requests_write_both_snapshots() {
+    let (dir, a, _) = setup();
+    let mut editor = create_editor();
+    open(&mut editor, &a);
+    let buf = editor.active_document_id();
+    let first = dir.path().join("first.txt");
+    let second = dir.path().join("second.txt");
+    type_text(&mut editor, "A");
+    editor.save_buffer(buf, Some(first.clone()), false);
+    type_text(&mut editor, "Z");
+    editor.save_buffer(buf, Some(second.clone()), false);
+    let second_snapshot = editor.active_document().buffer().to_string();
+    settle(&mut editor);
+
+    assert_eq!(std::fs::read_to_string(&first).unwrap(), "Aa");
+    assert_eq!(std::fs::read_to_string(&second).unwrap(), second_snapshot);
+    assert_eq!(active_path(&mut editor), second.canonicalize().ok());
+    assert!(!editor.active_document().is_dirty());
+}
+
+#[test]
+fn forced_reload_drops_a_completed_image_load_after_new_edits() {
+    let (dir, path, _) = setup();
+    let mut editor = create_editor();
+    open(&mut editor, &path);
+    let buf = editor.active_document_id();
+    type_text(&mut editor, "discardable");
+    let image_path = dir.path().join("image.png");
+    image::DynamicImage::new_rgb8(1, 1)
+        .save(&image_path)
+        .unwrap();
+    std::fs::copy(&image_path, &path).unwrap();
+
+    editor.reload_document(buf, true).unwrap();
+    type_text(&mut editor, "survives");
+    let expected = editor.active_document().buffer().to_string();
+    settle(&mut editor);
+
+    assert!(editor.active_document().image().is_none());
+    assert_eq!(editor.active_document().buffer().to_string(), expected);
+    assert!(editor.active_document().is_dirty());
+    assert!(editor.file_load_jobs.is_empty());
+}
+
+#[cfg(feature = "plugins")]
+#[test]
+fn lua_reload_cannot_overwrite_a_subsequent_insertion() {
+    let (_dir, path, _) = setup();
+    let mut editor = create_editor();
+    open(&mut editor, &path);
+    editor.plugin_host.mark_lua_used();
+    editor.update_lua_state();
+    let error = editor
+        .plugin_host
+        .lua_exec("rift.reload_buf(); rift.insert('UNSAVED_')");
+    assert!(error.is_none(), "{error:?}");
+    editor.apply_plugin_mutations();
+    settle(&mut editor);
+
+    assert_eq!(editor.active_document().buffer().to_string(), "UNSAVED_a");
+    assert!(editor.active_document().is_dirty());
+    assert!(editor.file_load_jobs.is_empty());
+}
+
+#[test]
 fn bug_wq_in_split_quits_editor() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("a.txt");
@@ -266,6 +383,49 @@ fn wq_then_typing_before_save_completes_quits_with_unsaved_edit() {
         "an edit made after :wq started must cancel the quit"
     );
     assert!(editor.active_document().is_dirty());
+}
+
+#[test]
+fn queued_write_and_quit_waits_for_its_own_snapshot() {
+    let (_dir, path, _) = setup();
+    let mut editor = create_editor();
+    let startup = editor.active_document_id();
+    open(&mut editor, &path);
+    if startup != editor.active_document_id() {
+        editor
+            .close_buffer(startup, crate::document::manager::RemovalIntent::Force)
+            .unwrap();
+    }
+    editor.execute_command_line("w");
+    type_text(&mut editor, "updated");
+    let expected = editor.active_document().buffer().to_string();
+    editor.execute_command_line("wq");
+    assert_eq!(editor.scheduler.queued_file_saves.len(), 1);
+    assert!(!editor.should_quit());
+    settle(&mut editor);
+
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), expected);
+    assert!(editor.should_quit());
+}
+
+#[test]
+fn failed_write_and_quit_does_not_quit_or_block_later_saves() {
+    let (dir, path, _) = setup();
+    let mut editor = create_editor();
+    open(&mut editor, &path);
+    type_text(&mut editor, "updated");
+    let expected = editor.active_document().buffer().to_string();
+
+    editor.save_and_quit(Some(dir.path().to_path_buf()), true);
+    settle(&mut editor);
+    assert!(!editor.should_quit());
+    assert!(editor.active_document().is_dirty());
+    assert!(editor.scheduler.running_file_saves.is_empty());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "a");
+
+    editor.save_buffer(editor.active_document_id(), None, false);
+    settle(&mut editor);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), expected);
 }
 
 #[cfg(feature = "plugins")]

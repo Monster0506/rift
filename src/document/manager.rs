@@ -270,9 +270,7 @@ impl DocumentManager {
 
     #[cfg(feature = "plugins")]
     pub(crate) fn tabs(&self) -> impl Iterator<Item = &Document> {
-        self.tab_order
-            .iter()
-            .filter_map(|id| self.documents.get(id))
+        self.public_tabs().filter_map(|id| self.documents.get(&id))
     }
 
     pub(crate) fn check_invariants(&self) -> Vec<String> {
@@ -423,11 +421,11 @@ impl DocumentManager {
 
         Ok(PreparedRemoval {
             id,
-            replacement: self
-                .tab_order
-                .get(position + 1)
-                .or_else(|| position.checked_sub(1).and_then(|p| self.tab_order.get(p)))
-                .copied(),
+            replacement: self.tab_order[position + 1..]
+                .iter()
+                .chain(self.tab_order[..position].iter().rev())
+                .copied()
+                .find(|&id| !self.is_private(id)),
         })
     }
 
@@ -464,7 +462,7 @@ impl DocumentManager {
 
     #[must_use]
     pub(crate) fn neighbor_tab(&self, active: DocumentId, forward: bool) -> Option<DocumentId> {
-        let is_public = |id: &DocumentId| !self.private_document_ids.contains(id);
+        let is_public = |&id: &DocumentId| !self.is_private(id);
         let next = |tabs: &[DocumentId]| tabs.iter().copied().find(is_public);
         let Some(index) = self.tab_index(active).filter(|_| is_public(&active)) else {
             return next(&self.tab_order);
@@ -479,10 +477,19 @@ impl DocumentManager {
 
     #[must_use]
     pub(crate) fn tab_count(&self) -> usize {
+        self.public_tabs().count()
+    }
+
+    fn public_tabs(&self) -> impl Iterator<Item = DocumentId> + '_ {
         self.tab_order
             .iter()
-            .filter(|id| !self.private_document_ids.contains(*id))
-            .count()
+            .copied()
+            .filter(|&id| !self.is_private(id))
+    }
+
+    #[must_use]
+    pub(crate) fn public_tab_at(&self, index: usize) -> Option<DocumentId> {
+        self.public_tabs().nth(index)
     }
 
     #[must_use]
@@ -511,6 +518,9 @@ impl DocumentManager {
         let normalized_path = crate::fs_backend::backend().canonicalize(path);
 
         for (idx, &id) in self.tab_order.iter().enumerate() {
+            if self.is_private(id) {
+                continue;
+            }
             if let Some(doc) = self.documents.get(&id) {
                 if doc.path() == Some(normalized_path.as_path()) {
                     return Some(idx);
@@ -524,10 +534,9 @@ impl DocumentManager {
     /// Panics if a tab ID has no stored document, which the manager's invariants rule out.
     #[must_use]
     pub(crate) fn get_buffer_list(&self, active: DocumentId) -> Vec<BufferInfo> {
-        self.tab_order
-            .iter()
+        self.public_tabs()
             .enumerate()
-            .map(|(i, &id)| {
+            .map(|(i, id)| {
                 let doc = self.documents.get(&id).unwrap();
                 BufferInfo {
                     id,
@@ -573,7 +582,8 @@ impl DocumentManager {
 
     #[must_use]
     pub(crate) fn find_open_document_id(&self, path: &Path) -> Option<DocumentId> {
-        self.find_open_document(path).map(|idx| self.tab_order[idx])
+        self.find_open_document(path)
+            .and_then(|idx| self.get_document_id_at(idx))
     }
 }
 
